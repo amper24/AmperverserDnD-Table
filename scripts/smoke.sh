@@ -146,9 +146,9 @@ gm -X DELETE "$B/api/campaigns/$CID" | grep -q '"ok":true'
 echo "SMOKE OK"
 
 echo "[9] root: CLI + права на базовый справочник"
-"$BIN" users create root@test.ru rootpass123 --name Root --root | grep -q root
-"$BIN" users list | grep -q "root@test.ru"
-"$BIN" stats | grep -q "Пользователи"
+"$BIN" users create root@test.ru rootpass123 --name Root --root | grep root >/dev/null
+"$BIN" users list | grep "root@test.ru" >/dev/null
+"$BIN" stats | grep "Пользователи" >/dev/null
 RT=$(curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"root@test.ru","password":"rootpass123"}' | J "d['token']")
 rt() { curl -fsS -H "Authorization: Bearer $RT" "$@" || { echo "!!! root request failed: $*" >&2; curl -s -H "Authorization: Bearer $RT" "$@" >&2; echo >&2; return 1; }; }
 rt "$B/api/auth/me" | J "d['is_root']" | grep -q True
@@ -162,6 +162,6 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" "$B
 NU=$(rt -X POST "$B/api/admin/users" -H 'content-type: application/json' -d '{"email":"new@test.ru","password":"password123","name":"Новый"}' | J "d['id']")
 rt -X PATCH "$B/api/admin/users/$NU" -H 'content-type: application/json' -d '{"is_root":true}' | J "d['is_root']" | grep -q True
 rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
-("$BIN" users revoke-root root@test.ru 2>&1 || true) | grep -q "единственный"
+("$BIN" users revoke-root root@test.ru 2>&1 || true) | grep "единственный" >/dev/null
 rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep -q 191
 echo "SMOKE OK (root)"
