@@ -1,5 +1,5 @@
 //! Подключение к БД (MySQL или SQLite через sqlx Any) и создание схемы.
-use sqlx::any::{AnyPool, AnyPoolOptions};
+use sqlx::{any::AnyPoolOptions, AnyPool};
 
 pub async fn connect(url: &str) -> anyhow::Result<(AnyPool, bool)> {
     sqlx::any::install_default_drivers();

@@ -32,7 +32,8 @@ pub fn compress_image(raw: &[u8], max_side: u32, quality: u8) -> anyhow::Result<
         "image/png"
     } else {
         let rgb = img.to_rgb8();
-        let enc = JpegEncoder::new_with_quality(&mut Cursor::new(&mut encoded), quality);
+        let mut cursor = Cursor::new(&mut encoded);
+        let enc = JpegEncoder::new_with_quality(&mut cursor, quality);
         rgb.write_with_encoder(enc)?;
         "image/jpeg"
     };
