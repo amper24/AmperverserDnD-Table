@@ -79,6 +79,7 @@
     const pf = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     pf.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', pf.files[0]); fd.append('name', ch.name); fd.append('kind', 'portrait'); if (ch.campaign_id) fd.append('campaign_id', ch.campaign_id); const a = await API.upload('/api/assets', fd); ch.portrait_asset_id = a.id; await API.patch('/api/characters/' + id, { portrait_asset_id: a.id }); render(); });
     if (!readonly) portrait.addEventListener('click', () => pf.click());
+    const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: 'token', label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
     const inp = (key, ph, type = 'text') => el('input', { value: s[key] ?? '', placeholder: ph, type, disabled: dis(), onchange: e => { s[key] = type === 'number' ? +e.target.value : e.target.value; if (key === 'level') s.proficiency_bonus = Math.ceil(1 + s.level / 4); save(); if (['level', 'name'].includes(key)) render(); } });
     const head = el('div', { class: 'head' }, portrait, el('div', {},
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', {}, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
@@ -86,6 +87,7 @@
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
+      tokenPick,
       embed ? null : Theme.button(),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
     return el('div', {}, bar, head);
@@ -268,7 +270,7 @@
     const open = ui.open.has(x.uid);
     const card = el('div', { class: 'mcard spell' + (x.prepared || x.level === 0 ? ' equipped' : '') + (open ? ' open' : ''), draggable: 'true', style: '--rar:var(--accent)' });
     card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(x.uid); else ui.open.add(x.uid); render(); } },
-      el('span', { class: 'card-icon big' }, icon('star', 22)),
+      el('span', { class: 'card-icon big' }, M.docIcon(sp, 'star', 22)),
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
       x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')) : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, icon('chat')),
       readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
@@ -305,11 +307,11 @@
     s.features.forEach((f, i) => {
       const open = ui.open.has('f' + i);
       const card = el('div', { class: 'mcard' + (open ? ' open' : ''), style: '--rar:var(--border)' });
-      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, icon('scroll', 22)), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
+      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, M.docIcon(f, 'scroll', 22)), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
         f.uses ? el('span', { class: 'small', onclick: e => e.stopPropagation() }, ...Array.from({ length: f.uses.max }, (_, k) => el('span', { class: 'pip' + (k < f.uses.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { f.uses.cur = k < f.uses.cur ? k : k + 1; save(); render(); } }))) : null));
       if (f.actions?.length) card.append(M.actionButtons(f, c, `${ch.name}: ${f.name}`));
       if (open) card.append(el('div', { class: 'mcard-body' }, el('div', { class: 'card-desc' }, M.rich(f.text || '', c, { prefix: `${ch.name}: ${f.name}` })),
-        el('div', { class: 'row', style: 'gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => M.sendCard({ name: f.name, kind: 'feat', desc: f.text, actions: f.actions || [], icon: 'scroll', owner: ch.name }) }, 'В чат'), readonly ? null : el('button', { class: 'small', onclick: () => editFeature(f) }, 'Изменить'), readonly ? null : el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { s.features.splice(i, 1); save(); render(); } }, icon('trash')))));
+        el('div', { class: 'row', style: 'gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => M.sendCard({ name: f.name, kind: 'feat', desc: f.text, actions: f.actions || [], icon: 'scroll', asset_id: f.asset_id, owner: ch.name }) }, 'В чат'), readonly ? null : el('button', { class: 'small', onclick: () => editFeature(f) }, 'Изменить'), readonly ? null : el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { s.features.splice(i, 1); save(); render(); } }, icon('trash')))));
       grid.append(card);
     });
     if (!s.features.length) grid.append(el('p', { class: 'muted small', style: 'padding:12px' }, 'Пока пусто. Перетащите расу/класс/черту из справочника.'));
@@ -317,22 +319,20 @@
     return root;
   }
   async function editFeature(f) {
-    const d = JSON.parse(JSON.stringify(f || { name: '', text: '', actions: [] })); d.actions ||= [];
-    const usesMax = el('input', { type: 'number', value: d.uses?.max ?? '', placeholder: '—' });
-    const ok = await modal(f ? 'Изменить умение' : 'Новое умение', el('div', { class: 'editor-form' }, el('div', { class: 'row' }, el('div', { class: 'field', style: 'flex:3' }, el('label', {}, 'Название'), el('input', { value: d.name, oninput: e => d.name = e.target.value })), el('div', { class: 'field' }, el('label', {}, 'Использований (макс)'), usesMax)),
-      el('div', { class: 'field' }, el('label', {}, 'Описание'), M.descEditor(d, 'text')), el('div', { class: 'field' }, el('label', {}, 'Действия'), M.actionsEditor(d))), [{ label: 'Сохранить', cls: 'primary', fn: () => true }], { wide: true });
-    if (!ok) return;
-    const um = +usesMax.value; d.uses = um > 0 ? { cur: Math.min(d.uses?.cur ?? um, um), max: um } : undefined;
+    const d = await M.editFeature(f);
+    if (!d) return;
     if (f) Object.assign(f, d); else s.features.push(d);
     save(); render();
   }
+
 
   // ---------- вкладка Заметки ----------
   function notesTab() {
     const root = el('div', { class: 'cols2' });
     const pers = el('div', { class: 'card' }, el('h3', {}, 'Личность'));
     for (const [k, n] of [['personality', 'Черты характера'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['flaws', 'Слабости'], ['appearance', 'Внешность'], ['backstory', 'Предыстория']]) pers.append(el('div', { class: 'field' }, el('label', {}, n), el('textarea', { disabled: dis(), style: 'min-height:48px', onchange: e => { s.traits[k] = e.target.value; save(); } }, s.traits[k] || '')));
-    const notes = el('div', { class: 'card' }, el('h3', {}, 'Заметки'), el('textarea', { disabled: dis(), style: 'min-height:320px', onchange: e => { s.notes = e.target.value; save(); } }, s.notes || ''),
+    const notes = el('div', { class: 'card' }, el('h3', {}, 'Заметки'), el('textarea', { disabled: dis(), style: 'min-height:220px', onchange: e => { s.notes = e.target.value; save(); render(); } }, s.notes || ''),
+      s.notes ? el('div', { class: 'card-desc', style: 'margin-top:6px' }, M.rich(s.notes, ctx(), { prefix: ch.name + ': заметки' })) : el('p', { class: 'muted small' }, 'В заметках работают кнопки бросков: [[1d20+@prof]]{Проверка} и переменные {{@hp_max}}.'),
       el('div', { class: 'field', style: 'margin-top:8px' }, el('label', {}, 'Владения и языки'), el('textarea', { disabled: dis(), style: 'min-height:60px', onchange: e => { s.proficiencies = e.target.value; save(); } }, s.proficiencies || '')));
     root.append(pers, notes);
     return root;

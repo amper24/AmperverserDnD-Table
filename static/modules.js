@@ -20,17 +20,21 @@ window.Modules = (function () {
   // ---------- модель ----------
   function newItem(o = {}) {
     return { uid: uid(), name: 'Предмет', type: 'gear', rarity: 'Обычный', qty: 1, weight: 0, cost: '', desc: '', equipped: false, attuned: false, attunement: false,
-      charges: null, actions: [], tags: [], icon: '', asset_id: null, source: '', ...o };
+      charges: null, actions: [], tags: [], icon: '', asset_id: null, token_asset_id: null, source: '', ...o };
   }
   function newSpell(o = {}) {
     return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
-      concentration: false, ritual: false, desc: '', prepared: false, actions: [], source: '', ...o };
+      concentration: false, ritual: false, desc: '', prepared: false, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
+  }
+  /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.
+  function newFeature(o = {}) {
+    return { uid: uid(), name: 'Умение', text: '', actions: [], uses: null, asset_id: null, source: '', ...o };
   }
   /// Предмет справочника -> модуль инвентаря (с авто-действиями для оружия).
   function itemFromCompendium(e, ctx) {
     const d = e.data || {};
     const type = d.type === 'weapon' ? 'weapon' : d.type === 'armor' ? 'armor' : d.type === 'magic' ? 'magic' : /зелье|свиток|рацион/i.test(e.name) ? 'consumable' : /стрел|болт/i.test(e.name) ? 'ammo' : 'gear';
-    const it = newItem({ name: e.name, type, rarity: d.rarity || 'Обычный', weight: d.weight || 0, cost: d.cost || '', desc: d.desc || '', source: e.source || '', attunement: !!d.attunement, tags: [d.category].filter(Boolean),
+    const it = newItem({ name: e.name, type, rarity: d.rarity || 'Обычный', weight: d.weight || 0, cost: d.cost || '', desc: d.desc || '', source: e.source || '', asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, attunement: !!d.attunement, tags: [d.category].filter(Boolean),
       actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : [] });
     if (type === 'weapon' && d.damage && !it.actions.length) {
       const props = d.properties || [];
@@ -51,7 +55,7 @@ window.Modules = (function () {
   function spellFromCompendium(e) {
     const d = e.data || {};
     return newSpell({ name: e.name, level: d.level ?? 1, school: d.school || '', casting_time: d.casting_time || '', range: d.range || '', components: d.components || '', duration: d.duration || '',
-      concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
+      concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, effect_size: d.effect_size || 1, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
   }
   function autoSpellActions(d) {
     const acts = [];
@@ -71,10 +75,17 @@ window.Modules = (function () {
     const ab = { str: mod(a.str), dex: mod(a.dex), con: mod(a.con), int: mod(a.int), wis: mod(a.wis), cha: mod(a.cha) };
     const spAb = s.spells?.ability || 'int';
     const best = Math.max(ab.str, ab.dex);
-    return { ...ab, prof, level: s.level || 1, best, atk: best + prof, atk_str: ab.str + prof, atk_dex: ab.dex + prof, spell: ab[spAb] + prof, dc: 8 + prof + ab[spAb], ac: s.ac || 10, hp: s.hp?.current || 0, init: ab.dex + (s.initiative_bonus || 0) };
+    const asList = v => Array.isArray(v) ? v : v && typeof v === 'object' ? Object.keys(v).filter(k => v[k]) : [];
+    const skillList = asList(s.skills), expList = asList(s.expertise);
+    const ctx = { ...ab, prof, level: s.level || 1, best, atk: best + prof, atk_str: ab.str + prof, atk_dex: ab.dex + prof, spell: ab[spAb] + prof, dc: 8 + prof + ab[spAb], spell_dc: 8 + prof + ab[spAb],
+      ac: s.ac || 10, hp: s.hp?.current || 0, hp_max: s.hp?.max || 0, init: ab.dex + (s.initiative_bonus || 0), speed: s.speed || 30, passive: 10 + ab.wis + (skillList.includes('perception') ? prof : 0) * (expList.includes('perception') ? 2 : 1),
+      name: s.name || '', class: s.class || '', race: s.race || '', half_level: Math.floor((s.level || 1) / 2) };
+    for (const k of Object.keys(ab)) ctx['save_' + k] = ab[k] + ((s.saving_throws || []).includes(k) ? prof : 0);
+    for (const [k, , a] of (window.SKILLS || [])) ctx[k] = ab[a] + (expList.includes(k) ? 2 : skillList.includes(k) ? 1 : 0) * prof;
+    return ctx;
   }
   function resolve(expr, ctx = {}) {
-    let out = String(expr).replace(/@([a-z_]+)/gi, (_, k) => { const v = ctx[k.toLowerCase()]; return v === undefined ? '0' : String(v); });
+    let out = String(expr).replace(/@([a-z_]+)/gi, (_, k) => { const v = ctx[k.toLowerCase()]; return v === undefined || typeof v !== 'number' ? '0' : String(v); });
     out = out.replace(/\+\s*-/g, '-').replace(/к/g, 'd').replace(/\s+/g, '').replace(/([+-])0(?=[+\-]|$)/g, '');
     // схлопываем константы "+5+2" оставляем — сервер посчитает
     return out;
@@ -104,10 +115,13 @@ window.Modules = (function () {
   function rich(text, ctx, opts = {}) {
     const wrap = el('span', { class: 'rich' });
     if (!text) return wrap;
-    const parts = String(text).split(/(\[\[[^\]]+\]\](?:\{[^}]*\})?)/g);
+    const parts = String(text).split(/(\[\[[^\]]+\]\](?:\{[^}]*\})?|\{\{[^}]+\}\})/g);
     for (const p of parts) {
       const m = p.match(/^\[\[([^\]]+)\]\](?:\{([^}]*)\})?$/);
       if (m) { wrap.append(rollBtn(m[1].trim(), m[2] || m[1].trim(), ctx, opts)); continue; }
+      // {{@dc}} — подстановка значения из листа (Сл {{@dc}}, +{{@prof}}); {{текст}} — выделение
+      const v = p.match(/^\{\{([^}]+)\}\}$/);
+      if (v) { const inner = v[1].trim(); const isVar = /^@[a-z_]+$/i.test(inner) || /@[a-z_]+/i.test(inner) && /^[-+*\d\s@a-z_]+$/i.test(inner); wrap.append(el('b', { class: 'inline-val', title: inner }, isVar ? evalConst(inner, ctx) : inner)); continue; }
       // авто-обнаружение кубиков в обычном тексте
       let last = 0; const re = new RegExp(DICE_RE.source, 'gi'); let mm;
       while ((mm = re.exec(p))) {
@@ -119,6 +133,12 @@ window.Modules = (function () {
     }
     return wrap;
   }
+  /// Вычисляет константное выражение вида "8+@prof+@wis" (без кубиков) для показа значения в тексте.
+  function evalConst(expr, ctx) {
+    const r = resolve(expr, ctx || {});
+    if (!/^[-+*\d\s()]+$/.test(r)) return r;
+    try { return String(Function('"use strict";return (' + r + ')')()); } catch { return r; }
+  }
   function textNode(t) { const f = document.createDocumentFragment(); const lines = t.split('\n'); lines.forEach((l, i) => { f.append(document.createTextNode(l)); if (i < lines.length - 1) f.append(el('br')); }); return f; }
   function rollBtn(expr, label, ctx, opts = {}) {
     const shown = ctx ? resolve(expr, ctx) : expr;
@@ -128,7 +148,15 @@ window.Modules = (function () {
 
   // ---------- карточка предмета / заклинания (общая для листа, чата, справочника) ----------
   /// Иконка предмета: элемент. it.icon — короткий текст (1–2 символа) поверх стандартной иконки типа.
-  function itemIcon(it) { return it?.icon ? el('span', { class: 'txt-ico' }, String(it.icon).slice(0, 2)) : icon(ITEM_ICONS[it?.type] || 'box', 18); }
+  function itemIcon(it) {
+    if (it?.asset_id) { const w = el('span', { class: 'img-ico' }); assetURL(it.asset_id).then(u => w.append(el('img', { src: u, alt: '' }))).catch(() => w.append(icon(ITEM_ICONS[it?.type] || 'box', 18))); return w; }
+    return it?.icon ? el('span', { class: 'txt-ico' }, String(it.icon).slice(0, 2)) : icon(ITEM_ICONS[it?.type] || 'box', 18);
+  }
+  /// Иконка любого модуля: картинка, иначе стандартная иконка по типу.
+  function docIcon(doc, fallback = 'scroll', size = 18) {
+    if (doc?.asset_id) { const w = el('span', { class: 'img-ico' }); assetURL(doc.asset_id).then(u => w.append(el('img', { src: u, alt: '' }))).catch(() => w.append(icon(fallback, size))); return w; }
+    return icon(fallback, size);
+  }
   function itemIconName(it) { return ITEM_ICONS[it?.type] || 'box'; }
   function actionButtons(doc, ctx, prefix) {
     const row = el('div', { class: 'actions-row' });
@@ -152,19 +180,46 @@ window.Modules = (function () {
   function spellCardBody(sp, ctx) {
     const meta = [sp.level === 0 ? 'Заговор' : `${sp.level} круг`, sp.school, sp.casting_time, sp.range, sp.components, (sp.concentration ? 'Концентрация, ' : '') + (sp.duration || ''), sp.ritual ? 'ритуал' : null].filter(Boolean).join(' · ');
     return el('div', { class: 'card-body' },
-      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, icon('star', 18)), el('div', { class: 'grow' }, el('b', {}, sp.name), el('div', { class: 'muted small' }, meta))),
+      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, docIcon(sp, 'star')), el('div', { class: 'grow' }, el('b', {}, sp.name), el('div', { class: 'muted small' }, meta))),
       sp.desc ? el('div', { class: 'card-desc' }, rich(sp.desc, ctx, { prefix: sp.name })) : null,
       actionButtons(sp, ctx, sp.name));
   }
   function toChatCard(doc, kind) {
-    return { name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? 'star' : (doc.icon || itemIconName(doc)),
+    return { name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? 'star' : (doc.icon || itemIconName(doc)), asset_id: doc.asset_id || null,
       meta: kind === 'spell' ? [doc.level === 0 ? 'Заговор' : `${doc.level} круг`, doc.school, doc.casting_time, doc.range, doc.duration].filter(Boolean).join(' · ') : [ITEM_TYPES[doc.type], doc.rarity].filter(Boolean).join(' · ') };
   }
   function renderChatCard(card, ctx) {
     return el('div', { class: 'chat-card' },
-      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, card.icon && ICONS_KNOWN(card.icon) ? icon(card.icon, 18) : card.icon ? el('span', { class: 'txt-ico' }, String(card.icon).slice(0, 2)) : icon('box', 18)), el('div', { class: 'grow' }, el('b', {}, card.name), el('div', { class: 'muted small' }, card.meta || ''))),
+      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, card.asset_id ? docIcon(card, 'box') : card.icon && ICONS_KNOWN(card.icon) ? icon(card.icon, 18) : card.icon ? el('span', { class: 'txt-ico' }, String(card.icon).slice(0, 2)) : icon('box', 18)), el('div', { class: 'grow' }, el('b', {}, card.name), el('div', { class: 'muted small' }, card.meta || ''))),
       card.desc ? el('div', { class: 'card-desc' }, rich(card.desc, ctx, { prefix: card.name })) : null,
       actionButtons(card, ctx, card.name));
+  }
+
+  // ---------- выбор изображения (инвентарь) и токена (карта) для модуля ----------
+  /// imagePicker(doc, 'asset_id', { kind: 'item', label: 'Изображение' }) — превью + загрузка / из библиотеки / убрать.
+  function imagePicker(doc, key, o = {}) {
+    const kind = o.kind || 'item';
+    const box = el('div', { class: 'imgpick' + (o.compact ? ' compact' : '') });
+    const prev = el('div', { class: 'imgpick-prev' });
+    const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
+    const draw = () => { prev.innerHTML = ''; if (doc[key]) assetURL(doc[key]).then(u => prev.append(el('img', { src: u }))).catch(() => prev.append(icon('image'))); else prev.append(icon(o.icon || 'image', 22)); };
+    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + (kind === 'token' ? ' (токен)' : '')); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
+    const fromLib = async () => {
+      const list = await API.get('/api/assets' + (kind === 'token' ? '?kind=token' : ''));
+      const grid = el('div', { class: 'asset-grid pick' });
+      let chosen = null;
+      for (const a of list) { const t = el('div', { class: 'asset', onclick: () => { grid.querySelectorAll('.asset').forEach(x => x.classList.remove('active')); t.classList.add('active'); chosen = a.id; } }, el('div', { class: 'thumb' }), el('div', { class: 'small ellipsis', title: a.name }, a.name)); assetURL(a.id).then(u => t.querySelector('.thumb').append(el('img', { src: u }))); grid.append(t); }
+      const ok = await modal('Библиотека ресурсов', el('div', { style: 'max-height:60vh;overflow:auto' }, list.length ? grid : el('p', { class: 'muted' }, 'Пусто — загрузите изображение.')), [{ label: 'Выбрать', cls: 'primary', fn: () => chosen || false }], { wide: true });
+      if (ok) { doc[key] = ok; draw(); o.onChange && o.onChange(ok); }
+    };
+    box.append(prev, el('div', { class: 'imgpick-btns' }, el('span', { class: 'muted small' }, o.label || 'Изображение'), el('div', { class: 'row', style: 'gap:4px' },
+      el('button', { class: 'small', onclick: () => file.click() }, 'Загрузить'), el('button', { class: 'small', onclick: fromLib }, 'Из библиотеки'), el('button', { class: 'small', onclick: () => { doc[key] = null; draw(); o.onChange && o.onChange(null); } }, 'Убрать')), file));
+    draw();
+    return box;
+  }
+  /// Пара «картинка для инвентаря + токен для карты».
+  function visualsRow(doc, o = {}) {
+    return el('div', { class: 'row visuals' }, imagePicker(doc, 'asset_id', { kind: 'item', label: o.imageLabel || 'Изображение (карточка, инвентарь)', icon: o.icon }), o.noToken ? null : imagePicker(doc, 'token_asset_id', { kind: 'token', label: o.tokenLabel || 'Токен на карте', icon: 'map' }));
   }
 
   // ---------- редактор действий (кнопок бросков) ----------
@@ -193,7 +248,20 @@ window.Modules = (function () {
   function descEditor(doc, key = 'desc') {
     const ta = el('textarea', { style: 'min-height:90px', placeholder: 'Описание. Кнопки бросков прямо в тексте: [[1d20+@atk]]{Атака} или [[2к6+3]]. Просто "3к6" тоже станет кнопкой.', oninput: e => { doc[key] = e.target.value; prev.replaceChildren(rich(doc[key])); } }, doc[key] || '');
     const prev = el('div', { class: 'card-desc preview' }, rich(doc[key] || ''));
-    const tools = el('div', { class: 'row', style: 'gap:4px;margin:4px 0' },
+    const TEMPLATES = [
+      ['Атака и урон', 'Атака: [[1d20+@atk]]{Атака}. Урон: [[1d8+@str]]{Урон} рубящий.'],
+      ['Спасбросок', 'Цель совершает спасбросок Ловкости Сл {{@dc}}; при провале получает [[3d6]]{Урон} урона, при успехе — половину.'],
+      ['Атака заклинанием', 'Дальнобойная атака заклинанием [[1d20+@spell]]{Атака}, попадание: [[1d10]]{Урон} урона огнём.'],
+      ['Лечение', 'Восстанавливает [[1d8+@spell]]{Лечение} хитов.'],
+      ['Проверка навыка', 'Проверка Восприятия [[1d20+@perception]]{Восприятие} против Сл {{@dc}}.'],
+      ['Заряды', 'Заряды: {{@level}}. Восстанавливает [[1d6+1]]{Восст.} зарядов на рассвете.'],
+      ['Область', 'Область: сфера радиусом 20 фт. Длительность: концентрация, до 1 минуты.'],
+    ];
+    const tplSel = el('select', { title: 'Шаблоны текста', onchange: e => { if (e.target.value) { insert(TEMPLATES[+e.target.value][1]); e.target.value = ''; } } }, el('option', { value: '' }, 'Шаблон…'), ...TEMPLATES.map(([n], i) => el('option', { value: i }, n)));
+    const varsBtn = el('button', { class: 'small', title: 'Переменные листа', onclick: () => modal('Переменные в тексте и формулах', el('div', { class: 'small' },
+      el('p', {}, 'Формулы: ', el('code', {}, '[[1d20+@atk]]{Атака}'), ' — кнопка броска. Значения: ', el('code', {}, '{{@dc}}'), ' — подставляется число с листа.'),
+      el('table', { class: 'tbl' }, ...[['@str @dex @con @int @wis @cha', 'модификаторы характеристик'], ['@save_str … @save_cha', 'спасброски'], ['@acrobatics @stealth @perception …', 'навыки (18 ключей как в листе)'], ['@prof', 'бонус мастерства'], ['@level @half_level', 'уровень'], ['@atk @atk_str @atk_dex', 'бонус атаки (лучший / силой / ловкостью)'], ['@spell @dc', 'атака заклинанием и Сл'], ['@ac @hp @hp_max @init @speed @passive', 'КД, хиты, инициатива, скорость, пассивное восприятие']].map(([k, v]) => el('tr', {}, el('td', {}, el('code', {}, k)), el('td', { class: 'muted' }, v))))), []) }, '@…');
+    const tools = el('div', { class: 'row', style: 'gap:4px;margin:4px 0;flex-wrap:wrap' }, tplSel, varsBtn,
       el('button', { class: 'small', onclick: () => insert('[[1d20+@atk]]{Атака}') }, '+[[атака]]'),
       el('button', { class: 'small', onclick: () => insert('[[1d8+@str]]{Урон}') }, '+[[урон]]'),
       el('button', { class: 'small', onclick: () => insert('[[1d20+@spell]]{Атака заклинанием}') }, '+[[закл]]'),
@@ -219,6 +287,7 @@ window.Modules = (function () {
         f('Восстановление', el('input', { value: it.charges?.recharge || '', placeholder: 'на рассвете 1d6+1', oninput: e => { if (it.charges) it.charges.recharge = e.target.value; } })),
         f('Теги', el('input', { value: (it.tags || []).join(', '), oninput: e => it.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean) })),
         el('label', { style: 'align-self:end;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: it.attunement ? '' : null, onchange: e => it.attunement = e.target.checked }), ' Требует настройки')),
+      visualsRow(it, { tokenLabel: 'Токен на карте (лут / предмет на столе)' }),
       f('Описание', descEditor(it)),
       f('Действия', actionsEditor(it)));
     return modal(opts.title || (item ? 'Редактировать предмет' : 'Новый предмет'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => it }], { wide: true });
@@ -232,9 +301,22 @@ window.Modules = (function () {
       el('div', { class: 'row' }, f('Время', el('input', { value: sp.casting_time, oninput: e => sp.casting_time = e.target.value })), f('Дистанция', el('input', { value: sp.range, oninput: e => sp.range = e.target.value })), f('Компоненты', el('input', { value: sp.components, oninput: e => sp.components = e.target.value })), f('Длительность', el('input', { value: sp.duration, oninput: e => sp.duration = e.target.value }))),
       el('div', { class: 'row' }, el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.concentration ? '' : null, onchange: e => sp.concentration = e.target.checked }), ' Концентрация'), el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.ritual ? '' : null, onchange: e => sp.ritual = e.target.checked }), ' Ритуал'),
         f('Классы', el('input', { value: (sp.classes || []).join(', '), oninput: e => sp.classes = e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))),
+      el('div', { class: 'row' }, visualsRow(sp, { icon: 'star', tokenLabel: 'Токен эффекта на карте (область, призыв)' }), f('Размер эффекта (клеток)', el('input', { type: 'number', min: 1, max: 20, step: 1, value: sp.effect_size || 1, style: 'width:90px', oninput: e => sp.effect_size = Math.max(1, +e.target.value || 1) }))),
       f('Описание', descEditor(sp)),
       f('Действия', actionsEditor(sp)));
     return modal(opts.title || (spell ? 'Редактировать заклинание' : 'Новое заклинание'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => sp }], { wide: true });
+  }
+  /// Редактор умения/черты (модуль: картинка, заряды, описание с кнопками, действия).
+  function editFeature(feature, opts = {}) {
+    const d = JSON.parse(JSON.stringify(feature || newFeature())); d.actions ||= [];
+    const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
+    const usesMax = el('input', { type: 'number', value: d.uses?.max ?? '', placeholder: '—' });
+    const recharge = el('select', {}, ...[['', 'не восстанавливается'], ['short', 'короткий отдых'], ['long', 'длинный отдых'], ['dawn', 'на рассвете']].map(([k, v]) => el('option', { value: k, selected: (d.uses?.recharge || '') === k ? '' : null }, v)));
+    const form = el('div', { class: 'editor-form' },
+      el('div', { class: 'row' }, el('div', { class: 'field', style: 'flex:3' }, el('label', {}, 'Название'), el('input', { value: d.name, oninput: e => d.name = e.target.value })), f('Источник', el('input', { value: d.source || '', placeholder: 'Класс / раса / черта', oninput: e => d.source = e.target.value })), f('Использований', usesMax), f('Восстановление', recharge)),
+      visualsRow(d, { icon: 'scroll', noToken: true }),
+      f('Описание', descEditor(d, 'text')), f('Действия', actionsEditor(d)));
+    return modal(opts.title || (feature ? 'Изменить умение' : 'Новое умение'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => { const um = +usesMax.value; d.uses = um > 0 ? { cur: Math.min(d.uses?.cur ?? um, um), max: um, recharge: recharge.value } : null; return d; } }], { wide: true });
   }
   /// Универсальный редактор записи справочника для остальных категорий (черты/состояния/монстры/расы…): поля + JSON.
   function editGeneric(entry, category) {
@@ -242,7 +324,7 @@ window.Modules = (function () {
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const state = { name: entry?.name || '' };
     const json = el('textarea', { style: 'min-height:160px;font-family:monospace;font-size:12px' }, JSON.stringify(d, null, 2));
-    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })), f('Описание', descEditor(d)));
+    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })), visualsRow(d, { tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }), f('Описание', descEditor(d)));
     if (category === 'monster') {
       simple.append(el('div', { class: 'row' }, f('КД', el('input', { type: 'number', value: d.ac || 10, oninput: e => d.ac = +e.target.value })), f('Хиты', el('input', { value: d.hp || '', placeholder: '22 (3к8+9)', oninput: e => d.hp = e.target.value })), f('Скорость', el('input', { value: d.speed || '30 фт', oninput: e => d.speed = e.target.value })), f('Опасность', el('input', { value: d.cr || '1', oninput: e => d.cr = e.target.value })), f('Размер', el('input', { value: d.size || 'Средний', oninput: e => d.size = e.target.value })), f('Тип', el('input', { value: d.type || 'гуманоид', oninput: e => d.type = e.target.value }))));
       d.abilities ||= { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
@@ -272,5 +354,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, newItem, newSpell, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

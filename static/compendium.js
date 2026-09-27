@@ -88,10 +88,10 @@ window.Compendium = (function () {
     if (category === 'item') {
       const it = e ? M().itemFromCompendium(e) : null; if (it && e.data?.icon) it.icon = e.data.icon;
       const r = await M().editItem(it, { title: e ? 'Редактировать предмет' : 'Новый предмет' }); if (!r) return;
-      result = { name: r.name, data: { type: r.type, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, category: r.tags?.[0] } };
+      result = { name: r.name, data: { type: r.type, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, category: r.tags?.[0] } };
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
-      result = { name: r.name, data: { level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions } };
+      result = { name: r.name, data: { level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
     } else {
       const r = await M().editGeneric(e, category); if (!r) return; result = r;
     }
@@ -127,7 +127,7 @@ window.Compendium = (function () {
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
         const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name), e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         it.addEventListener('click', () => { lst.querySelectorAll('.item').forEach(x => x.classList.remove('active')); it.classList.add('active'); det.innerHTML = ''; det.append(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load })); });
         it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });

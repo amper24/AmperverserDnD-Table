@@ -439,14 +439,14 @@
         if (!dest) return;
         if (dest === 'loot') { await Table.dropLootAtCenter({ item: it }); toast(`${it.name} на столе`); }
         else if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.inventory = [...(full.sheet.inventory || []), it]; await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${it.name} → ${full.name}`); }
-        else if (dest === 'comp') { await API.post('/api/compendium', { category: 'item', name: it.name, campaign_id: cid, data: { type: it.type, rarity: it.rarity, weight: it.weight, cost: it.cost, desc: it.desc, attunement: it.attunement, charges: it.charges?.max, recharge: it.charges?.recharge, actions: it.actions, tags: it.tags, icon: it.icon } }); toast('Добавлено в справочник кампании'); }
+        else if (dest === 'comp') { await API.post('/api/compendium', { category: 'item', name: it.name, campaign_id: cid, data: { type: it.type, rarity: it.rarity, weight: it.weight, cost: it.cost, desc: it.desc, attunement: it.attunement, charges: it.charges?.max, recharge: it.charges?.recharge, actions: it.actions, tags: it.tags, icon: it.icon, asset_id: it.asset_id, token_asset_id: it.token_asset_id } }); toast('Добавлено в справочник кампании'); }
       });
       add('wand', 'Заклинание', async () => {
         const sp = await Modules.editSpell(null); if (!sp) return;
         const dest = await chooseDest('Куда добавить заклинание?', { char: 'Персонажу', comp: isGM ? 'В homebrew-справочник кампании' : null });
         if (!dest) return;
         if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.spells ||= { known: [], slots: {}, ability: 'int' }; full.sheet.spells.known.push(sp); await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${sp.name} → ${full.name}`); }
-        else { await API.post('/api/compendium', { category: 'spell', name: sp.name, campaign_id: cid, data: { level: sp.level, school: sp.school, casting_time: sp.casting_time, range: sp.range, components: sp.components, duration: sp.duration, concentration: sp.concentration, ritual: sp.ritual, desc: sp.desc, actions: sp.actions } }); toast('Добавлено в справочник кампании'); }
+        else { await API.post('/api/compendium', { category: 'spell', name: sp.name, campaign_id: cid, data: { level: sp.level, school: sp.school, casting_time: sp.casting_time, range: sp.range, components: sp.components, duration: sp.duration, concentration: sp.concentration, ritual: sp.ritual, desc: sp.desc, actions: sp.actions, asset_id: sp.asset_id, token_asset_id: sp.token_asset_id, effect_size: sp.effect_size } }); toast('Добавлено в справочник кампании'); }
       });
       if (isGM) add('book', 'Запись справочника (монстр, черта, …)', async () => { await Compendium.editEntry(null, { campaignId: cid, isGM, onSaved: () => toast('Сохранено') }); });
       sep();

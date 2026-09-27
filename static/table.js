@@ -179,7 +179,9 @@ window.Table = (function () {
       c.translate(d.x, d.y);
       const r = Math.min(d.w, d.h) / 2;
       c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || '#f5a524') : '#f5a524'; c.lineWidth = 3 / S.cam.k; c.stroke();
-      c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05);
+      const li = d.item?.token_asset_id || d.item?.asset_id ? assetImage(d.item.token_asset_id || d.item.asset_id) : null;
+      if (li && li.complete && li.naturalWidth) { c.save(); c.beginPath(); c.roundRect(-r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r, r * 0.25); c.clip(); c.drawImage(li, -r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r); c.restore(); }
+      else { c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05); }
       const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
       c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = '#000c'; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
     } else if (d.type === 'drawing') {
@@ -381,9 +383,19 @@ window.Table = (function () {
       const lootRaw = e.dataTransfer.getData('application/x-item');
       if (asset) { placeAsset(JSON.parse(asset), w); return; }
       if (lootRaw) { try { await dropLoot(JSON.parse(lootRaw), w); } catch (err) { toast('Ошибка: ' + err.message); } return; }
+      const spellRaw = e.dataTransfer.getData('application/x-spell');
+      if (spellRaw) {
+        const sp = JSON.parse(spellRaw);
+        const src = sp.spell || sp;
+        if (!src.token_asset_id && !src.asset_id) { toast('У заклинания нет токена эффекта — задайте его в редакторе заклинания'); return; }
+        const cells = Math.max(1, +src.effect_size || 1), sz = g * cells;
+        const p = snapPos(w.x, w.y, sz, sz);
+        upsert({ layer: 'prop', z: 2, data: { type: 'image', asset_id: src.token_asset_id || src.asset_id, x: p.x, y: p.y, w: sz, h: sz, name: src.name, effect: true, owner_id: S.user.id } });
+        return;
+      }
       if (chr) {
         const c = JSON.parse(chr);
-        const data = { type: 'image', asset_id: c.portrait_asset_id, x: w.x, y: w.y, w: g, h: g, name: c.name, character_id: c.id, owner_id: c.owner_id, hp: { cur: c.sheet?.hp?.current ?? 10, max: c.sheet?.hp?.max ?? 10 } };
+        const data = { type: 'image', asset_id: c.sheet?.token_asset_id || c.portrait_asset_id, x: w.x, y: w.y, w: g, h: g, name: c.name, character_id: c.id, owner_id: c.owner_id, hp: { cur: c.sheet?.hp?.current ?? 10, max: c.sheet?.hp?.max ?? 10 } };
         if (!data.asset_id) { const a = (await API.get('/api/assets?kind=token')).find(x => x.name === 'NPC') || (await API.get('/api/assets?kind=token'))[0]; data.asset_id = a.id; }
         const p = snapPos(w.x, w.y, g, g); data.x = p.x; data.y = p.y;
         upsert({ layer: 'character', z: 0, data }); return;
@@ -392,7 +404,7 @@ window.Table = (function () {
         const c = JSON.parse(comp);
         if (c.category === 'monster' && S.isGM) {
           const toks = await API.get('/api/assets?kind=token');
-          const a = toks.find(t => c.name.toLowerCase().includes(t.name.toLowerCase())) || toks.find(t => t.name === 'NPC') || toks[0];
+          const a = (c.data.token_asset_id ? { id: c.data.token_asset_id } : null) || toks.find(t => c.name.toLowerCase().includes(t.name.toLowerCase())) || toks.find(t => t.name === 'NPC') || toks[0];
           const sizeMul = { 'Крошечный': 0.5, 'Маленький': 1, 'Средний': 1, 'Большой': 2, 'Огромный': 3, 'Громадный': 4 }[c.data.size] || 1;
           const hp = parseInt(c.data.hp) || 10;
           const p = snapPos(w.x, w.y, g * sizeMul, g * sizeMul);
