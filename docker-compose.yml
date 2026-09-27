@@ -1,0 +1,39 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: dnd
+      MYSQL_USER: dnd
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dnd}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max_allowed_packet=256M
+    volumes:
+      - dnd_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "dnd", "-p${MYSQL_PASSWORD:-dnd}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    image: amperverser/dnd-table:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: mysql+aiomysql://dnd:${MYSQL_PASSWORD:-dnd}@db:3306/dnd?charset=utf8mb4
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
+      DEV_SHOW_CODE: ${DEV_SHOW_CODE:-true}
+
+volumes:
+  dnd_mysql:

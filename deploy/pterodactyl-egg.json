@@ -1,0 +1,40 @@
+{
+  "_comment": "Egg для Pterodactyl (импорт: Admin → Nests → Import Egg). Python-ядро.",
+  "meta": { "version": "PTDL_v2", "update_url": null },
+  "exported_at": "2026-09-27T00:00:00+03:00",
+  "name": "Amperverser DnD Table",
+  "author": "amper24@users.noreply.github.com",
+  "description": "Виртуальный стол для D&D (FastAPI + MySQL/SQLite). Установка из GitHub, запуск через run.sh.",
+  "features": null,
+  "docker_images": {
+    "Python 3.12": "ghcr.io/parkervcp/yolks:python_3.12",
+    "Python 3.11": "ghcr.io/parkervcp/yolks:python_3.11"
+  },
+  "file_denylist": [],
+  "startup": "bash run.sh",
+  "config": {
+    "files": "{}",
+    "startup": "{\r\n    \"done\": \"Uvicorn running on\"\r\n}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\r\napt update && apt install -y git curl\r\nmkdir -p /mnt/server && cd /mnt/server\r\nif [ -d .git ]; then git pull; else git clone --depth 1 ${GIT_REPO} .; fi\r\n[ -f .env ] || cp .env.example .env\r\necho \"Установка завершена\"",
+      "container": "python:3.12-slim",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    { "name": "Репозиторий", "description": "Git-репозиторий приложения", "env_variable": "GIT_REPO", "default_value": "https://github.com/amper24/AmperverserDnD-Table.git", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
+    { "name": "DATABASE_URL", "description": "mysql+aiomysql://user:pass@host:3306/db  или  sqlite+aiosqlite:///./data/dnd.db", "env_variable": "DATABASE_URL", "default_value": "sqlite+aiosqlite:///./data/dnd.db", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
+    { "name": "SECRET_KEY", "description": "Секрет приложения", "env_variable": "SECRET_KEY", "default_value": "change-me", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
+    { "name": "SMTP host", "description": "SMTP сервер для кодов на почту (пусто = код в консоль)", "env_variable": "SMTP_HOST", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP port", "description": "", "env_variable": "SMTP_PORT", "default_value": "587", "user_viewable": true, "user_editable": true, "rules": "required|integer", "field_type": "text" },
+    { "name": "SMTP user", "description": "", "env_variable": "SMTP_USER", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP password", "description": "", "env_variable": "SMTP_PASSWORD", "default_value": "", "user_viewable": true, "user_editable": false, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP from", "description": "Адрес отправителя", "env_variable": "SMTP_FROM", "default_value": "noreply@example.com", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
+    { "name": "Показывать код в API (dev)", "description": "true/false — отдавать код входа в ответе API, если SMTP не настроен", "env_variable": "DEV_SHOW_CODE", "default_value": "true", "user_viewable": true, "user_editable": true, "rules": "required|string|in:true,false", "field_type": "text" },
+    { "name": "NO_VENV", "description": "1 — не создавать venv (ставить пакеты в --user)", "env_variable": "NO_VENV", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" }
+  ]
+}
