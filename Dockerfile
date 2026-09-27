@@ -12,6 +12,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /build/target/release/dnd-table /app/dnd-table
+RUN ln -s /app/dnd-table /usr/local/bin/dnd-table
 RUN mkdir -p /app/data
 ENV HOST=0.0.0.0 PORT=8080 RUST_LOG=info,sqlx=warn
 EXPOSE 8080
