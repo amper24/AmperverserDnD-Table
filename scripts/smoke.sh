@@ -7,6 +7,7 @@ B="http://127.0.0.1:$PORT"
 "$BIN" > server.log 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null || true; echo "--- server.log ---"; tail -n 40 server.log' EXIT
+trap 'echo "!!! SMOKE FAILED at line $LINENO: $BASH_COMMAND"' ERR
 for i in $(seq 1 60); do curl -fs "$B/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fs "$B/api/health" | grep -q '"ok":true'
 J() { python3 -c "import sys,json; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1"; }
@@ -16,8 +17,8 @@ login() { # $1 email, $2 name -> prints token
   curl -fs -X POST "$B/api/auth/verify" -H 'content-type: application/json' -d "{\"email\":\"$1\",\"code\":\"$code\",\"name\":\"$2\"}" | J "d['token']"
 }
 GM=$(login gm@test.ru Мастер); PL=$(login pl@test.ru Игрок)
-gm() { curl -fs -H "Authorization: Bearer $GM" "$@"; }
-pl() { curl -fs -H "Authorization: Bearer $PL" "$@"; }
+gm() { curl -fsS -H "Authorization: Bearer $GM" "$@" || { echo "!!! gm request failed: $*" >&2; curl -s -H "Authorization: Bearer $GM" "$@" >&2; echo >&2; return 1; }; }
+pl() { curl -fsS -H "Authorization: Bearer $PL" "$@" || { echo "!!! pl request failed: $*" >&2; curl -s -H "Authorization: Bearer $PL" "$@" >&2; echo >&2; return 1; }; }
 
 echo "[1] кампания + приглашение"
 CAMP=$(gm -X POST "$B/api/campaigns" -H 'content-type: application/json' -d '{"name":"Тест"}')
