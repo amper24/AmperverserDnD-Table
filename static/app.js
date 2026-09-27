@@ -536,6 +536,7 @@
         d.append(who, el('div', { class: 'row' }, el('span', { class: 'total' }, p.total), el('span', {}, p.label ? p.label + ' ' : '', el('span', { class: 'muted' }, p.expr))),
           el('div', { class: 'detail' }, p.parts.map(x => x.rolls ? `${x.term}: [${x.rolls.map(r => x.kept && !x.kept.includes(r) ? `~${r}~` : r).join(', ')}]` : x.term).join(' ')), p.gm_only ? el('div', { class: 'detail' }, 'только мастер') : null);
       } else if (m.kind === 'card') { d.append(who, Modules.renderChatCard(m.payload, {})); }
+      else if (m.kind === 'multi') { d.append(who, Modules.renderMulti(m.payload)); }
       else if (m.kind === 'system') { d.append(el('div', { class: 'muted small' }, (m.payload.text || ''))); }
       else d.append(who, Modules.rich(m.payload.text || '', {}, {}));
       chatLog.append(d); chatLog.scrollTop = chatLog.scrollHeight;
@@ -723,6 +724,7 @@
       if (d.type === 'roll') ws.send({ type: 'roll', expr: d.expr, label: d.label, gm_only: !!d.gm_only });
       if (d.type === 'chat') ws.send({ type: 'chat', text: d.text });
       if (d.type === 'card') ws.send({ type: 'card', card: d.card });
+      if (d.type === 'multi') ws.send({ type: 'multi', label: d.label, rolls: d.rolls, gm_only: !!d.gm_only });
       if (d.type === 'loot_drop') Table.dropLootAtCenter({ item: d.item }).then(() => toast(`${d.item.name} выложен на стол`)).catch(err => toast('Ошибка: ' + err.message));
     });
 

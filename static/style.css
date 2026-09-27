@@ -414,3 +414,27 @@ button.primary, .btn.primary { font-weight: 600; }
 .asset-grid.pick .asset.active { outline: 2px solid var(--accent); }
 .inline-val { color: var(--accent); font-weight: 600; }
 .chat-card .card-img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius); }
+
+/* ---- связки бросков (атака + урон) ---- */
+.act-btn.all { border-style: dashed; }
+.action-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; margin-bottom: 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); }
+.action-row .row select { flex: 0 0 110px; } .action-row .row input { flex: 1; min-width: 60px; } .action-row .row button { flex: 0 0 auto; }
+.action-row .action-note { font-size: 12px; }
+.multi { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.multi-label { font-weight: 600; font-size: 13px; }
+.multi-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--radius); background: var(--panel2); border-left: 3px solid var(--border); }
+.multi-row .total { font-size: 18px; font-weight: 700; min-width: 30px; text-align: center; }
+.multi-row.attack { border-left-color: #e5484d; }
+.multi-row.damage { border-left-color: #f5a524; }
+.multi-row.heal { border-left-color: #46a758; }
+.multi-row.save { border-left-color: #3e63dd; }
+.multi-row.crit .total { color: #46a758; }
+.multi-row.fumble .total { color: #e5484d; }
+.badge.crit { background: #46a75833; color: #46a758; }
+.badge.fumble { background: #e5484d33; color: #e5484d; }
+
+/* ---- заметки возле блоков листа ---- */
+.note-btn { background: none; border: none; padding: 0 3px; color: var(--muted); opacity: .35; cursor: pointer; vertical-align: middle; line-height: 1; }
+.note-btn:hover, .note-btn.has { opacity: 1; color: var(--accent); }
+.h3n { display: flex; align-items: center; }
+.note-line { font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); border-left: 2px solid var(--accent); padding: 4px 8px; margin: 4px 0 6px; border-radius: var(--radius); white-space: pre-wrap; }

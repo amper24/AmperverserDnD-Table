@@ -14,6 +14,9 @@ window.Modules = (function () {
   const RARITY_COLORS = { 'Обычный': '#9aa0ad', 'Необычный': '#46a758', 'Редкий': '#3e9bff', 'Очень редкий': '#7c5cff', 'Легендарный': '#f5a524', 'Артефакт': '#e5484d' };
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
+  const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
+  /// Виды бросков, к которым применимы преимущество/помеха (d20).
+  const D20_KINDS = ['attack', 'check', 'save', 'other'];
   const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
@@ -93,15 +96,48 @@ window.Modules = (function () {
   const DICE_RE = /(\d*[dк]\d+(?:k[hl]\d+)?(?:\s*[+\-]\s*(?:\d+|@[a-z_]+))*)/gi;
 
   // ---------- броски: единый канал ----------
+  /// Преимущество/помеха: первый d20 в выражении → 2d20kh1 / 2d20kl1.
+  function withMode(expr, mode) {
+    if (!mode || mode === 'normal') return expr;
+    return expr.replace(/(^|[^\dк\w])(1?)([dк])20(?!\d)(?!k)/i, (m, pre, n, d) => `${pre}2${d}20k${mode === 'adv' ? 'h' : 'l'}1`);
+  }
+  /// Режим броска по клавишам-модификаторам: Alt — преимущество, Ctrl — помеха, Shift — только мастеру.
+  function modeFromEvent(e) { return { mode: e?.altKey ? 'adv' : e?.ctrlKey || e?.metaKey ? 'dis' : 'normal', gm_only: !!e?.shiftKey }; }
   function roll(expr, label, opts = {}) {
     const ctx = opts.ctx || window.SHEET_CTX || {};
-    const resolved = resolve(expr, ctx);
+    const resolved = withMode(resolve(expr, ctx), opts.mode);
     const msg = { type: 'roll', expr: resolved, label: label || expr, gm_only: !!opts.gm_only };
     if (window.TABLE_CTX?.roll) return window.TABLE_CTX.roll(resolved, msg.label, msg.gm_only);
     if (window.parent !== window) return window.parent.postMessage(msg, '*');
     if (window.opener && !window.opener.closed) return window.opener.postMessage(msg, '*');
     const r = rollDice(resolved);
     toast(`${msg.label}: ${r.total}  (${r.parts.map(p => p.rolls ? '[' + p.rolls.join(',') + ']' : p.term).join(' ')})`, 4000);
+  }
+  /// Связка бросков (атака + урон + …) одним сообщением. Сервер удвоит кости урона при крите.
+  function rollMulti(actions, label, opts = {}) {
+    const ctx = opts.ctx || window.SHEET_CTX || {};
+    const rolls = actions.filter(a => a.roll).map(a => ({ name: a.name || ACTION_KINDS[a.kind] || 'Бросок', kind: a.kind || 'other', dtype: a.dtype || null,
+      expr: D20_KINDS.includes(a.kind || 'other') ? withMode(resolve(a.roll, ctx), opts.mode) : resolve(a.roll, ctx) }));
+    if (!rolls.length) return;
+    const msg = { type: 'multi', label: label || '', rolls, gm_only: !!opts.gm_only };
+    if (window.TABLE_CTX?.ws) return window.TABLE_CTX.ws.send(msg);
+    if (window.parent !== window) return window.parent.postMessage(msg, '*');
+    if (window.opener && !window.opener.closed) return window.opener.postMessage(msg, '*');
+    const lines = rolls.map(r => { const x = rollDice(r.expr); return `${r.name}: ${x.total}`; });
+    toast(`${msg.label}\n${lines.join('\n')}`, 5000);
+  }
+  /// Рендер связки бросков в чате.
+  function renderMulti(p) {
+    const box = el('div', { class: 'multi' });
+    if (p.label) box.append(el('div', { class: 'multi-label' }, p.label));
+    for (const r of p.rolls || []) {
+      const cls = 'multi-row ' + (r.kind || 'other') + (r.crit ? ' crit' : '') + (r.fumble ? ' fumble' : '');
+      box.append(el('div', { class: cls, title: r.parts.map(x => x.rolls ? `${x.term}: [${x.rolls.map(v => x.kept && !x.kept.includes(v) ? `~${v}~` : v).join(', ')}]` : x.term).join(' ') },
+        el('span', { class: 'total' }, r.total), el('span', { class: 'grow' }, icon(ACTION_ICONS[r.kind] || 'dice', 14), ' ', r.name, r.dtype ? el('span', { class: 'muted' }, ' ' + r.dtype) : null, el('span', { class: 'muted small' }, ' ' + r.expr)),
+        r.crit ? el('span', { class: 'badge crit' }, 'КРИТ') : r.fumble ? el('span', { class: 'badge fumble' }, '1') : r.doubled ? el('span', { class: 'badge crit' }, '×2 кости') : null));
+    }
+    if (p.gm_only) box.append(el('div', { class: 'detail' }, 'только мастер'));
+    return box;
   }
   function sendCard(card) {
     const msg = { type: 'card', card };
@@ -162,9 +198,12 @@ window.Modules = (function () {
     const row = el('div', { class: 'actions-row' });
     for (const a of doc.actions || []) {
       if (!a.roll) continue;
-      row.append(el('button', { class: 'act-btn ' + (a.kind || 'other'), title: resolve(a.roll, ctx || {}), onclick: (e) => { e.stopPropagation(); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}`, { ctx, gm_only: e.shiftKey }); } },
-        (ACTION_KINDS[a.kind] || '•').split(' ')[0], ' ', a.name || ACTION_KINDS[a.kind]?.slice(2) || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
+      const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
+      row.append(el('button', { class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, ...modeFromEvent(e) }); } },
+        icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
+    const rollable = (doc.actions || []).filter(a => a.roll);
+    if (rollable.length > 1) row.append(el('button', { class: 'act-btn all', title: 'Бросить всё одной связкой: ' + rollable.map(a => a.name || ACTION_KINDS[a.kind]).join(' → ') + '. При крите атаки кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру', onclick: e => { e.stopPropagation(); rollMulti(rollable, prefix || doc.name, { ctx, ...modeFromEvent(e) }); } }, icon('dice', 13), ' Всё'));
     if (doc.save_dc || doc.save_ability) row.append(el('span', { class: 'chip' }, `СЛ ${doc.save_dc || '@dc'} ${doc.save_ability || ''}`));
     return row;
   }
@@ -227,14 +266,22 @@ window.Modules = (function () {
     const box = el('div', { class: 'actions-editor' });
     const render = () => {
       box.innerHTML = '';
-      box.append(el('div', { class: 'muted small', style: 'margin-bottom:4px' }, 'Кнопки бросков. В формуле можно использовать @str @dex @con @int @wis @cha @prof @atk @spell @dc, кубики: 1d8, 2к6kh1'));
-      (doc.actions || []).forEach((a, i) => box.append(el('div', { class: 'action-row' },
-        el('select', { onchange: e => a.kind = e.target.value }, ...Object.entries(ACTION_KINDS).map(([k, v]) => el('option', { value: k, selected: (a.kind || 'other') === k ? '' : null }, v))),
-        el('input', { placeholder: 'Название', value: a.name || '', oninput: e => a.name = e.target.value }),
-        el('input', { placeholder: 'Формула: 1d20+@atk', value: a.roll || '', oninput: e => a.roll = e.target.value }),
-        el('button', { class: 'small', title: 'Проверить', onclick: () => roll(a.roll, a.name || 'тест') }, icon('dice')),
-        el('button', { class: 'small danger', onclick: () => { doc.actions.splice(i, 1); render(); } }, icon('close')))));
+      box.append(el('div', { class: 'muted small', style: 'margin-bottom:4px' }, 'Кнопок может быть сколько угодно — попадание, урон, доп. урон, лечение. Если их несколько, появится кнопка «Всё»: одна связка в чат, крит по атаке удваивает кости урона. Переменные: @str @dex @con @int @wis @cha @prof @atk @best @spell @dc; кубики: 1d8, 2к6kh1.'));
+      const list = doc.actions || [];
+      list.forEach((a, i) => box.append(el('div', { class: 'action-row' },
+        el('div', { class: 'row', style: 'gap:4px' },
+          el('select', { onchange: e => { a.kind = e.target.value; render(); } }, ...Object.entries(ACTION_KINDS).map(([k, v]) => el('option', { value: k, selected: (a.kind || 'other') === k ? '' : null }, v))),
+          el('input', { placeholder: 'Название', value: a.name || '', oninput: e => a.name = e.target.value }),
+          el('input', { placeholder: 'Формула: 1d20+@atk', value: a.roll || '', oninput: e => a.roll = e.target.value }),
+          ['damage', 'heal'].includes(a.kind) ? el('select', { title: 'Тип урона', onchange: e => a.dtype = e.target.value }, ...DAMAGE_TYPES.map(t => el('option', { value: t, selected: (a.dtype || '') === t ? '' : null }, t || 'тип…'))) : null,
+          el('button', { class: 'small', title: 'Выше', disabled: i === 0 ? '' : null, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; render(); } }, '↑'),
+          el('button', { class: 'small', title: 'Ниже', disabled: i === list.length - 1 ? '' : null, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; render(); } }, '↓'),
+          el('button', { class: 'small', title: 'Проверить', onclick: () => roll(a.roll, a.name || 'тест') }, icon('dice')),
+          el('button', { class: 'small danger', onclick: () => { list.splice(i, 1); render(); } }, icon('close'))),
+        el('input', { class: 'action-note', placeholder: 'Заметка к броску: условие, дальность, «половина при успешном спасброске»…', value: a.note || '', oninput: e => a.note = e.target.value }))));
       const presets = el('div', { class: 'row', style: 'margin-top:4px;flex-wrap:wrap;gap:4px' },
+        el('button', { class: 'small primary', title: 'Готовая связка: бросок на попадание и урон', onclick: () => { (doc.actions ||= []).push({ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best', dtype: 'рубящий' }); render(); } }, '+ Атака и урон'),
+        el('button', { class: 'small', title: 'Заклинание: спасбросок цели и урон', onclick: () => { (doc.actions ||= []).push({ name: 'Спасбросок цели', kind: 'save', roll: '1d20', note: 'СЛ {{@dc}} — цель бросает сама' }, { name: 'Урон', kind: 'damage', roll: '8d6', dtype: 'огонь', note: 'половина при успешном спасброске' }); render(); } }, '+ Спасбросок и урон'),
         el('button', { class: 'small', onclick: () => { (doc.actions ||= []).push({ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }); render(); } }, '+ Атака'),
         el('button', { class: 'small', onclick: () => { (doc.actions ||= []).push({ name: 'Урон', kind: 'damage', roll: '1d8+@str' }); render(); } }, '+ Урон'),
         el('button', { class: 'small', onclick: () => { (doc.actions ||= []).push({ name: 'Лечение', kind: 'heal', roll: '2d4+2' }); render(); } }, '+ Лечение'),
@@ -354,5 +401,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

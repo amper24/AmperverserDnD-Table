@@ -14,9 +14,29 @@
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
   const ui = { invQ: '', invType: '', spellQ: '', onlyPrepared: false, open: new Set() };
 
+  // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
+  function noteBtn(key, title) {
+    const has = !!(s.notes_by[key] || '').trim();
+    return el('button', { class: 'note-btn' + (has ? ' has' : ''), title: (has ? 'Заметка: ' + s.notes_by[key].slice(0, 200) : 'Добавить заметку') + (title ? ' — ' + title : ''), onclick: async e => {
+      e.stopPropagation();
+      const ta = el('textarea', { style: 'min-height:140px', disabled: dis() }, s.notes_by[key] || '');
+      const ok = await modal('Заметка: ' + (title || key), el('div', {}, ta, el('p', { class: 'muted small' }, 'Работают кнопки бросков [[1d20+@prof]]{Проверка} и значения {{@dc}}.')),
+        readonly ? [{ label: 'Закрыть', fn: () => false }] : [{ label: 'Удалить', cls: 'danger', fn: () => 'del' }, { label: 'Сохранить', cls: 'primary', fn: () => true }]);
+      if (!ok) return;
+      if (ok === 'del') delete s.notes_by[key]; else s.notes_by[key] = ta.value;
+      save(); render();
+    } }, icon('edit', 12));
+  }
+  /// Текст заметки под блоком (если есть).
+  function noteLine(key) {
+    const t = (s.notes_by[key] || '').trim();
+    return t ? el('div', { class: 'note-line' }, M.rich(t, ctx(), { prefix: ch.name })) : null;
+  }
+  const h3n = (text, key) => el('h3', { class: 'h3n' }, el('span', { class: 'grow' }, text), noteBtn(key, text));
+
   // ---- миграция старых данных в модули ----
   function migrate() {
-    s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
+    s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.notes_by ||= {}; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
     s.inventory = s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' }));
     s.spells.known = s.spells.known.map(sp => sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] }));
   }
@@ -100,23 +120,23 @@
     const abil = el('div', { class: 'abil' });
     for (const [k, name] of Object.entries(ABIL)) {
       abil.append(el('div', { class: 'ab', title: 'Клик — проверка характеристики', onclick: e => { if (e.target.tagName !== 'INPUT') roll('d20' + fmtMod(abMod(k)), 'проверка ' + name); } },
-        el('small', {}, name), el('div', { class: 'mod' }, fmtMod(abMod(k))), el('input', { type: 'number', value: s.abilities[k], disabled: dis(), onchange: ev => { s.abilities[k] = +ev.target.value; save(); render(); }, onclick: ev => ev.stopPropagation() })));
+        el('small', {}, name, ' ', noteBtn('ab:' + k, name)), el('div', { class: 'mod' }, fmtMod(abMod(k))), el('input', { type: 'number', value: s.abilities[k], disabled: dis(), onchange: ev => { s.abilities[k] = +ev.target.value; save(); render(); }, onclick: ev => ev.stopPropagation() })));
     }
     c1.append(abil);
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Спасброски'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name); } },
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Спасброски', 'saves'), noteLine('saves'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name); } },
       el('span', { class: 'pip' + (s.saving_throws.includes(k) ? ' on' : ''), onclick: () => { if (readonly) return; s.saving_throws = s.saving_throws.includes(k) ? s.saving_throws.filter(x => x !== k) : [...s.saving_throws, k]; save(); render(); } }), el('span', { class: 'val' }, fmtMod(saveVal(k))), name)))));
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Навыки'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name); } },
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Навыки', 'skills'), noteLine('skills'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name); } },
       el('span', { class: 'pip' + (s.expertise.includes(k) ? ' exp' : s.skills.includes(k) ? ' on' : ''), title: 'клик: нет → владение → компетентность', onclick: () => { if (readonly) return; if (s.expertise.includes(k)) { s.expertise = s.expertise.filter(x => x !== k); s.skills = s.skills.filter(x => x !== k); } else if (s.skills.includes(k)) s.expertise.push(k); else s.skills.push(k); save(); render(); } }),
-      el('span', { class: 'val' }, fmtMod(skillVal(k, ab))), name, el('span', { class: 'muted', style: 'font-size:10px' }, ' (' + ABIL[ab].slice(0, 3) + ')')))),
+      el('span', { class: 'val' }, fmtMod(skillVal(k, ab))), name, el('span', { class: 'muted', style: 'font-size:10px' }, ' (' + ABIL[ab].slice(0, 3) + ')'), noteBtn('skill:' + k, name)))),
       el('div', { class: 'muted', style: 'margin-top:6px;font-size:12px' }, 'Пассивное восприятие: ', el('b', {}, passive()), ' · Бонус мастерства: ', el('b', {}, fmtMod(prof())))));
 
     const c2 = el('div');
     const hp = s.hp;
     c2.append(el('div', { class: 'stat3' },
-      el('div', { class: 'card' }, el('label', {}, 'КД'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.ac = +e.target.value; save(); } })),
+      el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.ac = +e.target.value; save(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: () => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива') }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
-      el('div', { class: 'card' }, el('label', {}, 'Скорость'), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
-    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Хиты'),
+      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
+    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
       el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'), el('button', { class: 'small', onclick: () => roll(hp.hit_dice + fmtMod(abMod('con')), 'кость хитов') }, 'Кость хитов')),
@@ -124,7 +144,7 @@
         el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.inspiration ? '' : null, onchange: e => { s.inspiration = e.target.checked; save(); } }), ' Вдохновение'))));
 
     // Действия: экипированные предметы с кнопками + подготовленные заклинания с атаками + ручные атаки
-    const act = el('div', { class: 'card dropslot', 'data-cat': 'item', style: 'margin-top:8px' }, el('h3', {}, 'Действия ⤓'));
+    const act = el('div', { class: 'card dropslot', 'data-cat': 'item', style: 'margin-top:8px' }, h3n('Действия ⤓', 'actions'), noteLine('actions'));
     const c = ctx();
     const eq = s.inventory.filter(it => it.equipped && (it.actions || []).some(a => a.roll));
     eq.forEach(it => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, M.itemIcon(it)), el('b', { style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, it.name), M.actionButtons(it, c, `${ch.name}: ${it.name}`))));
@@ -183,7 +203,7 @@
     const card = el('div', { class: 'mcard' + (it.equipped ? ' equipped' : '') + (open ? ' open' : ''), draggable: readonly ? null : 'true', 'data-uid': it.uid, style: `--rar:${M.RARITY_COLORS[it.rarity] || 'var(--border)'}` });
     const head = el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(it.uid); else ui.open.add(it.uid); render(); } },
       el('span', { class: 'card-icon big' }, M.itemIcon(it)),
-      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
+      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), noteBtn('item:' + it.uid, it.name), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
       el('div', { class: 'qty', onclick: e => e.stopPropagation() }, readonly ? el('span', {}, '×' + it.qty) : [el('button', { class: 'tiny', onclick: () => { it.qty = Math.max(1, (it.qty || 1) - 1); save(); render(); } }, '−'), el('span', {}, it.qty || 1), el('button', { class: 'tiny', onclick: () => { it.qty = (it.qty || 1) + 1; save(); render(); } }, '+')]),
       readonly ? null : el('button', { class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); it.equipped = !it.equipped; save(); render(); } }, icon('check', 12)));
     card.append(head);
@@ -191,6 +211,7 @@
     if (acts.children.length) card.append(acts);
     if (open) {
       const body = el('div', { class: 'mcard-body' });
+      if (noteLine('item:' + it.uid)) body.append(noteLine('item:' + it.uid));
       if (it.desc) body.append(el('div', { class: 'card-desc' }, M.rich(it.desc, c, { prefix: `${ch.name}: ${it.name}` })));
       if (it.charges) body.append(el('div', { class: 'row small', style: 'align-items:center;gap:6px' }, 'Заряды: ', ...Array.from({ length: it.charges.max }, (_, i) => el('span', { class: 'pip' + (i < it.charges.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { if (readonly) return; it.charges.cur = i < it.charges.cur ? i : i + 1; save(); render(); } })), it.charges.recharge ? el('span', { class: 'muted' }, `(${it.charges.recharge})`) : null));
       if (it.cost || it.source) body.append(el('div', { class: 'muted small' }, [it.cost, it.source].filter(Boolean).join(' · ')));
@@ -271,13 +292,14 @@
     const card = el('div', { class: 'mcard spell' + (x.prepared || x.level === 0 ? ' equipped' : '') + (open ? ' open' : ''), draggable: 'true', style: '--rar:var(--accent)' });
     card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(x.uid); else ui.open.add(x.uid); render(); } },
       el('span', { class: 'card-icon big' }, M.docIcon(sp, 'star', 22)),
-      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
+      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), noteBtn('spell:' + x.uid, x.name), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
       x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')) : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, icon('chat')),
       readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
     const acts = M.actionButtons(x, c, `${ch.name}: ${x.name}`);
     if (acts.children.length) card.append(acts);
     if (open) {
       const body = el('div', { class: 'mcard-body' }, el('div', { class: 'muted small' }, [x.components, x.classes?.length ? 'Классы: ' + x.classes.join(', ') : null, x.source].filter(Boolean).join(' · ')));
+      if (noteLine('spell:' + x.uid)) body.append(noteLine('spell:' + x.uid));
       if (x.desc) body.append(el('div', { class: 'card-desc' }, M.rich(x.desc, c, { prefix: `${ch.name}: ${x.name}` })));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => sendCard(x, 'spell') }, 'В чат'));
       if (!readonly) menu.append(el('button', { class: 'small', onclick: async () => { const r = await M.editSpell(x); if (r) { Object.assign(x, r); save(); render(); } } }, 'Изменить'),
@@ -307,10 +329,10 @@
     s.features.forEach((f, i) => {
       const open = ui.open.has('f' + i);
       const card = el('div', { class: 'mcard' + (open ? ' open' : ''), style: '--rar:var(--border)' });
-      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, M.docIcon(f, 'scroll', 22)), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
+      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, M.docIcon(f, 'scroll', 22)), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), noteBtn('feat:' + (f.uid || i), f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
         f.uses ? el('span', { class: 'small', onclick: e => e.stopPropagation() }, ...Array.from({ length: f.uses.max }, (_, k) => el('span', { class: 'pip' + (k < f.uses.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { f.uses.cur = k < f.uses.cur ? k : k + 1; save(); render(); } }))) : null));
       if (f.actions?.length) card.append(M.actionButtons(f, c, `${ch.name}: ${f.name}`));
-      if (open) card.append(el('div', { class: 'mcard-body' }, el('div', { class: 'card-desc' }, M.rich(f.text || '', c, { prefix: `${ch.name}: ${f.name}` })),
+      if (open) card.append(el('div', { class: 'mcard-body' }, noteLine('feat:' + (f.uid || i)), el('div', { class: 'card-desc' }, M.rich(f.text || '', c, { prefix: `${ch.name}: ${f.name}` })),
         el('div', { class: 'row', style: 'gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => M.sendCard({ name: f.name, kind: 'feat', desc: f.text, actions: f.actions || [], icon: 'scroll', asset_id: f.asset_id, owner: ch.name }) }, 'В чат'), readonly ? null : el('button', { class: 'small', onclick: () => editFeature(f) }, 'Изменить'), readonly ? null : el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { s.features.splice(i, 1); save(); render(); } }, icon('trash')))));
       grid.append(card);
     });
@@ -334,6 +356,11 @@
     const notes = el('div', { class: 'card' }, el('h3', {}, 'Заметки'), el('textarea', { disabled: dis(), style: 'min-height:220px', onchange: e => { s.notes = e.target.value; save(); render(); } }, s.notes || ''),
       s.notes ? el('div', { class: 'card-desc', style: 'margin-top:6px' }, M.rich(s.notes, ctx(), { prefix: ch.name + ': заметки' })) : el('p', { class: 'muted small' }, 'В заметках работают кнопки бросков: [[1d20+@prof]]{Проверка} и переменные {{@hp_max}}.'),
       el('div', { class: 'field', style: 'margin-top:8px' }, el('label', {}, 'Владения и языки'), el('textarea', { disabled: dis(), style: 'min-height:60px', onchange: e => { s.proficiencies = e.target.value; save(); } }, s.proficiencies || '')));
+    const keys = Object.keys(s.notes_by).filter(k => (s.notes_by[k] || '').trim());
+    const title = k => { const [t, id] = k.split(':'); if (t === 'ab') return ABIL[id] || id; if (t === 'skill') return (SKILLS.find(x => x[0] === id) || [])[1] || id; if (t === 'item') return 'Предмет: ' + (s.inventory.find(x => x.uid === id)?.name || '?'); if (t === 'spell') return 'Заклинание: ' + (s.spells.known.find(x => x.uid === id)?.name || '?'); if (t === 'feat') return 'Умение: ' + (s.features.find((x, i) => (x.uid || i) == id)?.name || '?'); return { saves: 'Спасброски', skills: 'Навыки', ac: 'КД', speed: 'Скорость', hp: 'Хиты', actions: 'Действия' }[k] || k; };
+    const all = el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Заметки на листе'), keys.length ? null : el('p', { class: 'muted small' }, 'Нажмите карандаш рядом с характеристикой, навыком, предметом или заклинанием — заметка появится здесь и рядом с блоком.'));
+    keys.forEach(k => all.append(el('div', { class: 'row', style: 'align-items:flex-start;gap:6px;margin-bottom:4px' }, el('b', { class: 'small', style: 'flex:0 0 160px' }, title(k)), el('div', { class: 'note-line grow', style: 'margin:0' }, M.rich(s.notes_by[k], ctx(), { prefix: ch.name })), noteBtn(k, title(k)))));
+    notes.append(all);
     root.append(pers, notes);
     return root;
   }

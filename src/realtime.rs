@@ -172,6 +172,28 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
     Some(json!({ "expr": expr, "parts": parts, "total": total }))
 }
 
+/// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
+fn double_dice(expr: &str) -> String {
+    let re = Regex::new(r"(\d*)([dк])(\d+)").unwrap();
+    re.replace_all(expr, |c: &regex::Captures| {
+        let n: i64 = c.get(1).map(|m| m.as_str()).filter(|s| !s.is_empty()).and_then(|s| s.parse().ok()).unwrap_or(1);
+        format!("{}{}{}", n * 2, &c[2], &c[3])
+    }).into_owned()
+}
+
+/// Есть ли среди оставленных костей d20 естественная 20 / 1 (по первому d20-терму).
+fn nat_d20(r: &Value) -> (bool, bool) {
+    if let Some(parts) = r["parts"].as_array() {
+        for p in parts {
+            if p["sides"].as_i64() == Some(20) {
+                let kept: Vec<i64> = p["kept"].as_array().map(|a| a.iter().filter_map(|v| v.as_i64()).collect()).unwrap_or_default();
+                return (kept.contains(&20), kept.contains(&1));
+            }
+        }
+    }
+    (false, false)
+}
+
 async fn save_chat(st: &AppState, cid: &str, user: &auth::AuthUser, kind: &str, payload: &Value) -> Option<Value> {
     let now = util::now();
     let res = sqlx::query("INSERT INTO chat_messages (campaign_id, user_id, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -215,7 +237,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             // карточка предмета/заклинания в чат (с кнопками бросков на стороне клиента)
             let mut card = msg["card"].clone();
             if !card.is_object() { return; }
-            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon"].contains(&k.as_str())); }
+            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner"].contains(&k.as_str())); }
             if let Some(out) = save_chat(st, cid, user, "card", &card).await {
                 st.hub.broadcast(cid, &out, None).await;
             }
@@ -226,6 +248,37 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             r["label"] = msg["label"].clone();
             r["gm_only"] = json!(gm_only);
             if let Some(out) = save_chat(st, cid, user, "roll", &r).await {
+                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
+            }
+        }
+        // связка бросков одним сообщением: атака + урон (+ что угодно). Крит по атаке удваивает кости урона.
+        "multi" => {
+            let Some(list) = msg["rolls"].as_array() else { return };
+            let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
+            let mut out_rolls = Vec::new();
+            let mut crit = false;
+            for r in list.iter().take(8) {
+                let kind = r["kind"].as_str().unwrap_or("other").to_string();
+                let mut expr = r["expr"].as_str().unwrap_or("").to_string();
+                let mut doubled = false;
+                if crit && kind == "damage" {
+                    expr = double_dice(&expr);
+                    doubled = true;
+                }
+                let Some(mut rolled) = roll_expression(&expr) else { continue };
+                let (nat20, nat1) = nat_d20(&rolled);
+                if kind == "attack" && nat20 { crit = true; }
+                rolled["name"] = r["name"].clone();
+                rolled["kind"] = json!(kind);
+                rolled["dtype"] = r["dtype"].clone();
+                rolled["crit"] = json!(nat20 && kind != "damage" && kind != "heal");
+                rolled["fumble"] = json!(nat1 && kind != "damage" && kind != "heal");
+                rolled["doubled"] = json!(doubled);
+                out_rolls.push(rolled);
+            }
+            if out_rolls.is_empty() { return; }
+            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "rolls": out_rolls });
+            if let Some(out) = save_chat(st, cid, user, "multi", &payload).await {
                 if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
             }
         }
