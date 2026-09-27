@@ -12,7 +12,7 @@ window.API = {
     window.wsToken = () => localStorage.getItem('dnd_token') || '';
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.statusText);
-    if (url === '/api/auth/verify' && data.token) localStorage.setItem('dnd_token', data.token);
+    if (data.token && ['/api/auth/verify', '/api/auth/login', '/api/auth/reset-password', '/api/auth/google'].includes(url)) localStorage.setItem('dnd_token', data.token);
     if (url === '/api/auth/logout') localStorage.removeItem('dnd_token');
     return data;
   },
