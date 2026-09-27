@@ -95,12 +95,24 @@ fn serve_embedded(path: &str, if_none_match: Option<&str>) -> Response {
             if if_none_match.map(|v| v == etag).unwrap_or(false) {
                 return Response::builder().status(StatusCode::NOT_MODIFIED).header(header::ETAG, etag).header(header::CACHE_CONTROL, "no-cache").body(Body::empty()).unwrap();
             }
+            let mut data = file.data.into_owned();
+            if path.ends_with(".html") {
+                // Версионируем ссылки на скрипты/стили хэшем содержимого — браузер никогда не подхватит устаревший JS
+                let mut html = String::from_utf8_lossy(&data).into_owned();
+                for name in StaticFiles::iter() {
+                    if let Some(f) = StaticFiles::get(&name) {
+                        let h = f.metadata.sha256_hash()[..4].iter().map(|b| format!("{b:02x}")).collect::<String>();
+                        html = html.replace(&format!("\"/static/{name}\""), &format!("\"/static/{name}?v={h}\""));
+                    }
+                }
+                data = html.into_bytes();
+            }
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, mime.as_ref())
                 .header(header::CACHE_CONTROL, "no-cache")
                 .header(header::ETAG, etag)
-                .body(Body::from(file.data.into_owned()))
+                .body(Body::from(data))
                 .unwrap()
         }
         None => (StatusCode::NOT_FOUND, "not found").into_response(),

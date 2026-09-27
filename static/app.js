@@ -13,35 +13,84 @@
   if (campMatch) { renderCampaign(campMatch[1]); return; }
   renderLobby();
 
-  // ================= Авторизация =================
+  // ================= Главная страница + авторизация =================
   function renderAuth(next) {
     app.innerHTML = '';
-    const email = el('input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
-    const code = el('input', { placeholder: '6-значный код', inputmode: 'numeric', maxlength: 6 });
-    const name = el('input', { placeholder: 'Как вас называть (для новых)' });
-    const step1 = el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Почта'), email), el('button', { class: 'primary', style: 'width:100%', onclick: send }, 'Получить код'));
-    const step2 = el('div', { class: 'hidden' }, el('p', { class: 'muted', id: 'codeInfo' }), el('div', { class: 'field' }, el('label', {}, 'Код из письма'), code), el('div', { class: 'field' }, el('label', {}, 'Имя'), name),
-      el('button', { class: 'primary', style: 'width:100%', onclick: verify }, 'Войти'), el('button', { style: 'width:100%;margin-top:6px', onclick: send }, 'Отправить код ещё раз'));
-    const err = el('div', { style: 'color:var(--danger);margin-top:8px;min-height:18px' });
-    app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('div', { class: 'logo' }, 'Amperverser DnD', el('small', {}, 'Виртуальный стол')), el('div', { style: 'height:12px' }), step1, step2, err,
-      el('p', { class: 'muted', style: 'font-size:11px;margin-top:14px' }, 'Вход по коду на почту. Вход через Google появится позже.'))));
-    async function send() {
-      err.textContent = '';
-      try {
-        const r = await API.post('/api/auth/request-code', { email: email.value.trim() });
-        step1.classList.add('hidden'); step2.classList.remove('hidden');
-        document.getElementById('codeInfo').textContent = r.sent ? `Код отправлен на ${email.value}` : 'SMTP не настроен: код выведен в консоль сервера' + (r.dev_code ? ` (dev: ${r.dev_code})` : '');
-        if (r.dev_code) code.value = r.dev_code;
-        code.focus();
-      } catch (e) { err.textContent = e.message; }
-    }
-    async function verify() {
-      err.textContent = '';
-      try { await API.post('/api/auth/verify', { email: email.value.trim(), code: code.value.trim(), name: name.value.trim() || null }); location.href = next || '/'; }
-      catch (e) { err.textContent = e.message; }
-    }
-    email.addEventListener('keydown', e => e.key === 'Enter' && send());
-    code.addEventListener('keydown', e => e.key === 'Enter' && verify());
+    document.title = 'Amperverser DnD Table — виртуальный стол для D&D';
+    // --- форма: вход / регистрация / подтверждение / сброс пароля ---
+    let mode = 'login', pendingEmail = '';
+    const box = el('div', { class: 'card auth' });
+    const err = el('div', { class: 'auth-err' });
+    const f = (label, input) => el('div', { class: 'field' }, el('label', {}, label), input);
+    const inp = (attrs) => el('input', { ...attrs, onkeydown: e => { if (e.key === 'Enter') box.querySelector('button.primary')?.click(); } });
+    function show(m) { mode = m; err.textContent = ''; box.innerHTML = ''; box.append(...views[m]()); setTimeout(() => box.querySelector('input:not([type=hidden])')?.focus(), 30); }
+    const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { err.textContent = e.message; } finally { btn.disabled = false; } };
+    const tabs = () => el('div', { class: 'tabs auth-tabs' }, el('button', { class: mode === 'login' ? 'active' : '', onclick: () => show('login') }, 'Вход'), el('button', { class: mode === 'register' ? 'active' : '', onclick: () => show('register') }, 'Регистрация'));
+    const google = () => el('button', { class: 'google', disabled: '', title: 'Появится позже' }, el('span', { class: 'g' }, 'G'), ' Войти через Google ', el('span', { class: 'badge' }, 'скоро'));
+    const codeHint = (r) => r.sent ? `Код отправлен на ${pendingEmail}. Проверьте почту (и папку «Спам»).` : `Почтовый сервер не настроен — код показан ниже (режим разработки).`;
+    const views = {
+      login() {
+        const email = inp({ type: 'email', placeholder: 'you@example.com', autocomplete: 'email' }), pw = inp({ type: 'password', placeholder: '••••••••', autocomplete: 'current-password' });
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
+          pendingEmail = email.value.trim();
+          const r = await API.post('/api/auth/login', { email: pendingEmail, password: pw.value });
+          if (r.need_verify) { show('verify'); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) box.querySelector('input.code').value = r.dev_code; return; }
+          location.href = next || '/';
+        }) }, 'Войти');
+        return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), el('div', { class: 'or' }, 'или'), google()];
+      },
+      register() {
+        const name = inp({ placeholder: 'Как вас называть', autocomplete: 'nickname', maxlength: 64 }), email = inp({ type: 'email', placeholder: 'you@example.com', autocomplete: 'email' }), pw = inp({ type: 'password', placeholder: 'минимум 8 символов', autocomplete: 'new-password' }), pw2 = inp({ type: 'password', placeholder: 'ещё раз', autocomplete: 'new-password' });
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
+          if (pw.value.length < 8) throw new Error('Пароль должен быть не короче 8 символов');
+          if (pw.value !== pw2.value) throw new Error('Пароли не совпадают');
+          pendingEmail = email.value.trim();
+          const r = await API.post('/api/auth/register', { email: pendingEmail, password: pw.value, name: name.value.trim() || null });
+          show('verify'); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) box.querySelector('input.code').value = r.dev_code;
+        }) }, 'Создать аккаунт');
+        return [tabs(), f('Имя', name), f('Почта', email), f('Пароль', pw), f('Повторите пароль', pw2), btn, err, el('p', { class: 'muted small' }, 'На почту придёт 6-значный код подтверждения.'), el('div', { class: 'or' }, 'или'), google()];
+      },
+      verify() {
+        const code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code' });
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => { await API.post('/api/auth/verify', { email: pendingEmail, code: code.value.trim() }); location.href = next || '/'; }) }, 'Подтвердить и войти');
+        const resend = el('button', { class: 'wide', onclick: () => busy(resend, async () => { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; }) }, 'Отправить код ещё раз');
+        return [el('h2', {}, 'Подтвердите почту'), el('p', { class: 'muted small code-info' }), f('Код из письма', code), btn, err, resend, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, '← Назад ко входу'))];
+      },
+      reset() {
+        const email = inp({ type: 'email', placeholder: 'you@example.com', value: pendingEmail, autocomplete: 'email' }), code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6 }), pw = inp({ type: 'password', placeholder: 'новый пароль (8+ символов)', autocomplete: 'new-password' });
+        const step2 = el('div', { class: 'hidden' }, el('p', { class: 'muted small code-info' }), f('Код из письма', code), f('Новый пароль', pw));
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
+          pendingEmail = email.value.trim();
+          if (step2.classList.contains('hidden')) { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); step2.classList.remove('hidden'); step2.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; btn.textContent = 'Сменить пароль и войти'; code.focus(); return; }
+          await API.post('/api/auth/reset-password', { email: pendingEmail, code: code.value.trim(), password: pw.value }); location.href = next || '/';
+        }) }, 'Прислать код');
+        return [el('h2', {}, 'Восстановление пароля'), el('p', { class: 'muted small' }, 'Пришлём код на почту — по нему зададите новый пароль. Так же можно задать пароль старому аккаунту, у которого его не было.'), f('Почта', email), step2, btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, '← Назад ко входу'))];
+      },
+    };
+    show(next ? 'login' : 'login');
+    // --- лендинг ---
+    const feat = (icon, title, text) => el('div', { class: 'feat' }, el('div', { class: 'ficon' }, icon), el('b', {}, title), el('p', {}, text));
+    const home = el('div', { class: 'home' },
+      el('header', { class: 'home-top' }, el('div', { class: 'logo' }, 'Amperverser DnD', el('small', {}, 'Виртуальный стол')), el('nav', {}, el('a', { href: '#features' }, 'Возможности'), el('a', { href: '#how' }, 'Как начать'), el('a', { href: 'https://github.com/amper24/AmperverserDnD-Table', target: '_blank' }, 'GitHub'))),
+      el('section', { class: 'hero' },
+        el('div', { class: 'hero-text' },
+          el('h1', {}, 'Играйте в D&D онлайн — ', el('span', {}, 'на своём сервере')),
+          el('p', {}, 'Карты с туманом войны, токены, кубики в чате, листы персонажей с перетаскиваемыми предметами и заклинаниями, справочник на русском и свои наборы правил. Всё в одном окне браузера, без установки.'),
+          el('div', { class: 'hero-cta' }, el('button', { class: 'primary big', onclick: () => { show('register'); box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }, 'Создать аккаунт'), el('button', { class: 'big', onclick: () => { show('login'); box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }, 'Войти')),
+          el('div', { class: 'hero-badges' }, el('span', { class: 'badge' }, 'Rust · быстрый'), el('span', { class: 'badge' }, 'SQLite / MySQL'), el('span', { class: 'badge' }, 'Docker · Pterodactyl'), el('span', { class: 'badge' }, 'Open Source'))),
+        box),
+      el('section', { class: 'features', id: 'features' },
+        feat('🗺️', 'Стол как в Owlbear Rodeo', 'Слои карты, токены, квадратная и гекс-сетка, туман войны, линейка, рисование, пинги, инициатива.'),
+        feat('🧙', 'Живые листы персонажей', 'Вкладки, авто-расчёт модификаторов, инвентарь и книга заклинаний из карточек с кнопками бросков.'),
+        feat('🎲', 'Броски прямо в тексте', 'Пишите [[1d20+@atk]]{Атака} в любом описании — получится кнопка. Простое «3к6+2» тоже кликабельно.'),
+        feat('🎒', 'Предметы — модули', 'Перетаскивайте из справочника на лист, между персонажами и на карту как лут. Карточки в чат одним кликом.'),
+        feat('📚', 'Справочник и наборы', '191 запись SRD на русском, homebrew кампании и свои наборы с импортом/экспортом — как на DnD.su, только ваше.'),
+        feat('🔗', 'Кампании по ссылке', 'Мастер создаёт кампанию и делится ссылкой-приглашением. Роли игрок/мастер, скрытые броски, приватные токены.')),
+      el('section', { class: 'how', id: 'how' }, el('h2', {}, 'Как начать'),
+        el('ol', {}, el('li', {}, el('b', {}, 'Зарегистрируйтесь'), ' — почта, пароль и код подтверждения из письма.'), el('li', {}, el('b', {}, 'Создайте кампанию'), ' и отправьте игрокам ссылку-приглашение.'), el('li', {}, el('b', {}, 'Загрузите карту'), ' перетаскиванием, добавьте токены и персонажей.'), el('li', {}, el('b', {}, 'Играйте'), ': кубики, туман, инициатива, листы и предметы — всё синхронизируется мгновенно.'))),
+      el('footer', { class: 'home-foot' }, 'Amperverser DnD Table · самостоятельный хостинг: ', el('code', {}, 'cargo run --release'), ' · Docker · Pterodactyl'));
+    app.append(home);
+    if (next) { box.scrollIntoView({ block: 'center' }); err.textContent = 'Войдите, чтобы принять приглашение'; }
   }
 
   // ================= Присоединение =================

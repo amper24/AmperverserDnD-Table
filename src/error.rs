@@ -9,6 +9,7 @@ impl AppError {
     pub fn unauthorized(msg: impl Into<String>) -> Self { Self(StatusCode::UNAUTHORIZED, msg.into()) }
     pub fn forbidden(msg: impl Into<String>) -> Self { Self(StatusCode::FORBIDDEN, msg.into()) }
     pub fn not_found(msg: impl Into<String>) -> Self { Self(StatusCode::NOT_FOUND, msg.into()) }
+    pub fn internal(msg: impl Into<String>) -> Self { Self(StatusCode::INTERNAL_SERVER_ERROR, msg.into()) }
 }
 
 impl IntoResponse for AppError {

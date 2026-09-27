@@ -33,6 +33,7 @@ mime_guess = "2"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder"] }
 futures = "0.3"
 async-trait = "0.1"
+argon2 = { version = "0.5", features = ["std"] }
 
 [profile.release]
 opt-level = 3

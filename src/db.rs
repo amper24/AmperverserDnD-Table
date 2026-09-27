@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   name VARCHAR(64) NOT NULL DEFAULT '',
   google_sub VARCHAR(64) NULL,
-  created_at VARCHAR(40) NOT NULL
+  created_at VARCHAR(40) NOT NULL,
+  password_hash VARCHAR(255) NULL,
+  verified INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS auth_codes (
   id {AUTOINC},
@@ -172,6 +174,8 @@ CREATE TABLE IF NOT EXISTS compendium (
 const ALTERS: &[&str] = &[
     "ALTER TABLE compendium ADD COLUMN pack_id VARCHAR(32) NULL",
     "ALTER TABLE compendium ADD COLUMN name_lc VARCHAR(128) NULL",
+    "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL",
+    "ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 1",
 ];
 
 const INDEXES: &[&str] = &[

@@ -12,11 +12,20 @@ for i in $(seq 1 60); do curl -fs "$B/api/health" >/dev/null 2>&1 && break; slee
 curl -fs "$B/api/health" | grep -q '"ok":true'
 J() { python3 -c "import sys,json; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1"; }
 
-login() { # $1 email, $2 name -> prints token
-  code=$(curl -fs -X POST "$B/api/auth/request-code" -H 'content-type: application/json' -d "{\"email\":\"$1\"}" | J "d['dev_code']")
-  curl -fs -X POST "$B/api/auth/verify" -H 'content-type: application/json' -d "{\"email\":\"$1\",\"code\":\"$code\",\"name\":\"$2\"}" | J "d['token']"
+login() { # $1 email, $2 name -> prints token (регистрация с паролем + подтверждение почты)
+  code=$(curl -fs -X POST "$B/api/auth/register" -H 'content-type: application/json' -d "{\"email\":\"$1\",\"password\":\"secret123\",\"name\":\"$2\"}" | J "d['dev_code']")
+  curl -fs -X POST "$B/api/auth/verify" -H 'content-type: application/json' -d "{\"email\":\"$1\",\"code\":\"$code\"}" | J "d['token']"
 }
+echo "[0] авторизация: регистрация, пароль, сброс"
 GM=$(login gm@test.ru Мастер); PL=$(login pl@test.ru Игрок)
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"wrong"}'); [ "$code" = "400" ]
+curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}' | J "d['user']['name']" | grep -q Мастер
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$B/api/auth/register" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}'); [ "$code" = "400" ]   # повторная регистрация
+rc=$(curl -fs -X POST "$B/api/auth/request-code" -H 'content-type: application/json' -d '{"email":"pl@test.ru"}' | J "d['dev_code']")
+curl -fs -X POST "$B/api/auth/reset-password" -H 'content-type: application/json' -d "{\"email\":\"pl@test.ru\",\"code\":\"$rc\",\"password\":\"newpass123\"}" | J "d['ok']" | grep -q True
+curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"pl@test.ru","password":"newpass123"}' | J "d['ok']" | grep -q True
+curl -fs -H "Authorization: Bearer $PL" "$B/api/auth/me" | J "d['name']" | grep -q Игрок   # Bearer-токен работает
+curl -fs "$B/api/auth/verify?x" -X POST -H 'content-type: application/json' -d '{"email":"nobody@test.ru","code":"1"}' >/dev/null 2>&1 && exit 1 || true
 gm() { curl -fsS -H "Authorization: Bearer $GM" "$@" || { echo "!!! gm request failed: $*" >&2; curl -s -H "Authorization: Bearer $GM" "$@" >&2; echo >&2; return 1; }; }
 pl() { curl -fsS -H "Authorization: Bearer $PL" "$@" || { echo "!!! pl request failed: $*" >&2; curl -s -H "Authorization: Bearer $PL" "$@" >&2; echo >&2; return 1; }; }
 
