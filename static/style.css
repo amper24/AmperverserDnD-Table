@@ -349,3 +349,11 @@ button.primary, .btn.primary { font-weight: 600; }
 [data-theme="light"] .hero h1, [data-theme="light"] h1, [data-theme="light"] h2 { color: var(--text); }
 .topbar .btn.small, .topbar button.small, .userbox button, .theme-btn { height: 30px; line-height: 28px; padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; font-size: 13px; vertical-align: middle; }
 .topbar > span { display: inline-flex; align-items: center; gap: 8px; }
+/* ---- администрирование ---- */
+.mainnav a.root { color: var(--accent); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat b { font-size: 22px; display: block; margin-top: 2px; }
+.tbl { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.tbl th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tr:last-child td { border-bottom: none; }

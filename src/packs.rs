@@ -37,9 +37,13 @@ async fn fetch(st: &AppState, pid: &str) -> ApiResult<sqlx::any::AnyRow> {
     sqlx::query("SELECT * FROM packs WHERE id = ?").bind(pid).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Набор не найден"))
 }
 
-pub async fn require_owner(st: &AppState, pid: &str, uid: &str) -> ApiResult<()> {
+/// Владелец набора или root.
+pub async fn require_owner(st: &AppState, pid: &str, user: &AuthUser) -> ApiResult<()> {
     let r = fetch(st, pid).await?;
-    if r.get::<String, _>("owner_id") != uid {
+    if user.is_root {
+        return Ok(());
+    }
+    if r.get::<String, _>("owner_id") != user.id {
         return Err(AppError::forbidden("Это не ваш набор"));
     }
     Ok(())
@@ -89,14 +93,14 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(pid): Path<Str
 }
 
 async fn update(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>, Json(body): Json<PackIn>) -> ApiResult<Json<Value>> {
-    require_owner(&st, &pid, &user.id).await?;
+    require_owner(&st, &pid, &user).await?;
     sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ? WHERE id = ?")
         .bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(&pid).execute(&st.db).await?;
     Ok(Json(pack_json(&fetch(&st, &pid).await?, json!({ "mine": true }))))
 }
 
 async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
-    require_owner(&st, &pid, &user.id).await?;
+    require_owner(&st, &pid, &user).await?;
     sqlx::query("DELETE FROM compendium WHERE pack_id = ?").bind(&pid).execute(&st.db).await?;
     sqlx::query("DELETE FROM campaign_packs WHERE pack_id = ?").bind(&pid).execute(&st.db).await?;
     sqlx::query("DELETE FROM packs WHERE id = ?").bind(&pid).execute(&st.db).await?;

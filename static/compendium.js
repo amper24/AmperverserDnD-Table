@@ -46,7 +46,8 @@ window.Compendium = (function () {
     if (d.features) { wrap.append(el('h3', { style: 'margin-top:12px' }, 'Умения по уровням')); Object.entries(d.features).forEach(([lvl, fs]) => wrap.append(el('p', {}, el('b', {}, lvl + ' ур.: '), fs.join(', ')))); }
     // --- действия с записью ---
     const btns = el('div', { class: 'row', style: 'margin-top:12px;flex-wrap:wrap;gap:4px' });
-    const canEdit = (e.pack_id && (opts.packMine || e._mine)) || (e.campaign_id && (window.TABLE_CTX?.isGM || opts.isGM));
+    const isRoot = !!window.ME?.is_root;
+    const canEdit = isRoot || (e.pack_id && (opts.packMine || e._mine)) || (e.campaign_id && (window.TABLE_CTX?.isGM || opts.isGM));
     if (canEdit) btns.append(el('button', { class: 'small', onclick: () => editEntry(e, { campaignId: e.campaign_id, packId: e.pack_id, onSaved: opts.onChanged }) }, 'Редактировать'),
       el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить запись?')) { await API.del('/api/compendium/' + e.id); opts.onChanged && opts.onChanged(); } } }, 'Удалить'));
     btns.append(el('button', { class: 'small', onclick: () => copyTo(e, opts) }, 'Копировать в набор…'));
@@ -57,11 +58,12 @@ window.Compendium = (function () {
 
   async function copyTo(e, opts = {}) {
     const packs = await myPacks(true);
-    const sel = el('select', {}, ...packs.map(p => el('option', { value: p.id }, p.name)), opts.campaignId && opts.isGM ? el('option', { value: 'campaign' }, '— homebrew этой кампании') : null, el('option', { value: 'new' }, '+ Новый набор…'));
+    const sel = el('select', {}, ...packs.map(p => el('option', { value: p.id }, p.name)), opts.campaignId && opts.isGM ? el('option', { value: 'campaign' }, '— homebrew этой кампании') : null, window.ME?.is_root ? el('option', { value: 'base' }, '— базовый справочник (root)') : null, el('option', { value: 'new' }, '+ Новый набор…'));
     const ok = await modal(`Копировать «${e.name}»`, el('div', { class: 'field' }, el('label', {}, 'Куда'), sel), [{ label: 'Копировать', cls: 'primary', fn: () => sel.value }]);
     if (!ok) return;
     let body = { category: e.category, name: e.name, data: e.data };
     if (ok === 'campaign') body.campaign_id = opts.campaignId;
+    else if (ok === 'base') { /* без campaign_id и pack_id — только root */ }
     else if (ok === 'new') { const n = await prompt2('Название набора'); if (!n) return; const p = await API.post('/api/packs', { name: n }); packsCache = null; body.pack_id = p.id; }
     else body.pack_id = ok;
     await API.post('/api/compendium', body); toast('Скопировано'); opts.onChanged && opts.onChanged();
@@ -73,12 +75,13 @@ window.Compendium = (function () {
     if (!e) {
       const cat = el('select', {}, ...Object.entries(CAT_NAMES).map(([k, v]) => el('option', { value: k, selected: category === k ? '' : null }, v)));
       const packs = await myPacks();
-      const dest = el('select', {}, o.packId ? el('option', { value: 'pack:' + o.packId, selected: '' }, 'этот набор') : null, o.campaignId && o.isGM ? el('option', { value: 'campaign:' + o.campaignId }, 'Homebrew этой кампании') : null, ...packs.filter(p => p.id !== o.packId).map(p => el('option', { value: 'pack:' + p.id }, 'Набор: ' + p.name)), el('option', { value: 'new' }, '+ Новый набор…'));
+      const dest = el('select', {}, o.packId ? el('option', { value: 'pack:' + o.packId, selected: '' }, 'этот набор') : null, o.campaignId && o.isGM ? el('option', { value: 'campaign:' + o.campaignId }, 'Homebrew этой кампании') : null, ...packs.filter(p => p.id !== o.packId).map(p => el('option', { value: 'pack:' + p.id }, 'Набор: ' + p.name)), window.ME?.is_root ? el('option', { value: 'base' }, 'Базовый справочник (root)') : null, el('option', { value: 'new' }, '+ Новый набор…'));
       const ok = await modal('Новая запись', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Категория'), cat), el('div', { class: 'field' }, el('label', {}, 'Сохранить в'), dest)), [{ label: 'Далее', cls: 'primary', fn: () => ({ cat: cat.value, dest: dest.value }) }]);
       if (!ok) return;
       category = ok.cat;
       if (ok.dest === 'new') { const n = await prompt2('Название набора'); if (!n) return; const p = await API.post('/api/packs', { name: n }); packsCache = null; o = { ...o, packId: p.id, campaignId: null }; }
       else if (ok.dest.startsWith('pack:')) o = { ...o, packId: ok.dest.slice(5), campaignId: null };
+      else if (ok.dest === 'base') o = { ...o, packId: null, campaignId: null };
       else o = { ...o, packId: null, campaignId: ok.dest.slice(9) };
     }
     let result;

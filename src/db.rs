@@ -176,6 +176,7 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE compendium ADD COLUMN name_lc VARCHAR(128) NULL",
     "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL",
     "ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0",
 ];
 
 const INDEXES: &[&str] = &[

@@ -33,6 +33,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
       DEV_SHOW_CODE: ${DEV_SHOW_CODE:-true}
+      ROOT_EMAIL: ${ROOT_EMAIL:-}
+      ROOT_PASSWORD: ${ROOT_PASSWORD:-}
 
 volumes:
   dnd_mysql:

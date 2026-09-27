@@ -36,6 +36,8 @@
     { "name": "SMTP user", "description": "", "env_variable": "SMTP_USER", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
     { "name": "SMTP password", "description": "", "env_variable": "SMTP_PASSWORD", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
     { "name": "SMTP from", "description": "Адрес отправителя", "env_variable": "SMTP_FROM", "default_value": "noreply@example.com", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
+    { "name": "Почта root", "description": "Email администратора сервера — аккаунт создаётся при старте (нужен и пароль)", "env_variable": "ROOT_EMAIL", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:255", "field_type": "text" },
+    { "name": "Пароль root", "description": "Пароль администратора (минимум 8 символов)", "env_variable": "ROOT_PASSWORD", "default_value": "", "user_viewable": false, "user_editable": true, "rules": "nullable|string|max:255", "field_type": "text" },
     { "name": "Показывать код в API (dev)", "description": "true/false — отдавать код входа в ответе API, если SMTP не настроен", "env_variable": "DEV_SHOW_CODE", "default_value": "true", "user_viewable": true, "user_editable": true, "rules": "required|string|in:true,false", "field_type": "text" }
   ]
 }

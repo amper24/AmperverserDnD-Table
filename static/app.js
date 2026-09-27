@@ -4,6 +4,7 @@
   const APP_NAME = 'Edge Tablet';
   let me = null;
   try { me = await API.get('/api/auth/me'); } catch { me = null; }
+  window.ME = me;
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
   const joinMatch = path.match(/^\/join\/([\w-]+)/);
@@ -20,6 +21,7 @@
   if (path === '/login' || path === '/register') { renderAuth(path === '/register' ? 'register' : 'login'); return; }
   if (joinMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderJoin(joinMatch[1]); return; }
   if (campMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderCampaign(campMatch[1]); return; }
+  if (path === '/admin') { if (!me) { location.replace('/login?next=/admin'); return; } renderAdmin(); return; }
   if (SECTIONS[path]) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderSection(SECTIONS[path]); return; }
   if (!me) renderLanding(); else renderHome();
 
@@ -27,7 +29,7 @@
   function brand() { return el('a', { href: '/', class: 'brand' }, APP_NAME); }
   function topbar(active) {
     const nav = el('nav', { class: 'mainnav' }, ...Object.entries({ camps: ['Кампании', '/campaigns'], chars: ['Персонажи', '/characters'], comp: ['Справочник', '/compendium'], library: ['Библиотека', '/library'], packs: ['Наборы', '/packs'] })
-      .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)));
+      .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)), me?.is_root ? el('a', { href: '/admin', class: (active === 'admin' ? 'active ' : '') + 'root' }, 'Админ') : null);
     return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
       me ? el('span', { class: 'userbox' }, el('button', { class: 'link', title: 'Изменить имя', onclick: async () => { const n = await prompt2('Ваше имя', '', me.name); if (n) { await API.patch('/api/auth/me', { name: n }); location.reload(); } } }, me.name),
         el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'))
@@ -124,6 +126,43 @@
     two.append(cl, ch); page.append(two);
   }
 
+  // ================= Администрирование (root) =================
+  async function renderAdmin() {
+    app.innerHTML = ''; document.title = 'Администрирование — ' + APP_NAME;
+    const page = el('div', { class: 'page' });
+    app.append(topbar('admin'), page);
+    if (!me.is_root) { page.append(el('h1', {}, 'Нет доступа'), el('p', { class: 'muted' }, 'Нужны права root. Выдать их можно из консоли: ', el('code', {}, 'dnd-table users make-root ' + me.email))); return; }
+    const stats = await API.get('/api/admin/stats');
+    const statRow = el('div', { class: 'stats' }, ...[['Пользователи', stats.users], ['Кампании', stats.campaigns], ['Персонажи', stats.characters], ['Ассеты', stats.assets + ' (встр. ' + stats.assets_builtin + ')'], ['Базовый справочник', stats.compendium_base], ['Наборы', stats.packs]]
+      .map(([k, v]) => el('div', { class: 'card stat' }, el('div', { class: 'muted small' }, k), el('b', {}, v))));
+    page.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Администрирование'),
+      el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { if (confirm('Удалить все базовые записи справочника и залить их заново из встроенного набора? Ваши правки базовых записей будут потеряны.')) { const r = await API.post('/api/admin/reseed'); toast('Справочник пересоздан: ' + r.entries + ' записей'); } } }, 'Пересоздать базовый справочник')), statRow);
+    page.append(el('p', { class: 'muted small' }, 'Как root вы можете редактировать и удалять записи базового справочника и любых наборов прямо в разделе «Справочник», а в «Библиотеке ресурсов» — загружать встроенные ассеты и удалять любые.'));
+    // пользователи
+    const tbl = el('table', { class: 'tbl' });
+    const box = el('div', { class: 'card', style: 'margin-top:16px' }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, 'Пользователи'),
+      el('button', { class: 'primary small', style: 'flex:0', onclick: async () => {
+        const email = el('input', { type: 'email', placeholder: 'email' }), pw = el('input', { type: 'password', placeholder: 'пароль (8+)' }), name = el('input', { placeholder: 'имя' }), root = el('input', { type: 'checkbox', style: 'width:auto' });
+        const ok = await modal('Новый пользователь', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Почта'), email), el('div', { class: 'field' }, el('label', {}, 'Пароль'), pw), el('div', { class: 'field' }, el('label', {}, 'Имя'), name), el('label', {}, root, ' root')), [{ label: 'Создать', cls: 'primary', fn: () => ({ email: email.value, password: pw.value, name: name.value, is_root: root.checked }) }]);
+        if (!ok) return; try { await API.post('/api/admin/users', ok); toast('Создан'); refresh(); } catch (e) { toast('Ошибка: ' + e.message, 4000); }
+      } }, 'Создать')), tbl);
+    page.append(box);
+    async function refresh() {
+      const users = await API.get('/api/admin/users');
+      tbl.innerHTML = '';
+      tbl.append(el('tr', {}, ...['Почта', 'Имя', 'Root', 'Подтв.', 'Создан', ''].map(h => el('th', {}, h))));
+      for (const u of users) {
+        const rootCb = el('input', { type: 'checkbox', style: 'width:auto', checked: u.is_root ? '' : null, onchange: async e => { try { await API.patch('/api/admin/users/' + u.id, { is_root: e.target.checked }); if (u.id === me.id && !e.target.checked) location.reload(); } catch (err) { toast(err.message, 4000); e.target.checked = !e.target.checked; } } });
+        tbl.append(el('tr', {}, el('td', {}, u.email, u.id === me.id ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'вы') : null), el('td', {}, u.name), el('td', {}, rootCb), el('td', {}, u.verified ? 'да' : 'нет'), el('td', { class: 'muted small' }, u.created_at.slice(0, 10)),
+          el('td', { style: 'text-align:right;white-space:nowrap' },
+            el('button', { class: 'small', title: 'Сменить пароль', onclick: async () => { const p = await prompt2('Новый пароль для ' + u.email); if (p) { try { await API.patch('/api/admin/users/' + u.id, { password: p }); toast('Пароль обновлён'); } catch (e) { toast(e.message, 4000); } } } }, icon('lock')), ' ',
+            el('button', { class: 'small', title: 'Переименовать', onclick: async () => { const n = await prompt2('Имя', '', u.name); if (n) { await API.patch('/api/admin/users/' + u.id, { name: n }); refresh(); } } }, icon('edit')), ' ',
+            u.id !== me.id ? el('button', { class: 'small danger', title: 'Удалить', onclick: async () => { if (confirm('Удалить ' + u.email + ' вместе с его кампаниями и персонажами?')) { await API.del('/api/admin/users/' + u.id); refresh(); } } }, icon('trash')) : null)));
+      }
+    }
+    refresh();
+  }
+
   // ================= Присоединение =================
   async function renderJoin(codeStr) {
     app.innerHTML = '';
@@ -182,8 +221,9 @@
     const upKind = el('select', {}, ...[['token', 'Токен'], ['map', 'Карта'], ['prop', 'Объект'], ['portrait', 'Портрет']].map(([k, v]) => el('option', { value: k }, v)));
     const file = el('input', { type: 'file', accept: 'image/*', multiple: '', class: 'hidden' });
     const showBuiltin = el('input', { type: 'checkbox', style: 'width:auto' });
+    const asBuiltin = el('input', { type: 'checkbox', style: 'width:auto' });
     const grid = el('div', { class: 'asset-grid' });
-    wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px;flex-wrap:wrap' }, el('h1', { style: 'flex:1' }, 'Библиотека ресурсов'), kindSel, el('label', { class: 'muted small', style: 'flex:0;white-space:nowrap' }, showBuiltin, ' встроенные'), upKind, el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: () => file.click() }, 'Загрузить'), file),
+    wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px;flex-wrap:wrap' }, el('h1', { style: 'flex:1' }, 'Библиотека ресурсов'), kindSel, el('label', { class: 'muted small', style: 'flex:0;white-space:nowrap' }, showBuiltin, ' встроенные'), me.is_root ? el('label', { class: 'muted small', style: 'flex:0;white-space:nowrap', title: 'Загрузить как встроенный (виден всем)' }, asBuiltin, ' как встроенный') : null, upKind, el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: () => file.click() }, 'Загрузить'), file),
       el('p', { class: 'muted small' }, 'Изображения сжимаются в WebP и хранятся в базе. Ресурсы доступны во всех ваших кампаниях — перетаскивайте их на стол из панели «Ассеты».'), grid);
     async function refresh() {
       const list = await API.get('/api/assets' + (kindSel.value ? '?kind=' + kindSel.value : ''));
@@ -193,11 +233,11 @@
       for (const a of shown) {
         const im = el('div', { class: 'thumb' });
         assetURL(a.id).then(u => im.append(el('img', { src: u })));
-        grid.append(el('div', { class: 'asset' }, im, el('div', { class: 'row' }, el('span', { class: 'grow ellipsis', title: a.name }, a.name), a.builtin ? el('span', { class: 'badge' }, 'встроенный') : el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить?')) { await API.del('/api/assets/' + a.id); refresh(); } } }, icon('trash'))),
+        grid.append(el('div', { class: 'asset' }, im, el('div', { class: 'row' }, el('span', { class: 'grow ellipsis', title: a.name }, a.name), a.builtin ? el('span', { class: 'badge' }, 'встроенный') : null, (!a.builtin || me.is_root) ? el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить?')) { await API.del('/api/assets/' + a.id); refresh(); } } }, icon('trash')) : null),
           el('div', { class: 'muted small' }, `${{ map: 'карта', token: 'токен', prop: 'объект', portrait: 'портрет' }[a.kind] || a.kind} · ${a.width}×${a.height}`)));
       }
     }
-    file.addEventListener('change', async () => { for (const f of file.files) { const fd = new FormData(); fd.append('file', f); fd.append('name', f.name.replace(/\.[^.]+$/, '')); fd.append('kind', upKind.value); toast('Загрузка ' + f.name + '…'); await API.upload('/api/assets', fd); } file.value = ''; refresh(); });
+    file.addEventListener('change', async () => { for (const f of file.files) { const fd = new FormData(); fd.append('file', f); fd.append('name', f.name.replace(/\.[^.]+$/, '')); fd.append('kind', upKind.value); if (me.is_root && asBuiltin.checked) fd.append('builtin', '1'); toast('Загрузка ' + f.name + '…'); await API.upload('/api/assets', fd); } file.value = ''; refresh(); });
     kindSel.addEventListener('change', refresh); showBuiltin.addEventListener('change', refresh);
     refresh();
     return wrap;

@@ -1,4 +1,5 @@
 //! Edge Tablet — сервер виртуального стола (axum + sqlx, MySQL/SQLite).
+mod admin;
 mod assets;
 mod auth;
 mod campaigns;
@@ -52,12 +53,20 @@ async fn main() -> anyhow::Result<()> {
     let (db, is_sqlite) = db::connect(&cfg.database_url).await?;
     db::migrate(&db, is_sqlite).await?;
     seed::seed(&db).await?;
+    admin::ensure_root_from_env(&db).await?;
+
+    // CLI-команды администрирования (dnd-table users ..., stats, reseed)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if admin::run_cli(&db, &args).await? {
+        return Ok(());
+    }
 
     let state = AppState { db, cfg: cfg.clone(), hub: realtime::Hub::default(), is_sqlite };
 
     let app = Router::new()
         .route("/api/health", get(|| async { axum::Json(serde_json::json!({"ok": true})) }))
         .merge(auth::router())
+        .merge(admin::router())
         .merge(campaigns::router())
         .merge(scenes::router())
         .merge(assets::router())

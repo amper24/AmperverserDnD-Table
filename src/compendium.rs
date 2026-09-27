@@ -87,9 +87,9 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
         return Err(AppError::bad("Неизвестная категория"));
     }
     let source = match (&body.campaign_id, &body.pack_id) {
-        (_, Some(pid)) => { packs::require_owner(&st, pid, &user.id).await?; let p = sqlx::query("SELECT name FROM packs WHERE id = ?").bind(pid).fetch_one(&st.db).await?; util::truncate(&p.get::<String, _>("name"), 32) }
+        (_, Some(pid)) => { packs::require_owner(&st, pid, &user).await?; let p = sqlx::query("SELECT name FROM packs WHERE id = ?").bind(pid).fetch_one(&st.db).await?; util::truncate(&p.get::<String, _>("name"), 32) }
         (Some(cid), None) => { require_gm(&st, cid, &user.id).await?; "Homebrew".to_string() }
-        (None, None) => return Err(AppError::bad("Укажите кампанию или набор")),
+        (None, None) => { user.require_root().map_err(|_| AppError::bad("Укажите кампанию или набор"))?; "SRD".to_string() }
     };
     let id = util::uid();
     let campaign_id = if body.pack_id.is_some() { None } else { body.campaign_id.clone() };
@@ -104,10 +104,13 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
 async fn editable(st: &AppState, id: &str, user: &AuthUser) -> ApiResult<()> {
     let r = sqlx::query("SELECT campaign_id, pack_id FROM compendium WHERE id = ?").bind(id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Запись не найдена"))?;
     if let Some(pid) = r.get::<Option<String>, _>("pack_id") {
-        return packs::require_owner(st, &pid, &user.id).await;
+        return packs::require_owner(st, &pid, &user).await;
     }
     if let Some(cid) = r.get::<Option<String>, _>("campaign_id") {
         require_gm(st, &cid, &user.id).await?;
+        return Ok(());
+    }
+    if user.is_root {
         return Ok(());
     }
     Err(AppError::forbidden("Базовые записи нельзя менять — скопируйте в свой набор"))

@@ -17,7 +17,7 @@ struct Entry { category: String, slug: String, name: String, data: serde_json::V
 struct BuiltinAsset { file: String, name: String, kind: String }
 
 pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
-    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL").fetch_one(pool).await?.get("n");
+    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").fetch_one(pool).await?.get("n");
     if n == 0 {
         let raw = SeedFiles::get("compendium.json").ok_or_else(|| anyhow::anyhow!("compendium.json не вшит"))?;
         let entries: Vec<Entry> = serde_json::from_slice(&raw.data)?;

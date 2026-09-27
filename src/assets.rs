@@ -59,6 +59,7 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
     let mut name = String::new();
     let mut kind = "token".to_string();
     let mut campaign_id: Option<String> = None;
+    let mut builtin = false;
     while let Some(field) = mp.next_field().await.map_err(|e| AppError::bad(e.to_string()))? {
         match field.name().unwrap_or("") {
             "file" => {
@@ -72,10 +73,15 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
             "name" => name = field.text().await.unwrap_or_default(),
             "kind" => kind = field.text().await.unwrap_or_else(|_| "token".into()),
             "campaign_id" => { let v = field.text().await.unwrap_or_default(); if !v.is_empty() { campaign_id = Some(v); } }
+            "builtin" => { let v = field.text().await.unwrap_or_default(); builtin = v == "1" || v == "true"; }
             _ => {}
         }
     }
     let (fname, bytes) = file.ok_or_else(|| AppError::bad("Нет файла"))?;
+    if builtin {
+        user.require_root()?;
+        campaign_id = None;
+    }
     if let Some(cid) = &campaign_id {
         get_member(&st, cid, &user.id).await?;
     }
@@ -89,12 +95,12 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
         .map_err(|_| AppError::bad("Не удалось прочитать изображение"))?;
     let id = util::uid();
     let name = if name.trim().is_empty() { fname.rsplit_once('.').map(|(n, _)| n.to_string()).unwrap_or(fname) } else { name };
-    sqlx::query("INSERT INTO assets (id, campaign_id, owner_id, name, kind, mime, width, height, encoding, data_b64, builtin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        .bind(&id).bind(&campaign_id).bind(&user.id).bind(util::truncate(&name, 128)).bind(&kind).bind(&info.mime).bind(info.width).bind(info.height).bind(&info.encoding).bind(&info.data_b64).bind(util::now())
+    sqlx::query("INSERT INTO assets (id, campaign_id, owner_id, name, kind, mime, width, height, encoding, data_b64, builtin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&campaign_id).bind(&user.id).bind(util::truncate(&name, 128)).bind(&kind).bind(&info.mime).bind(info.width).bind(info.height).bind(&info.encoding).bind(&info.data_b64).bind(if builtin { 1i64 } else { 0i64 }).bind(util::now())
         .execute(&st.db).await?;
     Ok(Json(json!({
         "id": id, "name": name, "kind": kind, "mime": info.mime, "width": info.width, "height": info.height, "encoding": info.encoding,
-        "builtin": false, "campaign_id": campaign_id, "raw_size": info.raw_size, "stored_size": info.stored_size,
+        "builtin": builtin, "campaign_id": campaign_id, "raw_size": info.raw_size, "stored_size": info.stored_size,
     })))
 }
 
@@ -115,11 +121,11 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(aid): Path<Str
 
 async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(aid): Path<String>) -> ApiResult<Json<Value>> {
     let r = sqlx::query("SELECT builtin, owner_id, campaign_id FROM assets WHERE id = ?").bind(&aid).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Ассет не найден"))?;
-    if r.get::<i64, _>("builtin") != 0 {
-        return Err(AppError::not_found("Встроенный ассет нельзя удалить"));
+    if r.get::<i64, _>("builtin") != 0 && !user.is_root {
+        return Err(AppError::forbidden("Встроенный ассет может удалить только root"));
     }
     let owner: Option<String> = r.get("owner_id");
-    if owner.as_deref() != Some(&user.id) {
+    if owner.as_deref() != Some(&user.id) && !user.is_root {
         match r.get::<Option<String>, _>("campaign_id") {
             Some(cid) => { if !get_member(&st, &cid, &user.id).await?.is_gm() { return Err(AppError::forbidden("Нет прав")); } }
             None => return Err(AppError::forbidden("Нет прав")),

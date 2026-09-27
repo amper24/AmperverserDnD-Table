@@ -24,6 +24,14 @@ pub struct AuthUser {
     pub id: String,
     pub email: String,
     pub name: String,
+    pub is_root: bool,
+}
+
+impl AuthUser {
+    /// Требует права root (администратор сервера).
+    pub fn require_root(&self) -> ApiResult<()> {
+        if self.is_root { Ok(()) } else { Err(AppError::forbidden("Требуются права root")) }
+    }
 }
 
 #[async_trait]
@@ -37,11 +45,11 @@ impl FromRequestParts<AppState> for AuthUser {
 }
 
 pub async fn user_by_token(st: &AppState, token: &str) -> ApiResult<Option<AuthUser>> {
-    let row = sqlx::query("SELECT u.id, u.email, u.name FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
+    let row = sqlx::query("SELECT u.id, u.email, u.name, u.is_root FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
         .bind(token)
         .fetch_optional(&st.db)
         .await?;
-    Ok(row.map(|r| AuthUser { id: r.get("id"), email: r.get("email"), name: r.get("name") }))
+    Ok(row.map(|r| AuthUser { id: r.get("id"), email: r.get("email"), name: r.get("name"), is_root: r.get::<i64, _>("is_root") != 0 }))
 }
 
 pub fn router() -> Router<AppState> {
@@ -146,7 +154,7 @@ async fn consume_code(st: &AppState, email: &str, code: &str) -> ApiResult<()> {
     Ok(())
 }
 
-fn hash_password(pw: &str) -> ApiResult<String> {
+pub fn hash_password(pw: &str) -> ApiResult<String> {
     use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
     let salt = SaltString::generate(&mut OsRng);
     argon2::Argon2::default().hash_password(pw.as_bytes(), &salt).map(|h| h.to_string()).map_err(|_| AppError::internal("Ошибка хэширования"))
@@ -280,7 +288,7 @@ async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<Res
 }
 
 async fn me(user: AuthUser) -> Json<serde_json::Value> {
-    Json(json!({ "id": user.id, "email": user.email, "name": user.name }))
+    Json(json!({ "id": user.id, "email": user.email, "name": user.name, "is_root": user.is_root }))
 }
 
 #[derive(Deserialize)]

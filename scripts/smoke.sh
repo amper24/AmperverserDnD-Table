@@ -144,3 +144,24 @@ echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]
 gm -X DELETE "$B/api/campaigns/$CID" | grep -q '"ok":true'
 echo "SMOKE OK"
+
+echo "[9] root: CLI + права на базовый справочник"
+"$BIN" users create root@test.ru rootpass123 --name Root --root | grep -q root
+"$BIN" users list | grep -q "root@test.ru"
+"$BIN" stats | grep -q "Пользователи"
+RT=$(curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"root@test.ru","password":"rootpass123"}' | J "d['token']")
+rt() { curl -fsS -H "Authorization: Bearer $RT" "$@" || { echo "!!! root request failed: $*" >&2; curl -s -H "Authorization: Bearer $RT" "$@" >&2; echo >&2; return 1; }; }
+rt "$B/api/auth/me" | J "d['is_root']" | grep -q True
+[ "$(gm "$B/api/auth/me" | J "d['is_root']")" = "False" ]
+BASE=$(gm "$B/api/compendium?category=race" | J "d[0]['id']")
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X PATCH "$B/api/compendium/$BASE" -H 'content-type: application/json' -d '{"category":"race","name":"Хак","data":{}}'); [ "$code" = "403" ]
+rt -X PATCH "$B/api/compendium/$BASE" -H 'content-type: application/json' -d '{"category":"race","name":"Дварф (правка root)","data":{"desc":"ok"}}' | J "d['name']" | grep -q "правка root"
+rt -X POST "$B/api/compendium" -H 'content-type: application/json' -d '{"category":"item","name":"Базовый предмет root","data":{"type":"weapon"}}' | J "d['source']" | grep -q SRD
+[ "$(rt "$B/api/admin/users" | J "len(d)")" -ge 3 ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" "$B/api/admin/users"); [ "$code" = "403" ]
+NU=$(rt -X POST "$B/api/admin/users" -H 'content-type: application/json' -d '{"email":"new@test.ru","password":"password123","name":"Новый"}' | J "d['id']")
+rt -X PATCH "$B/api/admin/users/$NU" -H 'content-type: application/json' -d '{"is_root":true}' | J "d['is_root']" | grep -q True
+rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
+("$BIN" users revoke-root root@test.ru 2>&1 || true) | grep -q "единственный"
+rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep -q 191
+echo "SMOKE OK (root)"
