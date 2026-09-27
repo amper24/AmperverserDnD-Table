@@ -90,7 +90,7 @@ async def main():
         got=[x for x in await drain(g) if x["type"]=="item_upsert"][0]["item"]["data"]
         assert got["x"]==140 and got["name"]=="Гоблин", got
         await p.send(json.dumps({"type":"chat","text":"/r 2d20kh1+5"}))
-        r=[x for x in await drain(g) if x["type"]=="chat"][0]; assert r["kind"]=="roll" and 6<=r["payload"]["total"]<=25, r
+        r=[x for x in await drain(g) if x["type"]=="chat"][0]; assert r["kind"]=="roll" and 6<=r["payload"]["total"]<=25, r; await drain(p)
         await g.send(json.dumps({"type":"roll","expr":"d20","gm_only":True}))
         assert not [x for x in await drain(p) if x["type"]=="chat"], "игрок увидел скрытый бросок"
         assert [x for x in await drain(g) if x["type"]=="chat"]
