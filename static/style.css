@@ -447,3 +447,30 @@ label.radio .muted { font-weight: 400; }
 .feat-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
 .feat-text { margin: 4px 0 8px 12px; font-size: 13px; }
 select.small { padding: 4px 6px; font-size: 12px; }
+
+/* ---- Мастерская наборов ---- */
+.packs { display: grid; grid-template-columns: 260px 1fr; gap: 14px; min-height: calc(100vh - 120px); }
+.packs-side { border-right: 1px solid var(--border); padding-right: 12px; }
+.packs-side .item.active { border-color: var(--accent); }
+.packs-main { min-width: 0; display: flex; flex-direction: column; }
+.pack-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.pack-cover { width: 96px; height: 96px; flex: 0 0 auto; border-radius: var(--radius); background: var(--panel2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); }
+.pack-cover.small { width: 56px; height: 56px; }
+.pack-cover img { width: 100%; height: 100%; object-fit: cover; }
+.pack-work { display: grid; grid-template-columns: 200px 280px 1fr; gap: 10px; flex: 1; min-height: 0; height: calc(100vh - 300px); }
+.pack-folders { overflow-y: auto; border-right: 1px solid var(--border); padding-right: 6px; }
+.pack-folder { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+.pack-folder:hover { background: var(--panel2); }
+.pack-folder.active { background: var(--accent-soft); color: var(--accent); }
+.pack-folder .folder-menu { display: none; gap: 2px; }
+.pack-folder:hover .folder-menu { display: inline-flex; }
+.pack-folder-h { display: flex; align-items: center; margin: 10px 0 2px; padding: 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.pack-list { display: flex; flex-direction: column; min-height: 0; }
+.pack-det { overflow-y: auto; padding: 4px 8px; }
+.pack-det table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.pack-det td { padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.pack-det td:first-child { color: var(--muted); width: 130px; }
+button.ghost { background: transparent; border: none; padding: 0 4px; color: var(--muted); }
+button.ghost:hover { color: var(--text); }
+.pack-card { display: flex; flex-direction: column; }
+@media (max-width: 900px) { .packs { grid-template-columns: 1fr; } .packs-side { border-right: none; padding-right: 0; } .pack-work { grid-template-columns: 1fr; height: auto; } }

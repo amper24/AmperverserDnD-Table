@@ -366,12 +366,45 @@ window.Modules = (function () {
     return modal(opts.title || (feature ? 'Изменить умение' : 'Новое умение'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => { const um = +usesMax.value; d.uses = um > 0 ? { cur: Math.min(d.uses?.cur ?? um, um), max: um, recharge: recharge.value } : null; return d; } }], { wide: true });
   }
   /// Универсальный редактор записи справочника для остальных категорий (черты/состояния/монстры/расы…): поля + JSON.
-  function editGeneric(entry, category) {
+  function editGeneric(entry, category, gopts = {}) {
     const d = JSON.parse(JSON.stringify(entry?.data || { desc: '' }));
+    if (gopts.folder && !d.folder) d.folder = gopts.folder;
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const state = { name: entry?.name || '' };
     const json = el('textarea', { style: 'min-height:160px;font-family:monospace;font-size:12px' }, JSON.stringify(d, null, 2));
-    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })), visualsRow(d, { tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }), f('Описание', descEditor(d)));
+    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })), visualsRow(d, { tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }));
+    if (gopts.folders && gopts.folders.length) simple.append(f('Папка в наборе', el('select', { onchange: e => { if (e.target.value) d.folder = e.target.value; else delete d.folder; } }, el('option', { value: '' }, '— без папки'), ...gopts.folders.map(x => el('option', { value: x, selected: d.folder === x ? '' : null }, x)))));
+    if (category === 'npc') {
+      simple.append(el('div', { class: 'row' }, f('Роль', el('input', { value: d.role || '', placeholder: 'трактирщик, капитан стражи…', oninput: e => d.role = e.target.value })), f('Раса', el('input', { value: d.race || '', oninput: e => d.race = e.target.value })), f('Фракция', el('input', { value: d.faction || '', oninput: e => d.faction = e.target.value })),
+        f('Отношение', el('select', { onchange: e => d.attitude = e.target.value }, ...['', 'дружелюбный', 'нейтральный', 'враждебный'].map(x => el('option', { value: x, selected: (d.attitude || '') === x ? '' : null }, x || '—'))))),
+        el('div', { class: 'row' }, f('Место', el('input', { value: d.location || '', placeholder: 'где встретить', oninput: e => d.location = e.target.value })), f('Голос и манеры', el('input', { value: d.voice || '', placeholder: 'как отыгрывать', oninput: e => d.voice = e.target.value }))));
+    }
+    simple.append(f('Описание', descEditor(d)));
+    if (category === 'npc') {
+      simple.append(f('Зацепки для игроков (что может дать/попросить)', el('textarea', { style: 'min-height:60px', oninput: e => d.hooks = e.target.value }, d.hooks || '')),
+        f('Секреты мастера (игроки не видят)', el('textarea', { style: 'min-height:60px', oninput: e => d.secrets = e.target.value }, d.secrets || '')),
+        f('Добыча / имущество', el('input', { value: d.loot || '', oninput: e => d.loot = e.target.value })));
+      const sb = el('input', { type: 'checkbox', style: 'width:auto', checked: d.abilities ? '' : null });
+      const sbBox = el('div', { style: d.abilities ? '' : 'display:none' });
+      sb.addEventListener('change', () => { if (sb.checked) { d.abilities ||= { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }; d.ac ||= 10; d.hp ||= '4 (1к8)'; sbBox.style.display = ''; sbBox.innerHTML = ''; sbBox.append(statBlock()); } else { delete d.abilities; delete d.ac; delete d.hp; delete d.actions; sbBox.style.display = 'none'; } });
+      simple.append(el('label', {}, sb, ' Боевой статблок (КД, хиты, характеристики, атаки)'), sbBox);
+      if (d.abilities) sbBox.append(statBlock());
+    }
+    if (category === 'lore') {
+      simple.append(el('div', { class: 'row' }, f('Тип', el('select', { onchange: e => d.kind = e.target.value }, ...[['', '—'], ['rule', 'Правило'], ['place', 'Место'], ['faction', 'Фракция'], ['event', 'Событие'], ['deity', 'Божество'], ['other', 'Другое']].map(([k, v]) => el('option', { value: k, selected: (d.kind || '') === k ? '' : null }, v)))), f('Теги', el('input', { value: d.tags || '', placeholder: 'через запятую', oninput: e => d.tags = e.target.value }))),
+        f('Заметки мастера (игроки не видят)', el('textarea', { style: 'min-height:60px', oninput: e => d.secrets = e.target.value }, d.secrets || '')));
+    }
+    function statBlock() {
+      const box = el('div');
+      box.append(el('div', { class: 'row' }, f('КД', el('input', { type: 'number', value: d.ac || 10, oninput: e => d.ac = +e.target.value })), f('Хиты', el('input', { value: d.hp || '', placeholder: '22 (3к8+9)', oninput: e => d.hp = e.target.value })), f('Скорость', el('input', { value: d.speed || '30 фт', oninput: e => d.speed = e.target.value })), f('Опасность', el('input', { value: d.cr || '0', oninput: e => d.cr = e.target.value }))));
+      d.abilities ||= { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+      box.append(el('div', { class: 'row' }, ...Object.keys(ABIL).map(k => f(ABIL[k].slice(0, 3), el('input', { type: 'number', value: d.abilities[k], oninput: e => d.abilities[k] = +e.target.value })))));
+      d.actions ||= [];
+      const acts = el('div');
+      const renderActs = () => { acts.innerHTML = ''; d.actions.forEach((a, i) => acts.append(el('div', { class: 'row', style: 'margin-bottom:4px' }, el('input', { value: a.name, placeholder: 'Название', oninput: e => a.name = e.target.value }), el('input', { value: a.text, placeholder: 'Текст: +4 к попаданию, 1к6+2 колющий', style: 'flex:2', oninput: e => a.text = e.target.value }), el('button', { class: 'small danger', style: 'flex:0', onclick: () => { d.actions.splice(i, 1); renderActs(); } }, icon('close'))))); acts.append(el('button', { class: 'small', onclick: () => { d.actions.push({ name: '', text: '' }); renderActs(); } }, '+ Действие')); };
+      renderActs(); box.append(f('Действия (кубики в тексте станут кнопками)', acts));
+      return box;
+    }
     if (category === 'monster') {
       simple.append(el('div', { class: 'row' }, f('КД', el('input', { type: 'number', value: d.ac || 10, oninput: e => d.ac = +e.target.value })), f('Хиты', el('input', { value: d.hp || '', placeholder: '22 (3к8+9)', oninput: e => d.hp = e.target.value })), f('Скорость', el('input', { value: d.speed || '30 фт', oninput: e => d.speed = e.target.value })), f('Опасность', el('input', { value: d.cr || '1', oninput: e => d.cr = e.target.value })), f('Размер', el('input', { value: d.size || 'Средний', oninput: e => d.size = e.target.value })), f('Тип', el('input', { value: d.type || 'гуманоид', oninput: e => d.type = e.target.value }))));
       d.abilities ||= { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };

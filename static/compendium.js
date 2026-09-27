@@ -19,6 +19,8 @@ window.Compendium = (function () {
         if (d.stealth_disadvantage) add('Скрытность', 'Помеха'); if (d.str_req) add('Требование', 'Сила ' + d.str_req);
         break;
       case 'spell': add('Уровень', d.level === 0 ? 'Заговор' : d.level); add('Школа', d.school); add('Время', d.casting_time); add('Дистанция', d.range); add('Компоненты', d.components); add('Длительность', (d.concentration ? 'Концентрация, ' : '') + (d.duration || '')); add('Ритуал', d.ritual && 'Да'); add('Классы', d.classes); break;
+      case 'npc': add('Роль', d.role); add('Раса', d.race); add('Фракция', d.faction); add('Отношение', d.attitude); add('Место', d.location); add('Голос и манеры', d.voice); if (d.abilities) { add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); } add('Добыча', d.loot); break;
+      case 'lore': add('Тип', { rule: 'Правило', place: 'Место', faction: 'Фракция', event: 'Событие', deity: 'Божество', other: 'Другое' }[d.kind]); add('Теги', d.tags); break;
       case 'monster': add('Тип', `${d.size || ''} ${d.type || ''}${d.alignment ? ', ' + d.alignment : ''}`); add('Спасброски', d.saves); add('Навыки', d.skills); add('Уязвимости', d.vulnerabilities); add('Сопротивления', d.resistances); add('Иммунитеты', d.immunities); add('Иммунитет к состояниям', d.condition_immunities); add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); add('Опасность', `${d.cr} (${d.xp || 0} опыта)`); add('Чувства', d.senses); add('Языки', d.languages); add('Уязвимости', d.vulnerabilities); add('Иммунитеты', d.immunities); break;
     }
     const wrap = el('div', { class: 'entry' });
@@ -26,12 +28,14 @@ window.Compendium = (function () {
     wrap.append(el('div', { class: 'row', style: 'align-items:flex-start' }, el('h2', { style: 'flex:1' }, e.name, d.name_en && d.name_en !== e.name ? el('div', { class: 'muted small', style: 'font-weight:400' }, d.name_en) : null), el('span', { class: 'badge' }, src)));
     if (d.higher_level) rows.push(['На больших уровнях', d.higher_level]);
     if (rows.length) wrap.append(el('table', {}, ...rows.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', {}, M().rich(String(v), ctx, { prefix: e.name }))))));
-    if (e.category === 'monster' && d.abilities) {
+    if ((e.category === 'monster' || e.category === 'npc') && d.abilities) {
       wrap.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin:6px 0' }, M().rollBtn('1d20' + fmtMod(mod(d.abilities.dex || 10)), 'Инициатива', ctx, { prefix: e.name }),
         ...Object.entries(d.abilities).map(([k, v]) => M().rollBtn('1d20' + fmtMod(mod(v)), `${ABIL[k].slice(0, 3)} ${v} (${fmtMod(mod(v))})`, ctx, { prefix: e.name })),
         d.hp && /\d+к\d+/.test(String(d.hp)) ? M().rollBtn(String(d.hp).match(/(\d+к\d+(?:\+\d+)?)/)[1], 'Хиты', ctx, { prefix: e.name }) : null));
     }
+    if (d.folder) wrap.append(el('div', { class: 'muted small' }, 'Папка: ' + d.folder));
     if (d.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(d.desc, ctx, { prefix: e.name })));
+    if (d.hooks) wrap.append(el('p', {}, el('b', {}, 'Зацепки. '), M().rich(d.hooks, ctx, { prefix: e.name })));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
     block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prefix: `${e.name}: ${t.name}` })));
@@ -66,6 +70,7 @@ window.Compendium = (function () {
     const btns = el('div', { class: 'row', style: 'margin-top:12px;flex-wrap:wrap;gap:4px' });
     const isRoot = !!window.ME?.is_root;
     const canEdit = isRoot || (e.pack_id && (opts.packMine || e._mine)) || (e.campaign_id && (window.TABLE_CTX?.isGM || opts.isGM));
+    if (d.secrets && (canEdit || window.TABLE_CTX?.isGM || opts.isGM)) wrap.append(el('div', { class: 'card-desc', style: 'border-left:3px solid var(--danger,#c55);padding-left:8px;margin-top:8px' }, el('b', {}, 'Только для мастера. '), M().rich(d.secrets, ctx, { prefix: e.name })));
     if (canEdit) btns.append(el('button', { class: 'small', onclick: () => editEntry(e, { campaignId: e.campaign_id, packId: e.pack_id, onSaved: opts.onChanged }) }, 'Редактировать'),
       el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить запись?')) { await API.del('/api/compendium/' + e.id); opts.onChanged && opts.onChanged(); } } }, 'Удалить'));
     btns.append(el('button', { class: 'small', onclick: () => copyTo(e, opts) }, 'Копировать в набор…'));
@@ -106,12 +111,12 @@ window.Compendium = (function () {
     if (category === 'item') {
       const it = e ? M().itemFromCompendium(e) : null; if (it && e.data?.icon) it.icon = e.data.icon;
       const r = await M().editItem(it, { title: e ? 'Редактировать предмет' : 'Новый предмет' }); if (!r) return;
-      result = { name: r.name, data: { type: r.type, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, category: r.tags?.[0] } };
+      result = { name: r.name, data: { folder: e?.data?.folder || o.folder || undefined, type: r.type, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, category: r.tags?.[0] } };
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
-      result = { name: r.name, data: { level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
+      result = { name: r.name, data: { folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
     } else {
-      const r = await M().editGeneric(e, category); if (!r) return; result = r;
+      const r = await M().editGeneric(e, category, { folders: o.folders, folder: o.folder }); if (!r) return; result = r;
     }
     if (!result.name) return toast('Нужно название');
     const body = { category, name: result.name, data: result.data, campaign_id: e ? e.campaign_id : o.campaignId, pack_id: e ? e.pack_id : o.packId };
@@ -147,7 +152,7 @@ window.Compendium = (function () {
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
         const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         it.addEventListener('click', () => { lst.querySelectorAll('.item').forEach(x => x.classList.remove('active')); it.classList.add('active'); det.innerHTML = ''; det.append(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load })); });
         it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });

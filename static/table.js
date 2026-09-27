@@ -402,14 +402,14 @@ window.Table = (function () {
       }
       if (comp) {
         const c = JSON.parse(comp);
-        if (c.category === 'monster' && S.isGM) {
+        if ((c.category === 'monster' || c.category === 'npc') && S.isGM) {
           const toks = await API.get('/api/assets?kind=token');
           const a = (c.data.token_asset_id ? { id: c.data.token_asset_id } : null) || toks.find(t => c.name.toLowerCase().includes(t.name.toLowerCase())) || toks.find(t => t.name === 'NPC') || toks[0];
           const sizeMul = { 'Крошечный': 0.5, 'Маленький': 1, 'Средний': 1, 'Большой': 2, 'Огромный': 3, 'Громадный': 4 }[c.data.size] || 1;
-          const hp = parseInt(c.data.hp) || 10;
+          const hp = parseInt(c.data.hp) || (c.category === 'npc' ? 4 : 10);
           const p = snapPos(w.x, w.y, g * sizeMul, g * sizeMul);
-          upsert({ layer: 'character', z: 1, data: { type: 'image', asset_id: a.id, x: p.x, y: p.y, w: g * sizeMul, h: g * sizeMul, name: c.name, hp: { cur: hp, max: hp }, monster: c.data, hidden: false, owner_id: S.user.id } });
-        } else toast('На стол можно бросать монстров из бестиария');
+          upsert({ layer: 'character', z: 1, data: { type: 'image', asset_id: a.id, x: p.x, y: p.y, w: g * sizeMul, h: g * sizeMul, name: c.name, hp: { cur: hp, max: hp }, monster: c.data.abilities || c.data.hp || c.category === 'monster' ? c.data : null, npc: c.category === 'npc' ? { desc: c.data.desc, role: c.data.role, faction: c.data.faction, attitude: c.data.attitude, hooks: c.data.hooks } : undefined, hidden: false, owner_id: S.user.id } });
+        } else toast('На стол можно бросать монстров и NPC');
         return;
       }
       if (e.dataTransfer.files?.length) {

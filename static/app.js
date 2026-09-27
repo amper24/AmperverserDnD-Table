@@ -9,17 +9,19 @@
   const path = location.pathname.replace(/\/+$/, '') || '/';
   setTimeout(() => Consent.banner(), 300);
   const joinMatch = path.match(/^\/join\/([\w-]+)/);
+  const packJoin = path.match(/^\/packs\/join\/([\w-]+)/);
   const campMatch = path.match(/^\/c\/(\w+)/);
   const SECTION_CARDS = [
     ['/campaigns', 'Кампании', 'Создать кампанию, пригласить игроков по ссылке, открыть стол.'],
     ['/characters', 'Персонажи', 'Листы персонажей: характеристики, инвентарь, заклинания, умения.'],
     ['/compendium', 'Справочник', 'Расы, классы, заклинания, предметы, бестиарий — SRD на русском.'],
     ['/library', 'Библиотека ресурсов', 'Ваши карты, токены, портреты и объекты для стола.'],
-    ['/packs', 'Наборы', 'Свои коллекции правил и предметов. Импорт, экспорт, подключение к кампаниям.'],
+    ['/packs', 'Наборы', 'Мастерская homebrew: свои предметы, заклинания, NPC, монстры, расы и правила. Ссылки для друзей и каталог.'],
   ];
   const SECTIONS = { '/campaigns': 'camps', '/characters': 'chars', '/compendium': 'comp', '/library': 'library', '/packs': 'packs' };
 
   if (path === '/login' || path === '/register') { renderAuth(path === '/register' ? 'register' : 'login'); return; }
+  if (packJoin) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } app.innerHTML = ''; app.append(topbar('packs'), await Packs.joinPage(packJoin[1])); return; }
   if (joinMatch) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderJoin(joinMatch[1]); return; }
   if (campMatch) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderCampaign(campMatch[1]); return; }
   if (path === '/privacy') { renderPrivacy(); return; }
@@ -297,7 +299,7 @@
     app.innerHTML = '';
     const page = el('div', { class: 'page' });
     app.append(topbar(k), page);
-    const views = { camps: lobbyCampaigns, chars: lobbyCharacters, comp: () => el('div', { class: 'fill' }, Compendium.widget({})), library: lobbyLibrary, packs: () => el('div', {}, el('h1', {}, 'Наборы'), Compendium.packsPanel()) };
+    const views = { camps: lobbyCampaigns, chars: lobbyCharacters, comp: () => el('div', { class: 'fill' }, Compendium.widget({})), library: lobbyLibrary, packs: () => Packs.page() };
     const titles = { camps: 'Кампании', chars: 'Персонажи', comp: 'Справочник', library: 'Библиотека ресурсов', packs: 'Наборы' };
     document.title = titles[k] + ' — ' + APP_NAME;
     const r = await views[k]();

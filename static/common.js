@@ -209,7 +209,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   LS.setItem('et-edition', edition);
   return { name: name.value.trim(), sheet: { edition } };
 };
-window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', feat: 'Черты', condition: 'Состояния' };
+window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила' };
 
 // ---- Минималистичные SVG-иконки (line icons), без эмодзи ----
 const ICONS = {

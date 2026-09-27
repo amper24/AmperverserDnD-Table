@@ -11,7 +11,7 @@ use sqlx::Row;
 
 use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, packs, util, AppError, AppState};
 
-pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "feat", "condition"];
+pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore"];
 
 fn entry_json(r: &sqlx::any::AnyRow) -> Value {
     json!({
@@ -38,6 +38,8 @@ pub struct SearchQuery {
     pub limit: Option<i64>, pub mine: Option<bool>,
     /// Редакция правил: "2014" или "2024" — скрывает базовые записи другой редакции (свои записи видны всегда).
     pub edition: Option<String>,
+    /// Папка (своя категория) внутри набора: data.folder.
+    pub folder: Option<String>,
 }
 
 async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<SearchQuery>) -> ApiResult<Json<Value>> {
@@ -58,8 +60,8 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
             binds.push(cid.clone());
         }
         if q.mine.unwrap_or(true) {
-            conds.push("c.pack_id IN (SELECT id FROM packs WHERE owner_id = ?)".into());
-            binds.push(user.id.clone());
+            conds.push("c.pack_id IN (SELECT id FROM packs WHERE owner_id = ? UNION SELECT pack_id FROM pack_subscriptions WHERE user_id = ? UNION SELECT pack_id FROM pack_editors WHERE user_id = ?)".into());
+            binds.push(user.id.clone()); binds.push(user.id.clone()); binds.push(user.id.clone());
         }
     }
     let mut sql = format!("SELECT c.* FROM compendium c WHERE ({})", conds.join(" OR "));
@@ -68,12 +70,15 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
     if pattern.is_some() { sql.push_str(" AND c.name_lc LIKE ?"); }
     let other = match q.edition.as_deref() { Some("2014") => Some("SRD 2024"), Some("2024") => Some("SRD 2014"), _ => None };
     if other.is_some() { sql.push_str(" AND c.source <> ?"); }
+    let folder_pat = q.folder.as_ref().map(|f| format!("%\"folder\":{}%", serde_json::Value::String(f.clone())));
+    if folder_pat.is_some() { sql.push_str(" AND c.data LIKE ?"); }
     sql.push_str(" ORDER BY c.category, c.name LIMIT ?");
     let mut query = sqlx::query(&sql);
     for b in &binds { query = query.bind(b); }
     if let Some(c) = &q.category { query = query.bind(c); }
     if let Some(p) = &pattern { query = query.bind(p); }
     if let Some(o) = other { query = query.bind(o); }
+    if let Some(f) = &folder_pat { query = query.bind(f); }
     query = query.bind(q.limit.unwrap_or(300).clamp(1, 3000));
     let rows = query.fetch_all(&st.db).await?;
     Ok(Json(rows.iter().map(entry_json).collect()))
@@ -98,7 +103,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
         return Err(AppError::bad("Неизвестная категория"));
     }
     let source = match (&body.campaign_id, &body.pack_id) {
-        (_, Some(pid)) => { packs::require_owner(&st, pid, &user).await?; let p = sqlx::query("SELECT name FROM packs WHERE id = ?").bind(pid).fetch_one(&st.db).await?; util::truncate(&p.get::<String, _>("name"), 32) }
+        (_, Some(pid)) => { packs::require_editor(&st, pid, &user).await?; packs::touch(&st, pid).await?; let p = sqlx::query("SELECT name FROM packs WHERE id = ?").bind(pid).fetch_one(&st.db).await?; util::truncate(&p.get::<String, _>("name"), 32) }
         (Some(cid), None) => { require_gm(&st, cid, &user.id).await?; "Homebrew".to_string() }
         (None, None) => { user.require_root().map_err(|_| AppError::bad("Укажите кампанию или набор"))?; "SRD".to_string() }
     };
@@ -115,7 +120,9 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
 async fn editable(st: &AppState, id: &str, user: &AuthUser) -> ApiResult<()> {
     let r = sqlx::query("SELECT campaign_id, pack_id FROM compendium WHERE id = ?").bind(id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Запись не найдена"))?;
     if let Some(pid) = r.get::<Option<String>, _>("pack_id") {
-        return packs::require_owner(st, &pid, &user).await;
+        packs::require_editor(st, &pid, user).await?;
+        packs::touch(st, &pid).await?;
+        return Ok(());
     }
     if let Some(cid) = r.get::<Option<String>, _>("campaign_id") {
         require_gm(st, &cid, &user.id).await?;

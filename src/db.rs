@@ -147,6 +147,23 @@ CREATE TABLE IF NOT EXISTS packs (
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS pack_subscriptions (
+  id {AUTOINC},
+  pack_id VARCHAR(32) NOT NULL,
+  user_id VARCHAR(32) NOT NULL,
+  created_at VARCHAR(40) NOT NULL,
+  UNIQUE (pack_id, user_id),
+  FOREIGN KEY (pack_id) REFERENCES packs(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS pack_editors (
+  id {AUTOINC},
+  pack_id VARCHAR(32) NOT NULL,
+  user_id VARCHAR(32) NOT NULL,
+  UNIQUE (pack_id, user_id),
+  FOREIGN KEY (pack_id) REFERENCES packs(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS campaign_packs (
   id {AUTOINC},
   campaign_id VARCHAR(32) NOT NULL,
@@ -178,6 +195,14 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE users ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN avatar_asset_id VARCHAR(32) NULL",
+    "ALTER TABLE packs ADD COLUMN share_code VARCHAR(32) NULL",
+    "ALTER TABLE packs ADD COLUMN cover_asset_id VARCHAR(32) NULL",
+    "ALTER TABLE packs ADD COLUMN folders TEXT NULL",
+    "ALTER TABLE packs ADD COLUMN tags VARCHAR(255) NULL",
+    "ALTER TABLE packs ADD COLUMN edition VARCHAR(8) NULL",
+    "ALTER TABLE packs ADD COLUMN updated_at VARCHAR(40) NULL",
+    "ALTER TABLE packs ADD COLUMN published_at VARCHAR(40) NULL",
+    "ALTER TABLE packs ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
 ];
 
 const INDEXES: &[&str] = &[
@@ -198,6 +223,8 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX idx_comp_pack ON compendium(pack_id)",
     "CREATE INDEX idx_comp_name_lc ON compendium(name_lc)",
     "CREATE INDEX idx_packs_owner ON packs(owner_id)",
+    "CREATE INDEX idx_packs_share ON packs(share_code)",
+    "CREATE INDEX idx_packsub_user ON pack_subscriptions(user_id)",
 ];
 
 pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {
