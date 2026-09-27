@@ -1,8 +1,59 @@
 // Безопасное хранилище: localStorage может быть недоступен (фрейм на чужом домене, приватный режим) — тогда sessionStorage или память.
+// Учитывает согласие на cookie: без согласия на «функциональные» ключи (тема, вкладки, панели) они живут только в памяти.
 window.LS = (() => {
   const mem = {}; const memStore = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
-  for (const name of ['localStorage', 'sessionStorage']) { try { const st = window[name]; st.setItem('__et_test', '1'); st.removeItem('__et_test'); return st; } catch { } }
-  return memStore;
+  let real = memStore;
+  for (const name of ['localStorage', 'sessionStorage']) { try { const st = window[name]; st.setItem('__et_test', '1'); st.removeItem('__et_test'); real = st; break; } catch { } }
+  const ESSENTIAL = ['dnd_token', 'et-consent'];
+  const allowed = (k) => ESSENTIAL.includes(k) || (window.Consent ? Consent.get().functional : false);
+  return {
+    getItem: k => { const v = real.getItem(k); return v !== null ? v : memStore.getItem(k); },
+    setItem: (k, v) => { if (allowed(k)) real.setItem(k, v); else memStore.setItem(k, v); },
+    removeItem: k => { real.removeItem(k); memStore.removeItem(k); },
+    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
+  };
+})();
+
+// ---- Согласие на cookie и хранилище ----
+// Категории: necessary (сессия dnd_session/dnd_session_x, токен dnd_token, само согласие) — всегда; functional (тема, вкладки листа, панель кубиков) — по согласию.
+// Аналитики и рекламных cookie в приложении нет.
+window.Consent = (() => {
+  const KEY = 'et-consent';
+  const read = () => { try { const raw = LS.getItem(KEY) || (document.cookie.match(/(?:^|; )et-consent=([^;]*)/) || [])[1]; return raw ? JSON.parse(decodeURIComponent(raw)) : null; } catch { return null; } };
+  const api = {
+    get() { return read() || { decided: false, necessary: true, functional: false }; },
+    set(functional) {
+      const v = { decided: true, necessary: true, functional: !!functional, at: new Date().toISOString() };
+      const enc = encodeURIComponent(JSON.stringify(v));
+      LS.setItem(KEY, JSON.stringify(v));
+      try { document.cookie = `${KEY}=${enc}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`; } catch { }
+      if (!functional) LS.purgeFunctional(); else { try { LS.setItem('et-theme', document.documentElement.dataset.theme || 'dark'); } catch { } }
+      document.querySelector('.cookie-banner')?.remove();
+    },
+    banner() {
+      if (api.get().decided || document.querySelector('.cookie-banner') || new URLSearchParams(location.search).get('embed')) return;
+      const b = el('div', { class: 'cookie-banner', role: 'dialog', 'aria-label': 'Cookie' },
+        el('div', { class: 'cookie-text' }, el('b', {}, 'Cookie и хранилище'), el('p', {}, 'Для входа в аккаунт нужны обязательные cookie сессии. Функциональные (тема оформления, открытые вкладки) — по вашему выбору. Аналитики и рекламы нет. ', el('a', { href: '/privacy' }, 'Подробнее'))),
+        el('div', { class: 'cookie-actions' },
+          el('button', { class: 'small', onclick: () => api.settings() }, 'Настроить'),
+          el('button', { class: 'small', onclick: () => api.set(false) }, 'Только обязательные'),
+          el('button', { class: 'small primary', onclick: () => api.set(true) }, 'Принять все')));
+      document.body.append(b);
+    },
+    async settings() {
+      const cur = api.get();
+      const fn = el('input', { type: 'checkbox', style: 'width:auto', checked: cur.functional ? '' : null });
+      const row = (title, desc, ctrl) => el('div', { class: 'consent-row' }, el('div', { class: 'grow' }, el('b', {}, title), el('div', { class: 'muted small' }, desc)), ctrl);
+      const body = el('div', {},
+        row('Обязательные', 'Cookie сессии dnd_session / dnd_session_x, токен входа dnd_token, запись о согласии et-consent. Без них вход невозможен. Срок — 30 дней, согласие — 1 год.', el('span', { class: 'badge' }, 'всегда')),
+        row('Функциональные', 'Тема оформления (et-theme), последняя вкладка листа персонажа (sheet_tab_*), свёрнутая панель кубиков (dicetray_min). Хранятся в localStorage браузера, на сервер не передаются.', fn),
+        row('Аналитика и реклама', 'Не используются. Сторонних скриптов и трекеров на сайте нет.', el('span', { class: 'badge' }, 'нет')),
+        el('p', { class: 'muted small', style: 'margin-top:10px' }, 'Изменить выбор можно в любой момент: ссылка «Cookie» внизу главной страницы или в профиле. ', el('a', { href: '/privacy' }, 'Политика конфиденциальности')));
+      const ok = await modal('Настройки cookie', body, [{ label: 'Сохранить', cls: 'primary', fn: () => ({ functional: fn.checked }) }, { label: 'Принять все', fn: () => ({ functional: true }) }]);
+      if (ok) api.set(ok.functional);
+    },
+  };
+  return api;
 })();
 // Общие утилиты: API, распаковка изображений, кубики, окна
 window.API = {

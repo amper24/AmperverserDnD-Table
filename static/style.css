@@ -380,3 +380,18 @@ button.primary, .btn.primary { font-weight: 600; }
 .page.narrow .card { margin-bottom: 14px; }
 .page.narrow .card h2 { margin: 0 0 10px; font-size: 16px; }
 .mainnav a.active { color: var(--text); }
+
+/* ---- cookie ---- */
+.cookie-banner { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 200; margin: 0 auto; max-width: 860px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; box-shadow: var(--shadow); }
+.cookie-text { flex: 1 1 380px; font-size: 13px; }
+.cookie-text p { margin: 4px 0 0; color: var(--muted); }
+.cookie-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.consent-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.consent-row:last-of-type { border-bottom: none; }
+.home-foot a, .home-foot button.link { color: var(--muted); margin: 0 6px; font-size: 12px; }
+.home-foot a:hover, .home-foot button.link:hover { color: var(--text); }
+.legal { max-width: 760px; }
+.legal h2 { font-size: 17px; margin: 22px 0 8px; }
+.legal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.legal td, .legal th { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.legal th { color: var(--muted); font-weight: 600; font-size: 12px; }

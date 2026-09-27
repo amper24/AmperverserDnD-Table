@@ -7,6 +7,7 @@
   window.ME = me;
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
+  setTimeout(() => Consent.banner(), 300);
   const joinMatch = path.match(/^\/join\/([\w-]+)/);
   const campMatch = path.match(/^\/c\/(\w+)/);
   const SECTION_CARDS = [
@@ -21,6 +22,7 @@
   if (path === '/login' || path === '/register') { renderAuth(path === '/register' ? 'register' : 'login'); return; }
   if (joinMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderJoin(joinMatch[1]); return; }
   if (campMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderCampaign(campMatch[1]); return; }
+  if (path === '/privacy') { renderPrivacy(); return; }
   if (path === '/profile') { if (!me) { location.replace('/login?next=/profile'); return; } renderProfile(); return; }
   if (path === '/admin') { if (!me) { location.replace('/login?next=/admin'); return; } renderAdmin(); return; }
   if (SECTIONS[path]) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderSection(SECTIONS[path]); return; }
@@ -116,7 +118,7 @@
       el('section', { class: 'wrap' }, el('h2', {}, 'Как начать'), el('ol', { class: 'steps' },
         el('li', {}, el('b', {}, 'Зарегистрируйтесь'), ' — почта, пароль и код подтверждения из письма.'), el('li', {}, el('b', {}, 'Создайте кампанию'), ' и отправьте игрокам ссылку-приглашение.'),
         el('li', {}, el('b', {}, 'Загрузите карту'), ' перетаскиванием, добавьте токены и персонажей.'), el('li', {}, el('b', {}, 'Играйте'), ' — кубики, туман, инициатива, листы и предметы синхронизируются мгновенно.'))),
-      el('footer', { class: 'home-foot' }, APP_NAME, ' · самостоятельный хостинг: ', el('code', {}, 'cargo run --release'), ' · Docker · Pterodactyl')));
+      el('footer', { class: 'home-foot' }, APP_NAME, ' · самостоятельный хостинг: ', el('code', {}, 'cargo run --release'), ' · Docker · Pterodactyl', el('br'), el('a', { href: '/privacy' }, 'Конфиденциальность и cookie'), el('button', { class: 'link', onclick: () => Consent.settings() }, 'Настройки cookie'))));
   }
   // ================= Главная: панель пользователя =================
   async function renderHome() {
@@ -133,6 +135,38 @@
     if (!chars.length) ch.append(el('p', { class: 'muted' }, 'Пока нет персонажей.'));
     chars.slice(0, 5).forEach(c => ch.append(el('a', { href: '/sheet/' + c.id, target: '_blank', class: 'item' }, el('span', { class: 'grow' }, c.name), el('span', { class: 'muted small' }, [c.sheet?.race, c.sheet?.class, c.sheet?.level && c.sheet.level + ' ур.'].filter(Boolean).join(' · ')))));
     two.append(cl, ch); page.append(two);
+  }
+
+  // ================= Политика конфиденциальности и cookie =================
+  function renderPrivacy() {
+    app.innerHTML = ''; document.title = 'Конфиденциальность и cookie — ' + APP_NAME;
+    const page = el('div', { class: 'page legal' });
+    app.append(topbar(), page);
+    const tr = (...c) => el('tr', {}, ...c.map(x => el('td', {}, x)));
+    page.append(el('h1', {}, 'Конфиденциальность и cookie'),
+      el('p', { class: 'muted' }, APP_NAME + ' — самостоятельно размещаемый виртуальный стол. Все данные хранятся в базе того сервера, на котором запущено приложение; сторонним сервисам ничего не передаётся.'),
+      el('h2', {}, 'Какие данные хранятся'),
+      el('ul', {}, el('li', {}, 'Аккаунт: почта, имя, хэш пароля (argon2), аватар, дата регистрации, флаг администратора.'),
+        el('li', {}, 'Игровые данные: кампании, сцены, персонажи, справочник и наборы, чат, загруженные изображения (сжатые, в базе).'),
+        el('li', {}, 'Технические: токены сессий (30 дней), одноразовые коды подтверждения почты (15 минут).')),
+      el('h2', {}, 'Cookie и хранилище браузера'),
+      el('table', {}, el('tr', {}, el('th', {}, 'Имя'), el('th', {}, 'Тип'), el('th', {}, 'Назначение'), el('th', {}, 'Срок')),
+        tr('dnd_session', 'cookie, обязательный', 'Сессия входа (HttpOnly, SameSite=Lax).', '30 дней'),
+        tr('dnd_session_x', 'cookie, обязательный', 'Та же сессия для работы во встроенном фрейме (SameSite=None; Secure; Partitioned).', '30 дней'),
+        tr('dnd_token', 'localStorage, обязательный', 'Копия токена сессии для запросов и WebSocket, когда браузер не принимает cookie во фрейме.', 'до выхода'),
+        tr('et-consent', 'cookie + localStorage, обязательный', 'Ваш выбор по cookie.', '1 год'),
+        tr('et-theme', 'localStorage, функциональный', 'Светлая/тёмная тема.', 'бессрочно'),
+        tr('sheet_tab_*', 'localStorage, функциональный', 'Последняя открытая вкладка листа персонажа.', 'бессрочно'),
+        tr('dicetray_min', 'localStorage, функциональный', 'Свёрнута ли панель кубиков на столе.', 'бессрочно')),
+      el('p', { class: 'muted small' }, 'Аналитических, рекламных и сторонних cookie нет. Функциональные ключи сохраняются только после вашего согласия; без него они живут до закрытия страницы.'),
+      el('div', { class: 'row', style: 'margin:10px 0 20px' }, el('button', { class: 'small', onclick: () => Consent.settings() }, 'Настройки cookie')),
+      el('h2', {}, 'Ваши права'),
+      el('ul', {}, el('li', {}, 'Изменить имя, аватар и пароль — на странице ', el('a', { href: '/profile' }, 'профиля'), '.'),
+        el('li', {}, 'Завершить сессию — кнопка «Выйти»; смена пароля завершает сессии на других устройствах.'),
+        el('li', {}, 'Удалить аккаунт и все данные — обратитесь к администратору сервера (команда ', el('code', {}, 'dnd-table users delete <email>'), ').')),
+      el('h2', {}, 'Почта'),
+      el('p', {}, 'Адрес почты используется только для подтверждения регистрации и восстановления пароля. Рассылок нет.'),
+      el('p', { class: 'muted small' }, 'Владелец конкретного сервера может дополнить эту страницу своими контактами и юридическими реквизитами (файл static/app.js, функция renderPrivacy).'));
   }
 
   // ================= Профиль =================
@@ -179,7 +213,8 @@
     const sessBox = el('div', { class: 'card' }, el('h2', {}, 'Сессия'), el('div', { class: 'row' },
       el('button', { onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'),
       el('span', { class: 'muted small' }, 'Вход по паролю выполняется на странице ', el('a', { href: '/login' }, '/login'), '.')));
-    page.append(el('h1', {}, 'Профиль'), msg, avBox, dataBox, pwBox, sessBox);
+    const cookieBox = el('div', { class: 'card' }, el('h2', {}, 'Cookie и данные'), el('p', { class: 'muted small' }, 'Обязательные cookie сессии — всегда; функциональные (тема, вкладки) — по вашему выбору. ', el('a', { href: '/privacy' }, 'Политика конфиденциальности')), el('button', { class: 'small', onclick: () => Consent.settings() }, 'Настройки cookie'));
+    page.append(el('h1', {}, 'Профиль'), msg, avBox, dataBox, pwBox, cookieBox, sessBox);
   }
 
   // ================= Администрирование (root) =================

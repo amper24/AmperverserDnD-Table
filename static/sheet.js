@@ -5,6 +5,7 @@
   const app = document.getElementById('app');
   const id = location.pathname.split('/').pop();
   const embed = new URLSearchParams(location.search).get('embed') === '1';
+  setTimeout(() => Consent.banner(), 300);
   let me; try { me = await API.get('/api/auth/me'); window.ME = me; } catch { app.innerHTML = '<div class="center"><div class="card">Нужно войти. <a href="/">На главную</a></div></div>'; return; }
   let ch; try { ch = await API.get('/api/characters/' + id); } catch (e) { app.innerHTML = `<div class="center"><div class="card">${e.message}</div></div>`; return; }
   let s = ch.sheet; let readonly = false;
