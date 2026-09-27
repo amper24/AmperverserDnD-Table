@@ -2,17 +2,36 @@
 // Учитывает согласие на cookie: без согласия на «функциональные» ключи (тема, вкладки, панели) они живут только в памяти.
 window.LS = (() => {
   const mem = {}; const memStore = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
-  let real = memStore;
-  for (const name of ['localStorage', 'sessionStorage']) { try { const st = window[name]; st.setItem('__et_test', '1'); st.removeItem('__et_test'); real = st; break; } catch { } }
+  let real = memStore, persistent = false;
+  for (const name of ['localStorage', 'sessionStorage']) { try { const st = window[name]; st.setItem('__et_test', '1'); st.removeItem('__et_test'); real = st; persistent = true; break; } catch { } }
   const ESSENTIAL = ['dnd_token', 'et-consent'];
   const allowed = (k) => ESSENTIAL.includes(k) || (window.Consent ? Consent.get().functional : false);
   return {
     getItem: k => { const v = real.getItem(k); return v !== null ? v : memStore.getItem(k); },
     setItem: (k, v) => { if (allowed(k)) real.setItem(k, v); else memStore.setItem(k, v); },
     removeItem: k => { real.removeItem(k); memStore.removeItem(k); },
+    persistent,
     purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
   };
 })();
+
+// ---- Навигация с переносом токена ----
+// Если хранилище недоступно (например, фрейм с sandbox без allow-same-origin: нет ни cookie, ни localStorage),
+// токен сессии живёт в памяти и передаётся между страницами через фрагмент URL (#tk=...), который сразу стирается.
+(() => {
+  const m = location.hash.match(/(?:^#|&)tk=([\w-]+)/);
+  if (m) { LS.setItem('dnd_token', m[1]); try { history.replaceState(null, '', location.pathname + location.search); } catch { } }
+})();
+window.needTokenInUrl = () => !LS.persistent && !!LS.getItem('dnd_token');
+window.withTok = (url) => { if (!needTokenInUrl() || /^https?:\/\//.test(url) && !url.startsWith(location.origin)) return url; const [base] = url.split('#'); return base + '#tk=' + LS.getItem('dnd_token'); };
+window.reloadPage = () => go(location.pathname + location.search, true);
+window.go = (url, replace) => { const u = withTok(url); if (replace) location.replace(u); else location.href = u; };
+document.addEventListener('click', e => {
+  if (!needTokenInUrl()) return;
+  const a = e.target.closest && e.target.closest('a[href]'); if (!a || a.target === '_blank' || e.defaultPrevented) return;
+  const href = a.getAttribute('href'); if (!href || !href.startsWith('/') || href.startsWith('//')) return;
+  e.preventDefault(); go(href);
+}, true);
 
 // ---- Согласие на cookie и хранилище ----
 // Категории: necessary (сессия dnd_session/dnd_session_x, токен dnd_token, само согласие) — всегда; functional (тема, вкладки листа, панель кубиков) — по согласию.
@@ -65,7 +84,7 @@ window.API = {
       if (isForm) opt.body = body; else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     }
     const r = await fetch(url, opt);
-    if (r.status === 401) { LS.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && !location.pathname.startsWith('/login') && url !== '/api/auth/me') { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); } throw new Error('unauthorized'); }
+    if (r.status === 401) { LS.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && !location.pathname.startsWith('/login') && url !== '/api/auth/me') { go('/login?next=' + encodeURIComponent(location.pathname + location.search)); } throw new Error('unauthorized'); }
     window.wsToken = () => LS.getItem('dnd_token') || '';
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.statusText);

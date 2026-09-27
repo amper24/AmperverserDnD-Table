@@ -20,12 +20,13 @@
   const SECTIONS = { '/campaigns': 'camps', '/characters': 'chars', '/compendium': 'comp', '/library': 'library', '/packs': 'packs' };
 
   if (path === '/login' || path === '/register') { renderAuth(path === '/register' ? 'register' : 'login'); return; }
-  if (joinMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderJoin(joinMatch[1]); return; }
-  if (campMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderCampaign(campMatch[1]); return; }
+  if (joinMatch) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderJoin(joinMatch[1]); return; }
+  if (campMatch) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderCampaign(campMatch[1]); return; }
   if (path === '/privacy') { renderPrivacy(); return; }
-  if (path === '/profile') { if (!me) { location.replace('/login?next=/profile'); return; } renderProfile(); return; }
-  if (path === '/admin') { if (!me) { location.replace('/login?next=/admin'); return; } renderAdmin(); return; }
-  if (SECTIONS[path]) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderSection(SECTIONS[path]); return; }
+  if (path === '/diag') { renderDiag(); return; }
+  if (path === '/profile') { if (!me) { go('/login?next=/profile', true); return; } renderProfile(); return; }
+  if (path === '/admin') { if (!me) { go('/login?next=/admin', true); return; } renderAdmin(); return; }
+  if (SECTIONS[path]) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderSection(SECTIONS[path]); return; }
   if (!me) renderLanding(); else renderHome();
 
   // ================= Общее: шапка =================
@@ -35,7 +36,7 @@
       .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)), me?.is_root ? el('a', { href: '/admin', class: (active === 'admin' ? 'active ' : '') + 'root' }, 'Админ') : null);
     return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
       me ? el('span', { class: 'userbox' }, el('a', { href: '/profile', class: 'userlink', title: 'Профиль' }, avatarEl(me, 26), el('span', {}, me.name)),
-        el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'))
+        el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); go('/'); } }, 'Выйти'))
         : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), ' ', el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация')));
   }
 
@@ -44,7 +45,7 @@
     app.innerHTML = '';
     document.title = (startMode === 'register' ? 'Регистрация' : 'Вход') + ' — ' + APP_NAME;
     const next = new URLSearchParams(location.search).get('next') || '/';
-    if (me) { location.replace(next); return; }
+    if (me) { go(next, true); return; }
     let mode = startMode, pendingEmail = '';
     const box = el('div', { class: 'card auth' });
     const err = el('div', { class: 'auth-err' });
@@ -71,7 +72,7 @@
           pendingEmail = email.value.trim();
           const r = await API.post('/api/auth/login', { email: pendingEmail, password: pw.value });
           if (r.need_verify) return toVerify(r);
-          await ensureSession(r); location.href = next;
+          await ensureSession(r); go(next);
         }) }, 'Войти');
         return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), el('div', { class: 'or' }, 'или'), google()];
       },
@@ -87,7 +88,7 @@
       },
       verify() {
         const code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code' });
-        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => { const r = await API.post('/api/auth/verify', { email: pendingEmail, code: code.value.trim() }); await ensureSession(r); location.href = next; }) }, 'Подтвердить и войти');
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => { const r = await API.post('/api/auth/verify', { email: pendingEmail, code: code.value.trim() }); await ensureSession(r); go(next); }) }, 'Подтвердить и войти');
         const resend = el('button', { class: 'wide', onclick: () => busy(resend, async () => { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; }) }, 'Отправить код ещё раз');
         return [el('h2', {}, 'Подтвердите почту'), el('p', { class: 'muted small code-info' }), f('Код из письма', code), btn, err, resend, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, 'Назад ко входу'))];
       },
@@ -97,7 +98,7 @@
         const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
           pendingEmail = email.value.trim();
           if (step2.classList.contains('hidden')) { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); step2.classList.remove('hidden'); step2.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; btn.textContent = 'Сменить пароль и войти'; code.focus(); return; }
-          const r = await API.post('/api/auth/reset-password', { email: pendingEmail, code: code.value.trim(), password: pw.value }); await ensureSession(r); location.href = next;
+          const r = await API.post('/api/auth/reset-password', { email: pendingEmail, code: code.value.trim(), password: pw.value }); await ensureSession(r); go(next);
         }) }, 'Прислать код');
         return [el('h2', {}, 'Восстановление пароля'), el('p', { class: 'muted small' }, 'Пришлём код на почту — по нему зададите новый пароль. Так же можно задать пароль старому аккаунту, у которого его не было.'), f('Почта', email), step2, btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, 'Назад ко входу'))];
       },
@@ -135,6 +136,32 @@
     if (!chars.length) ch.append(el('p', { class: 'muted' }, 'Пока нет персонажей.'));
     chars.slice(0, 5).forEach(c => ch.append(el('a', { href: '/sheet/' + c.id, target: '_blank', class: 'item' }, el('span', { class: 'grow' }, c.name), el('span', { class: 'muted small' }, [c.sheet?.race, c.sheet?.class, c.sheet?.level && c.sheet.level + ' ур.'].filter(Boolean).join(' · ')))));
     two.append(cl, ch); page.append(two);
+  }
+
+  // ================= Диагностика входа =================
+  async function renderDiag() {
+    app.innerHTML = ''; document.title = 'Диагностика — ' + APP_NAME;
+    const page = el('div', { class: 'page legal' }); app.append(topbar(), page);
+    const rows = [];
+    const add = (k, v, ok) => rows.push(el('tr', {}, el('td', {}, k), el('td', { style: ok === false ? 'color:var(--danger)' : ok ? 'color:var(--ok)' : '' }, String(v))));
+    let inFrame = false; try { inFrame = window.top !== window.self; } catch { inFrame = true; }
+    add('Во фрейме', inFrame ? 'да' : 'нет');
+    add('Origin страницы', location.origin, location.origin !== 'null');
+    let ls = 'доступен'; try { localStorage.setItem('__d', '1'); localStorage.removeItem('__d'); } catch (e) { ls = 'НЕДОСТУПЕН: ' + e.name; }
+    add('localStorage', ls, ls === 'доступен');
+    let ck = 'доступен'; try { document.cookie = '__d=1; SameSite=Lax'; ck = document.cookie.includes('__d=1') ? 'доступен (JS-cookie записался)' : 'JS-cookie не записался'; document.cookie = '__d=; Max-Age=0'; } catch (e) { ck = 'НЕДОСТУПЕН: ' + e.name; }
+    add('document.cookie', ck, ck.startsWith('доступен'));
+    add('Хранилище приложения', LS.persistent ? 'постоянное' : 'только память (токен передаётся через #tk в URL)', LS.persistent);
+    add('Токен dnd_token', LS.getItem('dnd_token') ? 'есть' : 'нет');
+    let hasSA = 'нет API'; try { if (document.hasStorageAccess) hasSA = (await document.hasStorageAccess()) ? 'есть' : 'нет'; } catch (e) { hasSA = e.name; }
+    add('Storage Access (cookie во фрейме)', hasSA);
+    let meRes; try { const r = await fetch('/api/auth/me', { credentials: 'same-origin' }); meRes = r.status + (r.ok ? ' — cookie сессии работает' : ' — cookie не отправляется'); } catch (e) { meRes = 'ошибка ' + e.message; }
+    add('/api/auth/me только по cookie', meRes, meRes.startsWith('200'));
+    let meTok; try { const r = await fetch('/api/auth/me', { headers: LS.getItem('dnd_token') ? { Authorization: 'Bearer ' + LS.getItem('dnd_token') } : {} }); meTok = r.status + (r.ok ? ' — вход по токену работает' : ' — токена нет или он недействителен'); } catch (e) { meTok = 'ошибка ' + e.message; }
+    add('/api/auth/me по токену', meTok, meTok.startsWith('200'));
+    add('Браузер', navigator.userAgent);
+    page.append(el('h1', {}, 'Диагностика входа'), el('p', { class: 'muted' }, 'Эта страница показывает, что именно блокирует ваш браузер в текущем окне. Скопируйте таблицу, если вход не работает.'), el('table', {}, ...rows),
+      el('p', { style: 'margin-top:14px' }, el('a', { href: '/login', class: 'btn primary' }, 'Перейти ко входу'), ' ', el('a', { href: location.origin !== 'null' ? location.href.replace('/diag', '/') : '/', target: '_blank', class: 'btn' }, 'Открыть в новой вкладке')));
   }
 
   // ================= Политика конфиденциальности и cookie =================
@@ -191,12 +218,12 @@
         const fd = new FormData(); fd.append('file', f); fd.append('kind', 'portrait'); fd.append('name', 'Аватар ' + me.name);
         const a = await API.upload('/api/assets', fd);
         await API.patch('/api/auth/me', { avatar_asset_id: a.id });
-        me.avatar_asset_id = a.id; window.ME = me; okmsg('Аватар обновлён'); location.reload();
+        me.avatar_asset_id = a.id; window.ME = me; okmsg('Аватар обновлён'); reloadPage();
       } catch (e) { fail(e); }
     });
     const avBox = el('div', { class: 'card row', style: 'align-items:center;gap:16px' }, av,
       el('div', { style: 'flex:1' }, el('b', {}, 'Аватар'), el('p', { class: 'muted small', style: 'margin:4px 0 8px' }, 'Показывается в шапке, списке участников кампании и чате. Сжимается до 1024 px и хранится в базе.'),
-        el('div', { class: 'row' }, el('button', { class: 'small', onclick: () => file.click() }, 'Загрузить'), me.avatar_asset_id ? el('button', { class: 'small', onclick: async () => { try { await API.patch('/api/auth/me', { avatar_asset_id: null }); location.reload(); } catch (e) { fail(e); } } }, 'Убрать') : null), file));
+        el('div', { class: 'row' }, el('button', { class: 'small', onclick: () => file.click() }, 'Загрузить'), me.avatar_asset_id ? el('button', { class: 'small', onclick: async () => { try { await API.patch('/api/auth/me', { avatar_asset_id: null }); reloadPage(); } catch (e) { fail(e); } } }, 'Убрать') : null), file));
     // данные
     const name = el('input', { value: me.name, maxlength: 64 });
     const dataBox = el('div', { class: 'card' }, el('h2', {}, 'Данные аккаунта'),
@@ -211,7 +238,7 @@
       el('p', { class: 'muted small' }, 'После смены пароля все остальные устройства будут разлогинены. Если пароль забыт — «Забыли пароль?» на странице входа.'),
       el('button', { class: 'primary', onclick: async e => { try { if (pw1.value !== pw2.value) throw new Error('Пароли не совпадают'); e.target.disabled = true; await API.post('/api/auth/change-password', { old_password: oldPw.value, password: pw1.value }); oldPw.value = pw1.value = pw2.value = ''; okmsg('Пароль изменён'); } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сменить пароль'));
     const sessBox = el('div', { class: 'card' }, el('h2', {}, 'Сессия'), el('div', { class: 'row' },
-      el('button', { onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'),
+      el('button', { onclick: async () => { await API.post('/api/auth/logout'); go('/'); } }, 'Выйти'),
       el('span', { class: 'muted small' }, 'Вход по паролю выполняется на странице ', el('a', { href: '/login' }, '/login'), '.')));
     const cookieBox = el('div', { class: 'card' }, el('h2', {}, 'Cookie и данные'), el('p', { class: 'muted small' }, 'Обязательные cookie сессии — всегда; функциональные (тема, вкладки) — по вашему выбору. ', el('a', { href: '/privacy' }, 'Политика конфиденциальности')), el('button', { class: 'small', onclick: () => Consent.settings() }, 'Настройки cookie'));
     page.append(el('h1', {}, 'Профиль'), msg, avBox, dataBox, pwBox, cookieBox, sessBox);
@@ -243,7 +270,7 @@
       tbl.innerHTML = '';
       tbl.append(el('tr', {}, ...['Почта', 'Имя', 'Root', 'Подтв.', 'Создан', ''].map(h => el('th', {}, h))));
       for (const u of users) {
-        const rootCb = el('input', { type: 'checkbox', style: 'width:auto', checked: u.is_root ? '' : null, onchange: async e => { try { await API.patch('/api/admin/users/' + u.id, { is_root: e.target.checked }); if (u.id === me.id && !e.target.checked) location.reload(); } catch (err) { toast(err.message, 4000); e.target.checked = !e.target.checked; } } });
+        const rootCb = el('input', { type: 'checkbox', style: 'width:auto', checked: u.is_root ? '' : null, onchange: async e => { try { await API.patch('/api/admin/users/' + u.id, { is_root: e.target.checked }); if (u.id === me.id && !e.target.checked) reloadPage(); } catch (err) { toast(err.message, 4000); e.target.checked = !e.target.checked; } } });
         tbl.append(el('tr', {}, el('td', {}, u.email, u.id === me.id ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'вы') : null), el('td', {}, u.name), el('td', {}, rootCb), el('td', {}, u.verified ? 'да' : 'нет'), el('td', { class: 'muted small' }, u.created_at.slice(0, 10)),
           el('td', { style: 'text-align:right;white-space:nowrap' },
             el('button', { class: 'small', title: 'Сменить пароль', onclick: async () => { const p = await prompt2('Новый пароль для ' + u.email); if (p) { try { await API.patch('/api/admin/users/' + u.id, { password: p }); toast('Пароль обновлён'); } catch (e) { toast(e.message, 4000); } } } }, icon('lock')), ' ',
@@ -260,7 +287,7 @@
     try {
       const info = await API.get('/api/join/' + codeStr);
       app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Приглашение'), el('p', {}, 'Кампания ', el('b', {}, info.campaign_name), ' · роль: ', info.role === 'gm' ? 'мастер' : 'игрок'),
-        el('button', { class: 'primary wide', onclick: async () => { await API.post('/api/join/' + codeStr); location.href = '/c/' + info.campaign_id; } }, 'Присоединиться'), el('p', {}, el('a', { href: '/' }, 'На главную')))));
+        el('button', { class: 'primary wide', onclick: async () => { await API.post('/api/join/' + codeStr); go('/c/' + info.campaign_id); } }, 'Присоединиться'), el('p', {}, el('a', { href: '/' }, 'На главную')))));
     } catch (e) { app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Ошибка'), el('p', {}, e.message), el('a', { href: '/' }, 'На главную')))); }
   }
 
@@ -279,11 +306,11 @@
     const wrap = el('div');
     const list = await API.get('/api/campaigns');
     wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Кампании'),
-      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Название кампании', 'Затерянные рудники'); if (n) { const c = await API.post('/api/campaigns', { name: n }); location.href = '/c/' + c.id; } } }, 'Новая кампания'),
-      el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { const c = await prompt2('Код или ссылка приглашения'); if (c) location.href = '/join/' + c.split('/').pop(); } }, 'Присоединиться по ссылке')));
+      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Название кампании', 'Затерянные рудники'); if (n) { const c = await API.post('/api/campaigns', { name: n }); go('/c/' + c.id); } } }, 'Новая кампания'),
+      el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { const c = await prompt2('Код или ссылка приглашения'); if (c) go('/join/' + c.split('/').pop()); } }, 'Присоединиться по ссылке')));
     const g = el('div', { class: 'grid' });
     if (!list.length) g.append(el('p', { class: 'muted' }, 'Пока нет кампаний. Создайте свою или присоединитесь по ссылке-приглашению.'));
-    for (const c of list) g.append(el('div', { class: 'card camp-card', onclick: () => location.href = '/c/' + c.id }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, c.name), el('span', { class: 'badge ' + c.role }, c.role === 'gm' ? 'мастер' : 'игрок')), el('p', { class: 'muted' }, c.description || 'Без описания'), el('div', { class: 'muted small' }, `${c.members_count || c.members?.length || ''} участников`.replace(/^ /, ''))));
+    for (const c of list) g.append(el('div', { class: 'card camp-card', onclick: () => go('/c/' + c.id) }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, c.name), el('span', { class: 'badge ' + c.role }, c.role === 'gm' ? 'мастер' : 'игрок')), el('p', { class: 'muted' }, c.description || 'Без описания'), el('div', { class: 'muted small' }, `${c.members_count || c.members?.length || ''} участников`.replace(/^ /, ''))));
     wrap.append(g);
     return wrap;
   }
@@ -291,11 +318,11 @@
     const wrap = el('div');
     const list = await API.get('/api/characters');
     wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Персонажи'),
-      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Имя персонажа', 'Торин'); if (n) { const c = await API.post('/api/characters', { name: n }); window.open('/sheet/' + c.id, '_blank'); location.reload(); } } }, 'Новый персонаж'),
-      el('button', { style: 'flex:0;white-space:nowrap', onclick: () => LSS.importDialog({ onDone: c => { window.open('/sheet/' + c.id, '_blank'); location.reload(); } }) }, icon('upload'), ' Импорт из Long Story Short')));
+      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Имя персонажа', 'Торин'); if (n) { const c = await API.post('/api/characters', { name: n }); window.open(withTok('/sheet/' + c.id), '_blank'); reloadPage(); } } }, 'Новый персонаж'),
+      el('button', { style: 'flex:0;white-space:nowrap', onclick: () => LSS.importDialog({ onDone: c => { window.open(withTok('/sheet/' + c.id), '_blank'); reloadPage(); } }) }, icon('upload'), ' Импорт из Long Story Short')));
     const g = el('div', { class: 'grid' });
     if (!list.length) g.append(el('p', { class: 'muted' }, 'Персонажей пока нет.'));
-    for (const c of list) g.append(charCard(c, () => location.reload()));
+    for (const c of list) g.append(charCard(c, () => reloadPage()));
     wrap.append(g);
     return wrap;
   }
@@ -303,7 +330,7 @@
     const s = c.sheet || {};
     const img = el('div', { class: 'portrait', style: 'width:56px;height:56px;flex:0 0 56px' }, icon('user', 28));
     if (c.portrait_asset_id) assetURL(c.portrait_asset_id).then(u => { img.innerHTML = ''; img.append(el('img', { src: u })); });
-    return el('div', { class: 'card camp-card', onclick: () => window.open('/sheet/' + c.id, '_blank') }, el('div', { class: 'row' }, img, el('div', { style: 'flex:1' }, el('b', {}, c.name), el('div', { class: 'muted' }, [s.race, s.class, s.level && s.level + ' ур.'].filter(Boolean).join(' · ') || 'Новый персонаж'), el('div', { class: 'muted small' }, c.campaign_name ? 'Кампания: ' + c.campaign_name : 'Вне кампании')),
+    return el('div', { class: 'card camp-card', onclick: () => window.open(withTok('/sheet/' + c.id), '_blank') }, el('div', { class: 'row' }, img, el('div', { style: 'flex:1' }, el('b', {}, c.name), el('div', { class: 'muted' }, [s.race, s.class, s.level && s.level + ' ур.'].filter(Boolean).join(' · ') || 'Новый персонаж'), el('div', { class: 'muted small' }, c.campaign_name ? 'Кампания: ' + c.campaign_name : 'Вне кампании')),
       el('button', { class: 'small danger', style: 'flex:0', onclick: async e => { e.stopPropagation(); if (confirm('Удалить персонажа?')) { await API.del('/api/characters/' + c.id); onChange(); } } }, icon('trash'))));
   }
   // Библиотека ресурсов: все изображения пользователя (карты, токены, портреты, объекты) + встроенные
@@ -424,7 +451,7 @@
       if (isGM) add('book', 'Запись справочника (монстр, черта, …)', async () => { await Compendium.editEntry(null, { campaignId: cid, isGM, onSaved: () => toast('Сохранено') }); });
       sep();
       add('upload', 'Импорт из Long Story Short', async () => { await LSS.importDialog({ campaignId: cid, onDone: c => { panels.chars.refresh?.(); openSheet(c.id); } }); });
-      if (isGM) add('map', 'Новая сцена', async () => { const n = await prompt2('Название сцены', 'Подземелье'); if (!n) return; const sc = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sc.id }); location.reload(); });
+      if (isGM) add('map', 'Новая сцена', async () => { const n = await prompt2('Название сцены', 'Подземелье'); if (!n) return; const sc = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sc.id }); reloadPage(); });
       document.body.append(menu);
       setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
     }
@@ -526,7 +553,7 @@
         for (const c of chars) {
           const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'grow' }, c.name, ' ', el('span', { class: 'muted' }, [c.sheet.race, c.sheet.class, c.sheet.level && c.sheet.level + ' ур.'].filter(Boolean).join(' '))),
             el('button', { class: 'small', title: 'Открыть поверх стола', onclick: e => { e.stopPropagation(); openSheet(c.id); } }, icon('sheet')),
-            el('button', { class: 'small', title: 'В отдельном окне', onclick: e => { e.stopPropagation(); window.open('/sheet/' + c.id, 'sheet_' + c.id, 'width=1000,height=800'); } }, icon('window')));
+            el('button', { class: 'small', title: 'В отдельном окне', onclick: e => { e.stopPropagation(); window.open(withTok('/sheet/' + c.id), 'sheet_' + c.id, 'width=1000,height=800'); } }, icon('window')));
           it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-character', JSON.stringify(c)); ev.dataTransfer.effectAllowed = 'copy'; });
           it.addEventListener('click', () => openSheet(c.id));
           // передача предмета: перетащите карточку предмета с листа (или из справочника) на персонажа
@@ -559,9 +586,9 @@
     // Лист персонажа поверх стола (iframe) с кнопкой «в отдельное окно»
     const sheetFrames = new Set();
     function openSheet(charId) {
-      const iframe = el('iframe', { class: 'sheetframe', src: `/sheet/${charId}?embed=1` });
+      const iframe = el('iframe', { class: 'sheetframe', src: withTok(`/sheet/${charId}?embed=1`) });
       sheetFrames.add(iframe);
-      floatWindow('Лист персонажа', iframe, { popout: () => window.open('/sheet/' + charId, 'sheet_' + charId, 'width=1000,height=800'), x: 60 + Math.random() * 40, y: 60 + Math.random() * 40 });
+      floatWindow('Лист персонажа', iframe, { popout: () => window.open(withTok('/sheet/' + charId), 'sheet_' + charId, 'width=1000,height=800'), x: 60 + Math.random() * 40, y: 60 + Math.random() * 40 });
     }
 
     // ---- ассеты ----
@@ -671,8 +698,8 @@
         el('h3', { style: 'margin-top:14px' }, 'Участники'), mem,
         el('h3', { style: 'margin-top:14px' }, 'Наборы справочника'), Compendium.campaignPacksPanel(cid, isGM),
         el('h3', { style: 'margin-top:14px' }, 'Кампания'),
-        el('button', { class: 'small', onclick: async () => { const n = await prompt2('Название', '', camp.name); if (n) { await API.patch('/api/campaigns/' + cid, { name: n, description: camp.description }); location.reload(); } } }, 'Переименовать'), ' ',
-        el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить кампанию безвозвратно?')) { await API.del('/api/campaigns/' + cid); location.href = '/'; } } }, 'Удалить кампанию'));
+        el('button', { class: 'small', onclick: async () => { const n = await prompt2('Название', '', camp.name); if (n) { await API.patch('/api/campaigns/' + cid, { name: n, description: camp.description }); reloadPage(); } } }, 'Переименовать'), ' ',
+        el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить кампанию безвозвратно?')) { await API.del('/api/campaigns/' + cid); go('/'); } } }, 'Удалить кампанию'));
       refreshInv(); refreshMem();
       return w;
     }

@@ -84,7 +84,7 @@
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', {}, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       el('div', { class: 'row' }, el('div', { class: 'dropslot', 'data-cat': 'race' }, el('label', {}, 'Раса ⤓'), inp('race', 'перетащите из справочника')), el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), inp('alignment', '')))));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
-      embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open('/sheet/' + id, 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
+      embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       embed ? null : Theme.button(),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
