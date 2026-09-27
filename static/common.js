@@ -2,13 +2,18 @@
 window.API = {
   async req(method, url, body, isForm) {
     const opt = { method, headers: {}, credentials: 'same-origin' };
+    // Токен дублируем в localStorage: cookie не работает, когда приложение открыто во фрейме на чужом домене (превью)
+    const tok = localStorage.getItem('dnd_token'); if (tok) opt.headers['Authorization'] = 'Bearer ' + tok;
     if (body !== undefined) {
       if (isForm) opt.body = body; else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     }
     const r = await fetch(url, opt);
-    if (r.status === 401) { if (!location.pathname.startsWith('/sheet/')) { location.href = '/'; } throw new Error('unauthorized'); }
+    if (r.status === 401) { localStorage.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && url !== '/api/auth/me') { location.href = '/'; } throw new Error('unauthorized'); }
+    window.wsToken = () => localStorage.getItem('dnd_token') || '';
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.statusText);
+    if (url === '/api/auth/verify' && data.token) localStorage.setItem('dnd_token', data.token);
+    if (url === '/api/auth/logout') localStorage.removeItem('dnd_token');
     return data;
   },
   get: (u) => API.req('GET', u), post: (u, b) => API.req('POST', u, b), patch: (u, b) => API.req('PATCH', u, b), del: (u) => API.req('DELETE', u),

@@ -114,7 +114,7 @@ async fn request_code(State(st): State<AppState>, Json(body): Json<RequestCodeIn
 #[derive(Deserialize)]
 pub struct VerifyIn { pub email: String, pub code: String, pub name: Option<String> }
 
-async fn verify(State(st): State<AppState>, Json(body): Json<VerifyIn>) -> ApiResult<Response> {
+async fn verify(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<VerifyIn>) -> ApiResult<Response> {
     let email = norm_email(&body.email)?;
     let row = sqlx::query("SELECT id, code, expires_at, attempts FROM auth_codes WHERE email = ? AND used = 0 ORDER BY id DESC LIMIT 1")
         .bind(&email).fetch_optional(&st.db).await?;
@@ -162,7 +162,10 @@ async fn verify(State(st): State<AppState>, Json(body): Json<VerifyIn>) -> ApiRe
 
     let body = json!({ "ok": true, "token": token, "user": { "id": user_id, "email": email, "name": name } });
     let mut resp = Json(body).into_response();
-    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}", 60 * 60 * 24 * 30);
+    // За HTTPS-прокси (в т.ч. во фрейме на другом домене) нужен SameSite=None; Secure
+    let https = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).map(|v| v.starts_with("https")).unwrap_or(false);
+    let same_site = if https { "SameSite=None; Secure" } else { "SameSite=Lax" };
+    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; {same_site}; Max-Age={}", 60 * 60 * 24 * 30);
     resp.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).unwrap());
     Ok(resp)
 }

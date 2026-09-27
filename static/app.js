@@ -136,7 +136,7 @@
     const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) this.sock.send(JSON.stringify(m)); } };
     function connect() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const s = new WebSocket(`${proto}://${location.host}/ws/${cid}`);
+      const s = new WebSocket(`${proto}://${location.host}/ws/${cid}` + (localStorage.getItem('dnd_token') ? `?token=${localStorage.getItem('dnd_token')}` : ''));
       ws.sock = s;
       s.onmessage = e => { const m = JSON.parse(e.data); handleWs(m); };
       s.onclose = () => setTimeout(connect, 1500);
