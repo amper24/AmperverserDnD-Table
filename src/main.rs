@@ -66,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(packs::router())
         .merge(realtime::router())
         .route("/static/*path", get(static_handler))
-        .route("/sheet/:id", get(|| async { serve_embedded("sheet.html") }))
-        .fallback(get(|| async { serve_embedded("index.html") }))
+        .route("/sheet/:id", get(|| async { serve_embedded("sheet.html", None) }))
+        .fallback(get(|| async { serve_embedded("index.html", None) }))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -81,20 +81,25 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn static_handler(uri: Uri) -> Response {
+async fn static_handler(uri: Uri, headers: axum::http::HeaderMap) -> Response {
     let path = uri.path().trim_start_matches("/static/");
-    serve_embedded(path)
+    serve_embedded(path, headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()))
 }
 
-fn serve_embedded(path: &str) -> Response {
+fn serve_embedded(path: &str, if_none_match: Option<&str>) -> Response {
     match StaticFiles::get(path) {
         Some(file) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            let cache = if path.ends_with(".html") { "no-cache" } else { "public, max-age=3600" };
+            // Всегда перепроверять (ETag по хэшу содержимого): после обновления сервера клиент не должен жить со старым JS
+            let etag = format!("\"{}\"", file.metadata.sha256_hash()[..8].iter().map(|b| format!("{b:02x}")).collect::<String>());
+            if if_none_match.map(|v| v == etag).unwrap_or(false) {
+                return Response::builder().status(StatusCode::NOT_MODIFIED).header(header::ETAG, etag).header(header::CACHE_CONTROL, "no-cache").body(Body::empty()).unwrap();
+            }
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, mime.as_ref())
-                .header(header::CACHE_CONTROL, cache)
+                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::ETAG, etag)
                 .body(Body::from(file.data.into_owned()))
                 .unwrap()
         }
