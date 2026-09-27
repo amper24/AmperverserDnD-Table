@@ -200,7 +200,8 @@
     const wrap = el('div');
     const list = await API.get('/api/characters');
     wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Персонажи'),
-      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Имя персонажа', 'Торин'); if (n) { const c = await API.post('/api/characters', { name: n }); window.open('/sheet/' + c.id, '_blank'); location.reload(); } } }, 'Новый персонаж')));
+      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Имя персонажа', 'Торин'); if (n) { const c = await API.post('/api/characters', { name: n }); window.open('/sheet/' + c.id, '_blank'); location.reload(); } } }, 'Новый персонаж'),
+      el('button', { style: 'flex:0;white-space:nowrap', onclick: () => LSS.importDialog({ onDone: c => { window.open('/sheet/' + c.id, '_blank'); location.reload(); } }) }, icon('upload'), ' Импорт из Long Story Short')));
     const g = el('div', { class: 'grid' });
     if (!list.length) g.append(el('p', { class: 'muted' }, 'Персонажей пока нет.'));
     for (const c of list) g.append(charCard(c, () => location.reload()));
@@ -261,12 +262,93 @@
     const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
     const bar = el('div', { class: 'tbar' }, el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
     if (isGM) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
-    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
+    const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
+    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
     const canvasWrap = el('div', { id: 'canvasWrap' });
     const side = el('div', { id: 'side' });
     root.append(canvasWrap, side);
+
+    // ---- панель кубиков на столе ----
+    function buildDiceTray() {
+      const tray = el('div', { class: 'dicetray' });
+      const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', style: 'width:52px' });
+      const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', style: 'width:130px' });
+      const hidden = isGM ? el('input', { type: 'checkbox', style: 'width:auto', title: 'Скрытый бросок — видит только мастер' }) : null;
+      let mode = 'norm';
+      const modeBtns = el('div', { class: 'seg' }, ...[['norm', 'Обычно'], ['adv', 'Преим.'], ['dis', 'Помеха']].map(([k, t]) => el('button', { class: 'small' + (k === 'norm' ? ' active' : ''), onclick: e => { mode = k; modeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.currentTarget)); } }, t)));
+      const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
+      const rollExpr = (expr, label) => { ws.send({ type: 'roll', expr, label, gm_only: !!hidden?.checked }); };
+      const die = (d) => {
+        let expr = 'd' + d, label = 'к' + d;
+        if (d === 20 && mode === 'adv') { expr = '2d20kh1'; label = 'к20 с преимуществом'; } else if (d === 20 && mode === 'dis') { expr = '2d20kl1'; label = 'к20 с помехой'; }
+        rollExpr(expr + modStr(), label + (modStr() ? ' ' + modStr() : ''));
+      };
+      const dice = el('div', { class: 'dice' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d} (Shift — дважды)`, onclick: e => { die(d); if (e.shiftKey) die(d); } }, 'к' + d)));
+      exprInp.addEventListener('keydown', e => { if (e.key === 'Enter' && exprInp.value.trim()) { rollExpr(exprInp.value.trim(), exprInp.value.trim()); } });
+      const go = el('button', { class: 'small', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) rollExpr(exprInp.value.trim(), exprInp.value.trim()); } }, 'Бросить');
+      const collapse = el('button', { class: 'small tray-toggle', title: 'Кубики: свернуть/развернуть', onclick: () => { tray.classList.toggle('min'); localStorage.setItem('dicetray_min', tray.classList.contains('min') ? '1' : ''); } }, icon('dice'));
+      if (localStorage.getItem('dicetray_min')) tray.classList.add('min');
+      tray.append(collapse, el('div', { class: 'tray-body' }, dice, modeBtns, modInp, exprInp, go, hidden ? el('label', { class: 'muted small', style: 'white-space:nowrap' }, hidden, ' скрытый') : null));
+      return tray;
+    }
+    canvasWrap.append(buildDiceTray());
+
+    // ---- меню «Создать» ----
+    function createMenu(anchor) {
+      document.querySelectorAll('.ctxmenu').forEach(m => m.remove());
+      const r = anchor.getBoundingClientRect();
+      const menu = el('div', { class: 'ctxmenu', style: `left:${r.left}px;top:${r.bottom + 4}px` });
+      const add = (ico, label, fn) => menu.append(el('div', { class: 'ctxitem', onclick: () => { menu.remove(); fn().catch(e => toast('Ошибка: ' + e.message, 4000)); } }, icon(ico), ' ', label));
+      const sep = () => menu.append(el('div', { class: 'ctxsep' }));
+      add('user', 'Персонаж (лист + токен)', async () => {
+        const n = await prompt2('Имя персонажа'); if (!n) return;
+        const c = await API.post('/api/characters', { name: n, campaign_id: cid });
+        await Table.placeTokenAtCenter({ name: c.name, hp: c.sheet?.hp?.max ?? 10, character_id: c.id, asset_id: c.portrait_asset_id, owner_id: me.id });
+        panels.chars.refresh?.(); openSheet(c.id);
+      });
+      if (isGM) add('skull', 'NPC / монстр (токен)', async () => {
+        const name = el('input', { placeholder: 'Гоблин' }), hp = el('input', { type: 'number', value: 10, style: 'width:80px' }), size = el('select', {}, ...[[1, 'Средний'], [0.5, 'Крошечный'], [2, 'Большой'], [3, 'Огромный'], [4, 'Громадный']].map(([v, t]) => el('option', { value: v }, t))), hid = el('input', { type: 'checkbox', style: 'width:auto' });
+        const ok = await modal('Новый NPC', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Имя'), name), el('div', { class: 'row' }, el('div', { class: 'field' }, el('label', {}, 'Хиты'), hp), el('div', { class: 'field' }, el('label', {}, 'Размер'), size)), el('label', {}, hid, ' скрыт от игроков'), el('p', { class: 'muted small' }, 'Монстра со статблоком удобнее перетащить из бестиария в справочнике.')), [{ label: 'Поставить на стол', cls: 'primary', fn: () => name.value.trim() }]);
+        if (!ok) return;
+        await Table.placeTokenAtCenter({ name: ok, hp: +hp.value || 10, sizeMul: +size.value, hidden: hid.checked });
+      });
+      sep();
+      add('sword', 'Предмет', async () => {
+        const it = await Modules.editItem(null, { title: 'Новый предмет' }); if (!it) return;
+        const dest = await chooseDest('Куда положить предмет?', { loot: 'На стол (лут)', char: 'В инвентарь', comp: isGM ? 'В homebrew-справочник кампании' : null });
+        if (!dest) return;
+        if (dest === 'loot') { await Table.dropLootAtCenter({ item: it }); toast(`${it.name} на столе`); }
+        else if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.inventory = [...(full.sheet.inventory || []), it]; await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${it.name} → ${full.name}`); }
+        else if (dest === 'comp') { await API.post('/api/compendium', { category: 'item', name: it.name, campaign_id: cid, data: { type: it.type, rarity: it.rarity, weight: it.weight, cost: it.cost, desc: it.desc, attunement: it.attunement, charges: it.charges?.max, recharge: it.charges?.recharge, actions: it.actions, tags: it.tags, icon: it.icon } }); toast('Добавлено в справочник кампании'); }
+      });
+      add('wand', 'Заклинание', async () => {
+        const sp = await Modules.editSpell(null); if (!sp) return;
+        const dest = await chooseDest('Куда добавить заклинание?', { char: 'Персонажу', comp: isGM ? 'В homebrew-справочник кампании' : null });
+        if (!dest) return;
+        if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.spells ||= { known: [], slots: {}, ability: 'int' }; full.sheet.spells.known.push(sp); await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${sp.name} → ${full.name}`); }
+        else { await API.post('/api/compendium', { category: 'spell', name: sp.name, campaign_id: cid, data: { level: sp.level, school: sp.school, casting_time: sp.casting_time, range: sp.range, components: sp.components, duration: sp.duration, concentration: sp.concentration, ritual: sp.ritual, desc: sp.desc, actions: sp.actions } }); toast('Добавлено в справочник кампании'); }
+      });
+      if (isGM) add('book', 'Запись справочника (монстр, черта, …)', async () => { await Compendium.editEntry(null, { campaignId: cid, isGM, onSaved: () => toast('Сохранено') }); });
+      sep();
+      add('upload', 'Импорт из Long Story Short', async () => { await LSS.importDialog({ campaignId: cid, onDone: c => { panels.chars.refresh?.(); openSheet(c.id); } }); });
+      if (isGM) add('map', 'Новая сцена', async () => { const n = await prompt2('Название сцены', 'Подземелье'); if (!n) return; const sc = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sc.id }); location.reload(); });
+      document.body.append(menu);
+      setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+    }
+    // выбор назначения: { key: label | null }; для 'char' раскрывается список персонажей кампании → 'char:<id>'
+    async function chooseDest(title, options) {
+      const chars = await API.get('/api/characters?campaign_id=' + cid).catch(() => []);
+      const sel = el('select', {});
+      for (const [k, label] of Object.entries(options)) {
+        if (!label) continue;
+        if (k === 'char') { for (const c of chars) sel.append(el('option', { value: 'char:' + c.id }, label + ': ' + c.name)); }
+        else sel.append(el('option', { value: k }, label));
+      }
+      if (!sel.options.length) { toast('Нет доступных персонажей'); return null; }
+      return modal(title, el('div', { class: 'field' }, sel), [{ label: 'Ок', cls: 'primary', fn: () => sel.value }]);
+    }
 
     // ---- WebSocket ----
     const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) this.sock.send(JSON.stringify(m)); } };
@@ -378,6 +460,7 @@
         }
       };
       w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Имя персонажа'); if (n) { const c = await API.post('/api/characters', { name: n, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
+        el('button', { style: 'width:100%;margin-bottom:8px', onclick: () => LSS.importDialog({ campaignId: cid, onDone: c => { refresh(); openSheet(c.id); } }) }, icon('upload'), ' Импорт из Long Story Short'),
         el('p', { class: 'muted', style: 'font-size:12px' }, 'Перетащите персонажа на стол — появится токен. Перетащите предмет с листа на персонажа — он будет передан.'), list);
       refresh(); panels.chars.refresh = refresh;
       return w;

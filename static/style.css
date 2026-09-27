@@ -357,3 +357,17 @@ button.primary, .btn.primary { font-weight: 600; }
 .tbl th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl tr:last-child td { border-bottom: none; }
+/* ---- кубики на столе ---- */
+.dicetray { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 8px; z-index: 5; max-width: calc(100% - 200px); }
+.dicetray .tray-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dicetray .dice { margin: 0; }
+.dicetray .dice button { font-weight: 600; min-width: 40px; }
+.dicetray input { padding: 4px 6px; font-size: 12px; }
+.dicetray.min .tray-body { display: none; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.seg button.active { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
+.ctxsep { height: 1px; background: var(--border); margin: 4px 0; }
+.ctxitem .ico { color: var(--muted); }

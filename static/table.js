@@ -580,5 +580,16 @@ window.Table = (function () {
   function getScene() { return S.scene; }
   function state() { return S; }
   function dropLootAtCenter(p) { return dropLoot(p, toWorld(S.w / 2, S.h / 2), true); }
-  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, CONDNAMES, CONDICON, dropLootAtCenter };
+  /// Токен в центре экрана (создание NPC/персонажа из меню «Создать»). data: name, hp, asset_id?, character_id?, sizeMul?
+  async function placeTokenAtCenter(o = {}) {
+    const g = grid(); const w = toWorld(S.w / 2, S.h / 2); const mul = o.sizeMul || 1;
+    let asset_id = o.asset_id;
+    if (!asset_id) { const toks = await API.get('/api/assets?kind=token'); const a = toks.find(t => o.name && t.name.toLowerCase() === (o.name || '').toLowerCase()) || toks.find(t => t.name === 'NPC') || toks[0]; asset_id = a?.id; }
+    const p = snapPos(w.x, w.y, g * mul, g * mul);
+    const data = { type: 'image', asset_id, x: p.x, y: p.y, w: g * mul, h: g * mul, name: o.name || 'Токен', hp: { cur: o.hp ?? 10, max: o.hp ?? 10 }, hidden: !!o.hidden, owner_id: o.owner_id || S.user.id };
+    if (o.character_id) data.character_id = o.character_id;
+    if (o.monster) data.monster = o.monster;
+    upsert({ layer: 'character', z: 1, data });
+  }
+  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, CONDNAMES, CONDICON, dropLootAtCenter, placeTokenAtCenter };
 })();
