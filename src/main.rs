@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let state_db = db.clone();
     let state = AppState { db, cfg: cfg.clone(), hub: realtime::Hub::default(), is_sqlite };
 
     let app = Router::new()
@@ -86,6 +87,8 @@ async fn main() -> anyhow::Result<()> {
     let db_label = cfg.database_url.split('@').last().unwrap_or("").to_string();
     tracing::info!("Edge Tablet запущен: http://{}  (БД: {})", addr, db_label);
     println!("Server listening on http://{addr}");
+    println!("Консоль: введите help для списка команд (users list, users make-root <email>, stats, stop)");
+    admin::spawn_console(state_db);
     axum::serve(listener, app).await?;
     Ok(())
 }

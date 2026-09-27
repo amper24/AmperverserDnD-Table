@@ -143,11 +143,9 @@ pub async fn ensure_root_from_env(db: &AnyPool) -> anyhow::Result<()> {
     let password = std::env::var("ROOT_PASSWORD").unwrap_or_default();
     match find_id(db, &email).await {
         Ok(id) => {
-            sqlx::query("UPDATE users SET is_root = 1, verified = 1 WHERE id = ?").bind(&id).execute(db).await?;
-            if password.len() >= 8 {
-                sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?").bind(auth::hash_password(&password).map_err(|e| anyhow::anyhow!(e.1))?).bind(&id).execute(db).await?;
-            }
-            tracing::info!("root: {email} (права подтверждены из ROOT_EMAIL)");
+            let is_root: i64 = sqlx::query("SELECT is_root FROM users WHERE id = ?").bind(&id).fetch_one(db).await?.get("is_root");
+            if is_root != 0 { tracing::info!("root: {email}"); }
+            else { tracing::info!("ROOT_EMAIL={email}: аккаунт есть, но без прав root. Выдать: введите в консоль  users make-root {email}"); }
         }
         Err(_) => {
             if password.len() < 8 {
@@ -180,8 +178,13 @@ Edge Tablet — команды администрирования
   dnd-table reseed                           пересоздать базовый справочник из вшитого seed
   dnd-table help                             эта справка
 
+Консоль сервера (Pterodactyl, Docker attach, run.sh): те же команды можно вводить
+прямо в консоль запущенного сервера, без префикса dnd-table:
+  help | users list | users make-root <email> | users revoke-root <email> | stats | stop
+
 Через cargo: cargo run --release -- users make-root admin@example.com
-Переменные: DATABASE_URL, ROOT_EMAIL + ROOT_PASSWORD (автосоздание root при старте).";
+Переменные: DATABASE_URL, ROOT_EMAIL + ROOT_PASSWORD (создание root при первом старте,
+если такого аккаунта ещё нет; снятые права root не восстанавливаются автоматически).";
 
 /// Возвращает Ok(true), если аргументы были CLI-командой и она выполнена (сервер запускать не нужно).
 pub async fn run_cli(db: &AnyPool, args: &[String]) -> anyhow::Result<bool> {
@@ -212,11 +215,10 @@ pub async fn run_cli(db: &AnyPool, args: &[String]) -> anyhow::Result<bool> {
         ["users", "make-root", email] | ["users", "revoke-root", email] => {
             let on = a[1] == "make-root";
             let id = find_id(db, email).await?;
-            if !on && root_count(db).await.map_err(|e| anyhow::anyhow!(e.1))? <= 1 {
-                anyhow::bail!("Это единственный root — сначала назначьте другого");
-            }
+            let last = !on && root_count(db).await.map_err(|e| anyhow::anyhow!(e.1))? <= 1;
             sqlx::query("UPDATE users SET is_root = ?, verified = 1 WHERE id = ?").bind(if on { 1i64 } else { 0 }).bind(&id).execute(db).await?;
             println!("{email}: root = {}", if on { "yes" } else { "no" });
+            if last { println!("Внимание: root-пользователей больше нет. Вернуть: users make-root <email>"); }
         }
         ["users", "set-password", email, password] => {
             if password.len() < 8 { anyhow::bail!("Пароль не короче 8 символов"); }
@@ -242,7 +244,48 @@ pub async fn run_cli(db: &AnyPool, args: &[String]) -> anyhow::Result<bool> {
             crate::seed::seed(db).await?;
             println!("Базовый справочник пересоздан");
         }
-        _ => { println!("Неизвестная команда: {}\n\n{HELP}", args.join(" ")); std::process::exit(2); }
+        _ => { println!("Неизвестная команда: {}\n\n{HELP}", args.join(" ")); anyhow::bail!("unknown command"); }
     }
     Ok(true)
+}
+
+/// Интерактивная консоль запущенного сервера: читает команды из stdin (консоль Pterodactyl / docker attach / терминал)
+/// и выполняет их той же функцией, что и CLI. Если stdin закрыт или недоступен — просто завершается.
+pub fn spawn_console(db: AnyPool) {
+    let handle = tokio::runtime::Handle::current();
+    std::thread::Builder::new().name("console".into()).spawn(move || {
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        for line in stdin.lock().lines() {
+            let Ok(line) = line else { break };
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            let args: Vec<String> = match shell_split(line) { Ok(a) => a, Err(e) => { println!("{e}"); continue; } };
+            match args[0].as_str() {
+                "stop" | "exit" | "quit" => { println!("Остановка сервера…"); std::process::exit(0); }
+                "serve" => { println!("Сервер уже запущен"); continue; }
+                _ => {}
+            }
+            let db = db.clone();
+            let res = handle.block_on(async move { run_cli(&db, &args).await });
+            match res { Ok(_) => {}, Err(e) if e.to_string() == "unknown command" => {}, Err(e) => println!("Ошибка: {e}") }
+        }
+    }).ok();
+}
+
+/// Разбор строки консоли с поддержкой кавычек: users create a@b.c pass --name "Иван Иванов".
+fn shell_split(s: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new(); let mut cur = String::new(); let mut quote: Option<char> = None; let mut has = false;
+    for ch in s.chars() {
+        match (quote, ch) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), c) => cur.push(c),
+            (None, '"') | (None, '\'') => { quote = Some(ch); has = true; }
+            (None, c) if c.is_whitespace() => { if has || !cur.is_empty() { out.push(std::mem::take(&mut cur)); has = false; } }
+            (None, c) => { cur.push(c); has = true; }
+        }
+    }
+    if quote.is_some() { return Err("Незакрытая кавычка".into()); }
+    if has || !cur.is_empty() { out.push(cur); }
+    Ok(out)
 }
