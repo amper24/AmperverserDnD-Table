@@ -85,15 +85,15 @@ window.el = function (tag, attrs = {}, ...children) {
   for (const c of children.flat()) if (c !== null && c !== undefined) e.append(c.nodeType ? c : document.createTextNode(c));
   return e;
 };
-window.modal = function (title, content, buttons = []) {
+window.modal = function (title, content, buttons = [], opts = {}) {
   return new Promise(resolve => {
     const bg = el('div', { class: 'modal-bg' });
-    const m = el('div', { class: 'modal' }, el('h2', {}, title), content);
+    const m = el('div', { class: 'modal' + (opts.wide ? ' wide' : '') }, el('h2', {}, title), content);
     const btns = el('div', { class: 'row', style: 'margin-top:14px;justify-content:flex-end' });
     for (const b of buttons) btns.append(el('button', { class: b.cls || '', onclick: () => { const r = b.fn ? b.fn() : b.value; if (r !== false) { bg.remove(); resolve(r); } } }, b.label));
     btns.append(el('button', { onclick: () => { bg.remove(); resolve(null); } }, 'Отмена'));
     m.append(btns); bg.append(m); document.body.append(bg);
-    bg.addEventListener('click', e => { if (e.target === bg) { bg.remove(); resolve(null); } });
+    bg.addEventListener('pointerdown', e => { if (e.target === bg && !opts.wide) { bg.remove(); resolve(null); } });
   });
 };
 window.prompt2 = async function (title, placeholder = '', value = '') {

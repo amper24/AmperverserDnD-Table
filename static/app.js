@@ -70,7 +70,7 @@
     const tabs = el('div', { class: 'tabs' });
     const content = el('div');
     page.append(tabs, content);
-    const views = { camps: ['Кампании', lobbyCampaigns], chars: ['Мои персонажи', lobbyCharacters], comp: ['Справочник', () => { const w = el('div', { style: 'height:calc(100vh - 160px)' }, Compendium.widget({})); return w; }] };
+    const views = { camps: ['Кампании', lobbyCampaigns], chars: ['Мои персонажи', lobbyCharacters], comp: ['Справочник', () => { const w = el('div', { style: 'height:calc(100vh - 160px)' }, Compendium.widget({})); return w; }], packs: ['📦 Наборы', () => Compendium.packsPanel()] };
     let cur = 'camps';
     function show(k) { cur = k; tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.k === k)); content.innerHTML = ''; const r = views[k][1](); if (r?.then) r.then(x => content.append(x)); else content.append(r); }
     for (const [k, [t]] of Object.entries(views)) tabs.append(el('button', { 'data-k': k, onclick: () => show(k) }, t));
@@ -112,7 +112,7 @@
     let camp;
     try { camp = await API.get('/api/campaigns/' + cid); } catch (e) { app.innerHTML = ''; app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Нет доступа'), el('p', {}, e.message), el('a', { href: '/' }, 'В лобби')))); return; }
     const isGM = camp.role === 'gm';
-    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => ws.send({ type: 'roll', expr, label, gm_only }) };
+    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => ws.send({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
     document.title = camp.name + ' — DnD Table';
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
@@ -199,7 +199,9 @@
         const p = m.payload;
         d.append(who, el('div', { class: 'row' }, el('span', { class: 'total' }, p.total), el('span', {}, p.label ? p.label + ' ' : '', el('span', { class: 'muted' }, p.expr))),
           el('div', { class: 'detail' }, p.parts.map(x => x.rolls ? `${x.term}: [${x.rolls.map(r => x.kept && !x.kept.includes(r) ? `~${r}~` : r).join(', ')}]` : x.term).join(' ')), p.gm_only ? el('div', { class: 'detail' }, '🙈 только мастер') : null);
-      } else d.append(who, el('div', {}, m.payload.text));
+      } else if (m.kind === 'card') { d.append(who, Modules.renderChatCard(m.payload, {})); }
+      else if (m.kind === 'system') { d.append(el('div', { class: 'muted small' }, '⚙ ' + (m.payload.text || ''))); }
+      else d.append(who, Modules.rich(m.payload.text || '', {}, {}));
       chatLog.append(d); chatLog.scrollTop = chatLog.scrollHeight;
     }
 
@@ -218,6 +220,18 @@
             el('button', { class: 'small', title: 'В отдельном окне', onclick: e => { e.stopPropagation(); window.open('/sheet/' + c.id, 'sheet_' + c.id, 'width=1000,height=800'); } }, '⧉'));
           it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-character', JSON.stringify(c)); ev.dataTransfer.effectAllowed = 'copy'; });
           it.addEventListener('click', () => openSheet(c.id));
+          // передача предмета: перетащите карточку предмета с листа (или из справочника) на персонажа
+          it.addEventListener('dragover', ev => { if (Modules.hasType(ev, 'application/x-item', 'application/x-spell')) { ev.preventDefault(); it.classList.add('dragover'); } });
+          it.addEventListener('dragleave', () => it.classList.remove('dragover'));
+          it.addEventListener('drop', async ev => {
+            it.classList.remove('dragover'); ev.preventDefault();
+            const p = Modules.getDrag(ev, 'application/x-item'); const sp = Modules.getDrag(ev, 'application/x-spell');
+            try {
+              if (p && p.from_character_id && p.from_character_id !== c.id) { await API.post(`/api/characters/${p.from_character_id}/transfer`, { item_uid: p.item.uid, to_character_id: c.id }); toast(`${p.item.name} → ${c.name}`); }
+              else if (p && !p.from_character_id) { const full = await API.get('/api/characters/' + c.id); full.sheet.inventory = [...(full.sheet.inventory || []), { ...p.item, uid: Modules.uid() }]; await API.patch('/api/characters/' + c.id, { sheet: full.sheet }); toast(`${p.item.name} → ${c.name}`); }
+              else if (sp) { const full = await API.get('/api/characters/' + c.id); full.sheet.spells ||= { known: [], slots: {}, ability: 'int' }; if (!full.sheet.spells.known.some(x => x.name === sp.spell.name)) full.sheet.spells.known.push({ ...sp.spell, uid: Modules.uid() }); await API.patch('/api/characters/' + c.id, { sheet: full.sheet }); toast(`${sp.spell.name} → ${c.name}`); }
+            } catch (e) { toast('Не удалось: ' + e.message, 4000); }
+          });
           list.append(it);
         }
         if (!chars.length) list.append(el('p', { class: 'muted' }, 'Пока никого. Создайте персонажа или добавьте своего.'));
@@ -228,13 +242,15 @@
         }
       };
       w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Имя персонажа'); if (n) { const c = await API.post('/api/characters', { name: n, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
-        el('p', { class: 'muted', style: 'font-size:12px' }, 'Перетащите персонажа на стол, чтобы создать его токен.'), list);
+        el('p', { class: 'muted', style: 'font-size:12px' }, 'Перетащите персонажа на стол — появится токен. Перетащите предмет с листа на персонажа — он будет передан.'), list);
       refresh(); panels.chars.refresh = refresh;
       return w;
     }
     // Лист персонажа поверх стола (iframe) с кнопкой «в отдельное окно»
+    const sheetFrames = new Set();
     function openSheet(charId) {
       const iframe = el('iframe', { class: 'sheetframe', src: `/sheet/${charId}?embed=1` });
+      sheetFrames.add(iframe);
       floatWindow('Лист персонажа', iframe, { popout: () => window.open('/sheet/' + charId, 'sheet_' + charId, 'width=1000,height=800'), x: 60 + Math.random() * 40, y: 60 + Math.random() * 40 });
     }
 
@@ -343,6 +359,7 @@
         el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'player' }); refreshInv(); } }, '+ Для игроков'),
         el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'gm' }); refreshInv(); } }, '+ Для мастера')), inv,
         el('h3', { style: 'margin-top:14px' }, 'Участники'), mem,
+        el('h3', { style: 'margin-top:14px' }, '📦 Наборы справочника'), Compendium.campaignPacksPanel(cid, isGM),
         el('h3', { style: 'margin-top:14px' }, 'Кампания'),
         el('button', { class: 'small', onclick: async () => { const n = await prompt2('Название', '', camp.name); if (n) { await API.patch('/api/campaigns/' + cid, { name: n, description: camp.description }); location.reload(); } } }, 'Переименовать'), ' ',
         el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить кампанию безвозвратно?')) { await API.del('/api/campaigns/' + cid); location.href = '/'; } } }, 'Удалить кампанию'));
@@ -357,13 +374,20 @@
         case 'presence': presence.innerHTML = ''; m.users.forEach(u => presence.append(el('span', { class: u.role, title: u.name }, u.name.slice(0, 2).toUpperCase()))); break;
         case 'active_scene': camp.active_scene_id = m.scene_id; refreshSceneSel(); if (!isGM) loadScene(m.scene_id); break;
         case 'initiative': initState = m.state; panels.init.render?.(); if (curPanel !== 'init') tabs.querySelector('[data-k=init]').style.color = 'var(--accent)'; break;
-        case 'character_update': panels.chars.refresh?.(); break;
+        case 'character_update': panels.chars.refresh?.(); for (const f of sheetFrames) { if (!f.isConnected) { sheetFrames.delete(f); continue; } try { f.contentWindow.postMessage({ type: 'character_update', id: m.character?.id }, '*'); } catch { } } break;
+        case 'packs_changed': paneEls.comp?.firstChild?.reload?.(); toast('Наборы кампании обновлены'); break;
         default: Table.onMessage(m);
       }
     }
     tabs.addEventListener('click', e => { if (e.target.dataset.k) e.target.style.color = ''; });
     // сообщения из iframe листа персонажа (броски в чат, открыть в отдельном окне)
-    window.addEventListener('message', e => { if (e.data?.type === 'roll') ws.send({ type: 'roll', expr: e.data.expr, label: e.data.label }); if (e.data?.type === 'chat') ws.send({ type: 'chat', text: e.data.text }); });
+    window.addEventListener('message', e => {
+      const d = e.data; if (!d?.type) return;
+      if (d.type === 'roll') ws.send({ type: 'roll', expr: d.expr, label: d.label, gm_only: !!d.gm_only });
+      if (d.type === 'chat') ws.send({ type: 'chat', text: d.text });
+      if (d.type === 'card') ws.send({ type: 'card', card: d.card });
+      if (d.type === 'loot_drop') Table.dropLootAtCenter({ item: d.item }).then(() => toast(`${d.item.name} выложен на стол`)).catch(err => toast('Ошибка: ' + err.message));
+    });
 
     connect();
     await loadScene(currentSceneId);

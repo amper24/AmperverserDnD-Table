@@ -99,7 +99,7 @@ window.Table = (function () {
   function visibleItems() {
     return S.scene.items.filter(i => S.isGM || !i.data.hidden).sort((a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer) || a.z - b.z);
   }
-  function canEdit(it) { return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id); }
+  function canEdit(it) { return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id) || !!it.data.loot; }
 
   // ---------- рендер ----------
   function loop() { draw(); requestAnimationFrame(loop); }
@@ -174,6 +174,14 @@ window.Table = (function () {
         if (d.conditions?.length) { c.font = `${d.h * 0.18}px sans-serif`; c.textAlign = 'left'; c.fillText(d.conditions.map(x => CONDICON[x] || '•').join(''), -d.w / 2, -d.h / 2 + d.h * 0.18); }
         if (d.dead) { c.strokeStyle = '#e5484d'; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
       }
+    } else if (d.type === 'loot') {
+      // мешочек с лутом: иконка предмета на подложке
+      c.translate(d.x, d.y);
+      const r = Math.min(d.w, d.h) / 2;
+      c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || '#f5a524') : '#f5a524'; c.lineWidth = 3 / S.cam.k; c.stroke();
+      c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item ? Modules.itemIcon(d.item) : '📦', 0, r * 0.05);
+      const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
+      c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = '#000c'; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
     } else if (d.type === 'drawing') {
       drawShape(c, d);
     } else if (d.type === 'text') {
@@ -370,7 +378,9 @@ window.Table = (function () {
       const asset = e.dataTransfer.getData('application/x-asset');
       const chr = e.dataTransfer.getData('application/x-character');
       const comp = e.dataTransfer.getData('application/x-compendium');
+      const lootRaw = e.dataTransfer.getData('application/x-item');
       if (asset) { placeAsset(JSON.parse(asset), w); return; }
+      if (lootRaw) { try { await dropLoot(JSON.parse(lootRaw), w); } catch (err) { toast('Ошибка: ' + err.message); } return; }
       if (chr) {
         const c = JSON.parse(chr);
         const data = { type: 'image', asset_id: c.portrait_asset_id, x: w.x, y: w.y, w: g, h: g, name: c.name, character_id: c.id, owner_id: c.owner_id, hp: { cur: c.sheet?.hp?.current ?? 10, max: c.sheet?.hp?.max ?? 10 } };
@@ -399,6 +409,32 @@ window.Table = (function () {
         }
       }
     });
+  }
+  // Предмет, брошенный на стол: создаём «лут»-токен; если он пришёл с листа персонажа — убираем его оттуда
+  async function dropLoot(p, w, silent) {
+    const g = grid(); const pos = snapPos(w.x, w.y, g * 0.7, g * 0.7);
+    const item = { ...p.item };
+    if (p.from_character_id) {
+      const ch = await API.get('/api/characters/' + p.from_character_id);
+      const inv = ch.sheet.inventory || [];
+      if (!inv.some(i => i.uid === item.uid)) { if (!silent) return toast('Предмета уже нет в инвентаре'); }
+      else { ch.sheet.inventory = inv.filter(i => i.uid !== item.uid); await API.patch('/api/characters/' + p.from_character_id, { sheet: ch.sheet }); }
+    }
+    upsert({ layer: 'prop', z: 5, data: { type: 'loot', loot: true, item, x: pos.x, y: pos.y, w: g * 0.7, h: g * 0.7, name: item.name, owner_id: S.user.id, dropped_by: p.from_character_id || null } });
+    if (!silent) toast(`${item.name} на столе`);
+  }
+  async function pickUpLoot(it) {
+    const all = await API.get('/api/characters?campaign_id=' + S.campaign.id);
+    const mine = S.isGM ? all : all.filter(c => c.owner_id === S.user.id);
+    if (!mine.length) return toast('У вас нет персонажа в кампании');
+    let target = mine[0];
+    if (mine.length > 1) { const sel = el('select', {}, ...mine.map(c => el('option', { value: c.id }, c.name))); const ok = await modal(`Кто подбирает «${it.data.item?.name}»?`, el('div', { class: 'field' }, sel), [{ label: 'Подобрать', cls: 'primary', fn: () => sel.value }]); if (!ok) return; target = mine.find(c => c.id === ok); }
+    const ch = await API.get('/api/characters/' + target.id);
+    const item = { ...it.data.item, uid: Modules.uid(), equipped: false };
+    ch.sheet.inventory = [...(ch.sheet.inventory || []), item];
+    await API.patch('/api/characters/' + target.id, { sheet: ch.sheet });
+    S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); if (S.sel === it.id) { S.sel = null; updateProps(); }
+    S.ws.send({ type: 'chat', text: `${target.name} подбирает ${item.name}${item.qty > 1 ? ' ×' + item.qty : ''}` });
   }
   function placeAsset(a, w) {
     const g = grid();
@@ -449,6 +485,10 @@ window.Table = (function () {
     const add = (label, fn, cls = '') => menu.append(el('div', { class: 'ctxitem ' + cls, onclick: () => { menu.remove(); fn(); } }, label));
     menu.append(el('div', { class: 'ctxtitle' }, d.name || d.text || Table.LAYER_NAMES[it.layer] || 'Элемент'));
     if (d.character_id) add('📜 Лист персонажа', () => S.onOpenSheet(d.character_id));
+    if (d.type === 'loot') {
+      add('🖐 Подобрать', () => pickUpLoot(it));
+      add('🔍 Осмотреть', () => floatWindow(d.item?.name || 'Предмет', el('div', { style: 'padding:12px' }, Modules.itemCardBody(d.item || {}, {}), el('div', { class: 'row', style: 'margin-top:8px' }, el('button', { class: 'small', onclick: () => Modules.sendCard(Modules.toChatCard(d.item, 'item')) }, '💬 В чат'))), { w: 420, h: 360 }));
+    }
     if (d.monster) add('👹 Статблок', () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }));
     if (editable && (it.layer === 'character' || it.layer === 'mount')) {
       add('− Урон…', () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; if (d.hp.cur <= 0) d.dead = true; upsert(it); });
@@ -539,5 +579,6 @@ window.Table = (function () {
   function setActiveLayer(l) { S.activeLayer = l; }
   function getScene() { return S.scene; }
   function state() { return S; }
-  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, CONDNAMES, CONDICON };
+  function dropLootAtCenter(p) { return dropLoot(p, toWorld(S.w / 2, S.h / 2), true); }
+  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, CONDNAMES, CONDICON, dropLootAtCenter };
 })();

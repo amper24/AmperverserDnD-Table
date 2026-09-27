@@ -59,6 +59,31 @@ CH=$(pl -X POST "$B/api/characters" -H 'content-type: application/json' -d "{\"n
 gm -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d '{"sheet":{"name":"Торин","level":3}}' | J "d['sheet']['level']" | grep -q 3
 pl -X PATCH "$B/api/characters/$CH" >/dev/null   # пустой PATCH (проверка прав из листа)
 
+echo "[4b] наборы (packs)"
+PACK=$(pl -X POST "$B/api/packs" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":false}' | J "d['id']")
+pl -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Кинжал Теней\",\"pack_id\":\"$PACK\",\"data\":{\"type\":\"weapon\",\"actions\":[{\"name\":\"Атака\",\"kind\":\"attack\",\"roll\":\"1d20+@atk\"}]}}" | J "d['pack_id']" | grep -q "$PACK"
+pl "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)" | grep -q 1          # владелец видит свой набор
+[ "$(gm "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)")" = "0" ]        # мастер — нет, набор не подключён и не публичный
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/campaigns/$CID/packs/$PACK"); [ "$code" = "403" ]
+pl -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":true}' | J "d['is_public']" | grep -qi true
+gm -X POST "$B/api/campaigns/$CID/packs/$PACK" | grep -q '"ok":true'
+[ "$(gm "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/campaigns/$CID/packs" | J "d[0]['entries']")" = "1" ]
+EXP=$(pl "$B/api/packs/$PACK/export")
+IMP=$(gm -X POST "$B/api/packs/import" -H 'content-type: application/json' -d "$(echo "$EXP" | python3 -c "import sys,json; d=json.load(sys.stdin); d['name']='Импорт'; print(json.dumps(d))")")
+[ "$(echo "$IMP" | J "d['entries']")" = "1" ]
+[ "$(gm "$B/api/packs?scope=mine" | J "len(d)")" = "1" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X DELETE "$B/api/packs/$PACK"); [ "$code" = "403" ]
+
+echo "[4c] передача предметов между персонажами"
+CH2=$(gm -X POST "$B/api/characters" -H 'content-type: application/json' -d "{\"name\":\"Гимли\",\"campaign_id\":\"$CID\"}" | J "d['id']")
+pl -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d '{"sheet":{"name":"Торин","level":3,"inventory":[{"uid":"u1","name":"Факел","qty":5,"type":"gear"}]}}' >/dev/null
+pl -X POST "$B/api/characters/$CH/transfer" -H 'content-type: application/json' -d "{\"item_uid\":\"u1\",\"to_character_id\":\"$CH2\",\"qty\":2}" | grep -q '"ok":true'
+[ "$(pl "$B/api/characters/$CH" | J "d['sheet']['inventory'][0]['qty']")" = "3" ]
+[ "$(gm "$B/api/characters/$CH2" | J "d['sheet']['inventory'][0]['qty']")" = "2" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/characters/$CH2/transfer" -H 'content-type: application/json' -d "{\"item_uid\":\"u1\",\"to_character_id\":\"$CH\"}"); [ "$code" = "403" ]
+gm -X DELETE "$B/api/characters/$CH2" | grep -q '"ok":true'
+
 echo "[5] WebSocket: чат, броски, права игрока"
 python3 - "$B" "$CID" "$SID" "$GM" "$PL" <<'PY'
 import sys, json, asyncio
@@ -102,8 +127,8 @@ asyncio.run(main())
 PY
 echo "[5b] состояние после WS"
 [ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "(len(d['items']), d['fog']['enabled'])")" = "(1, True)" ]
-[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "1" ]   # скрытый бросок мастера игроку не виден
-[ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "2" ]
+[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "2" ]   # системное сообщение о передаче + бросок; скрытый бросок мастера игроку не виден
+[ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "3" ]
 
 echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]
