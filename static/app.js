@@ -112,7 +112,7 @@
     let camp;
     try { camp = await API.get('/api/campaigns/' + cid); } catch (e) { app.innerHTML = ''; app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Нет доступа'), el('p', {}, e.message), el('a', { href: '/' }, 'В лобби')))); return; }
     const isGM = camp.role === 'gm';
-    window.TABLE_CTX = { isGM, campaign: camp, user: me };
+    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => ws.send({ type: 'roll', expr, label, gm_only }) };
     document.title = camp.name + ' — DnD Table';
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
@@ -310,8 +310,10 @@
       const renderGrid = () => {
         const sc = Table.getScene(); if (!sc) return; const g = sc.grid;
         gridBox.innerHTML = ''; gridBox.append(el('h3', {}, 'Сетка сцены'),
-          el('div', { class: 'row' }, el('div', { class: 'field' }, el('label', {}, 'Размер клетки (px)'), el('input', { type: 'number', value: g.size, onchange: e => { g.size = +e.target.value; Table.sendScene({ grid: g }); } })),
-            el('div', { class: 'field' }, el('label', {}, 'Масштаб'), el('input', { value: g.scale || '5 фт', onchange: e => { g.scale = e.target.value; Table.state().gridScaleFt = parseInt(g.scale) || 5; Table.sendScene({ grid: g }); } }))),
+          el('div', { class: 'row' }, el('div', { class: 'field' }, el('label', {}, 'Тип сетки'), el('select', { onchange: e => { g.type = e.target.value; Table.sendScene({ grid: g }); } }, el('option', { value: 'square', selected: (g.type || 'square') === 'square' ? '' : null }, 'Квадраты'), el('option', { value: 'hex', selected: g.type === 'hex' ? '' : null }, 'Гексы'))),
+            el('div', { class: 'field' }, el('label', {}, 'Размер клетки (px)'), el('input', { type: 'number', value: g.size, onchange: e => { g.size = +e.target.value; Table.sendScene({ grid: g }); } })),
+            el('div', { class: 'field' }, el('label', {}, 'Масштаб клетки'), el('input', { value: g.scale || '5 фт', onchange: e => { g.scale = e.target.value; Table.state().gridScaleFt = parseInt(g.scale) || 5; Table.sendScene({ grid: g }); } }))),
+          el('div', { class: 'field' }, el('label', {}, 'Цвет линий'), el('input', { type: 'color', value: (g.color || '#000000').slice(0, 7), style: 'height:32px;padding:2px', onchange: e => { g.color = e.target.value + '66'; Table.sendScene({ grid: g }); } })),
           el('label', {}, el('input', { type: 'checkbox', checked: g.visible ? '' : null, style: 'width:auto', onchange: e => { g.visible = e.target.checked; Table.sendScene({ grid: g }); } }), ' Показывать сетку'));
       };
       w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Название сцены'); if (n) { const s = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await refresh(); loadScene(s.id); } } }, '+ Новая сцена'), list, gridBox);

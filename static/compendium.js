@@ -35,7 +35,22 @@ window.Compendium = (function () {
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
     block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), t.text));
     block('Подрасы', d.subraces, s => el('p', {}, el('b', {}, s.name + ' (' + asi(s.asi) + '). '), s.text));
-    block('Действия', d.actions, a => el('p', {}, el('b', {}, a.name + '. '), a.text));
+    block('Действия', d.actions, a => {
+      const p = el('p', {}, el('b', {}, a.name + '. '), a.text);
+      const roll = window.TABLE_CTX?.roll || (window.parent !== window && ((expr, label) => window.parent.postMessage({ type: 'roll', expr, label }, '*')));
+      if (roll) {
+        const hit = a.text.match(/([+-]\d+)\s*(?:к|к попаданию|,)/);
+        const dmg = a.text.match(/(\d+к\d+(?:\s*[+-]\s*\d+)?)/);
+        if (hit) p.append(el('span', { class: 'rollbtn', title: 'Бросок атаки', onclick: () => roll('d20' + hit[1], `${e.name}: ${a.name} (атака)`) }, '🎯 ' + hit[1]));
+        if (dmg) p.append(el('span', { class: 'rollbtn', title: 'Урон', onclick: () => roll(dmg[1].replace(/\s/g, '').replace(/к/g, 'd'), `${e.name}: ${a.name} (урон)`) }, '💥 ' + dmg[1]));
+      }
+      return p;
+    });
+    if (e.category === 'monster' && d.abilities) {
+      const roll = window.TABLE_CTX?.roll;
+      if (roll) wrap.append(el('p', {}, el('span', { class: 'rollbtn', onclick: () => roll('d20' + fmtMod(mod(d.abilities.dex || 10)), e.name + ': инициатива') }, '🎲 Инициатива'),
+        ...Object.entries(d.abilities).map(([k, v]) => el('span', { class: 'rollbtn', onclick: () => roll('d20' + fmtMod(mod(v)), `${e.name}: ${ABIL[k]}`) }, ABIL[k].slice(0, 3) + ' ' + fmtMod(mod(v))))));
+    }
     if (d.features) { wrap.append(el('h3', { style: 'margin-top:12px' }, 'Умения по уровням')); Object.entries(d.features).forEach(([lvl, fs]) => wrap.append(el('p', {}, el('b', {}, lvl + ' ур.: '), fs.join(', ')))); }
     if (e.campaign_id && window.TABLE_CTX?.isGM) {
       wrap.append(el('div', { class: 'row', style: 'margin-top:12px' },

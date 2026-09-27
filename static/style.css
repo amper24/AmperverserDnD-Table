@@ -149,3 +149,12 @@ iframe.sheetframe { width: 100%; height: 100%; border: none; background: var(--b
 .presence { display: flex; gap: 4px; }
 .presence span { width: 26px; height: 26px; border-radius: 50%; background: var(--accent2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
 .presence span.gm { background: var(--accent); color: #1a1408; }
+
+/* контекстное меню */
+.ctxmenu { position: fixed; z-index: 120; min-width: 200px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 10px 30px #000a; }
+.ctxtitle { padding: 6px 10px; font-weight: 600; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.ctxitem { padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.ctxitem:hover { background: var(--panel2); }
+.ctxitem.danger { color: var(--danger); }
+.rollbtn { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--border); cursor: pointer; font-size: 12px; margin-left: 4px; }
+.rollbtn:hover { border-color: var(--accent); color: var(--accent); }

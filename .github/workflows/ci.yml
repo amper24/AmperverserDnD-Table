@@ -74,11 +74,13 @@ jobs:
           NUM=$(gh issue list --state open --search "CI build log in:title" --json number --jq '.[0].number')
           if [ -z "$NUM" ]; then NUM=$(gh issue create --title "CI build log" --body "Автоматические отчёты CI" | grep -oE '[0-9]+$'); fi
           gh issue comment "$NUM" --body-file report.md
-      - name: Upload Cargo.lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: Cargo.lock
-          path: Cargo.lock
+      - name: Commit Cargo.lock if missing in repo
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -f Cargo.lock && git commit -m "chore: add Cargo.lock [skip ci]" && git push origin HEAD:${GITHUB_REF_NAME}
+          fi
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

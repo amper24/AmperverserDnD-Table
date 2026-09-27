@@ -24,6 +24,7 @@ window.Table = (function () {
     S.hint = el('div', { class: 'hint' }, 'ЛКМ — выбрать/тащить, колесо — зум, ПКМ/пробел — панорама');
     wrap.append(S.hint);
     bindEvents();
+    syncScale();
     resize();
     window.addEventListener('resize', resize);
     fitToMap();
@@ -31,8 +32,9 @@ window.Table = (function () {
   }
 
   function setScene(scene) {
-    S.scene = scene; S.sel = null; S.temp = null; updateProps(); fitToMap();
+    S.scene = scene; S.sel = null; S.temp = null; syncScale(); updateProps(); fitToMap();
   }
+  function syncScale() { S.gridScaleFt = parseInt(S.scene.grid?.scale) || 5; }
 
   // ---------- геометрия ----------
   function resize() {
@@ -43,8 +45,22 @@ window.Table = (function () {
   const toWorld = (sx, sy) => ({ x: (sx - S.cam.x) / S.cam.k, y: (sy - S.cam.y) / S.cam.k });
   const toScreen = (wx, wy) => ({ x: wx * S.cam.k + S.cam.x, y: wy * S.cam.k + S.cam.y });
   const grid = () => S.scene.grid?.size || 70;
+  // --- гекс-сетка (pointy-top): size = ширина гекса ---
+  function hexMetrics() { const w = grid(); const r = w / Math.sqrt(3); return { w, r, hstep: w, vstep: r * 1.5 }; }
+  function hexCenter(q, rr) { const { w, r } = hexMetrics(); return { x: w * (q + rr / 2), y: r * 1.5 * rr }; }
+  function hexAt(x, y) {
+    const { w, r } = hexMetrics();
+    const qf = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / r, rf = (2 / 3 * y) / r;
+    // округление кубических координат
+    let rx = Math.round(qf), rz = Math.round(rf), ry = Math.round(-qf - rf);
+    const dx = Math.abs(rx - qf), dz = Math.abs(rz - rf), dy = Math.abs(ry + qf + rf);
+    if (dx > dy && dx > dz) rx = -ry - rz; else if (dz > dx && dz > dy) rz = -rx - ry;
+    void w; return { q: rx, r: rz };
+  }
+  function isHex() { return (S.scene.grid?.type || 'square') === 'hex'; }
   function snapPos(x, y, w, h) {
     if (!S.snap) return { x, y };
+    if (isHex()) { const c = hexAt(x, y); return hexCenter(c.q, c.r); }
     const g = grid();
     // токены меньше клетки — по центру клетки, иначе к углам
     if (w <= g * 1.01 && h <= g * 1.01) return { x: Math.round((x - g / 2) / g) * g + g / 2 - w / 2 + w / 2, y: Math.round((y - g / 2) / g) * g + g / 2 };
@@ -115,8 +131,22 @@ window.Table = (function () {
     const size = g.size || 70;
     const tl = toWorld(0, 0), br = toWorld(S.w, S.h);
     c.strokeStyle = g.color || '#00000055'; c.lineWidth = 1 / S.cam.k; c.beginPath();
-    const x0 = Math.floor(tl.x / size) * size, y0 = Math.floor(tl.y / size) * size;
     if ((br.x - tl.x) / size > 400) return;
+    if (isHex()) {
+      const { w, r } = hexMetrics();
+      const r0 = Math.floor(tl.y / (r * 1.5)) - 1, r1 = Math.ceil(br.y / (r * 1.5)) + 1;
+      for (let rr = r0; rr <= r1; rr++) {
+        const q0 = Math.floor(tl.x / w - rr / 2) - 1, q1 = Math.ceil(br.x / w - rr / 2) + 1;
+        for (let q = q0; q <= q1; q++) {
+          const hc = hexCenter(q, rr);
+          for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); const px = hc.x + r * Math.cos(a), py = hc.y + r * Math.sin(a); if (i === 0) c.moveTo(px, py); else c.lineTo(px, py); }
+          c.closePath();
+        }
+      }
+      c.stroke();
+      return;
+    }
+    const x0 = Math.floor(tl.x / size) * size, y0 = Math.floor(tl.y / size) * size;
     for (let x = x0; x <= br.x; x += size) { c.moveTo(x, tl.y); c.lineTo(x, br.y); }
     for (let y = y0; y <= br.y; y += size) { c.moveTo(tl.x, y); c.lineTo(br.x, y); }
     c.stroke();
@@ -163,8 +193,10 @@ window.Table = (function () {
   function drawTemp(c, t, uid) {
     if (t.kind === 'ruler') {
       const [a, b] = t.points; const g = grid();
-      const dx = Math.abs(b[0] - a[0]) / g, dy = Math.abs(b[1] - a[1]) / g;
-      const cells = Math.max(dx, dy); const ft = Math.round(cells * S.gridScaleFt);
+      let cells;
+      if (isHex()) { const ha = hexAt(a[0], a[1]), hb = hexAt(b[0], b[1]); cells = Math.max(Math.abs(ha.q - hb.q), Math.abs(ha.r - hb.r), Math.abs((-ha.q - ha.r) - (-hb.q - hb.r))); }
+      else { const dx = Math.abs(b[0] - a[0]) / g, dy = Math.abs(b[1] - a[1]) / g; cells = Math.max(dx, dy); }
+      const ft = Math.round(cells * S.gridScaleFt);
       c.strokeStyle = '#ffd54f'; c.lineWidth = 3 / S.cam.k; c.setLineDash([8 / S.cam.k, 6 / S.cam.k]); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]);
       c.font = `bold ${16 / S.cam.k}px sans-serif`; c.fillStyle = '#ffd54f'; c.strokeStyle = '#000'; c.lineWidth = 4 / S.cam.k; c.textAlign = 'center';
       const label = `${ft} фт (${Math.round(cells * 10) / 10} кл.)` + (t.name ? ' — ' + t.name : '');
@@ -252,6 +284,10 @@ window.Table = (function () {
     cv.addEventListener('pointerdown', e => {
       cv.setPointerCapture(e.pointerId);
       const w = toWorld(e.offsetX, e.offsetY);
+      if (e.button === 2 && !space) {
+        const it = hitTest(w.x, w.y);
+        if (it) { S.sel = it.id; updateProps(); contextMenu(it, e.clientX, e.clientY); return; }
+      }
       if (e.button === 1 || e.button === 2 || space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
       if (S.tool === 'select') {
         const it = hitTest(w.x, w.y);
@@ -399,10 +435,44 @@ window.Table = (function () {
       case 'item_upsert': { const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.it.id === m.item.id)) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); break; }
       case 'item_delete': S.scene.items = S.scene.items.filter(i => i.id !== m.id); if (S.sel === m.id) { S.sel = null; updateProps(); } break;
       case 'items_bulk': for (const u of m.items) { const it = S.scene.items.find(i => i.id === u.id); if (it) { Object.assign(it.data, u.data); if (u.z !== undefined) it.z = u.z; if (u.layer) it.layer = u.layer; } } break;
-      case 'scene_update': if (m.grid) S.scene.grid = m.grid; if (m.fog) S.scene.fog = m.fog; if (m.name) S.scene.name = m.name; break;
+      case 'scene_update': if (m.grid) { S.scene.grid = m.grid; syncScale(); } if (m.fog) S.scene.fog = m.fog; if (m.name) S.scene.name = m.name; break;
       case 'ruler': if (m.points) S.remoteRulers[m.user_id] = { kind: 'ruler', points: m.points, name: m.name, user_id: m.user_id }; else delete S.remoteRulers[m.user_id]; break;
       case 'ping': S.pings.push({ x: m.x, y: m.y, t: Date.now(), name: m.name }); break;
     }
+  }
+
+  // ---------- контекстное меню (ПКМ по элементу) ----------
+  function contextMenu(it, x, y) {
+    document.querySelectorAll('.ctxmenu').forEach(m => m.remove());
+    const d = it.data, editable = canEdit(it);
+    const menu = el('div', { class: 'ctxmenu', style: `left:${x}px;top:${y}px` });
+    const add = (label, fn, cls = '') => menu.append(el('div', { class: 'ctxitem ' + cls, onclick: () => { menu.remove(); fn(); } }, label));
+    menu.append(el('div', { class: 'ctxtitle' }, d.name || d.text || Table.LAYER_NAMES[it.layer] || 'Элемент'));
+    if (d.character_id) add('📜 Лист персонажа', () => S.onOpenSheet(d.character_id));
+    if (d.monster) add('👹 Статблок', () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }));
+    if (editable && (it.layer === 'character' || it.layer === 'mount')) {
+      add('− Урон…', () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; if (d.hp.cur <= 0) d.dead = true; upsert(it); });
+      add('+ Лечение…', () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max || v, d.hp.cur + v); if (d.hp.cur > 0) d.dead = false; upsert(it); });
+      if (d.monster?.abilities) add('🎲 Инициатива', () => S.ws.send({ type: 'roll', expr: 'd20' + fmtMod(mod(d.monster.abilities.dex || 10)), label: d.name + ': инициатива', gm_only: !!S.isGM && d.hidden }));
+      add(d.dead ? '💚 Жив' : '💀 Мёртв', () => { d.dead = !d.dead; upsert(it); });
+    }
+    if (editable) {
+      add('⧉ Дублировать', () => { const c = JSON.parse(JSON.stringify(it)); delete c.id; c.data.x += grid(); c.data.y += grid(); upsert(c); });
+      add('↻ Повернуть 90°', () => { d.rotation = ((d.rotation || 0) + 90) % 360; upsert(it); });
+      add('▲ На передний план', () => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; upsert(it); });
+      add('▼ На задний план', () => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; upsert(it); });
+    }
+    if (S.isGM) {
+      add(d.hidden ? '👁 Показать игрокам' : '🙈 Скрыть от игроков', () => { d.hidden = !d.hidden; upsert(it); });
+      add(d.locked ? '🔓 Открепить' : '🔒 Закрепить', () => { d.locked = !d.locked; upsert(it); });
+    }
+    if (editable) add('🗑 Удалить', () => { S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps(); }, 'danger');
+    document.body.append(menu);
+    const r = menu.getBoundingClientRect();
+    if (r.right > innerWidth) menu.style.left = (x - r.width) + 'px';
+    if (r.bottom > innerHeight) menu.style.top = (y - r.height) + 'px';
+    const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('pointerdown', close, true); } };
+    setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
   }
 
   // ---------- панель свойств выбранного элемента ----------
