@@ -65,7 +65,7 @@
     app.innerHTML = '';
     const root = el('div', { class: 'sheet' });
     root.append(topBar());
-    const tabs = [['main', '🧙 Основное'], ['inv', `🎒 Инвентарь (${s.inventory.length})`], ['spells', `✨ Заклинания (${s.spells.known.length})`], ['feats', `📜 Умения (${s.features.length})`], ['notes', '📝 Заметки']];
+    const tabs = [['main', 'Основное'], ['inv', `Инвентарь (${s.inventory.length})`], ['spells', `Заклинания (${s.spells.known.length})`], ['feats', `Умения (${s.features.length})`], ['notes', 'Заметки']];
     root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; localStorage.setItem('sheet_tab_' + id, k); render(); } }, n))));
     root.append({ main: mainTab, inv: invTab, spells: spellsTab, feats: featsTab, notes: notesTab }[tab]());
     app.append(root);
@@ -73,7 +73,7 @@
   }
 
   function topBar() {
-    const portrait = el('div', { class: 'portrait', title: 'Загрузить портрет' }, '🧙');
+    const portrait = el('div', { class: 'portrait', title: 'Загрузить портрет' }, icon('user', 40));
     if (ch.portrait_asset_id) assetURL(ch.portrait_asset_id).then(u => { portrait.innerHTML = ''; portrait.append(el('img', { src: u })); });
     const pf = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     pf.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', pf.files[0]); fd.append('name', ch.name); fd.append('kind', 'portrait'); if (ch.campaign_id) fd.append('campaign_id', ch.campaign_id); const a = await API.upload('/api/assets', fd); ch.portrait_asset_id = a.id; await API.patch('/api/characters/' + id, { portrait_asset_id: a.id }); render(); });
@@ -83,8 +83,8 @@
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', {}, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       el('div', { class: 'row' }, el('div', { class: 'dropslot', 'data-cat': 'race' }, el('label', {}, 'Раса ⤓'), inp('race', 'перетащите из справочника')), el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), inp('alignment', '')))));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
-      embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open('/sheet/' + id, 'sheet_' + id, 'width=1000,height=800') }, '⧉ В окно') : null,
-      el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, '📚 Справочник'),
+      embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open('/sheet/' + id, 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
+      el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
     return el('div', {}, bar, head);
   }
@@ -115,7 +115,7 @@
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Хиты'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
-      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'), el('button', { class: 'small', onclick: () => roll(hp.hit_dice + fmtMod(abMod('con')), 'кость хитов') }, '🎲 КХ')),
+      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'), el('button', { class: 'small', onclick: () => roll(hp.hit_dice + fmtMod(abMod('con')), 'кость хитов') }, 'Кость хитов')),
       el('div', { class: 'row', style: 'margin-top:6px;font-size:12px' }, el('span', {}, 'Спасброски от смерти: ', ...[0, 1, 2].map(i => el('span', { class: 'pip', style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--ok);margin:0 2px;cursor:pointer;background:' + (s.death_saves.success > i ? 'var(--ok)' : 'transparent'), onclick: () => { s.death_saves.success = s.death_saves.success > i ? i : i + 1; save(); render(); } })), ' / ', ...[0, 1, 2].map(i => el('span', { style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--danger);margin:0 2px;cursor:pointer;background:' + (s.death_saves.failure > i ? 'var(--danger)' : 'transparent'), onclick: () => { s.death_saves.failure = s.death_saves.failure > i ? i : i + 1; save(); render(); } }))),
         el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.inspiration ? '' : null, onchange: e => { s.inspiration = e.target.checked; save(); } }), ' Вдохновение'))));
 
@@ -125,19 +125,19 @@
     const eq = s.inventory.filter(it => it.equipped && (it.actions || []).some(a => a.roll));
     eq.forEach(it => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, M.itemIcon(it)), el('b', { style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, it.name), M.actionButtons(it, c, `${ch.name}: ${it.name}`))));
     const castable = s.spells.known.filter(sp => (sp.prepared || sp.level === 0) && (sp.actions || []).some(a => a.roll));
-    castable.forEach(sp => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, '✨'), el('b', {}, sp.name), M.actionButtons(sp, c, `${ch.name}: ${sp.name}`))));
+    castable.forEach(sp => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, icon('star', 18)), el('b', {}, sp.name), M.actionButtons(sp, c, `${ch.name}: ${sp.name}`))));
     if (s.attacks.length) act.append(el('div', { class: 'atk-row muted', style: 'font-size:11px' }, el('span', {}, 'Ручные атаки'), el('span', {}, 'Атака'), el('span', {}, 'Урон'), el('span'), el('span')));
     s.attacks.forEach((a, i) => act.append(el('div', { class: 'atk-row' },
       el('input', { value: a.name, disabled: dis(), onchange: e => { a.name = e.target.value; save(); } }), el('input', { value: a.bonus, disabled: dis(), onchange: e => { a.bonus = e.target.value; save(); } }), el('input', { value: a.damage, disabled: dis(), onchange: e => { a.damage = e.target.value; save(); } }),
-      el('button', { class: 'small', title: 'Бросок атаки', onclick: () => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)') }, '🎯'),
-      el('button', { class: 'small', title: 'Урон', onclick: () => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)') }, '💥'),
+      el('button', { class: 'small', title: 'Бросок атаки', onclick: () => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)') }, icon('target')),
+      el('button', { class: 'small', title: 'Урон', onclick: () => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)') }, icon('zap')),
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: true, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
     c2.append(act);
     // Кратко: экипировка и настройка
     const wearing = s.inventory.filter(it => it.equipped);
-    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it) + ' ' + it.name + (it.attuned ? ' ◈' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
+    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it) + ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
       el('div', { class: 'muted small', style: 'margin-top:4px' }, `Настроено: ${s.inventory.filter(i => i.attuned).length}/3 · Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт`)));
     cols.append(c1, c2);
     return cols;
@@ -148,12 +148,12 @@
   function invTab() {
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'item' });
     const bar = el('div', { class: 'inv-bar' },
-      el('input', { placeholder: '🔍 Поиск по предметам', value: ui.invQ, oninput: e => { ui.invQ = e.target.value; drawList(); } }),
+      el('input', { placeholder: 'Поиск по предметам', value: ui.invQ, oninput: e => { ui.invQ = e.target.value; drawList(); } }),
       el('select', { onchange: e => { ui.invType = e.target.value; drawList(); } }, el('option', { value: '' }, 'Все типы'), ...Object.entries(M.ITEM_TYPES).map(([k, v]) => el('option', { value: k, selected: ui.invType === k ? '' : null }, v))),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const it = await M.editItem(null); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Предмет'),
-      el('button', { class: 'small', onclick: () => toggleComp('item') }, '📚 Справочник'));
-    const wallet = el('div', { class: 'wallet' }, ...['pp', 'gp', 'ep', 'sp', 'cp'].map(c => el('label', {}, { pp: '🪙 ПМ', gp: '🟡 ЗМ', ep: '⚪ ЭМ', sp: '⚪ СМ', cp: '🟤 ММ' }[c], el('input', { type: 'number', value: s.currency[c], disabled: dis(), onchange: e => { s.currency[c] = +e.target.value; save(); } }))),
-      el('span', { class: 'muted small', style: 'margin-left:auto' }, `Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт${totalWeight() > s.abilities.str * 15 ? ' ⚠ перегруз' : ''}`));
+      el('button', { class: 'small', onclick: () => toggleComp('item') }, 'Справочник'));
+    const wallet = el('div', { class: 'wallet' }, ...['pp', 'gp', 'ep', 'sp', 'cp'].map(c => el('label', {}, { pp: 'ПМ', gp: 'ЗМ', ep: 'ЭМ', sp: 'СМ', cp: 'ММ' }[c], el('input', { type: 'number', value: s.currency[c], disabled: dis(), onchange: e => { s.currency[c] = +e.target.value; save(); } }))),
+      el('span', { class: 'muted small', style: 'margin-left:auto' }, `Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт${totalWeight() > s.abilities.str * 15 ? ' — перегруз' : ''}`));
     const list = el('div', { class: 'inv-list' });
     root.append(bar, wallet, list);
     function drawList() {
@@ -179,9 +179,9 @@
     const card = el('div', { class: 'mcard' + (it.equipped ? ' equipped' : '') + (open ? ' open' : ''), draggable: readonly ? null : 'true', 'data-uid': it.uid, style: `--rar:${M.RARITY_COLORS[it.rarity] || 'var(--border)'}` });
     const head = el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(it.uid); else ui.open.add(it.uid); render(); } },
       el('span', { class: 'card-icon big' }, M.itemIcon(it)),
-      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { title: 'настроен' }, ' ◈') : null), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `⚡${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
+      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
       el('div', { class: 'qty', onclick: e => e.stopPropagation() }, readonly ? el('span', {}, '×' + it.qty) : [el('button', { class: 'tiny', onclick: () => { it.qty = Math.max(1, (it.qty || 1) - 1); save(); render(); } }, '−'), el('span', {}, it.qty || 1), el('button', { class: 'tiny', onclick: () => { it.qty = (it.qty || 1) + 1; save(); render(); } }, '+')]),
-      readonly ? null : el('button', { class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); it.equipped = !it.equipped; save(); render(); } }, it.equipped ? '✔' : '○'));
+      readonly ? null : el('button', { class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); it.equipped = !it.equipped; save(); render(); } }, icon('check', 12)));
     card.append(head);
     const acts = M.actionButtons(it, c, `${ch.name}: ${it.name}`);
     if (acts.children.length) card.append(acts);
@@ -191,15 +191,15 @@
       if (it.charges) body.append(el('div', { class: 'row small', style: 'align-items:center;gap:6px' }, 'Заряды: ', ...Array.from({ length: it.charges.max }, (_, i) => el('span', { class: 'pip' + (i < it.charges.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { if (readonly) return; it.charges.cur = i < it.charges.cur ? i : i + 1; save(); render(); } })), it.charges.recharge ? el('span', { class: 'muted' }, `(${it.charges.recharge})`) : null));
       if (it.cost || it.source) body.append(el('div', { class: 'muted small' }, [it.cost, it.source].filter(Boolean).join(' · ')));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' },
-        el('button', { class: 'small', onclick: () => sendCard(it, 'item') }, '💬 В чат'));
+        el('button', { class: 'small', onclick: () => sendCard(it, 'item') }, 'В чат'));
       if (!readonly) menu.append(
-        el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it); if (r) { Object.assign(it, r); save(); render(); } } }, '✏️ Изменить'),
-        it.attunement ? el('button', { class: 'small', onclick: () => { it.attuned = !it.attuned; save(); render(); } }, it.attuned ? '◈ Снять настройку' : '◇ Настроиться') : null,
-        it.type === 'consumable' ? el('button', { class: 'small', onclick: () => { it.qty = (it.qty || 1) - 1; sendCard(it, 'item'); if (it.qty <= 0) s.inventory = s.inventory.filter(x => x !== it); save(); render(); } }, '🧪 Использовать') : null,
-        ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, '🤝 Передать') : null,
-        ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, '🗺 На стол') : null,
-        it.qty > 1 ? el('button', { class: 'small', onclick: async () => { const n = +(await prompt2('Отделить сколько?', '', '1')); if (n > 0 && n < it.qty) { it.qty -= n; s.inventory.push({ ...JSON.parse(JSON.stringify(it)), uid: M.uid(), qty: n, equipped: false }); save(); render(); } } }, '✂ Разделить') : null,
-        el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { if (confirm(`Удалить «${it.name}»?`)) { s.inventory = s.inventory.filter(x => x !== it); save(); render(); } } }, '🗑'));
+        el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it); if (r) { Object.assign(it, r); save(); render(); } } }, 'Изменить'),
+        it.attunement ? el('button', { class: 'small', onclick: () => { it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
+        it.type === 'consumable' ? el('button', { class: 'small', onclick: () => { it.qty = (it.qty || 1) - 1; sendCard(it, 'item'); if (it.qty <= 0) s.inventory = s.inventory.filter(x => x !== it); save(); render(); } }, 'Использовать') : null,
+        ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, 'Передать') : null,
+        ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, 'На стол') : null,
+        it.qty > 1 ? el('button', { class: 'small', onclick: async () => { const n = +(await prompt2('Отделить сколько?', '', '1')); if (n > 0 && n < it.qty) { it.qty -= n; s.inventory.push({ ...JSON.parse(JSON.stringify(it)), uid: M.uid(), qty: n, equipped: false }); save(); render(); } } }, 'Разделить') : null,
+        el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { if (confirm(`Удалить «${it.name}»?`)) { s.inventory = s.inventory.filter(x => x !== it); save(); render(); } } }, icon('trash')));
       body.append(menu);
       card.append(body);
     }
@@ -230,18 +230,18 @@
     const spAb = sp.ability || 'int';
     root.append(el('div', { class: 'inv-bar' },
       el('label', { style: 'flex:0;white-space:nowrap' }, 'Хар-ка ', el('select', { style: 'width:auto;padding:4px', disabled: dis(), onchange: e => { sp.ability = e.target.value; save(); render(); } }, ...['int', 'wis', 'cha'].map(k => el('option', { value: k, selected: spAb === k ? '' : null }, ABIL[k])))),
-      el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => roll('d20' + fmtMod(c.spell), 'атака заклинанием') }, '🎯 Атака ', el('b', {}, fmtMod(c.spell))),
-      el('input', { placeholder: '🔍 Поиск', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
+      el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => roll('d20' + fmtMod(c.spell), 'атака заклинанием') }, 'Атака ', el('b', {}, fmtMod(c.spell))),
+      el('input', { placeholder: 'Поиск', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
       el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.onlyPrepared ? '' : null, onchange: e => { ui.onlyPrepared = e.target.checked; draw(); } }), ' только подготовленные'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const x = await M.editSpell(null); if (x) { sp.known.push(x); save(); render(); } } }, '+ Заклинание'),
-      el('button', { class: 'small', onclick: () => toggleComp('spell') }, '📚 Справочник')));
+      el('button', { class: 'small', onclick: () => toggleComp('spell') }, 'Справочник')));
     const slots = el('div', { class: 'slots' });
     for (let l = 1; l <= 9; l++) {
       const sl = sp.slots[l] || { max: 0, used: 0 }; if (!sl.max && readonly) continue;
       slots.append(el('div', { class: 'slot' + (sl.max ? '' : ' empty') }, el('b', {}, l), el('span', { class: 'pips' }, ...Array.from({ length: sl.max }, (_, i) => el('span', { class: 'pip' + (i >= sl.used ? ' on' : ''), title: 'клик — потратить/вернуть', onclick: () => { sl.used = i >= sl.used ? i + 1 : i; sp.slots[l] = sl; save(); render(); } }))),
         readonly ? null : el('input', { type: 'number', value: sl.max, min: 0, title: 'Всего ячеек', onchange: e => { sl.max = +e.target.value; sl.used = Math.min(sl.used, sl.max); sp.slots[l] = sl; save(); render(); } })));
     }
-    if (!readonly) slots.append(el('button', { class: 'small', title: 'Восстановить все ячейки (длинный отдых)', onclick: () => { for (const k in sp.slots) sp.slots[k].used = 0; save(); render(); } }, '🌙 Отдых'));
+    if (!readonly) slots.append(el('button', { class: 'small', title: 'Восстановить все ячейки (длинный отдых)', onclick: () => { for (const k in sp.slots) sp.slots[k].used = 0; save(); render(); } }, 'Долгий отдых'));
     root.append(slots);
     const list = el('div');
     root.append(list);
@@ -266,18 +266,18 @@
     const open = ui.open.has(x.uid);
     const card = el('div', { class: 'mcard spell' + (x.prepared || x.level === 0 ? ' equipped' : '') + (open ? ' open' : ''), draggable: 'true', style: '--rar:var(--accent)' });
     card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(x.uid); else ui.open.add(x.uid); render(); } },
-      el('span', { class: 'card-icon big' }, '✨'),
+      el('span', { class: 'card-icon big' }, icon('star', 22)),
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
-      x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, '🪄') : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, '💬'),
-      readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, x.prepared ? '✔' : '○')));
+      x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')) : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, icon('chat')),
+      readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
     const acts = M.actionButtons(x, c, `${ch.name}: ${x.name}`);
     if (acts.children.length) card.append(acts);
     if (open) {
       const body = el('div', { class: 'mcard-body' }, el('div', { class: 'muted small' }, [x.components, x.classes?.length ? 'Классы: ' + x.classes.join(', ') : null, x.source].filter(Boolean).join(' · ')));
       if (x.desc) body.append(el('div', { class: 'card-desc' }, M.rich(x.desc, c, { prefix: `${ch.name}: ${x.name}` })));
-      const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => sendCard(x, 'spell') }, '💬 В чат'));
-      if (!readonly) menu.append(el('button', { class: 'small', onclick: async () => { const r = await M.editSpell(x); if (r) { Object.assign(x, r); save(); render(); } } }, '✏️ Изменить'),
-        el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { sp.known = sp.known.filter(y => y !== x); save(); render(); } }, '🗑'));
+      const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => sendCard(x, 'spell') }, 'В чат'));
+      if (!readonly) menu.append(el('button', { class: 'small', onclick: async () => { const r = await M.editSpell(x); if (r) { Object.assign(x, r); save(); render(); } } }, 'Изменить'),
+        el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { sp.known = sp.known.filter(y => y !== x); save(); render(); } }, icon('trash')));
       body.append(menu); card.append(body);
     }
     card.addEventListener('dragstart', ev => M.setDrag(ev, 'application/x-spell', { spell: x, from_character_id: id }));
@@ -298,16 +298,16 @@
     const c = ctx();
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'feat' });
     root.append(el('div', { class: 'inv-bar' }, el('span', { class: 'muted small', style: 'flex:1' }, 'Умения классов, расовые особенности, черты. В тексте работают кнопки бросков: [[1d20+@prof]]{Проверка}.'),
-      readonly ? null : el('button', { class: 'primary small', onclick: () => editFeature(null) }, '+ Умение'), el('button', { class: 'small', onclick: () => toggleComp('feat') }, '📚 Справочник')));
+      readonly ? null : el('button', { class: 'primary small', onclick: () => editFeature(null) }, '+ Умение'), el('button', { class: 'small', onclick: () => toggleComp('feat') }, 'Справочник')));
     const grid = el('div', { class: 'cards one' });
     s.features.forEach((f, i) => {
       const open = ui.open.has('f' + i);
       const card = el('div', { class: 'mcard' + (open ? ' open' : ''), style: '--rar:var(--border)' });
-      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, '📜'), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
+      card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete('f' + i); else ui.open.add('f' + i); render(); } }, el('span', { class: 'card-icon big' }, icon('scroll', 22)), el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, f.name), !open ? el('div', { class: 'muted small ellipsis' }, (f.text || '').slice(0, 120)) : null),
         f.uses ? el('span', { class: 'small', onclick: e => e.stopPropagation() }, ...Array.from({ length: f.uses.max }, (_, k) => el('span', { class: 'pip' + (k < f.uses.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { f.uses.cur = k < f.uses.cur ? k : k + 1; save(); render(); } }))) : null));
       if (f.actions?.length) card.append(M.actionButtons(f, c, `${ch.name}: ${f.name}`));
       if (open) card.append(el('div', { class: 'mcard-body' }, el('div', { class: 'card-desc' }, M.rich(f.text || '', c, { prefix: `${ch.name}: ${f.name}` })),
-        el('div', { class: 'row', style: 'gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => M.sendCard({ name: f.name, kind: 'feat', desc: f.text, actions: f.actions || [], icon: '📜', owner: ch.name }) }, '💬 В чат'), readonly ? null : el('button', { class: 'small', onclick: () => editFeature(f) }, '✏️ Изменить'), readonly ? null : el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { s.features.splice(i, 1); save(); render(); } }, '🗑'))));
+        el('div', { class: 'row', style: 'gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => M.sendCard({ name: f.name, kind: 'feat', desc: f.text, actions: f.actions || [], icon: 'scroll', owner: ch.name }) }, 'В чат'), readonly ? null : el('button', { class: 'small', onclick: () => editFeature(f) }, 'Изменить'), readonly ? null : el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { s.features.splice(i, 1); save(); render(); } }, icon('trash')))));
       grid.append(card);
     });
     if (!s.features.length) grid.append(el('p', { class: 'muted small', style: 'padding:12px' }, 'Пока пусто. Перетащите расу/класс/черту из справочника.'));

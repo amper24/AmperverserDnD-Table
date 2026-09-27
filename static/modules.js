@@ -7,13 +7,16 @@
 window.Modules = (function () {
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-  const ITEM_TYPES = { weapon: '⚔️ Оружие', armor: '🛡️ Доспех', gear: '🎒 Снаряжение', consumable: '🧪 Расходник', magic: '✨ Магический', tool: '🔧 Инструмент', treasure: '💰 Ценность', ammo: '🏹 Боеприпас' };
-  const ITEM_ICONS = { weapon: '⚔️', armor: '🛡️', gear: '🎒', consumable: '🧪', magic: '✨', tool: '🔧', treasure: '💰', ammo: '🏹' };
+  const ITEM_TYPES = { weapon: 'Оружие', armor: 'Доспех', gear: 'Снаряжение', consumable: 'Расходник', magic: 'Магический', tool: 'Инструмент', treasure: 'Ценность', ammo: 'Боеприпас' };
+  // иконки типов — имена SVG-иконок из common.js (icon(name)); it.icon может переопределить (1–2 символа текста)
+  const ITEM_ICONS = { weapon: 'sword', armor: 'shield', gear: 'bag', consumable: 'flask', magic: 'star', tool: 'tool', treasure: 'coin', ammo: 'target' };
   const RARITIES = ['Обычный', 'Необычный', 'Редкий', 'Очень редкий', 'Легендарный', 'Артефакт'];
   const RARITY_COLORS = { 'Обычный': '#9aa0ad', 'Необычный': '#46a758', 'Редкий': '#3e9bff', 'Очень редкий': '#7c5cff', 'Легендарный': '#f5a524', 'Артефакт': '#e5484d' };
-  const ACTION_KINDS = { attack: '🎯 Атака', damage: '💥 Урон', heal: '💚 Лечение', save: '🛡 Спасбросок', check: '🎲 Проверка', other: '• Другое' };
+  const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
+  const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
 
+  const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
   // ---------- модель ----------
   function newItem(o = {}) {
     return { uid: uid(), name: 'Предмет', type: 'gear', rarity: 'Обычный', qty: 1, weight: 0, cost: '', desc: '', equipped: false, attuned: false, attunement: false,
@@ -119,12 +122,14 @@ window.Modules = (function () {
   function textNode(t) { const f = document.createDocumentFragment(); const lines = t.split('\n'); lines.forEach((l, i) => { f.append(document.createTextNode(l)); if (i < lines.length - 1) f.append(el('br')); }); return f; }
   function rollBtn(expr, label, ctx, opts = {}) {
     const shown = ctx ? resolve(expr, ctx) : expr;
-    const b = el('button', { class: 'inline-roll' + (opts.auto ? ' auto' : ''), title: `Бросить ${shown}`, onclick: (e) => { e.stopPropagation(); e.preventDefault(); roll(expr, (opts.prefix ? opts.prefix + ': ' : '') + label, { ctx, gm_only: e.shiftKey }); } }, '🎲 ', label === expr ? shown : label);
+    const b = el('button', { class: 'inline-roll' + (opts.auto ? ' auto' : ''), title: `Бросить ${shown}`, onclick: (e) => { e.stopPropagation(); e.preventDefault(); roll(expr, (opts.prefix ? opts.prefix + ': ' : '') + label, { ctx, gm_only: e.shiftKey }); } }, icon('dice', 12), ' ', label === expr ? shown : label);
     return b;
   }
 
   // ---------- карточка предмета / заклинания (общая для листа, чата, справочника) ----------
-  function itemIcon(it) { return it.icon || ITEM_ICONS[it.type] || '📦'; }
+  /// Иконка предмета: элемент. it.icon — короткий текст (1–2 символа) поверх стандартной иконки типа.
+  function itemIcon(it) { return it?.icon ? el('span', { class: 'txt-ico' }, String(it.icon).slice(0, 2)) : icon(ITEM_ICONS[it?.type] || 'box', 18); }
+  function itemIconName(it) { return ITEM_ICONS[it?.type] || 'box'; }
   function actionButtons(doc, ctx, prefix) {
     const row = el('div', { class: 'actions-row' });
     for (const a of doc.actions || []) {
@@ -132,11 +137,11 @@ window.Modules = (function () {
       row.append(el('button', { class: 'act-btn ' + (a.kind || 'other'), title: resolve(a.roll, ctx || {}), onclick: (e) => { e.stopPropagation(); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}`, { ctx, gm_only: e.shiftKey }); } },
         (ACTION_KINDS[a.kind] || '•').split(' ')[0], ' ', a.name || ACTION_KINDS[a.kind]?.slice(2) || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
-    if (doc.save_dc || doc.save_ability) row.append(el('span', { class: 'chip' }, `🛡 СЛ ${doc.save_dc || '@dc'} ${doc.save_ability || ''}`));
+    if (doc.save_dc || doc.save_ability) row.append(el('span', { class: 'chip' }, `СЛ ${doc.save_dc || '@dc'} ${doc.save_ability || ''}`));
     return row;
   }
   function itemCardBody(it, ctx, opts = {}) {
-    const meta = [ITEM_TYPES[it.type]?.slice(2), it.rarity && it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.cost || null, it.attunement ? 'настройка' : null].filter(Boolean).join(' · ');
+    const meta = [ITEM_TYPES[it.type], it.rarity && it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.cost || null, it.attunement ? 'настройка' : null].filter(Boolean).join(' · ');
     const body = el('div', { class: 'card-body' },
       el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, itemIcon(it)), el('div', { class: 'grow' }, el('b', { style: `color:${RARITY_COLORS[it.rarity] || 'inherit'}` }, it.name), el('div', { class: 'muted small' }, meta)), it.qty > 1 ? el('span', { class: 'badge' }, '×' + it.qty) : null),
       it.charges ? el('div', { class: 'small muted' }, `Заряды: ${it.charges.cur}/${it.charges.max}${it.charges.recharge ? ' (' + it.charges.recharge + ')' : ''}`) : null,
@@ -147,17 +152,17 @@ window.Modules = (function () {
   function spellCardBody(sp, ctx) {
     const meta = [sp.level === 0 ? 'Заговор' : `${sp.level} круг`, sp.school, sp.casting_time, sp.range, sp.components, (sp.concentration ? 'Концентрация, ' : '') + (sp.duration || ''), sp.ritual ? 'ритуал' : null].filter(Boolean).join(' · ');
     return el('div', { class: 'card-body' },
-      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, '✨'), el('div', { class: 'grow' }, el('b', {}, sp.name), el('div', { class: 'muted small' }, meta))),
+      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, icon('star', 18)), el('div', { class: 'grow' }, el('b', {}, sp.name), el('div', { class: 'muted small' }, meta))),
       sp.desc ? el('div', { class: 'card-desc' }, rich(sp.desc, ctx, { prefix: sp.name })) : null,
       actionButtons(sp, ctx, sp.name));
   }
   function toChatCard(doc, kind) {
-    return { name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? '✨' : itemIcon(doc),
-      meta: kind === 'spell' ? [doc.level === 0 ? 'Заговор' : `${doc.level} круг`, doc.school, doc.casting_time, doc.range, doc.duration].filter(Boolean).join(' · ') : [ITEM_TYPES[doc.type]?.slice(2), doc.rarity].filter(Boolean).join(' · ') };
+    return { name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? 'star' : (doc.icon || itemIconName(doc)),
+      meta: kind === 'spell' ? [doc.level === 0 ? 'Заговор' : `${doc.level} круг`, doc.school, doc.casting_time, doc.range, doc.duration].filter(Boolean).join(' · ') : [ITEM_TYPES[doc.type], doc.rarity].filter(Boolean).join(' · ') };
   }
   function renderChatCard(card, ctx) {
     return el('div', { class: 'chat-card' },
-      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, card.icon || '📦'), el('div', { class: 'grow' }, el('b', {}, card.name), el('div', { class: 'muted small' }, card.meta || ''))),
+      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, card.icon && ICONS_KNOWN(card.icon) ? icon(card.icon, 18) : card.icon ? el('span', { class: 'txt-ico' }, String(card.icon).slice(0, 2)) : icon('box', 18)), el('div', { class: 'grow' }, el('b', {}, card.name), el('div', { class: 'muted small' }, card.meta || ''))),
       card.desc ? el('div', { class: 'card-desc' }, rich(card.desc, ctx, { prefix: card.name })) : null,
       actionButtons(card, ctx, card.name));
   }
@@ -172,8 +177,8 @@ window.Modules = (function () {
         el('select', { onchange: e => a.kind = e.target.value }, ...Object.entries(ACTION_KINDS).map(([k, v]) => el('option', { value: k, selected: (a.kind || 'other') === k ? '' : null }, v))),
         el('input', { placeholder: 'Название', value: a.name || '', oninput: e => a.name = e.target.value }),
         el('input', { placeholder: 'Формула: 1d20+@atk', value: a.roll || '', oninput: e => a.roll = e.target.value }),
-        el('button', { class: 'small', title: 'Проверить', onclick: () => roll(a.roll, a.name || 'тест') }, '🎲'),
-        el('button', { class: 'small danger', onclick: () => { doc.actions.splice(i, 1); render(); } }, '✕'))));
+        el('button', { class: 'small', title: 'Проверить', onclick: () => roll(a.roll, a.name || 'тест') }, icon('dice')),
+        el('button', { class: 'small danger', onclick: () => { doc.actions.splice(i, 1); render(); } }, icon('close')))));
       const presets = el('div', { class: 'row', style: 'margin-top:4px;flex-wrap:wrap;gap:4px' },
         el('button', { class: 'small', onclick: () => { (doc.actions ||= []).push({ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }); render(); } }, '+ Атака'),
         el('button', { class: 'small', onclick: () => { (doc.actions ||= []).push({ name: 'Урон', kind: 'damage', roll: '1d8+@str' }); render(); } }, '+ Урон'),
@@ -202,7 +207,7 @@ window.Modules = (function () {
     const it = JSON.parse(JSON.stringify(item || newItem()));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const form = el('div', { class: 'editor-form' },
-      el('div', { class: 'row' }, f('Название', el('input', { value: it.name, oninput: e => it.name = e.target.value })), f('Иконка (эмодзи)', el('input', { value: it.icon || '', placeholder: itemIcon(it), style: 'width:70px', oninput: e => it.icon = e.target.value }))),
+      el('div', { class: 'row' }, f('Название', el('input', { value: it.name, oninput: e => it.name = e.target.value })), f('Метка (1–2 символа)', el('input', { value: it.icon || '', placeholder: '—', maxlength: 2, style: 'width:70px', oninput: e => it.icon = e.target.value }))),
       el('div', { class: 'row' },
         f('Тип', el('select', { onchange: e => it.type = e.target.value }, ...Object.entries(ITEM_TYPES).map(([k, v]) => el('option', { value: k, selected: it.type === k ? '' : null }, v)))),
         f('Редкость', el('select', { onchange: e => it.rarity = e.target.value }, ...RARITIES.map(r => el('option', { value: r, selected: it.rarity === r ? '' : null }, r)))),
@@ -244,13 +249,13 @@ window.Modules = (function () {
       simple.append(el('div', { class: 'row' }, ...Object.keys(ABIL).map(k => f(ABIL[k].slice(0, 3), el('input', { type: 'number', value: d.abilities[k], oninput: e => d.abilities[k] = +e.target.value })))));
       d.actions ||= [];
       const acts = el('div');
-      const renderActs = () => { acts.innerHTML = ''; d.actions.forEach((a, i) => acts.append(el('div', { class: 'row', style: 'margin-bottom:4px' }, el('input', { value: a.name, placeholder: 'Название', oninput: e => a.name = e.target.value }), el('input', { value: a.text, placeholder: 'Текст: +4 к попаданию, 1к6+2 колющий', style: 'flex:2', oninput: e => a.text = e.target.value }), el('button', { class: 'small danger', style: 'flex:0', onclick: () => { d.actions.splice(i, 1); renderActs(); } }, '✕')))); acts.append(el('button', { class: 'small', onclick: () => { d.actions.push({ name: '', text: '' }); renderActs(); } }, '+ Действие')); };
+      const renderActs = () => { acts.innerHTML = ''; d.actions.forEach((a, i) => acts.append(el('div', { class: 'row', style: 'margin-bottom:4px' }, el('input', { value: a.name, placeholder: 'Название', oninput: e => a.name = e.target.value }), el('input', { value: a.text, placeholder: 'Текст: +4 к попаданию, 1к6+2 колющий', style: 'flex:2', oninput: e => a.text = e.target.value }), el('button', { class: 'small danger', style: 'flex:0', onclick: () => { d.actions.splice(i, 1); renderActs(); } }, icon('close'))))); acts.append(el('button', { class: 'small', onclick: () => { d.actions.push({ name: '', text: '' }); renderActs(); } }, '+ Действие')); };
       renderActs(); simple.append(f('Действия (кубики в тексте станут кнопками)', acts));
     }
     if (category === 'race' || category === 'class' || category === 'background') {
       d.traits ||= [];
       const tr = el('div');
-      const renderTr = () => { tr.innerHTML = ''; d.traits.forEach((a, i) => tr.append(el('div', { class: 'row', style: 'margin-bottom:4px' }, el('input', { value: a.name, placeholder: 'Умение', oninput: e => a.name = e.target.value }), el('input', { value: a.text, placeholder: 'Описание', style: 'flex:2', oninput: e => a.text = e.target.value }), el('button', { class: 'small danger', style: 'flex:0', onclick: () => { d.traits.splice(i, 1); renderTr(); } }, '✕')))); tr.append(el('button', { class: 'small', onclick: () => { d.traits.push({ name: '', text: '' }); renderTr(); } }, '+ Умение')); };
+      const renderTr = () => { tr.innerHTML = ''; d.traits.forEach((a, i) => tr.append(el('div', { class: 'row', style: 'margin-bottom:4px' }, el('input', { value: a.name, placeholder: 'Умение', oninput: e => a.name = e.target.value }), el('input', { value: a.text, placeholder: 'Описание', style: 'flex:2', oninput: e => a.text = e.target.value }), el('button', { class: 'small danger', style: 'flex:0', onclick: () => { d.traits.splice(i, 1); renderTr(); } }, icon('close'))))); tr.append(el('button', { class: 'small', onclick: () => { d.traits.push({ name: '', text: '' }); renderTr(); } }, '+ Умение')); };
       renderTr(); simple.append(f('Особенности', tr));
       if (category === 'race') { d.asi ||= {}; simple.append(el('div', { class: 'row' }, ...Object.keys(ABIL).map(k => f('+' + ABIL[k].slice(0, 3), el('input', { type: 'number', value: d.asi[k] || 0, oninput: e => { const v = +e.target.value; if (v) d.asi[k] = v; else delete d.asi[k]; } }))), f('Скорость', el('input', { type: 'number', value: d.speed || 30, oninput: e => d.speed = +e.target.value })))); }
       if (category === 'class') simple.append(el('div', { class: 'row' }, f('Кость хитов', el('input', { value: d.hit_die || 'd8', oninput: e => d.hit_die = e.target.value })), f('Хар-ка заклинаний', el('select', { onchange: e => d.spellcasting = e.target.value || undefined }, el('option', { value: '' }, '—'), ...['int', 'wis', 'cha'].map(k => el('option', { value: k, selected: d.spellcasting === k ? '' : null }, ABIL[k]))))));
@@ -267,5 +272,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, ITEM_TYPES, ITEM_ICONS, RARITIES, RARITY_COLORS, ACTION_KINDS, newItem, newSpell, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, newItem, newSpell, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

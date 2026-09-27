@@ -70,7 +70,7 @@ async fn send_code(st: &AppState, to: &str, code: &str) -> bool {
             .to(to.parse()?)
             .subject(format!("Код входа: {code}"))
             .header(ContentType::TEXT_PLAIN)
-            .body(format!("Ваш код подтверждения для DnD Table: {code}\nКод действует {CODE_TTL_MIN} минут."))?;
+            .body(format!("Ваш код подтверждения Edge Tablet: {code}\nКод действует {CODE_TTL_MIN} минут."))?;
         let mut builder = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)?.port(cfg.smtp_port);
         if !cfg.smtp_user.is_empty() {
             builder = builder.credentials(Credentials::new(cfg.smtp_user.clone(), cfg.smtp_password.clone()));

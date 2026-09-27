@@ -171,7 +171,7 @@ window.Table = (function () {
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
           c.fillStyle = p > 0.5 ? '#46a758' : p > 0.25 ? '#f5a524' : '#e5484d'; c.fillRect(-bw / 2, y, bw * p, bh);
         }
-        if (d.conditions?.length) { c.font = `${d.h * 0.18}px sans-serif`; c.textAlign = 'left'; c.fillText(d.conditions.map(x => CONDICON[x] || '•').join(''), -d.w / 2, -d.h / 2 + d.h * 0.18); }
+        if (d.conditions?.length) { c.font = `bold ${d.h * 0.14}px sans-serif`; c.textAlign = 'left'; c.fillStyle = '#ffd77a'; c.fillText(d.conditions.map(x => CONDICON[x] || '?').join(' '), -d.w / 2, -d.h / 2 + d.h * 0.18); }
         if (d.dead) { c.strokeStyle = '#e5484d'; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
       }
     } else if (d.type === 'loot') {
@@ -179,7 +179,7 @@ window.Table = (function () {
       c.translate(d.x, d.y);
       const r = Math.min(d.w, d.h) / 2;
       c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || '#f5a524') : '#f5a524'; c.lineWidth = 3 / S.cam.k; c.stroke();
-      c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item ? Modules.itemIcon(d.item) : '📦', 0, r * 0.05);
+      c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05);
       const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
       c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = '#000c'; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
     } else if (d.type === 'drawing') {
@@ -232,20 +232,20 @@ window.Table = (function () {
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(fc, 0, 0); c.restore();
     c.translate(0, 0);
   }
-  const CONDICON = { blinded: '🙈', charmed: '💗', deafened: '🙉', frightened: '😱', grappled: '✊', incapacitated: '💫', invisible: '👻', paralyzed: '⚡', petrified: '🗿', poisoned: '🤢', prone: '⬇️', restrained: '⛓️', stunned: '🌀', unconscious: '💤', exhaustion: '🥵', concentration: '🎯' };
+  const CONDICON = { blinded: 'ОС', charmed: 'ОЧ', deafened: 'ГЛ', frightened: 'ИС', grappled: 'СХ', incapacitated: 'НД', invisible: 'НВ', paralyzed: 'ПР', petrified: 'ОК', poisoned: 'ОТ', prone: 'СБ', restrained: 'ОП', stunned: 'ОШ', unconscious: 'БС', exhaustion: 'ИТ', concentration: 'КЦ' };
 
   // ---------- инструменты ----------
   function buildTools(wrap) {
-    const tools = [['select', '⬚', 'Выбор (V)'], ['pan', '✋', 'Панорама (H)'], ['ruler', '📏', 'Линейка (R)'], ['draw', '✏️', 'Рисование (D)'], ['text', 'T', 'Текст'], ['pointer', '📍', 'Указка (P)']];
-    if (S.isGM) tools.push(['fog', '🌫️', 'Туман войны (F)']);
+    const tools = [['select', icon('select'), 'Выбор (V)'], ['pan', icon('hand'), 'Панорама (H)'], ['ruler', icon('ruler'), 'Линейка (R)'], ['draw', icon('pen'), 'Рисование (D)'], ['text', icon('text'), 'Текст'], ['pointer', icon('pin'), 'Указка (P)']];
+    if (S.isGM) tools.push(['fog', icon('fog'), 'Туман войны (F)']);
     S.toolbox = el('div', { class: 'tools' });
-    for (const [id, icon, title] of tools) S.toolbox.append(el('button', { class: 'icon', 'data-tool': id, title, onclick: () => setTool(id) }, icon));
+    for (const [id, ico, title] of tools) S.toolbox.append(el('button', { class: 'icon', 'data-tool': id, title, onclick: () => setTool(id) }, ico));
     S.subbox = el('div', { class: 'sub' });
     S.toolbox.append(S.subbox);
     wrap.append(S.toolbox);
     const zoom = el('div', { class: 'zoom' },
       el('button', { class: 'icon', onclick: () => zoomBy(1.25) }, '+'), el('button', { class: 'icon', onclick: () => zoomBy(0.8) }, '−'),
-      el('button', { class: 'icon', title: 'Вписать карту', onclick: fitToMap }, '⛶'),
+      el('button', { class: 'icon', title: 'Вписать карту', onclick: fitToMap }, icon('fit')),
       el('button', { class: 'icon', title: 'Привязка к сетке', id: 'snapBtn', onclick: (e) => { S.snap = !S.snap; e.currentTarget.classList.toggle('active', S.snap); } }, '#'));
     zoom.querySelector('#snapBtn').classList.add('active');
     wrap.append(zoom);
@@ -259,7 +259,7 @@ window.Table = (function () {
     const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить', pan: 'Тяните для панорамирования', ruler: 'Тяните для измерения (видят все)', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: 'Зелёный — открыть, красный — скрыть. Shift — переключить режим' };
     S.hint.textContent = hints[t] || '';
     if (t === 'draw') {
-      const shapes = [['path', '〰'], ['line', '╱'], ['rect', '▭'], ['circle', '◯'], ['poly', '⬠']];
+      const shapes = [['path', icon('path')], ['line', icon('line')], ['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]];
       const col = el('div', { style: 'display:flex;flex-direction:column;gap:3px' });
       const srow = el('div', { style: 'display:flex;gap:3px' }, ...shapes.map(([s, i]) => el('button', { class: 'icon small' + (S.drawShape === s ? ' active' : ''), style: 'width:30px;height:30px', onclick: (e) => { S.drawShape = s; srow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, i)));
       const crow = el('div', { style: 'display:flex;gap:3px;flex-wrap:wrap;width:170px' }, ...COLORS.map(cc => el('button', { style: `width:22px;height:22px;padding:0;background:${cc};border-color:${S.drawColor === cc ? '#fff' : '#444'}`, onclick: (e) => { S.drawColor = cc; crow.querySelectorAll('button').forEach(b => b.style.borderColor = '#444'); e.currentTarget.style.borderColor = '#fff'; } })));
@@ -271,7 +271,7 @@ window.Table = (function () {
       const mrow = el('div', { style: 'display:flex;gap:3px' },
         el('button', { class: 'small' + (S.fogMode === 'reveal' ? ' active' : ''), onclick: (e) => { S.fogMode = 'reveal'; mrow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, 'Открыть'),
         el('button', { class: 'small' + (S.fogMode === 'hide' ? ' active' : ''), onclick: (e) => { S.fogMode = 'hide'; mrow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, 'Скрыть'));
-      const srow = el('div', { style: 'display:flex;gap:3px' }, ...[['rect', '▭'], ['circle', '◯'], ['poly', '⬠']].map(([s, i]) => el('button', { class: 'icon small' + (S.fogShape === s ? ' active' : ''), style: 'width:30px;height:30px', onclick: (e) => { S.fogShape = s; srow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, i)));
+      const srow = el('div', { style: 'display:flex;gap:3px' }, ...[['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]].map(([s, i]) => el('button', { class: 'icon small' + (S.fogShape === s ? ' active' : ''), style: 'width:30px;height:30px', onclick: (e) => { S.fogShape = s; srow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, i)));
       const en = el('button', { class: 'small' + (S.scene.fog?.enabled ? ' active' : ''), onclick: (e) => { S.scene.fog = { ...(S.scene.fog || { shapes: [] }), enabled: !S.scene.fog?.enabled }; e.currentTarget.classList.toggle('active', S.scene.fog.enabled); sendScene({ fog: S.scene.fog }); } }, 'Туман вкл/выкл');
       const clr = el('button', { class: 'small', onclick: () => { S.scene.fog = { ...S.scene.fog, shapes: [] }; sendScene({ fog: S.scene.fog }); } }, 'Скрыть всё');
       const all = el('button', { class: 'small', onclick: () => { const m = S.scene.items.find(i => i.layer === 'map'); const b = m ? itemBounds(m) : { x: -5000, y: -5000, w: 10000, h: 10000 }; S.scene.fog = { ...S.scene.fog, shapes: [{ shape: 'rect', mode: 'reveal', points: [[b.x, b.y], [b.x + b.w, b.y + b.h]] }] }; sendScene({ fog: S.scene.fog }); } }, 'Открыть всё');
@@ -484,29 +484,29 @@ window.Table = (function () {
     const menu = el('div', { class: 'ctxmenu', style: `left:${x}px;top:${y}px` });
     const add = (label, fn, cls = '') => menu.append(el('div', { class: 'ctxitem ' + cls, onclick: () => { menu.remove(); fn(); } }, label));
     menu.append(el('div', { class: 'ctxtitle' }, d.name || d.text || Table.LAYER_NAMES[it.layer] || 'Элемент'));
-    if (d.character_id) add('📜 Лист персонажа', () => S.onOpenSheet(d.character_id));
+    if (d.character_id) add('Лист персонажа', () => S.onOpenSheet(d.character_id));
     if (d.type === 'loot') {
-      add('🖐 Подобрать', () => pickUpLoot(it));
-      add('🔍 Осмотреть', () => floatWindow(d.item?.name || 'Предмет', el('div', { style: 'padding:12px' }, Modules.itemCardBody(d.item || {}, {}), el('div', { class: 'row', style: 'margin-top:8px' }, el('button', { class: 'small', onclick: () => Modules.sendCard(Modules.toChatCard(d.item, 'item')) }, '💬 В чат'))), { w: 420, h: 360 }));
+      add('Подобрать', () => pickUpLoot(it));
+      add('Осмотреть', () => floatWindow(d.item?.name || 'Предмет', el('div', { style: 'padding:12px' }, Modules.itemCardBody(d.item || {}, {}), el('div', { class: 'row', style: 'margin-top:8px' }, el('button', { class: 'small', onclick: () => Modules.sendCard(Modules.toChatCard(d.item, 'item')) }, 'В чат'))), { w: 420, h: 360 }));
     }
-    if (d.monster) add('👹 Статблок', () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }));
+    if (d.monster) add('Статблок', () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }));
     if (editable && (it.layer === 'character' || it.layer === 'mount')) {
       add('− Урон…', () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; if (d.hp.cur <= 0) d.dead = true; upsert(it); });
       add('+ Лечение…', () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max || v, d.hp.cur + v); if (d.hp.cur > 0) d.dead = false; upsert(it); });
-      if (d.monster?.abilities) add('🎲 Инициатива', () => S.ws.send({ type: 'roll', expr: 'd20' + fmtMod(mod(d.monster.abilities.dex || 10)), label: d.name + ': инициатива', gm_only: !!S.isGM && d.hidden }));
-      add(d.dead ? '💚 Жив' : '💀 Мёртв', () => { d.dead = !d.dead; upsert(it); });
+      if (d.monster?.abilities) add('Инициатива', () => S.ws.send({ type: 'roll', expr: 'd20' + fmtMod(mod(d.monster.abilities.dex || 10)), label: d.name + ': инициатива', gm_only: !!S.isGM && d.hidden }));
+      add(d.dead ? 'Жив' : 'Мёртв', () => { d.dead = !d.dead; upsert(it); });
     }
     if (editable) {
-      add('⧉ Дублировать', () => { const c = JSON.parse(JSON.stringify(it)); delete c.id; c.data.x += grid(); c.data.y += grid(); upsert(c); });
-      add('↻ Повернуть 90°', () => { d.rotation = ((d.rotation || 0) + 90) % 360; upsert(it); });
-      add('▲ На передний план', () => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; upsert(it); });
-      add('▼ На задний план', () => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; upsert(it); });
+      add('Дублировать', () => { const c = JSON.parse(JSON.stringify(it)); delete c.id; c.data.x += grid(); c.data.y += grid(); upsert(c); });
+      add('Повернуть на 90°', () => { d.rotation = ((d.rotation || 0) + 90) % 360; upsert(it); });
+      add('На передний план', () => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; upsert(it); });
+      add('На задний план', () => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; upsert(it); });
     }
     if (S.isGM) {
-      add(d.hidden ? '👁 Показать игрокам' : '🙈 Скрыть от игроков', () => { d.hidden = !d.hidden; upsert(it); });
-      add(d.locked ? '🔓 Открепить' : '🔒 Закрепить', () => { d.locked = !d.locked; upsert(it); });
+      add(d.hidden ? 'Показать игрокам' : 'Скрыть от игроков', () => { d.hidden = !d.hidden; upsert(it); });
+      add(d.locked ? 'Открепить' : 'Закрепить', () => { d.locked = !d.locked; upsert(it); });
     }
-    if (editable) add('🗑 Удалить', () => { S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps(); }, 'danger');
+    if (editable) add('Удалить', () => { S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps(); }, 'danger');
     document.body.append(menu);
     const r = menu.getBoundingClientRect();
     if (r.right > innerWidth) menu.style.left = (x - r.width) + 'px';
@@ -542,18 +542,18 @@ window.Table = (function () {
           const conds = d.conditions || [];
           const cbox = el('div', { style: 'margin-bottom:8px' });
           const sel = el('select', { onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } } }, el('option', { value: '' }, '+ состояние'), ...Object.entries(CONDICON).map(([k, v]) => el('option', { value: k }, v + ' ' + (CONDNAMES[k] || k))));
-          cbox.append(el('div', {}, ...conds.map(c => el('span', { class: 'chip' }, CONDICON[c], CONDNAMES[c] || c, el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '×')))), sel);
+          cbox.append(el('div', {}, ...conds.map(c => el('span', { class: 'chip' }, CONDNAMES[c] || c, el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '×')))), sel);
           box.append(cbox);
           box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
             el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto', onchange: e => { d.dead = e.target.checked; save(); } }), ' Мёртв'),
             el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.show_hp ? '' : null, style: 'width:auto', onchange: e => { d.show_hp = e.target.checked; save(); } }), ' HP всем')));
-          if (d.character_id) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, '📜 Лист персонажа'));
-          if (d.monster) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, '👹 Статблок'));
+          if (d.character_id) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, 'Лист персонажа'));
+          if (d.monster) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, 'Статблок'));
         }
         box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-          el('button', { class: 'small', onclick: () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); } }, '↻ 90°'),
-          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) + 1; save(); } }, '▲ выше'),
-          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) - 1; save(); } }, '▼ ниже')));
+          el('button', { class: 'small', onclick: () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); } }, 'Повернуть'),
+          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) + 1; save(); } }, 'Выше'),
+          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) - 1; save(); } }, 'Ниже')));
       }
       if (S.isGM) {
         box.append(el('div', { class: 'field' }, el('label', {}, 'Слой'), el('select', { onchange: e => { it.layer = e.target.value; save(); } }, ...LAYER_ORDER.filter(l => !['drawing', 'text', 'note'].includes(l)).map(l => el('option', { value: l, selected: it.layer === l ? '' : null }, LAYER_NAMES[l])))));

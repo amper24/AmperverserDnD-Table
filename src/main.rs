@@ -1,4 +1,4 @@
-//! Amperverser DnD Table — сервер виртуального стола (axum + sqlx, MySQL/SQLite).
+//! Edge Tablet — сервер виртуального стола (axum + sqlx, MySQL/SQLite).
 mod assets;
 mod auth;
 mod campaigns;
@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let db_label = cfg.database_url.split('@').last().unwrap_or("").to_string();
-    tracing::info!("DnD Table запущен: http://{}  (БД: {})", addr, db_label);
+    tracing::info!("Edge Tablet запущен: http://{}  (БД: {})", addr, db_label);
     println!("Server listening on http://{addr}");
     axum::serve(listener, app).await?;
     Ok(())
