@@ -16,14 +16,14 @@ pub fn default_fog() -> Value { json!({ "enabled": false, "shapes": [] }) }
 pub fn scene_json(r: &sqlx::any::AnyRow) -> Value {
     json!({
         "id": r.get::<String, _>("id"), "campaign_id": r.get::<String, _>("campaign_id"), "name": r.get::<String, _>("name"),
-        "grid": util::json_value(&r.get::<String, _>("grid")), "fog": util::json_value(&r.get::<String, _>("fog")),
+        "grid": util::json_value(&util::text(&r, "grid")), "fog": util::json_value(&util::text(&r, "fog")),
     })
 }
 
 pub fn item_json(r: &sqlx::any::AnyRow) -> Value {
     json!({
         "id": r.get::<String, _>("id"), "scene_id": r.get::<String, _>("scene_id"), "layer": r.get::<String, _>("layer"),
-        "z": r.get::<i64, _>("z"), "data": util::json_value(&r.get::<String, _>("data")),
+        "z": r.get::<i64, _>("z"), "data": util::json_value(&util::text(&r, "data")),
     })
 }
 
@@ -74,7 +74,7 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Pa
     require_gm(&st, &cid, &user.id).await?;
     let s = fetch_scene(&st, &cid, &sid).await?;
     let name = body.name.map(|n| util::truncate(&n, 128)).unwrap_or_else(|| s.get::<String, _>("name"));
-    let grid = body.grid.map(|g| g.to_string()).unwrap_or_else(|| s.get::<String, _>("grid"));
+    let grid = body.grid.map(|g| g.to_string()).unwrap_or_else(|| util::text(&s, "grid"));
     sqlx::query("UPDATE scenes SET name = ?, grid = ? WHERE id = ?").bind(&name).bind(&grid).bind(&sid).execute(&st.db).await?;
     st.hub.broadcast(&cid, &json!({ "type": "scene_update", "scene_id": sid, "grid": util::json_value(&grid), "name": name }), None).await;
     Ok(Json(scene_json(&fetch_scene(&st, &cid, &sid).await?)))
@@ -95,11 +95,11 @@ async fn duplicate(State(st): State<AppState>, user: AuthUser, Path((cid, sid)):
     let nid = util::uid();
     let name = format!("{} (копия)", s.get::<String, _>("name"));
     sqlx::query("INSERT INTO scenes (id, campaign_id, name, grid, fog, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(&nid).bind(&cid).bind(&name).bind(s.get::<String, _>("grid")).bind(s.get::<String, _>("fog")).bind(util::now()).execute(&st.db).await?;
+        .bind(&nid).bind(&cid).bind(&name).bind(util::text(&s, "grid")).bind(util::text(&s, "fog")).bind(util::now()).execute(&st.db).await?;
     let items = sqlx::query("SELECT * FROM scene_items WHERE scene_id = ?").bind(&sid).fetch_all(&st.db).await?;
     for it in items {
         sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-            .bind(util::uid()).bind(&nid).bind(it.get::<String, _>("layer")).bind(it.get::<i64, _>("z")).bind(it.get::<String, _>("data")).bind(util::now())
+            .bind(util::uid()).bind(&nid).bind(it.get::<String, _>("layer")).bind(it.get::<i64, _>("z")).bind(util::text(&it, "data")).bind(util::now())
             .execute(&st.db).await?;
     }
     Ok(Json(scene_json(&fetch_scene(&st, &cid, &nid).await?)))

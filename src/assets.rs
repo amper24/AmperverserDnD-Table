@@ -109,7 +109,7 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(aid): Path<Str
         }
     }
     let mut out = meta(&r);
-    out["data_b64"] = json!(r.get::<String, _>("data_b64"));
+    out["data_b64"] = json!(util::text(&r, "data_b64"));
     Ok(([(header::CACHE_CONTROL, "private, max-age=31536000, immutable")], Json(out)).into_response())
 }
 

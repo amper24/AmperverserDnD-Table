@@ -31,7 +31,7 @@ fn campaign_json(r: &sqlx::any::AnyRow, role: Option<&str>) -> Value {
     json!({
         "id": r.get::<String, _>("id"),
         "name": r.get::<String, _>("name"),
-        "description": r.get::<String, _>("description"),
+        "description": util::text(&r, "description"),
         "owner_id": r.get::<String, _>("owner_id"),
         "active_scene_id": r.get::<Option<String>, _>("active_scene_id"),
         "role": role,
@@ -189,7 +189,7 @@ async fn chat_history(State(st): State<AppState>, user: AuthUser, Path(cid): Pat
         .bind(&cid).bind(limit).fetch_all(&st.db).await?;
     let mut out: Vec<Value> = rows.iter().map(|r| json!({
         "id": r.get::<i64, _>("id"), "user_id": r.get::<String, _>("user_id"), "name": r.get::<String, _>("name"),
-        "kind": r.get::<String, _>("kind"), "payload": util::json_value(&r.get::<String, _>("payload")), "at": r.get::<String, _>("created_at"),
+        "kind": r.get::<String, _>("kind"), "payload": util::json_value(&util::text(&r, "payload")), "at": r.get::<String, _>("created_at"),
     })).filter(|m_| m.is_gm() || !m_["payload"]["gm_only"].as_bool().unwrap_or(false)).collect();
     out.reverse();
     Ok(Json(Value::Array(out)))
@@ -200,7 +200,7 @@ async fn invite_info(State(st): State<AppState>, Path(code): Path<String>) -> Ap
     let inv = sqlx::query("SELECT i.role, c.id, c.name, c.description FROM invites i JOIN campaigns c ON c.id = i.campaign_id WHERE i.code = ?")
         .bind(&code).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Приглашение не найдено"))?;
     Ok(Json(json!({
-        "campaign": { "id": inv.get::<String, _>("id"), "name": inv.get::<String, _>("name"), "description": inv.get::<String, _>("description") },
+        "campaign": { "id": inv.get::<String, _>("id"), "name": inv.get::<String, _>("name"), "description": util::text(&inv, "description") },
         "role": inv.get::<String, _>("role"),
     })))
 }

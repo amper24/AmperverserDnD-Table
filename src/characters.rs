@@ -28,7 +28,7 @@ fn char_json(r: &sqlx::any::AnyRow) -> Value {
     json!({
         "id": r.get::<String, _>("id"), "campaign_id": r.get::<Option<String>, _>("campaign_id"), "owner_id": r.get::<String, _>("owner_id"),
         "name": r.get::<String, _>("name"), "portrait_asset_id": r.get::<Option<String>, _>("portrait_asset_id"),
-        "sheet": util::json_value(&r.get::<String, _>("sheet")), "updated_at": r.get::<String, _>("updated_at"),
+        "sheet": util::json_value(&util::text(&r, "sheet")), "updated_at": r.get::<String, _>("updated_at"),
     })
 }
 

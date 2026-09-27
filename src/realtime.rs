@@ -233,7 +233,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                     let Some(id) = msg["id"].as_str() else { return };
                     let row = sqlx::query("SELECT data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
                     if let Some(row) = row {
-                        let data = util::json_value(&row.get::<String, _>("data"));
+                        let data = util::json_value(&util::text(&row, "data"));
                         if is_gm || player_can_edit(&data, &user.id) {
                             let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
                             st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
@@ -247,7 +247,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                         let Some(id) = it["id"].as_str() else { continue };
                         let row = sqlx::query("SELECT layer, z, data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
                         let Some(row) = row else { continue };
-                        let mut data = util::json_value(&row.get::<String, _>("data"));
+                        let mut data = util::json_value(&util::text(&row, "data"));
                         if let (Some(dst), Some(src)) = (data.as_object_mut(), it["data"].as_object()) {
                             for (k, v) in src { dst.insert(k.clone(), v.clone()); }
                         }
@@ -265,8 +265,8 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             let Some(scene_id) = msg["scene_id"].as_str() else { return };
             let row = sqlx::query("SELECT grid, fog, name FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
             let Some(row) = row else { return };
-            let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { row.get::<String, _>("grid") };
-            let fog = if msg["fog"].is_object() { msg["fog"].to_string() } else { row.get::<String, _>("fog") };
+            let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { util::text(&row, "grid") };
+            let fog = if msg["fog"].is_object() { msg["fog"].to_string() } else { util::text(&row, "fog") };
             let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
             let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ? WHERE id = ?").bind(&grid).bind(&fog).bind(&name).bind(scene_id).execute(&st.db).await;
             st.hub.broadcast(cid, &json!({ "type": "scene_update", "scene_id": scene_id, "grid": msg["grid"], "fog": msg["fog"], "name": msg["name"] }), None).await;
@@ -296,7 +296,7 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
 
     let (final_id, layer, z, data) = match existing {
         Some(row) => {
-            let old = util::json_value(&row.get::<String, _>("data"));
+            let old = util::json_value(&util::text(&row, "data"));
             let mut layer: String = row.get("layer");
             let mut z: i64 = row.get("z");
             let merged = if is_gm {

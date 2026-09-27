@@ -16,7 +16,7 @@ pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell"
 fn entry_json(r: &sqlx::any::AnyRow) -> Value {
     json!({
         "id": r.get::<String, _>("id"), "category": r.get::<String, _>("category"), "slug": r.get::<String, _>("slug"), "name": r.get::<String, _>("name"),
-        "source": r.get::<String, _>("source"), "campaign_id": r.get::<Option<String>, _>("campaign_id"), "data": util::json_value(&r.get::<String, _>("data")),
+        "source": r.get::<String, _>("source"), "campaign_id": r.get::<Option<String>, _>("campaign_id"), "data": util::json_value(&util::text(&r, "data")),
     })
 }
 
