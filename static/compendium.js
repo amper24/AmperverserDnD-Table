@@ -11,19 +11,20 @@ window.Compendium = (function () {
     const asi = (a) => a ? Object.entries(a).map(([k, v]) => (ABIL[k] || k) + ' ' + (typeof v === 'number' ? fmtMod(v) : v)).join(', ') : '';
     const ctx = window.SHEET_CTX || {};
     switch (e.category) {
-      case 'race': add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Тёмное зрение', d.darkvision && d.darkvision + ' фт'); add('Языки', d.languages); break;
-      case 'class': add('Кость хитов', d.hit_die); add('Основная хар-ка', d.primary); add('Спасброски', (d.saves || []).map(s => ABIL[s])); add('Доспехи', d.armor); add('Оружие', d.weapons); add('Навыки', d.skills && `${d.skills.choose} из: ${d.skills.from.join(', ')}`); add('Подклассы', d.subclasses); break;
-      case 'background': add('Навыки', d.skills); add('Инструменты', d.tools); add('Языки', d.languages); add('Умение', d.feature); add('Снаряжение', d.equipment); break;
+      case 'race': if (d.parent) add('Основной вид', d.parent); add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Тёмное зрение', d.darkvision && d.darkvision + ' фт'); add('Языки', d.languages); break;
+      case 'class': add('Кость хитов', d.hit_die); add('Стартовое снаряжение', d.starting_equipment); add('Основная хар-ка', d.primary); add('Спасброски', (d.saves || []).map(s => ABIL[s])); add('Доспехи', d.armor); add('Оружие', d.weapons); add('Навыки', d.skills && `${d.skills.choose} из: ${d.skills.from.join(', ')}`); add('Подклассы', d.subclasses); break;
+      case 'background': add('Навыки', d.skills); add('Инструменты', d.tools); add('Языки', d.languages); add('Умение', d.feature); add('Черта происхождения', d.feat); add('Характеристики', d.asi_options && ('+2/+1 или +1/+1/+1 из: ' + d.asi_options.join(', '))); add('Снаряжение', d.equipment); break;
       case 'item':
         add('Тип', M().ITEM_TYPES[d.type]?.slice(2)); add('Категория', d.category); add('Стоимость', d.cost); add('Урон', d.damage && `${d.damage} ${d.damage_type || ''}`); add('КД', d.ac); add('Вес', d.weight && d.weight + ' фнт'); add('Свойства', d.properties); add('Редкость', d.rarity); add('Настройка', d.attunement && 'Требуется'); add('Заряды', d.charges);
         if (d.stealth_disadvantage) add('Скрытность', 'Помеха'); if (d.str_req) add('Требование', 'Сила ' + d.str_req);
         break;
       case 'spell': add('Уровень', d.level === 0 ? 'Заговор' : d.level); add('Школа', d.school); add('Время', d.casting_time); add('Дистанция', d.range); add('Компоненты', d.components); add('Длительность', (d.concentration ? 'Концентрация, ' : '') + (d.duration || '')); add('Ритуал', d.ritual && 'Да'); add('Классы', d.classes); break;
-      case 'monster': add('Тип', `${d.size || ''} ${d.type || ''}`); add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); add('Опасность', `${d.cr} (${d.xp || 0} опыта)`); add('Чувства', d.senses); add('Языки', d.languages); add('Уязвимости', d.vulnerabilities); add('Иммунитеты', d.immunities); break;
+      case 'monster': add('Тип', `${d.size || ''} ${d.type || ''}${d.alignment ? ', ' + d.alignment : ''}`); add('Спасброски', d.saves); add('Навыки', d.skills); add('Уязвимости', d.vulnerabilities); add('Сопротивления', d.resistances); add('Иммунитеты', d.immunities); add('Иммунитет к состояниям', d.condition_immunities); add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); add('Опасность', `${d.cr} (${d.xp || 0} опыта)`); add('Чувства', d.senses); add('Языки', d.languages); add('Уязвимости', d.vulnerabilities); add('Иммунитеты', d.immunities); break;
     }
     const wrap = el('div', { class: 'entry' });
     const src = e.pack_id ? (e.pack_name || 'набор') : e.campaign_id ? 'homebrew' : e.source;
-    wrap.append(el('div', { class: 'row', style: 'align-items:flex-start' }, el('h2', { style: 'flex:1' }, e.name), el('span', { class: 'badge' }, src)));
+    wrap.append(el('div', { class: 'row', style: 'align-items:flex-start' }, el('h2', { style: 'flex:1' }, e.name, d.name_en && d.name_en !== e.name ? el('div', { class: 'muted small', style: 'font-weight:400' }, d.name_en) : null), el('span', { class: 'badge' }, src)));
+    if (d.higher_level) rows.push(['На больших уровнях', d.higher_level]);
     if (rows.length) wrap.append(el('table', {}, ...rows.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', {}, M().rich(String(v), ctx, { prefix: e.name }))))));
     if (e.category === 'monster' && d.abilities) {
       wrap.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin:6px 0' }, M().rollBtn('1d20' + fmtMod(mod(d.abilities.dex || 10)), 'Инициатива', ctx, { prefix: e.name }),
@@ -34,7 +35,7 @@ window.Compendium = (function () {
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
     block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prefix: `${e.name}: ${t.name}` })));
-    block('Подрасы', d.subraces, s => el('p', {}, el('b', {}, s.name + ' (' + asi(s.asi) + '). '), s.text));
+    block('Подрасы / линии', d.subraces, s => typeof s === 'string' ? el('p', {}, s) : el('p', {}, el('b', {}, s.name + ' (' + asi(s.asi) + '). '), s.text));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].text !== undefined) block('Действия', d.actions, a => {
       const p = el('p', {}, el('b', {}, a.name + '. '));
       const hit = (a.text || '').match(/([+-]\d+)\s*(?:к попаданию|к|,)/);
@@ -43,7 +44,24 @@ window.Compendium = (function () {
       return p;
     });
     block('Легендарные действия', d.legendary_actions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prefix: e.name })));
-    if (d.features) { wrap.append(el('h3', { style: 'margin-top:12px' }, 'Умения по уровням')); Object.entries(d.features).forEach(([lvl, fs]) => wrap.append(el('p', {}, el('b', {}, lvl + ' ур.: '), fs.join(', ')))); }
+    if (Array.isArray(d.actions_roll) && d.actions_roll.length) wrap.append(el('div', { style: 'margin:6px 0' }, el('div', { class: 'muted small' }, 'Броски атак и урона'), M().actionButtons({ actions: d.actions_roll }, ctx, e.name)));
+    block('Реакции', d.reactions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prefix: e.name })));
+    if (d.prerequisites) wrap.append(el('p', { class: 'muted small' }, 'Требования: ' + d.prerequisites));
+    if (d.feature_text) wrap.append(el('p', {}, el('b', {}, (d.feature || 'Умение') + '. '), M().rich(d.feature_text, ctx, { prefix: e.name })));
+    const featList = (features, texts, title) => {
+      if (!features || !Object.keys(features).length) return;
+      wrap.append(el('h3', { style: 'margin-top:12px' }, title));
+      Object.entries(features).sort((a, b) => +a[0] - +b[0]).forEach(([lvl, fs]) => {
+        const p = el('div', { class: 'lvl-row' }, el('b', {}, lvl + ' ур.: '));
+        (Array.isArray(fs) ? fs : [fs]).forEach((n, i) => { const t = texts?.[n]; p.append(i ? ', ' : '', t ? el('a', { href: '#', class: 'feat-link', onclick: ev => { ev.preventDefault(); const nx = p.nextSibling; if (nx?.classList?.contains('feat-text') && nx.dataset.n === n) { nx.remove(); return; } if (nx?.classList?.contains('feat-text')) nx.remove(); p.after(el('div', { class: 'feat-text card-desc', 'data-n': n }, M().rich(t, ctx, { prefix: `${e.name}: ${n}` }))); } }, n) : n); });
+        wrap.append(p);
+      });
+    };
+    featList(d.features, d.feature_texts, 'Умения по уровням');
+    if (Array.isArray(d.subclasses) && d.subclasses.length) {
+      wrap.append(el('h3', { style: 'margin-top:12px' }, 'Подклассы'));
+      d.subclasses.forEach(sc => { if (typeof sc === 'string') { wrap.append(el('p', {}, sc)); return; } wrap.append(el('p', {}, el('b', {}, sc.name), sc.name_en && sc.name_en !== sc.name ? el('span', { class: 'muted small' }, ' ' + sc.name_en) : null)); if (sc.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(sc.desc, ctx, { prefix: sc.name }))); featList(sc.features, sc.feature_texts, sc.name + ': умения'); });
+    }
     // --- действия с записью ---
     const btns = el('div', { class: 'row', style: 'margin-top:12px;flex-wrap:wrap;gap:4px' });
     const isRoot = !!window.ME?.is_root;
@@ -107,16 +125,18 @@ window.Compendium = (function () {
     const left = el('div', { style: 'display:flex;flex-direction:column;min-height:0' });
     const catSel = el('select', {}, el('option', { value: '' }, 'Все категории'), ...Object.entries(CAT_NAMES).map(([k, v]) => el('option', { value: k, selected: opts.category === k ? '' : null }, v)));
     const srcSel = el('select', { title: 'Источник' }, el('option', { value: '' }, 'Все источники'));
+    const ed0 = opts.edition || window.SHEET_EDITION || defaultEdition();
+    const edSel = el('select', { title: 'Редакция правил' }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: ed0 === k ? '' : null }, v)), el('option', { value: '', selected: ed0 === '' ? '' : null }, 'Обе редакции'));
     const q = el('input', { placeholder: 'Поиск…' });
     const lst = el('div', { class: 'list lst', style: 'flex:1;margin-top:6px' });
     const det = el('div', { class: 'det' }, el('p', { class: 'muted' }, 'Выберите запись. Записи можно перетаскивать на лист персонажа или на стол. Кубики в тексте — кликабельны.'));
-    left.append(catSel, el('div', { style: 'height:4px' }), opts.packId ? null : srcSel, el('div', { style: 'height:4px' }), q, lst);
+    left.append(catSel, el('div', { style: 'height:4px' }), opts.packId ? null : el('div', { class: 'row', style: 'gap:4px' }, edSel, srcSel), el('div', { style: 'height:4px' }), q, lst);
     left.append(el('button', { class: 'small', style: 'margin-top:6px', onclick: () => editEntry(null, { campaignId: opts.campaignId, isGM: opts.isGM, packId: opts.packId, category: catSel.value || 'item', onSaved: load }) }, '+ Своя запись'));
     root.append(left, det);
     let timer, packNames = {};
     (async () => { if (opts.packId) return; const mine = await myPacks(); let camp = []; if (opts.campaignId) { try { camp = await API.get(`/api/campaigns/${opts.campaignId}/packs`); } catch { } } const all = [...mine, ...camp.filter(p => !mine.some(m => m.id === p.id))]; all.forEach(p => { packNames[p.id] = p.name; srcSel.append(el('option', { value: 'pack:' + p.id }, p.name)); }); srcSel.append(el('option', { value: 'srd' }, 'База (SRD)')); if (opts.campaignId) srcSel.append(el('option', { value: 'hb' }, 'Homebrew кампании')); })();
     async function load() {
-      const params = new URLSearchParams(); if (catSel.value) params.set('category', catSel.value); if (q.value) params.set('q', q.value);
+      const params = new URLSearchParams(); if (catSel.value) params.set('category', catSel.value); if (q.value) params.set('q', q.value); if (edSel.value) params.set('edition', edSel.value); params.set('limit', '3000');
       const src = srcSel.value;
       if (opts.packId) params.set('pack_id', opts.packId); else if (src.startsWith('pack:')) params.set('pack_id', src.slice(5)); else if (opts.campaignId) params.set('campaign_id', opts.campaignId);
       let items = await API.get('/api/compendium?' + params);
@@ -128,13 +148,13 @@ window.Compendium = (function () {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
         const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
-        const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name), e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
+        const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         it.addEventListener('click', () => { lst.querySelectorAll('.item').forEach(x => x.classList.remove('active')); it.classList.add('active'); det.innerHTML = ''; det.append(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load })); });
         it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
         lst.append(it);
       }
     }
-    catSel.addEventListener('change', load); srcSel.addEventListener('change', load);
+    catSel.addEventListener('change', load); srcSel.addEventListener('change', load); edSel.addEventListener('change', () => { if (!opts.edition && !window.SHEET_EDITION && edSel.value) LS.set('et-edition', edSel.value); load(); });
     q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
     load();
     root.reload = load;

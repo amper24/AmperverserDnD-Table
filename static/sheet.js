@@ -57,7 +57,7 @@
   const skillVal = (k, ab) => abMod(ab) + (s.expertise.includes(k) ? 2 : s.skills.includes(k) ? 1 : 0) * prof();
   const saveVal = (k) => abMod(k) + (s.saving_throws.includes(k) ? prof() : 0);
   const passive = () => 10 + skillVal('perception', 'wis');
-  const ctx = () => { const c = M.ctxFromSheet(s); window.SHEET_CTX = c; return c; };
+  const ctx = () => { const c = M.ctxFromSheet(s); window.SHEET_CTX = c; window.SHEET_EDITION = s.edition || '2014'; return c; };
   function roll(expr, label) { M.roll(expr, `${ch.name}: ${label}`, { ctx: ctx() }); }
   const dis = () => readonly ? '' : null;
 
@@ -107,6 +107,7 @@
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
+      readonly ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014']) : el('select', { class: 'small', style: 'flex:0;width:auto', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v))),
       tokenPick,
       embed ? null : Theme.button(),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
@@ -384,8 +385,8 @@
     const d = e.data || {};
     switch (e.category) {
       case 'race': {
-        s.race = e.name;
-        if (d.asi && confirm(`Применить бонусы расы к характеристикам? (${Object.entries(d.asi).filter(([k]) => ABIL[k]).map(([k, v]) => ABIL[k] + ' +' + v).join(', ')})`)) for (const [k, v] of Object.entries(d.asi)) if (ABIL[k]) s.abilities[k] += v;
+        s.race = d.subrace && d.parent ? `${d.parent} (${e.name})` : e.name;
+        if (d.asi && Object.keys(d.asi).length && confirm(`Применить бонусы расы к характеристикам? (${Object.entries(d.asi).filter(([k]) => ABIL[k]).map(([k, v]) => ABIL[k] + ' +' + v).join(', ')})`)) for (const [k, v] of Object.entries(d.asi)) if (ABIL[k]) s.abilities[k] += v;
         if (d.speed) s.speed = d.speed;
         (d.traits || []).forEach(t => { if (!s.features.some(f => f.name === t.name)) s.features.push({ name: t.name, text: t.text }); });
         break;
@@ -394,7 +395,7 @@
         s.class = e.name;
         if (d.saves && confirm('Установить спасброски и кость хитов класса?')) { s.saving_throws = [...d.saves]; s.hp.hit_dice = (s.level || 1) + d.hit_die; if (s.level === 1) { s.hp.max = parseInt(d.hit_die.slice(1)) + abMod('con'); s.hp.current = s.hp.max; } }
         if (d.spellcasting) s.spells.ability = d.spellcasting;
-        Object.entries(d.features || {}).forEach(([lvl, fs]) => { if (+lvl <= (s.level || 1)) fs.forEach(n => { if (!s.features.some(f => f.name === n)) s.features.push({ name: n, text: `${e.name}, ${lvl} ур.` }); }); });
+        Object.entries(d.features || {}).forEach(([lvl, fs]) => { if (+lvl <= (s.level || 1)) fs.forEach(n => { if (!s.features.some(f => f.name === n)) s.features.push(M.newFeature({ name: n, text: d.feature_texts?.[n] || '', source: `${e.name}, ${lvl} ур.` })); }); });
         (d.traits || []).forEach(t => { if (!s.features.some(f => f.name === t.name)) s.features.push({ name: t.name, text: t.text }); });
         break;
       }
@@ -402,7 +403,13 @@
         s.background = e.name;
         const map = Object.fromEntries(SKILLS.map(([k, n]) => [n, k]));
         (d.skills || []).forEach(n => { if (map[n] && !s.skills.includes(map[n])) s.skills.push(map[n]); });
-        if (d.feature) s.features.push({ name: d.feature, text: `Умение предыстории «${e.name}»` });
+        if (d.feature) s.features.push(M.newFeature({ name: d.feature, text: d.feature_text || '', source: `Предыстория «${e.name}»` }));
+        if (d.feat) s.features.push(M.newFeature({ name: d.feat, text: 'Черта происхождения. Описание — в справочнике (Черты).', source: `Предыстория «${e.name}»` }));
+        if (d.asi_options?.length) {
+          const short = { СИЛ: 'str', ЛОВ: 'dex', ТЕЛ: 'con', ИНТ: 'int', МДР: 'wis', ХАР: 'cha' };
+          const pick = window.prompt(`Правила 2024: предыстория даёт +2 и +1 (или +1/+1/+1) к характеристикам из списка: ${d.asi_options.join(', ')}.\nВведите, например: ${d.asi_options[0]} +2, ${d.asi_options[1] || d.asi_options[0]} +1 (пусто — пропустить)`, `${d.asi_options[0]} +2, ${d.asi_options[1] || d.asi_options[0]} +1`);
+          if (pick) for (const m of pick.matchAll(/(СИЛ|ЛОВ|ТЕЛ|ИНТ|МДР|ХАР)\s*\+?(\d)/gi)) { const k = short[m[1].toUpperCase()]; if (k) s.abilities[k] += +m[2]; }
+        }
         (d.traits || []).forEach(t => { if (!s.features.some(f => f.name === t.name)) s.features.push({ name: t.name, text: t.text }); });
         break;
       }
@@ -425,7 +432,7 @@
   let compEl;
   function toggleComp(cat) {
     if (compEl) { compEl.remove(); compEl = null; if (!cat) return; }
-    compEl = floatWindow('Справочник (перетаскивайте на лист)', el('div', { style: 'height:100%;padding:8px' }, Compendium.widget({ campaignId: ch.campaign_id, category: cat })), { x: Math.max(0, window.innerWidth - 640), y: 60, w: 620, h: 520 });
+    compEl = floatWindow('Справочник (перетаскивайте на лист)', el('div', { style: 'height:100%;padding:8px' }, Compendium.widget({ campaignId: ch.campaign_id, category: cat, edition: s.edition || '2014' })), { x: Math.max(0, window.innerWidth - 640), y: 60, w: 620, h: 520 });
   }
 
   render();

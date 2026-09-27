@@ -318,7 +318,7 @@
     const wrap = el('div');
     const list = await API.get('/api/characters');
     wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Персонажи'),
-      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Имя персонажа', 'Торин'); if (n) { const c = await API.post('/api/characters', { name: n }); window.open(withTok('/sheet/' + c.id), '_blank'); reloadPage(); } } }, 'Новый персонаж'),
+      el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const r = await newCharacterDialog(); if (r) { const c = await API.post('/api/characters', r); window.open(withTok('/sheet/' + c.id), '_blank'); reloadPage(); } } }, 'Новый персонаж'),
       el('button', { style: 'flex:0;white-space:nowrap', onclick: () => LSS.importDialog({ onDone: c => { window.open(withTok('/sheet/' + c.id), '_blank'); reloadPage(); } }) }, icon('upload'), ' Импорт из Long Story Short')));
     const g = el('div', { class: 'grid' });
     if (!list.length) g.append(el('p', { class: 'muted' }, 'Персонажей пока нет.'));
@@ -421,8 +421,8 @@
       const add = (ico, label, fn) => menu.append(el('div', { class: 'ctxitem', onclick: () => { menu.remove(); fn().catch(e => toast('Ошибка: ' + e.message, 4000)); } }, icon(ico), ' ', label));
       const sep = () => menu.append(el('div', { class: 'ctxsep' }));
       add('user', 'Персонаж (лист + токен)', async () => {
-        const n = await prompt2('Имя персонажа'); if (!n) return;
-        const c = await API.post('/api/characters', { name: n, campaign_id: cid });
+        const r = await newCharacterDialog(); if (!r) return;
+        const c = await API.post('/api/characters', { ...r, campaign_id: cid });
         await Table.placeTokenAtCenter({ name: c.name, hp: c.sheet?.hp?.max ?? 10, character_id: c.id, asset_id: c.portrait_asset_id, owner_id: me.id });
         panels.chars.refresh?.(); openSheet(c.id);
       });
@@ -578,7 +578,7 @@
           for (const c of free) list.append(el('div', { class: 'item' }, el('span', { class: 'grow' }, c.name), el('button', { class: 'small', onclick: async () => { await API.patch('/api/characters/' + c.id, { campaign_id: cid }); refresh(); } }, '+ в кампанию')));
         }
       };
-      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Имя персонажа'); if (n) { const c = await API.post('/api/characters', { name: n, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
+      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const r = await newCharacterDialog(); if (r) { const c = await API.post('/api/characters', { ...r, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
         el('button', { style: 'width:100%;margin-bottom:8px', onclick: () => LSS.importDialog({ campaignId: cid, onDone: c => { refresh(); openSheet(c.id); } }) }, icon('upload'), ' Импорт из Long Story Short'),
         el('p', { class: 'muted', style: 'font-size:12px' }, 'Перетащите персонажа на стол — появится токен. Перетащите предмет с листа на персонажа — он будет передан.'), list);
       refresh(); panels.chars.refresh = refresh;

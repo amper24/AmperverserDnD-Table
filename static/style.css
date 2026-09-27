@@ -438,3 +438,12 @@ button.primary, .btn.primary { font-weight: 600; }
 .note-btn:hover, .note-btn.has { opacity: 1; color: var(--accent); }
 .h3n { display: flex; align-items: center; }
 .note-line { font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); border-left: 2px solid var(--accent); padding: 4px 8px; margin: 4px 0 6px; border-radius: var(--radius); white-space: pre-wrap; }
+
+/* ---- редакции и справочник SRD ---- */
+label.radio { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 4px; cursor: pointer; font-weight: 500; }
+label.radio input { width: auto; margin: 0; }
+label.radio .muted { font-weight: 400; }
+.lvl-row { margin: 3px 0; font-size: 13px; }
+.feat-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.feat-text { margin: 4px 0 8px 12px; font-size: 13px; }
+select.small { padding: 4px 6px; font-size: 12px; }

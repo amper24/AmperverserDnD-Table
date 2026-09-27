@@ -191,6 +191,24 @@ window.SKILLS = [
   ['sleight', 'Ловкость рук', 'dex'], ['stealth', 'Скрытность', 'dex'], ['survival', 'Выживание', 'wis'],
 ];
 window.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
+window.EDITIONS = { '2014': 'D&D 5e (2014)', '2024': 'D&D 5e (2024)' };
+/// Редакция по умолчанию для новых персонажей и фильтра справочника (запоминается).
+window.defaultEdition = () => LS.get('et-edition') || '2014';
+/// Диалог создания персонажа: имя + редакция правил. Возвращает { name, sheet } или null.
+window.newCharacterDialog = async function (defaults = {}) {
+  const name = el('input', { placeholder: 'Торин', value: defaults.name || '' });
+  const ed = defaultEdition();
+  const radios = Object.entries(EDITIONS).map(([k, v]) => el('label', { class: 'radio' }, el('input', { type: 'radio', name: 'edition', value: k, checked: k === ed ? '' : null }), ' ', v,
+    el('span', { class: 'muted small' }, k === '2014' ? ' — расы с бонусами характеристик, классика' : ' — виды без бонусов, бонусы и черта от предыстории, мастерство оружия')));
+  const box = el('div', { class: 'editor-form' }, el('div', { class: 'field' }, el('label', {}, 'Имя персонажа'), name), el('div', { class: 'field' }, el('label', {}, 'Редакция правил'), ...radios),
+    el('p', { class: 'muted small' }, 'Редакция влияет на то, какие расы, классы, заклинания и предметы предлагает справочник. Её можно сменить позже в шапке листа.'));
+  setTimeout(() => name.focus(), 50);
+  const ok = await modal('Новый персонаж', box, [{ label: 'Создать', cls: 'primary', fn: () => true }]);
+  if (!ok || !name.value.trim()) return null;
+  const edition = box.querySelector('input[name=edition]:checked')?.value || '2014';
+  LS.set('et-edition', edition);
+  return { name: name.value.trim(), sheet: { edition } };
+};
 window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', feat: 'Черты', condition: 'Состояния' };
 
 // ---- Минималистичные SVG-иконки (line icons), без эмодзи ----

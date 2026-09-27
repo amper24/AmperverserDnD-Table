@@ -38,8 +38,11 @@ pl -X POST "$B/api/join/$CODE" | grep -q '"ok":true'
 [ "$(gm "$B/api/campaigns/$CID" | J "len(d['members'])")" = "2" ]
 
 echo "[2] справочник"
-[ "$(gm "$B/api/compendium?category=race" | J "len(d)")" = "9" ]
-gm "$B/api/compendium?q=меч" | J "[e['name'] for e in d]" | grep -q "Длинный меч"
+[ "$(gm "$B/api/compendium?category=race&edition=2014" | J "len(d)")" = "13" ]
+[ "$(gm "$B/api/compendium?category=class&edition=2024" | J "len(d)")" = "12" ]
+[ "$(gm "$B/api/compendium?category=spell&edition=2014&limit=3000" | J "len(d)")" = "319" ]
+gm "$B/api/compendium?q=fireball" | J "[e['name'] for e in d]" | grep "Огненный шар" >/dev/null
+gm "$B/api/compendium?q=меч" | J "[e['name'] for e in d]" | grep "Длинный меч" >/dev/null
 HB=$(gm -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Меч Ампера\",\"campaign_id\":\"$CID\",\"data\":{\"type\":\"magic\"}}" | J "d['source']")
 [ "$HB" = "Homebrew" ]
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"x\",\"campaign_id\":\"$CID\",\"data\":{}}")

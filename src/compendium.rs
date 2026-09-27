@@ -36,6 +36,8 @@ pub fn router() -> Router<AppState> {
 pub struct SearchQuery {
     pub category: Option<String>, pub q: Option<String>, pub campaign_id: Option<String>, pub pack_id: Option<String>,
     pub limit: Option<i64>, pub mine: Option<bool>,
+    /// Редакция правил: "2014" или "2024" — скрывает базовые записи другой редакции (свои записи видны всегда).
+    pub edition: Option<String>,
 }
 
 async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<SearchQuery>) -> ApiResult<Json<Value>> {
@@ -64,12 +66,15 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
     if q.category.is_some() { sql.push_str(" AND c.category = ?"); }
     let pattern = q.q.as_ref().map(|s| format!("%{}%", s.to_lowercase()));
     if pattern.is_some() { sql.push_str(" AND c.name_lc LIKE ?"); }
+    let other = match q.edition.as_deref() { Some("2014") => Some("SRD 2024"), Some("2024") => Some("SRD 2014"), _ => None };
+    if other.is_some() { sql.push_str(" AND c.source <> ?"); }
     sql.push_str(" ORDER BY c.category, c.name LIMIT ?");
     let mut query = sqlx::query(&sql);
     for b in &binds { query = query.bind(b); }
     if let Some(c) = &q.category { query = query.bind(c); }
     if let Some(p) = &pattern { query = query.bind(p); }
-    query = query.bind(q.limit.unwrap_or(300).clamp(1, 2000));
+    if let Some(o) = other { query = query.bind(o); }
+    query = query.bind(q.limit.unwrap_or(300).clamp(1, 3000));
     let rows = query.fetch_all(&st.db).await?;
     Ok(Json(rows.iter().map(entry_json).collect()))
 }
@@ -81,6 +86,12 @@ async fn get_one(State(st): State<AppState>, _user: AuthUser, Path(id): Path<Str
 
 #[derive(Deserialize)]
 pub struct EntryIn { pub category: String, pub name: String, #[serde(default)] pub data: Value, pub campaign_id: Option<String>, pub pack_id: Option<String> }
+
+/// Поисковый ключ: русское + английское название (если задано в data.name_en).
+fn name_lc(body: &EntryIn) -> String {
+    let en = body.data.get("name_en").and_then(|v| v.as_str()).unwrap_or("");
+    util::truncate(&format!("{} {}", body.name, en).trim().to_lowercase(), 128)
+}
 
 async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<EntryIn>) -> ApiResult<Json<Value>> {
     if !CATEGORIES.contains(&body.category.as_str()) {
@@ -94,7 +105,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
     let id = util::uid();
     let campaign_id = if body.pack_id.is_some() { None } else { body.campaign_id.clone() };
     sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&campaign_id).bind(&body.pack_id).bind(&body.category).bind(slugify(&body.name)).bind(util::truncate(&body.name, 128)).bind(util::truncate(&body.name, 128).to_lowercase()).bind(&source).bind(body.data.to_string())
+        .bind(&id).bind(&campaign_id).bind(&body.pack_id).bind(&body.category).bind(slugify(&body.name)).bind(util::truncate(&body.name, 128)).bind(name_lc(&body)).bind(&source).bind(body.data.to_string())
         .execute(&st.db).await?;
     let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
     Ok(Json(entry_json(&r)))
@@ -122,7 +133,7 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<Strin
         return Err(AppError::bad("Неизвестная категория"));
     }
     sqlx::query("UPDATE compendium SET name = ?, name_lc = ?, data = ?, category = ?, slug = ? WHERE id = ?")
-        .bind(util::truncate(&body.name, 128)).bind(util::truncate(&body.name, 128).to_lowercase()).bind(body.data.to_string()).bind(&body.category).bind(slugify(&body.name)).bind(&id).execute(&st.db).await?;
+        .bind(util::truncate(&body.name, 128)).bind(name_lc(&body)).bind(body.data.to_string()).bind(&body.category).bind(slugify(&body.name)).bind(&id).execute(&st.db).await?;
     let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
     Ok(Json(entry_json(&r)))
 }
