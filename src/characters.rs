@@ -36,6 +36,59 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/characters", get(list).post(create))
         .route("/api/characters/:id", get(get_one).patch(patch).delete(delete_one))
+        .route("/api/characters/:id/transfer", axum::routing::post(transfer))
+}
+
+#[derive(Deserialize)]
+pub struct TransferIn { pub item_uid: String, pub to_character_id: String, pub qty: Option<i64> }
+
+/// Атомарная передача предмета между персонажами (владелец/мастер источника; получатель — в той же кампании).
+async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>, Json(body): Json<TransferIn>) -> ApiResult<Json<Value>> {
+    if body.to_character_id == id {
+        return Err(AppError::bad("Нельзя передать самому себе"));
+    }
+    let src = load_checked(&st, &id, &user, true).await?;
+    let dst = char_json(&load_row(&st, &body.to_character_id).await?);
+    let same_campaign = src["campaign_id"].is_string() && src["campaign_id"] == dst["campaign_id"];
+    let dst_ok = dst["owner_id"] == user.id || same_campaign;
+    if !dst_ok {
+        return Err(AppError::forbidden("Получатель должен быть в той же кампании"));
+    }
+    let mut src_sheet = src["sheet"].clone();
+    let mut dst_sheet = dst["sheet"].clone();
+    let inv = src_sheet["inventory"].as_array().cloned().unwrap_or_default();
+    let Some(pos) = inv.iter().position(|it| it["uid"] == body.item_uid.as_str()) else { return Err(AppError::not_found("Предмет не найден")) };
+    let mut item = inv[pos].clone();
+    let have = item["qty"].as_i64().unwrap_or(1).max(1);
+    let qty = body.qty.unwrap_or(have).clamp(1, have);
+    let mut new_inv = inv.clone();
+    if qty >= have {
+        new_inv.remove(pos);
+    } else {
+        new_inv[pos]["qty"] = json!(have - qty);
+        item["qty"] = json!(qty);
+    }
+    item["uid"] = json!(util::uid());
+    item["equipped"] = json!(false);
+    item["attuned"] = json!(false);
+    src_sheet["inventory"] = json!(new_inv);
+    let mut dst_inv = dst_sheet["inventory"].as_array().cloned().unwrap_or_default();
+    dst_inv.push(item.clone());
+    dst_sheet["inventory"] = json!(dst_inv);
+    let now = util::now();
+    sqlx::query("UPDATE characters SET sheet = ?, updated_at = ? WHERE id = ?").bind(src_sheet.to_string()).bind(&now).bind(&id).execute(&st.db).await?;
+    sqlx::query("UPDATE characters SET sheet = ?, updated_at = ? WHERE id = ?").bind(dst_sheet.to_string()).bind(&now).bind(&body.to_character_id).execute(&st.db).await?;
+    let a = char_json(&load_row(&st, &id).await?);
+    let b = char_json(&load_row(&st, &body.to_character_id).await?);
+    if let Some(cid) = src["campaign_id"].as_str() {
+        st.hub.broadcast(cid, &json!({ "type": "character_update", "character": a }), None).await;
+        st.hub.broadcast(cid, &json!({ "type": "character_update", "character": b }), None).await;
+        let text = format!("{} передал(а) «{}»{} → {}", user.name, item["name"].as_str().unwrap_or("предмет"), if qty > 1 { format!(" ×{qty}") } else { String::new() }, b["name"].as_str().unwrap_or(""));
+        if let Some(m) = crate::realtime::system_message(&st, cid, &user, &text).await {
+            st.hub.broadcast(cid, &m, None).await;
+        }
+    }
+    Ok(Json(json!({ "ok": true, "from": a, "to": b, "item": item })))
 }
 
 #[derive(Deserialize)]

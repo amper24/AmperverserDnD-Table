@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod error;
 mod images;
+mod packs;
 mod realtime;
 mod scenes;
 mod seed;
@@ -62,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(assets::router())
         .merge(characters::router())
         .merge(compendium::router())
+        .merge(packs::router())
         .merge(realtime::router())
         .route("/static/*path", get(static_handler))
         .route("/sheet/:id", get(|| async { serve_embedded("sheet.html") }))

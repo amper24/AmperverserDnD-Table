@@ -182,6 +182,12 @@ async fn save_chat(st: &AppState, cid: &str, user: &auth::AuthUser, kind: &str, 
 
 fn player_can_edit(data: &Value, user_id: &str) -> bool {
     data["owner_id"] == user_id || data["editors"].as_array().map(|a| a.iter().any(|e| e == user_id)).unwrap_or(false)
+        || data["loot"].as_bool().unwrap_or(false) // лут на карте может подобрать любой игрок
+}
+
+/// Системное сообщение в чат (сохраняется в историю).
+pub async fn system_message(st: &AppState, cid: &str, user: &auth::AuthUser, text: &str) -> Option<Value> {
+    save_chat(st, cid, user, "system", &json!({ "text": text })).await
 }
 
 async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, role: &str, msg: Value) {
@@ -202,6 +208,15 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 ("text", json!({ "text": text, "whisper": msg["whisper"] }))
             };
             if let Some(out) = save_chat(st, cid, user, kind, &payload).await {
+                st.hub.broadcast(cid, &out, None).await;
+            }
+        }
+        "card" => {
+            // карточка предмета/заклинания в чат (с кнопками бросков на стороне клиента)
+            let mut card = msg["card"].clone();
+            if !card.is_object() { return; }
+            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon"].contains(&k.as_str())); }
+            if let Some(out) = save_chat(st, cid, user, "card", &card).await {
                 st.hub.broadcast(cid, &out, None).await;
             }
         }
@@ -323,7 +338,8 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
         }
         None => {
             let layer = layer_in.unwrap_or_else(|| "character".into());
-            if !is_gm && !PLAYER_LAYERS.contains(&layer.as_str()) {
+            let is_loot = data["loot"].as_bool().unwrap_or(false);
+            if !is_gm && !PLAYER_LAYERS.contains(&layer.as_str()) && !(layer == "prop" && is_loot) {
                 return;
             }
             if data.get("owner_id").map(|v| v.is_null()).unwrap_or(true) {

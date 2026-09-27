@@ -136,17 +136,41 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS packs (
+  id VARCHAR(32) PRIMARY KEY,
+  owner_id VARCHAR(32) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  description TEXT NOT NULL,
+  is_public BIGINT NOT NULL DEFAULT 0,
+  created_at VARCHAR(40) NOT NULL,
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS campaign_packs (
+  id {AUTOINC},
+  campaign_id VARCHAR(32) NOT NULL,
+  pack_id VARCHAR(32) NOT NULL,
+  UNIQUE (campaign_id, pack_id),
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  FOREIGN KEY (pack_id) REFERENCES packs(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS compendium (
   id VARCHAR(32) PRIMARY KEY,
   campaign_id VARCHAR(32) NULL,
+  pack_id VARCHAR(32) NULL,
   category VARCHAR(24) NOT NULL,
   slug VARCHAR(64) NOT NULL,
   name VARCHAR(128) NOT NULL,
   source VARCHAR(32) NOT NULL DEFAULT 'SRD',
   data {MEDIUMTEXT} NOT NULL,
-  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  FOREIGN KEY (pack_id) REFERENCES packs(id) ON DELETE CASCADE
 );
 "#;
+
+/// Миграции для уже существующих баз (ошибки "колонка уже есть" игнорируются).
+const ALTERS: &[&str] = &[
+    "ALTER TABLE compendium ADD COLUMN pack_id VARCHAR(32) NULL",
+];
 
 const INDEXES: &[&str] = &[
     "CREATE INDEX idx_auth_codes_email ON auth_codes(email)",
@@ -163,6 +187,8 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX idx_chat_campaign ON chat_messages(campaign_id)",
     "CREATE INDEX idx_comp_category ON compendium(category)",
     "CREATE INDEX idx_comp_campaign ON compendium(campaign_id)",
+    "CREATE INDEX idx_comp_pack ON compendium(pack_id)",
+    "CREATE INDEX idx_packs_owner ON packs(owner_id)",
 ];
 
 pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {
@@ -179,6 +205,14 @@ pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {
         }
         let stmt = format!("{stmt}{suffix}");
         sqlx::query(&stmt).execute(pool).await?;
+    }
+    for stmt in ALTERS {
+        if let Err(e) = sqlx::query(stmt).execute(pool).await {
+            let msg = e.to_string();
+            if !(msg.contains("Duplicate") || msg.contains("duplicate") || msg.contains("1060")) {
+                return Err(e.into());
+            }
+        }
     }
     // Индексы: MySQL не умеет IF NOT EXISTS — игнорируем ошибку "уже существует"
     for idx in INDEXES {
