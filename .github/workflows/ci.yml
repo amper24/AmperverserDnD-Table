@@ -6,7 +6,11 @@ on:
   pull_request:
 
 env:
-  CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: write
+  issues: write
 
 jobs:
   build-test:
@@ -31,21 +35,45 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Build (release)
-        run: cargo build --release --locked 2>/dev/null || cargo build --release
+        run: |
+          set -o pipefail
+          cargo build --release 2>&1 | tee build.log
       - name: Clippy
-        run: cargo clippy --release -- -D warnings || true
+        run: cargo clippy --release 2>&1 | tee clippy.log || true
       - name: Test deps
         run: pip install -q websockets pillow
       - name: Smoke test (SQLite)
         env:
           DATABASE_URL: sqlite://data/ci.db
           PORT: "8099"
-        run: bash scripts/smoke.sh
+        run: |
+          set -o pipefail
+          bash scripts/smoke.sh 2>&1 | tee smoke-sqlite.log
       - name: Smoke test (MySQL)
         env:
           DATABASE_URL: mysql://dnd:dnd@127.0.0.1:3306/dnd
           PORT: "8098"
-        run: bash scripts/smoke.sh
+        run: |
+          set -o pipefail
+          bash scripts/smoke.sh 2>&1 | tee smoke-mysql.log
+      - name: Report logs to issue (on failure)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure: run ${{ github.run_id }} (${{ github.sha }})"
+            for f in build.log smoke-sqlite.log smoke-mysql.log; do
+              if [ -f "$f" ]; then
+                echo; echo "#### $f"; echo '```'
+                grep -v -E '^\s*(Compiling|Downloaded|Downloading|Updating|Locking|Adding|Fresh|Running)' "$f" | tail -n 250 | cut -c1-400
+                echo '```'
+              fi
+            done
+          } > report.md
+          NUM=$(gh issue list --state open --search "CI build log in:title" --json number --jq '.[0].number')
+          if [ -z "$NUM" ]; then NUM=$(gh issue create --title "CI build log" --body "Автоматические отчёты CI" | grep -oE '[0-9]+$'); fi
+          gh issue comment "$NUM" --body-file report.md
       - name: Upload Cargo.lock
         uses: actions/upload-artifact@v4
         with:
