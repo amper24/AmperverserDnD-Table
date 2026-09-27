@@ -33,7 +33,16 @@ docker compose up -d --build
 ```
 
 ### Windows
-Запустите `run.bat` (нужен Rust с rustup.rs **или** `dnd-table.exe` из Releases рядом со скриптом).
+Без Rust — `install.bat`: скачает `dnd-table.exe` из последнего релиза в папку скрипта и запустит сервер.
+
+```bat
+run.bat                 :: двойной клик или из cmd: dnd-table.exe рядом -> target\release -> сборка через cargo
+run.bat help            :: аргументы передаются бинарнику (users list, users make-root <email>, stats)
+install.bat             :: скачать готовый .exe из GitHub Releases и запустить
+```
+Переменные: `PORT` (8080), `NO_BROWSER=1` — не открывать браузер, `NO_PAUSE=1` — не ждать клавишу в конце (используется в CI), `REBUILD=1` — пересобрать через cargo, `DND_DIR` — куда ставить `install.bat`.
+
+Если `run.bat` печатает мусор вроде `'.' is not recognized…`, `'EXE' is not recognized…`, `'и' is not recognized…` — это cmd разбирает файл в неправильной кодировке / с неправильными переводами строк (батник был в UTF-8 с кириллицей и с LF). Сейчас `*.bat` в репозитории ASCII-only и с CRLF, это фиксирует `.gitattributes`. На уже испорченной копии: `git pull`, затем `git rm --cached run.bat install.bat && git checkout -- run.bat install.bat` (или просто свежий клон) — и батники пересохранятся с CRLF.
 
 ---
 
@@ -202,7 +211,8 @@ src/
 static/                 # index.html, app.js (лобби+кампания), table.js (canvas-стол), sheet.js, compendium.js
 data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), builtin/ (30 ассетов)
 scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)
-deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh
+deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh · install.bat
+.gitattributes          # *.bat/*.cmd — всегда CRLF (иначе cmd.exe ломает разбор батников)
 ```
 
 ## Разработка
