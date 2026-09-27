@@ -15,23 +15,10 @@ window.LS = (() => {
   };
 })();
 
-// ---- Навигация с переносом токена ----
-// Если хранилище недоступно (например, фрейм с sandbox без allow-same-origin: нет ни cookie, ни localStorage),
-// токен сессии живёт в памяти и передаётся между страницами через фрагмент URL (#tk=...), который сразу стирается.
-(() => {
-  const m = location.hash.match(/(?:^#|&)tk=([\w-]+)/);
-  if (m) { LS.setItem('dnd_token', m[1]); try { history.replaceState(null, '', location.pathname + location.search); } catch { } }
-})();
-window.needTokenInUrl = () => !LS.persistent && !!LS.getItem('dnd_token');
-window.withTok = (url) => { if (!needTokenInUrl() || /^https?:\/\//.test(url) && !url.startsWith(location.origin)) return url; const [base] = url.split('#'); return base + '#tk=' + LS.getItem('dnd_token'); };
-window.reloadPage = () => go(location.pathname + location.search, true);
-window.go = (url, replace) => { const u = withTok(url); if (replace) location.replace(u); else location.href = u; };
-document.addEventListener('click', e => {
-  if (!needTokenInUrl()) return;
-  const a = e.target.closest && e.target.closest('a[href]'); if (!a || a.target === '_blank' || e.defaultPrevented) return;
-  const href = a.getAttribute('href'); if (!href || !href.startsWith('/') || href.startsWith('//')) return;
-  e.preventDefault(); go(href);
-}, true);
+// ---- Навигация ----
+window.withTok = (url) => url;
+window.reloadPage = () => location.reload();
+window.go = (url, replace) => { if (replace) location.replace(url); else location.href = url; };
 
 // ---- Согласие на cookie и хранилище ----
 // Категории: necessary (сессия dnd_session/dnd_session_x, токен dnd_token, само согласие) — всегда; functional (тема, вкладки листа, панель кубиков) — по согласию.

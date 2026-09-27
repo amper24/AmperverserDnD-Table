@@ -57,7 +57,7 @@
       if (r?.token) LS.setItem('dnd_token', r.token);
       try { await API.get('/api/auth/me'); } catch {
         const openTab = el('a', { href: location.origin + next, target: '_blank' }, 'открыть приложение в новой вкладке');
-        throw new Error('Вход выполнен, но браузер не сохранил сессию (заблокированы cookie и хранилище во встроенном фрейме). Попробуйте ' + openTab.outerHTML);
+        throw new Error('Вход выполнен, но браузер не сохранил сессию: заблокированы cookie и хранилище (обычно — встроенный фрейм или строгий приватный режим). Попробуйте ' + openTab.outerHTML);
       }
     }
     const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { if (/<a /.test(e.message)) err.innerHTML = e.message; else err.textContent = e.message; } finally { btn.disabled = false; } };
@@ -151,7 +151,7 @@
     add('localStorage', ls, ls === 'доступен');
     let ck = 'доступен'; try { document.cookie = '__d=1; SameSite=Lax'; ck = document.cookie.includes('__d=1') ? 'доступен (JS-cookie записался)' : 'JS-cookie не записался'; document.cookie = '__d=; Max-Age=0'; } catch (e) { ck = 'НЕДОСТУПЕН: ' + e.name; }
     add('document.cookie', ck, ck.startsWith('доступен'));
-    add('Хранилище приложения', LS.persistent ? 'постоянное' : 'только память (токен передаётся через #tk в URL)', LS.persistent);
+    add('Хранилище приложения', LS.persistent ? 'постоянное' : 'только память (сессия не переживёт перезагрузку страницы)', LS.persistent);
     add('Токен dnd_token', LS.getItem('dnd_token') ? 'есть' : 'нет');
     let hasSA = 'нет API'; try { if (document.hasStorageAccess) hasSA = (await document.hasStorageAccess()) ? 'есть' : 'нет'; } catch (e) { hasSA = e.name; }
     add('Storage Access (cookie во фрейме)', hasSA);
