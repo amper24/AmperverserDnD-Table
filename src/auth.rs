@@ -17,6 +17,7 @@ use sqlx::Row;
 use crate::{error::ApiResult, util, AppError, AppState};
 
 pub const COOKIE: &str = "dnd_session";
+pub const COOKIE_X: &str = "dnd_session_x";
 const CODE_TTL_MIN: i64 = 10;
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,8 @@ pub struct AuthUser {
     pub email: String,
     pub name: String,
     pub is_root: bool,
+    pub avatar_asset_id: Option<String>,
+    pub created_at: String,
 }
 
 impl AuthUser {
@@ -39,17 +42,22 @@ impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, Self::Rejection> {
-        let token = util::cookie(&parts.headers, COOKIE).or_else(|| util::bearer(&parts.headers)).ok_or_else(|| AppError::unauthorized("Требуется вход"))?;
+        let token = session_token(&parts.headers).ok_or_else(|| AppError::unauthorized("Требуется вход"))?;
         user_by_token(st, &token).await?.ok_or_else(|| AppError::unauthorized("Сессия недействительна"))
     }
 }
 
+/// Токен сессии из Bearer-заголовка или любого из двух cookie.
+pub fn session_token(headers: &HeaderMap) -> Option<String> {
+    util::bearer(headers).or_else(|| util::cookie(headers, COOKIE)).or_else(|| util::cookie(headers, COOKIE_X))
+}
+
 pub async fn user_by_token(st: &AppState, token: &str) -> ApiResult<Option<AuthUser>> {
-    let row = sqlx::query("SELECT u.id, u.email, u.name, u.is_root FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
+    let row = sqlx::query("SELECT u.id, u.email, u.name, u.is_root, u.avatar_asset_id, u.created_at FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
         .bind(token)
         .fetch_optional(&st.db)
         .await?;
-    Ok(row.map(|r| AuthUser { id: r.get("id"), email: r.get("email"), name: r.get("name"), is_root: r.get::<i64, _>("is_root") != 0 }))
+    Ok(row.map(|r| AuthUser { id: r.get("id"), email: r.get("email"), name: r.get("name"), is_root: r.get::<i64, _>("is_root") != 0, avatar_asset_id: r.get("avatar_asset_id"), created_at: r.get("created_at") }))
 }
 
 pub fn router() -> Router<AppState> {
@@ -62,6 +70,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/auth/google", get(google_stub).post(google_stub))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/me", get(me).patch(update_me))
+        .route("/api/auth/change-password", post(change_password))
 }
 
 // ---------- отправка почты ----------
@@ -177,9 +186,14 @@ async fn start_session(st: &AppState, headers: &HeaderMap, user_id: &str, email:
     let mut resp = Json(body).into_response();
     // За HTTPS-прокси (в т.ч. во фрейме на другом домене) нужен SameSite=None; Secure
     let https = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).map(|v| v.starts_with("https")).unwrap_or(false);
-    let same_site = if https { "SameSite=None; Secure" } else { "SameSite=Lax" };
-    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; {same_site}; Max-Age={}", 60 * 60 * 24 * 30);
-    resp.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).unwrap());
+    let _ = https;
+    let max_age = 60 * 60 * 24 * 30;
+    // Ставим два cookie: обычный (SameSite=Lax, работает по http и в своей вкладке) и «фреймовый»
+    // (SameSite=None; Secure; Partitioned — для встраивания на чужой домен по https). Сервер принимает любой.
+    let c1 = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}");
+    let c2 = format!("{COOKIE_X}={token}; Path=/; HttpOnly; SameSite=None; Secure; Partitioned; Max-Age={max_age}");
+    resp.headers_mut().append(header::SET_COOKIE, HeaderValue::from_str(&c1).unwrap());
+    resp.headers_mut().append(header::SET_COOKIE, HeaderValue::from_str(&c2).unwrap());
     Ok(resp)
 }
 
@@ -279,23 +293,50 @@ async fn google_stub() -> ApiResult<Json<serde_json::Value>> {
 }
 
 async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    if let Some(token) = util::cookie(&headers, COOKIE) {
+    if let Some(token) = session_token(&headers) {
         sqlx::query("DELETE FROM sessions WHERE token = ?").bind(&token).execute(&st.db).await?;
     }
     let mut resp = (StatusCode::OK, Json(json!({ "ok": true }))).into_response();
-    resp.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&format!("{COOKIE}=; Path=/; Max-Age=0")).unwrap());
+    resp.headers_mut().append(header::SET_COOKIE, HeaderValue::from_str(&format!("{COOKIE}=; Path=/; Max-Age=0; SameSite=Lax")).unwrap());
+    resp.headers_mut().append(header::SET_COOKIE, HeaderValue::from_str(&format!("{COOKIE_X}=; Path=/; Max-Age=0; SameSite=None; Secure; Partitioned")).unwrap());
     Ok(resp)
 }
 
 async fn me(user: AuthUser) -> Json<serde_json::Value> {
-    Json(json!({ "id": user.id, "email": user.email, "name": user.name, "is_root": user.is_root }))
+    Json(json!({ "id": user.id, "email": user.email, "name": user.name, "is_root": user.is_root, "avatar_asset_id": user.avatar_asset_id, "created_at": user.created_at }))
 }
 
 #[derive(Deserialize)]
-pub struct ProfileIn { pub name: String }
+pub struct ProfileIn { pub name: Option<String>, pub avatar_asset_id: Option<Option<String>> }
 
+/// Профиль: имя и аватар (asset kind=portrait, владелец — сам пользователь). avatar_asset_id: null — убрать.
 async fn update_me(State(st): State<AppState>, user: AuthUser, Json(body): Json<ProfileIn>) -> ApiResult<Json<serde_json::Value>> {
-    let name = util::truncate(body.name.trim(), 64);
-    sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(&name).bind(&user.id).execute(&st.db).await?;
+    if let Some(name) = &body.name {
+        let name = util::truncate(name.trim(), 64);
+        if name.is_empty() { return Err(AppError::bad("Имя не может быть пустым")); }
+        sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(&name).bind(&user.id).execute(&st.db).await?;
+    }
+    if let Some(av) = &body.avatar_asset_id {
+        if let Some(aid) = av {
+            let ok = sqlx::query("SELECT id FROM assets WHERE id = ? AND (owner_id = ? OR builtin = 1)").bind(aid).bind(&user.id).fetch_optional(&st.db).await?.is_some();
+            if !ok { return Err(AppError::bad("Аватар не найден")); }
+        }
+        sqlx::query("UPDATE users SET avatar_asset_id = ? WHERE id = ?").bind(av).bind(&user.id).execute(&st.db).await?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordIn { pub old_password: String, pub password: String }
+
+/// Смена пароля: старый + новый; остальные сессии завершаются.
+async fn change_password(State(st): State<AppState>, headers: HeaderMap, user: AuthUser, Json(body): Json<ChangePasswordIn>) -> ApiResult<Json<serde_json::Value>> {
+    check_password(&body.password)?;
+    let r = sqlx::query("SELECT password_hash FROM users WHERE id = ?").bind(&user.id).fetch_one(&st.db).await?;
+    let hash: Option<String> = r.get("password_hash");
+    if let Some(h) = hash { if !verify_password(&body.old_password, &h) { return Err(AppError::bad("Старый пароль неверен")); } }
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?").bind(hash_password(&body.password)?).bind(&user.id).execute(&st.db).await?;
+    let cur = session_token(&headers).unwrap_or_default();
+    sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token <> ?").bind(&user.id).bind(&cur).execute(&st.db).await?;
     Ok(Json(json!({ "ok": true })))
 }

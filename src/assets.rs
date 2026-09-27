@@ -109,9 +109,13 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(aid): Path<Str
     let builtin: i64 = r.get("builtin");
     let owner: Option<String> = r.get("owner_id");
     let cid: Option<String> = r.get("campaign_id");
-    if builtin == 0 && owner.as_deref() != Some(&user.id) {
+    if builtin == 0 && owner.as_deref() != Some(&user.id) && !user.is_root {
         if let Some(cid) = &cid {
             get_member(&st, cid, &user.id).await?;
+        } else {
+            // чужой ассет без кампании доступен, если это чей-то аватар
+            let is_avatar = sqlx::query("SELECT id FROM users WHERE avatar_asset_id = ?").bind(&aid).fetch_optional(&st.db).await?.is_some();
+            if !is_avatar { return Err(AppError::forbidden("Нет доступа")); }
         }
     }
     let mut out = meta(&r);

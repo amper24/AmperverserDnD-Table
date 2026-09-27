@@ -1,19 +1,25 @@
+// Безопасное хранилище: localStorage может быть недоступен (фрейм на чужом домене, приватный режим) — тогда sessionStorage или память.
+window.LS = (() => {
+  const mem = {}; const memStore = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
+  for (const name of ['localStorage', 'sessionStorage']) { try { const st = window[name]; st.setItem('__et_test', '1'); st.removeItem('__et_test'); return st; } catch { } }
+  return memStore;
+})();
 // Общие утилиты: API, распаковка изображений, кубики, окна
 window.API = {
   async req(method, url, body, isForm) {
     const opt = { method, headers: {}, credentials: 'same-origin' };
     // Токен дублируем в localStorage: cookie не работает, когда приложение открыто во фрейме на чужом домене (превью)
-    const tok = localStorage.getItem('dnd_token'); if (tok) opt.headers['Authorization'] = 'Bearer ' + tok;
+    const tok = LS.getItem('dnd_token'); if (tok) opt.headers['Authorization'] = 'Bearer ' + tok;
     if (body !== undefined) {
       if (isForm) opt.body = body; else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     }
     const r = await fetch(url, opt);
-    if (r.status === 401) { localStorage.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && url !== '/api/auth/me') { location.href = '/'; } throw new Error('unauthorized'); }
-    window.wsToken = () => localStorage.getItem('dnd_token') || '';
+    if (r.status === 401) { LS.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && !location.pathname.startsWith('/login') && url !== '/api/auth/me') { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); } throw new Error('unauthorized'); }
+    window.wsToken = () => LS.getItem('dnd_token') || '';
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.statusText);
-    if (data.token && ['/api/auth/verify', '/api/auth/login', '/api/auth/reset-password', '/api/auth/google'].includes(url)) localStorage.setItem('dnd_token', data.token);
-    if (url === '/api/auth/logout') localStorage.removeItem('dnd_token');
+    if (data.token && ['/api/auth/verify', '/api/auth/login', '/api/auth/reset-password', '/api/auth/google'].includes(url)) LS.setItem('dnd_token', data.token);
+    if (url === '/api/auth/logout') LS.removeItem('dnd_token');
     return data;
   },
   get: (u) => API.req('GET', u), post: (u, b) => API.req('POST', u, b), patch: (u, b) => API.req('PATCH', u, b), del: (u) => API.req('DELETE', u),
@@ -165,7 +171,7 @@ window.icon = function (name, size = 16) {
 // ---- Тема (светлая / тёмная) ----
 window.Theme = {
   get() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; },
-  set(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('et-theme', t); } catch { } document.querySelectorAll('.theme-btn').forEach(b => { b.innerHTML = ''; b.append(icon(t === 'light' ? 'moon' : 'sun')); b.title = t === 'light' ? 'Тёмная тема' : 'Светлая тема'; }); },
+  set(t) { document.documentElement.dataset.theme = t; try { LS.setItem('et-theme', t); } catch { } document.querySelectorAll('.theme-btn').forEach(b => { b.innerHTML = ''; b.append(icon(t === 'light' ? 'moon' : 'sun')); b.title = t === 'light' ? 'Тёмная тема' : 'Светлая тема'; }); },
   toggle() { Theme.set(Theme.get() === 'light' ? 'dark' : 'light'); },
   button() { const t = Theme.get(); return el('button', { class: 'theme-btn', title: t === 'light' ? 'Тёмная тема' : 'Светлая тема', onclick: Theme.toggle }, icon(t === 'light' ? 'moon' : 'sun')); },
 };

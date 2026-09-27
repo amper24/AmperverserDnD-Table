@@ -83,12 +83,12 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Cam
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
     let m = get_member(&st, &cid, &user.id).await?;
     let row = fetch_campaign(&st, &cid).await?;
-    let members = sqlx::query("SELECT m.user_id, m.role, u.name, u.email FROM campaign_members m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? ORDER BY m.joined_at")
+    let members = sqlx::query("SELECT m.user_id, m.role, u.name, u.email, u.avatar_asset_id FROM campaign_members m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? ORDER BY m.joined_at")
         .bind(&cid).fetch_all(&st.db).await?;
     let mut out = campaign_json(&row, Some(&m.role));
     out["members"] = members.iter().map(|r| json!({
         "user_id": r.get::<String, _>("user_id"),
-        "name": r.get::<String, _>("name"),
+        "avatar_asset_id": r.get::<Option<String>, _>("avatar_asset_id"), "name": r.get::<String, _>("name"),
         "email": if m.is_gm() { Some(r.get::<String, _>("email")) } else { None },
         "role": r.get::<String, _>("role"),
     })).collect();

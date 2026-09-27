@@ -21,6 +21,7 @@
   if (path === '/login' || path === '/register') { renderAuth(path === '/register' ? 'register' : 'login'); return; }
   if (joinMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderJoin(joinMatch[1]); return; }
   if (campMatch) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderCampaign(campMatch[1]); return; }
+  if (path === '/profile') { if (!me) { location.replace('/login?next=/profile'); return; } renderProfile(); return; }
   if (path === '/admin') { if (!me) { location.replace('/login?next=/admin'); return; } renderAdmin(); return; }
   if (SECTIONS[path]) { if (!me) { location.replace('/login?next=' + encodeURIComponent(path)); return; } renderSection(SECTIONS[path]); return; }
   if (!me) renderLanding(); else renderHome();
@@ -31,7 +32,7 @@
     const nav = el('nav', { class: 'mainnav' }, ...Object.entries({ camps: ['Кампании', '/campaigns'], chars: ['Персонажи', '/characters'], comp: ['Справочник', '/compendium'], library: ['Библиотека', '/library'], packs: ['Наборы', '/packs'] })
       .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)), me?.is_root ? el('a', { href: '/admin', class: (active === 'admin' ? 'active ' : '') + 'root' }, 'Админ') : null);
     return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
-      me ? el('span', { class: 'userbox' }, el('button', { class: 'link', title: 'Изменить имя', onclick: async () => { const n = await prompt2('Ваше имя', '', me.name); if (n) { await API.patch('/api/auth/me', { name: n }); location.reload(); } } }, me.name),
+      me ? el('span', { class: 'userbox' }, el('a', { href: '/profile', class: 'userlink', title: 'Профиль' }, avatarEl(me, 26), el('span', {}, me.name)),
         el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'))
         : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), ' ', el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация')));
   }
@@ -48,7 +49,15 @@
     const f = (label, input) => el('div', { class: 'field' }, el('label', {}, label), input);
     const inp = (attrs) => el('input', { ...attrs, onkeydown: e => { if (e.key === 'Enter') box.querySelector('button.primary')?.click(); } });
     function show(m) { mode = m; err.textContent = ''; box.innerHTML = ''; box.append(...views[m]()); history.replaceState(null, '', (m === 'register' ? '/register' : '/login') + location.search); setTimeout(() => box.querySelector('input')?.focus(), 30); }
-    const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { err.textContent = e.message; } finally { btn.disabled = false; } };
+    // Проверяем, что сессия действительно сохранилась (токен в хранилище или cookie), иначе объясняем причину вместо молчаливого выброса на главную
+    async function ensureSession(r) {
+      if (r?.token) LS.setItem('dnd_token', r.token);
+      try { await API.get('/api/auth/me'); } catch {
+        const openTab = el('a', { href: location.origin + next, target: '_blank' }, 'открыть приложение в новой вкладке');
+        throw new Error('Вход выполнен, но браузер не сохранил сессию (заблокированы cookie и хранилище во встроенном фрейме). Попробуйте ' + openTab.outerHTML);
+      }
+    }
+    const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { if (/<a /.test(e.message)) err.innerHTML = e.message; else err.textContent = e.message; } finally { btn.disabled = false; } };
     const tabs = () => el('div', { class: 'tabs auth-tabs' }, el('button', { class: mode === 'login' ? 'active' : '', onclick: () => show('login') }, 'Вход'), el('button', { class: mode === 'register' ? 'active' : '', onclick: () => show('register') }, 'Регистрация'));
     const google = () => el('button', { class: 'google', disabled: '', title: 'Появится позже' }, el('span', { class: 'g' }, 'G'), 'Войти через Google', el('span', { class: 'badge' }, 'скоро'));
     const codeHint = (r) => r.sent ? `Код отправлен на ${pendingEmail}. Проверьте почту и папку «Спам».` : 'Почтовый сервер не настроен — код показан ниже (режим разработки).';
@@ -60,7 +69,7 @@
           pendingEmail = email.value.trim();
           const r = await API.post('/api/auth/login', { email: pendingEmail, password: pw.value });
           if (r.need_verify) return toVerify(r);
-          location.href = next;
+          await ensureSession(r); location.href = next;
         }) }, 'Войти');
         return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), el('div', { class: 'or' }, 'или'), google()];
       },
@@ -76,7 +85,7 @@
       },
       verify() {
         const code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code' });
-        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => { await API.post('/api/auth/verify', { email: pendingEmail, code: code.value.trim() }); location.href = next; }) }, 'Подтвердить и войти');
+        const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => { const r = await API.post('/api/auth/verify', { email: pendingEmail, code: code.value.trim() }); await ensureSession(r); location.href = next; }) }, 'Подтвердить и войти');
         const resend = el('button', { class: 'wide', onclick: () => busy(resend, async () => { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; }) }, 'Отправить код ещё раз');
         return [el('h2', {}, 'Подтвердите почту'), el('p', { class: 'muted small code-info' }), f('Код из письма', code), btn, err, resend, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, 'Назад ко входу'))];
       },
@@ -86,7 +95,7 @@
         const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
           pendingEmail = email.value.trim();
           if (step2.classList.contains('hidden')) { const r = await API.post('/api/auth/request-code', { email: pendingEmail }); step2.classList.remove('hidden'); step2.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) code.value = r.dev_code; btn.textContent = 'Сменить пароль и войти'; code.focus(); return; }
-          await API.post('/api/auth/reset-password', { email: pendingEmail, code: code.value.trim(), password: pw.value }); location.href = next;
+          const r = await API.post('/api/auth/reset-password', { email: pendingEmail, code: code.value.trim(), password: pw.value }); await ensureSession(r); location.href = next;
         }) }, 'Прислать код');
         return [el('h2', {}, 'Восстановление пароля'), el('p', { class: 'muted small' }, 'Пришлём код на почту — по нему зададите новый пароль. Так же можно задать пароль старому аккаунту, у которого его не было.'), f('Почта', email), step2, btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, 'Назад ко входу'))];
       },
@@ -124,6 +133,53 @@
     if (!chars.length) ch.append(el('p', { class: 'muted' }, 'Пока нет персонажей.'));
     chars.slice(0, 5).forEach(c => ch.append(el('a', { href: '/sheet/' + c.id, target: '_blank', class: 'item' }, el('span', { class: 'grow' }, c.name), el('span', { class: 'muted small' }, [c.sheet?.race, c.sheet?.class, c.sheet?.level && c.sheet.level + ' ур.'].filter(Boolean).join(' · ')))));
     two.append(cl, ch); page.append(two);
+  }
+
+  // ================= Профиль =================
+  function avatarEl(u, size = 32) {
+    const a = el('span', { class: 'avatar', style: `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px` }, (u.name || '?').trim().charAt(0).toUpperCase());
+    if (u.avatar_asset_id) assetURL(u.avatar_asset_id).then(url => { a.textContent = ''; a.append(el('img', { src: url, alt: '' })); }).catch(() => { });
+    return a;
+  }
+  async function renderProfile() {
+    app.innerHTML = ''; document.title = 'Профиль — ' + APP_NAME;
+    const page = el('div', { class: 'page narrow' });
+    app.append(topbar('profile'), page);
+    const msg = el('div', { class: 'auth-err' });
+    const okmsg = (t) => { msg.style.color = 'var(--ok)'; msg.textContent = t; setTimeout(() => { msg.textContent = ''; msg.style.color = ''; }, 2500); };
+    const fail = (e) => { msg.style.color = ''; msg.textContent = e.message; };
+    // аватар
+    const av = avatarEl(me, 96);
+    const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
+    file.addEventListener('change', async () => {
+      const f = file.files[0]; if (!f) return;
+      try {
+        const fd = new FormData(); fd.append('file', f); fd.append('kind', 'portrait'); fd.append('name', 'Аватар ' + me.name);
+        const a = await API.upload('/api/assets', fd);
+        await API.patch('/api/auth/me', { avatar_asset_id: a.id });
+        me.avatar_asset_id = a.id; window.ME = me; okmsg('Аватар обновлён'); location.reload();
+      } catch (e) { fail(e); }
+    });
+    const avBox = el('div', { class: 'card row', style: 'align-items:center;gap:16px' }, av,
+      el('div', { style: 'flex:1' }, el('b', {}, 'Аватар'), el('p', { class: 'muted small', style: 'margin:4px 0 8px' }, 'Показывается в шапке, списке участников кампании и чате. Сжимается до 1024 px и хранится в базе.'),
+        el('div', { class: 'row' }, el('button', { class: 'small', onclick: () => file.click() }, 'Загрузить'), me.avatar_asset_id ? el('button', { class: 'small', onclick: async () => { try { await API.patch('/api/auth/me', { avatar_asset_id: null }); location.reload(); } catch (e) { fail(e); } } }, 'Убрать') : null), file));
+    // данные
+    const name = el('input', { value: me.name, maxlength: 64 });
+    const dataBox = el('div', { class: 'card' }, el('h2', {}, 'Данные аккаунта'),
+      el('div', { class: 'field' }, el('label', {}, 'Имя (видят другие игроки)'), name),
+      el('div', { class: 'field' }, el('label', {}, 'Почта'), el('input', { value: me.email, disabled: '' })),
+      el('div', { class: 'muted small', style: 'margin-bottom:10px' }, 'Аккаунт создан ' + new Date(me.created_at).toLocaleDateString(), me.is_root ? ' · права root' : ''),
+      el('button', { class: 'primary', onclick: async e => { try { e.target.disabled = true; await API.patch('/api/auth/me', { name: name.value }); okmsg('Сохранено'); me.name = name.value.trim(); document.querySelector('.userlink span').textContent = me.name; } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сохранить'));
+    // пароль
+    const oldPw = el('input', { type: 'password', autocomplete: 'current-password' }), pw1 = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'минимум 8 символов' }), pw2 = el('input', { type: 'password', autocomplete: 'new-password' });
+    const pwBox = el('div', { class: 'card' }, el('h2', {}, 'Смена пароля'),
+      el('div', { class: 'field' }, el('label', {}, 'Текущий пароль'), oldPw), el('div', { class: 'field' }, el('label', {}, 'Новый пароль'), pw1), el('div', { class: 'field' }, el('label', {}, 'Повторите новый пароль'), pw2),
+      el('p', { class: 'muted small' }, 'После смены пароля все остальные устройства будут разлогинены. Если пароль забыт — «Забыли пароль?» на странице входа.'),
+      el('button', { class: 'primary', onclick: async e => { try { if (pw1.value !== pw2.value) throw new Error('Пароли не совпадают'); e.target.disabled = true; await API.post('/api/auth/change-password', { old_password: oldPw.value, password: pw1.value }); oldPw.value = pw1.value = pw2.value = ''; okmsg('Пароль изменён'); } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сменить пароль'));
+    const sessBox = el('div', { class: 'card' }, el('h2', {}, 'Сессия'), el('div', { class: 'row' },
+      el('button', { onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'),
+      el('span', { class: 'muted small' }, 'Вход по паролю выполняется на странице ', el('a', { href: '/login' }, '/login'), '.')));
+    page.append(el('h1', {}, 'Профиль'), msg, avBox, dataBox, pwBox, sessBox);
   }
 
   // ================= Администрирование (root) =================
@@ -288,8 +344,8 @@
       const dice = el('div', { class: 'dice' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d} (Shift — дважды)`, onclick: e => { die(d); if (e.shiftKey) die(d); } }, 'к' + d)));
       exprInp.addEventListener('keydown', e => { if (e.key === 'Enter' && exprInp.value.trim()) { rollExpr(exprInp.value.trim(), exprInp.value.trim()); } });
       const go = el('button', { class: 'small', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) rollExpr(exprInp.value.trim(), exprInp.value.trim()); } }, 'Бросить');
-      const collapse = el('button', { class: 'small tray-toggle', title: 'Кубики: свернуть/развернуть', onclick: () => { tray.classList.toggle('min'); localStorage.setItem('dicetray_min', tray.classList.contains('min') ? '1' : ''); } }, icon('dice'));
-      if (localStorage.getItem('dicetray_min')) tray.classList.add('min');
+      const collapse = el('button', { class: 'small tray-toggle', title: 'Кубики: свернуть/развернуть', onclick: () => { tray.classList.toggle('min'); LS.setItem('dicetray_min', tray.classList.contains('min') ? '1' : ''); } }, icon('dice'));
+      if (LS.getItem('dicetray_min')) tray.classList.add('min');
       tray.append(collapse, el('div', { class: 'tray-body' }, dice, modeBtns, modInp, exprInp, go, hidden ? el('label', { class: 'muted small', style: 'white-space:nowrap' }, hidden, ' скрытый') : null));
       return tray;
     }
@@ -354,7 +410,7 @@
     const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) this.sock.send(JSON.stringify(m)); } };
     function connect() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const s = new WebSocket(`${proto}://${location.host}/ws/${cid}` + (localStorage.getItem('dnd_token') ? `?token=${localStorage.getItem('dnd_token')}` : ''));
+      const s = new WebSocket(`${proto}://${location.host}/ws/${cid}` + (LS.getItem('dnd_token') ? `?token=${LS.getItem('dnd_token')}` : ''));
       ws.sock = s;
       s.onmessage = e => { const m = JSON.parse(e.data); handleWs(m); };
       s.onclose = () => setTimeout(connect, 1500);
@@ -570,7 +626,7 @@
       const mem = el('div', { class: 'list' });
       const refreshMem = async () => {
         camp = await API.get('/api/campaigns/' + cid); mem.innerHTML = '';
-        for (const m of camp.members) mem.append(el('div', { class: 'item' }, el('span', { class: 'grow' }, m.name, ' ', el('span', { class: 'muted' }, m.email || '')),
+        for (const m of camp.members) mem.append(el('div', { class: 'item' }, avatarEl(m, 24), el('span', { class: 'grow' }, m.name, ' ', el('span', { class: 'muted' }, m.email || '')),
           el('select', { style: 'width:auto', onchange: async e => { await API.patch(`/api/campaigns/${cid}/members/${m.user_id}`, { role: e.target.value }); refreshMem(); } }, el('option', { value: 'player', selected: m.role === 'player' ? '' : null }, 'Игрок'), el('option', { value: 'gm', selected: m.role === 'gm' ? '' : null }, 'Мастер')),
           m.user_id !== camp.owner_id ? el('button', { class: 'small danger', onclick: async () => { if (confirm('Исключить?')) { await API.del(`/api/campaigns/${cid}/members/${m.user_id}`); refreshMem(); } } }, icon('close')) : null));
       };

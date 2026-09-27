@@ -75,7 +75,7 @@ async fn ws_handler(
     Query(q): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Response {
-    let token = q.get("token").cloned().or_else(|| util::cookie(&headers, auth::COOKIE));
+    let token = q.get("token").cloned().or_else(|| auth::session_token(&headers));
     let user = match token {
         Some(t) => auth::user_by_token(&st, &t).await.ok().flatten(),
         None => None,

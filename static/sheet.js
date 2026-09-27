@@ -10,7 +10,7 @@
   let s = ch.sheet; let readonly = false;
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
-  let tab = localStorage.getItem('sheet_tab_' + id) || 'main';
+  let tab = LS.getItem('sheet_tab_' + id) || 'main';
   const ui = { invQ: '', invType: '', spellQ: '', onlyPrepared: false, open: new Set() };
 
   // ---- миграция старых данных в модули ----
@@ -66,7 +66,7 @@
     const root = el('div', { class: 'sheet' });
     root.append(topBar());
     const tabs = [['main', 'Основное'], ['inv', `Инвентарь (${s.inventory.length})`], ['spells', `Заклинания (${s.spells.known.length})`], ['feats', `Умения (${s.features.length})`], ['notes', 'Заметки']];
-    root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; localStorage.setItem('sheet_tab_' + id, k); render(); } }, n))));
+    root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; LS.setItem('sheet_tab_' + id, k); render(); } }, n))));
     root.append({ main: mainTab, inv: invTab, spells: spellsTab, feats: featsTab, notes: notesTab }[tab]());
     app.append(root);
     if (!readonly) bindDrops(root);

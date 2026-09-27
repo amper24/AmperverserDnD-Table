@@ -164,4 +164,19 @@ rt -X PATCH "$B/api/admin/users/$NU" -H 'content-type: application/json' -d '{"i
 rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
 ("$BIN" users revoke-root root@test.ru 2>&1 || true) | grep "единственный" >/dev/null
 rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep -q 191
+echo "[10] профиль: два cookie, имя, аватар, смена пароля"
+hdrs=$(curl -s -D - -o /dev/null -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}')
+[ "$(echo "$hdrs" | grep -ci '^set-cookie: dnd_session')" = "2" ]
+COOK=$(echo "$hdrs" | grep -i '^set-cookie: dnd_session_x=' | sed 's/^[Ss]et-[Cc]ookie: //; s/;.*//')
+curl -fs -H "Cookie: $COOK" "$B/api/auth/me" | J "d['name']" | grep -q Мастер   # вход по «фреймовому» cookie
+gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d '{"name":"Мастер Игры"}' | grep -q '"ok":true'
+gm "$B/api/auth/me" | J "d['name']" | grep -q "Мастер Игры"
+AV=$(gm -X POST "$B/api/assets" -F "file=@/tmp/map.png" -F "kind=portrait" -F "name=avatar" | J "d['id']")
+gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d "{\"avatar_asset_id\":\"$AV\"}" | grep -q '"ok":true'
+[ "$(gm "$B/api/auth/me" | J "d['avatar_asset_id']")" = "$AV" ]
+pl "$B/api/assets/$AV" | J "d['id']" | grep -q "$AV"   # чужой аватар доступен для показа
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/auth/change-password" -H 'content-type: application/json' -d '{"old_password":"wrong","password":"another123"}'); [ "$code" = "400" ]
+gm -X POST "$B/api/auth/change-password" -H 'content-type: application/json' -d '{"old_password":"secret123","password":"another123"}' | grep -q '"ok":true'
+curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"another123"}' | J "d['ok']" | grep -q True
+gm "$B/api/auth/me" | J "d['name']" | grep -q "Мастер Игры"   # текущая сессия сохранена
 echo "SMOKE OK (root)"
