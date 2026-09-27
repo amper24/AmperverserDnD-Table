@@ -1,29 +1,25 @@
 @echo off
 chcp 65001 >nul
-REM Запуск DnD Table на Windows. Требуется Python 3.10+ (https://python.org, отметьте "Add to PATH").
+REM Запуск DnD Table на Windows.
+REM Если рядом есть dnd-table.exe (из GitHub Releases) — запускается он, иначе сборка через cargo (https://rustup.rs).
 cd /d "%~dp0"
-
-where python >nul 2>nul || (echo [!] Python не найден. Установите Python 3.10+ и добавьте в PATH. & pause & exit /b 1)
-
-if not exist .venv (
-  echo [*] Создание виртуального окружения...
-  python -m venv .venv
-)
-call .venv\Scripts\activate.bat
-
-echo [*] Установка зависимостей...
-python -m pip install -q --disable-pip-version-check -r requirements.txt
-
-if not exist .env (
-  if "%DATABASE_URL%"=="" (
-    echo [*] .env не найден — используется SQLite ^(data\dnd.db^). Для MySQL скопируйте .env.example в .env
-    set DATABASE_URL=sqlite+aiosqlite:///./data/dnd.db
-  )
-)
 if "%PORT%"=="" set PORT=8080
-if "%HOST%"=="" set HOST=0.0.0.0
+if not exist .env echo [*] .env не найден — используется SQLite (data\dnd.db). Для MySQL скопируйте .env.example в .env
 
-echo [*] Старт на http://localhost:%PORT%
+if exist dnd-table.exe (
+  start "" http://localhost:%PORT%
+  dnd-table.exe
+  goto :end
+)
+if exist target\release\dnd-table.exe (
+  start "" http://localhost:%PORT%
+  target\release\dnd-table.exe
+  goto :end
+)
+where cargo >nul 2>nul || (echo [!] cargo не найден. Установите Rust с https://rustup.rs или скачайте dnd-table.exe из Releases. & pause & exit /b 1)
+echo [*] Сборка (release)...
+cargo build --release || (pause & exit /b 1)
 start "" http://localhost:%PORT%
-python -m app.main
+target\release\dnd-table.exe
+:end
 pause

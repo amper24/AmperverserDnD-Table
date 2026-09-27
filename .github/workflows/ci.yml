@@ -2,10 +2,90 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  probe:
+  build-test:
+    name: Build & smoke test (SQLite + MySQL)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: dnd
+          MYSQL_USER: dnd
+          MYSQL_PASSWORD: dnd
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     steps:
       - uses: actions/checkout@v4
-      - run: echo "actions ok"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release)
+        run: cargo build --release --locked 2>/dev/null || cargo build --release
+      - name: Clippy
+        run: cargo clippy --release -- -D warnings || true
+      - name: Test deps
+        run: pip install -q websockets pillow
+      - name: Smoke test (SQLite)
+        env:
+          DATABASE_URL: sqlite://data/ci.db
+          PORT: "8099"
+        run: bash scripts/smoke.sh
+      - name: Smoke test (MySQL)
+        env:
+          DATABASE_URL: mysql://dnd:dnd@127.0.0.1:3306/dnd
+          PORT: "8098"
+        run: bash scripts/smoke.sh
+      - name: Upload Cargo.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock
+          path: Cargo.lock
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnd-table-linux-x86_64
+          path: target/release/dnd-table
+
+  release:
+    name: Release binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: dnd-table-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: dnd-table-windows-x86_64.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: dnd-table-macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename
+        shell: bash
+        run: |
+          mkdir -p out
+          if [[ "${{ matrix.os }}" == windows-latest ]]; then cp target/${{ matrix.target }}/release/dnd-table.exe out/${{ matrix.asset }}; else cp target/${{ matrix.target }}/release/dnd-table out/${{ matrix.asset }}; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*

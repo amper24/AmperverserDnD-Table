@@ -1,6 +1,7 @@
+/target/
+/data/
+*.db
+*.db-*
+.env
 .venv/
 __pycache__/
-*.pyc
-.env
-data/
-*.db

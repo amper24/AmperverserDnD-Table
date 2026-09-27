@@ -1,11 +1,19 @@
-FROM python:3.12-slim
+# ---- сборка ----
+FROM rust:1-bookworm AS builder
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+COPY static ./static
+COPY data_seed ./data_seed
+RUN cargo build --release
+
+# ---- рантайм ----
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core curl && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
+COPY --from=builder /build/target/release/dnd-table /app/dnd-table
 RUN mkdir -p /app/data
+ENV HOST=0.0.0.0 PORT=8080 RUST_LOG=info,sqlx=warn
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fs http://localhost:8080/api/health || exit 1
-CMD ["python", "-m", "app.main"]
+CMD ["/app/dnd-table"]
