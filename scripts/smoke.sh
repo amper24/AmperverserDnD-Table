@@ -100,8 +100,10 @@ async def main():
         print("ws ok")
 asyncio.run(main())
 PY
+echo "[5b] состояние после WS"
 [ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "(len(d['items']), d['fog']['enabled'])")" = "(1, True)" ]
-[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "1" ]
+[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "1" ]   # скрытый бросок мастера игроку не виден
+[ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "2" ]
 
 echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]
