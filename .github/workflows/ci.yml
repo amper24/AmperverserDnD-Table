@@ -86,6 +86,21 @@ jobs:
         with:
           name: dnd-table-linux-x86_64
           path: target/release/dnd-table
+      # Статический musl-бинарник публикуется в служебный ref refs/preview/<ветка> (не ветка),
+      # чтобы его можно было забрать обычным git fetch там, где нет Rust (превью-песочницы).
+      - name: Preview binary (musl) -> refs/preview/<branch>
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -e
+          sudo apt-get install -y -q musl-tools >/dev/null
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --target x86_64-unknown-linux-musl
+          rm -rf /tmp/pv && mkdir -p /tmp/pv && cd /tmp/pv
+          git init -q && git config user.name "github-actions[bot]" && git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-musl/release/dnd-table" . && gzip -9 dnd-table
+          echo "${GITHUB_SHA}" > SOURCE_COMMIT
+          git add -A && git commit -q -m "preview binary for ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/preview/${GITHUB_REF_NAME}
 
   release:
     name: Release binaries
