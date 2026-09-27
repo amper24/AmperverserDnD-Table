@@ -28,7 +28,7 @@
   function topbar(active) {
     const nav = el('nav', { class: 'mainnav' }, ...Object.entries({ camps: ['Кампании', '/campaigns'], chars: ['Персонажи', '/characters'], comp: ['Справочник', '/compendium'], library: ['Библиотека', '/library'], packs: ['Наборы', '/packs'] })
       .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)));
-    return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }),
+    return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
       me ? el('span', { class: 'userbox' }, el('button', { class: 'link', title: 'Изменить имя', onclick: async () => { const n = await prompt2('Ваше имя', '', me.name); if (n) { await API.patch('/api/auth/me', { name: n }); location.reload(); } } }, me.name),
         el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); location.href = '/'; } }, 'Выйти'))
         : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), ' ', el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация')));
@@ -90,7 +90,7 @@
       },
     };
     show(mode);
-    app.append(el('div', { class: 'authpage' }, el('div', { class: 'authwrap' }, brand(), next !== '/' ? el('p', { class: 'muted small' }, 'Войдите, чтобы продолжить') : null, box, el('p', { class: 'muted small', style: 'text-align:center' }, el('a', { href: '/' }, 'На главную')))));
+    app.append(el('div', { class: 'authpage' }, el('div', { class: 'authwrap' }, el('div', { class: 'row', style: 'width:100%' }, brand(), el('span', { class: 'spacer' }), Theme.button()), next !== '/' ? el('p', { class: 'muted small' }, 'Войдите, чтобы продолжить') : null, box, el('p', { class: 'muted small', style: 'text-align:center' }, el('a', { href: '/' }, 'На главную')))));
   }
 
   // ================= Главная: лендинг (гость) =================
@@ -221,7 +221,7 @@
     const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
     const bar = el('div', { class: 'tbar' }, el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
     if (isGM) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
-    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), toggleSide);
+    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
     const canvasWrap = el('div', { id: 'canvasWrap' });
