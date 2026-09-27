@@ -11,7 +11,7 @@ window.LS = (() => {
     setItem: (k, v) => { if (allowed(k)) real.setItem(k, v); else memStore.setItem(k, v); },
     removeItem: k => { real.removeItem(k); memStore.removeItem(k); },
     persistent,
-    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
+    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min', 'et-edition']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
   };
 })();
 
@@ -193,7 +193,7 @@ window.SKILLS = [
 window.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
 window.EDITIONS = { '2014': 'D&D 5e (2014)', '2024': 'D&D 5e (2024)' };
 /// Редакция по умолчанию для новых персонажей и фильтра справочника (запоминается).
-window.defaultEdition = () => LS.get('et-edition') || '2014';
+window.defaultEdition = () => LS.getItem('et-edition') || '2014';
 /// Диалог создания персонажа: имя + редакция правил. Возвращает { name, sheet } или null.
 window.newCharacterDialog = async function (defaults = {}) {
   const name = el('input', { placeholder: 'Торин', value: defaults.name || '' });
@@ -206,7 +206,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   const ok = await modal('Новый персонаж', box, [{ label: 'Создать', cls: 'primary', fn: () => true }]);
   if (!ok || !name.value.trim()) return null;
   const edition = box.querySelector('input[name=edition]:checked')?.value || '2014';
-  LS.set('et-edition', edition);
+  LS.setItem('et-edition', edition);
   return { name: name.value.trim(), sheet: { edition } };
 };
 window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', feat: 'Черты', condition: 'Состояния' };

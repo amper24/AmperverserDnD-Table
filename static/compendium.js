@@ -154,7 +154,7 @@ window.Compendium = (function () {
         lst.append(it);
       }
     }
-    catSel.addEventListener('change', load); srcSel.addEventListener('change', load); edSel.addEventListener('change', () => { if (!opts.edition && !window.SHEET_EDITION && edSel.value) LS.set('et-edition', edSel.value); load(); });
+    catSel.addEventListener('change', load); srcSel.addEventListener('change', load); edSel.addEventListener('change', () => { if (!opts.edition && !window.SHEET_EDITION && edSel.value) LS.setItem('et-edition', edSel.value); load(); });
     q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
     load();
     root.reload = load;
