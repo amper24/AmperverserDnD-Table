@@ -347,3 +347,5 @@ button.primary, .btn.primary { font-weight: 600; }
 [data-theme="light"] .topbar, [data-theme="light"] #side, [data-theme="light"] .card, [data-theme="light"] .float { box-shadow: none; }
 [data-theme="light"] .asset span, [data-theme="light"] .hint { color: #fff; }
 [data-theme="light"] .hero h1, [data-theme="light"] h1, [data-theme="light"] h2 { color: var(--text); }
+.topbar .btn.small, .topbar button.small, .userbox button, .theme-btn { height: 30px; line-height: 28px; padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; font-size: 13px; vertical-align: middle; }
+.topbar > span { display: inline-flex; align-items: center; gap: 8px; }
