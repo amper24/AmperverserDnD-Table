@@ -129,8 +129,8 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
         let Some(nm) = e["name"].as_str() else { continue };
         if !CATEGORIES.contains(&cat) { continue; }
         let slug = e["slug"].as_str().map(|s| s.to_string()).unwrap_or_else(|| crate::compendium::slugify(nm));
-        sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)")
-            .bind(util::uid()).bind(&id).bind(cat).bind(util::truncate(&slug, 64)).bind(util::truncate(nm, 128)).bind(util::truncate(&name, 32)).bind(e["data"].to_string())
+        sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(util::uid()).bind(&id).bind(cat).bind(util::truncate(&slug, 64)).bind(util::truncate(nm, 128)).bind(util::truncate(nm, 128).to_lowercase()).bind(util::truncate(&name, 32)).bind(e["data"].to_string())
             .execute(&st.db).await?;
         count += 1;
     }

@@ -1,5 +1,5 @@
 //! Подключение к БД (MySQL или SQLite через sqlx Any) и создание схемы.
-use sqlx::{any::AnyPoolOptions, AnyPool};
+use sqlx::{any::AnyPoolOptions, AnyPool, Row};
 
 pub async fn connect(url: &str) -> anyhow::Result<(AnyPool, bool)> {
     sqlx::any::install_default_drivers();
@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS compendium (
   category VARCHAR(24) NOT NULL,
   slug VARCHAR(64) NOT NULL,
   name VARCHAR(128) NOT NULL,
+  name_lc VARCHAR(128) NULL,
   source VARCHAR(32) NOT NULL DEFAULT 'SRD',
   data {MEDIUMTEXT} NOT NULL,
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS compendium (
 /// Миграции для уже существующих баз (ошибки "колонка уже есть" игнорируются).
 const ALTERS: &[&str] = &[
     "ALTER TABLE compendium ADD COLUMN pack_id VARCHAR(32) NULL",
+    "ALTER TABLE compendium ADD COLUMN name_lc VARCHAR(128) NULL",
 ];
 
 const INDEXES: &[&str] = &[
@@ -188,6 +190,7 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX idx_comp_category ON compendium(category)",
     "CREATE INDEX idx_comp_campaign ON compendium(campaign_id)",
     "CREATE INDEX idx_comp_pack ON compendium(pack_id)",
+    "CREATE INDEX idx_comp_name_lc ON compendium(name_lc)",
     "CREATE INDEX idx_packs_owner ON packs(owner_id)",
 ];
 
@@ -225,5 +228,11 @@ pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {
         }
     }
     tracing::info!("Схема БД готова ({})", if is_sqlite { "SQLite" } else { "MySQL" });
+    // Поиск без учёта регистра для кириллицы: SQLite LOWER() умеет только ASCII, поэтому храним name_lc
+    let rows = sqlx::query("SELECT id, name FROM compendium WHERE name_lc IS NULL").fetch_all(pool).await?;
+    for r in &rows {
+        let name: String = r.get("name");
+        sqlx::query("UPDATE compendium SET name_lc = ? WHERE id = ?").bind(name.to_lowercase()).bind(r.get::<String, _>("id")).execute(pool).await?;
+    }
     Ok(())
 }

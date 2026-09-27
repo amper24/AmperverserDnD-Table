@@ -63,7 +63,7 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
     let mut sql = format!("SELECT c.* FROM compendium c WHERE ({})", conds.join(" OR "));
     if q.category.is_some() { sql.push_str(" AND c.category = ?"); }
     let pattern = q.q.as_ref().map(|s| format!("%{}%", s.to_lowercase()));
-    if pattern.is_some() { sql.push_str(" AND LOWER(c.name) LIKE ?"); }
+    if pattern.is_some() { sql.push_str(" AND c.name_lc LIKE ?"); }
     sql.push_str(" ORDER BY c.category, c.name LIMIT ?");
     let mut query = sqlx::query(&sql);
     for b in &binds { query = query.bind(b); }
@@ -93,8 +93,8 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Ent
     };
     let id = util::uid();
     let campaign_id = if body.pack_id.is_some() { None } else { body.campaign_id.clone() };
-    sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, source, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&campaign_id).bind(&body.pack_id).bind(&body.category).bind(slugify(&body.name)).bind(util::truncate(&body.name, 128)).bind(&source).bind(body.data.to_string())
+    sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&campaign_id).bind(&body.pack_id).bind(&body.category).bind(slugify(&body.name)).bind(util::truncate(&body.name, 128)).bind(util::truncate(&body.name, 128).to_lowercase()).bind(&source).bind(body.data.to_string())
         .execute(&st.db).await?;
     let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
     Ok(Json(entry_json(&r)))
@@ -118,8 +118,8 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<Strin
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));
     }
-    sqlx::query("UPDATE compendium SET name = ?, data = ?, category = ?, slug = ? WHERE id = ?")
-        .bind(util::truncate(&body.name, 128)).bind(body.data.to_string()).bind(&body.category).bind(slugify(&body.name)).bind(&id).execute(&st.db).await?;
+    sqlx::query("UPDATE compendium SET name = ?, name_lc = ?, data = ?, category = ?, slug = ? WHERE id = ?")
+        .bind(util::truncate(&body.name, 128)).bind(util::truncate(&body.name, 128).to_lowercase()).bind(body.data.to_string()).bind(&body.category).bind(slugify(&body.name)).bind(&id).execute(&st.db).await?;
     let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
     Ok(Json(entry_json(&r)))
 }

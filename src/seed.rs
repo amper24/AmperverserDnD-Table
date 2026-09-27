@@ -23,8 +23,8 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
         let entries: Vec<Entry> = serde_json::from_slice(&raw.data)?;
         let count = entries.len();
         for e in entries {
-            sqlx::query("INSERT INTO compendium (id, campaign_id, category, slug, name, source, data) VALUES (?, NULL, ?, ?, ?, 'SRD', ?)")
-                .bind(util::uid()).bind(&e.category).bind(&e.slug).bind(&e.name).bind(e.data.to_string()).execute(pool).await?;
+            sqlx::query("INSERT INTO compendium (id, campaign_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, 'SRD', ?)")
+                .bind(util::uid()).bind(&e.category).bind(&e.slug).bind(&e.name).bind(e.name.to_lowercase()).bind(e.data.to_string()).execute(pool).await?;
         }
         tracing::info!("Справочник: добавлено {} записей", count);
     }
