@@ -330,7 +330,7 @@ async fn insert_entries(st: &AppState, pid: &str, source: &str, entries: &[Value
 
 #[derive(Deserialize)]
 pub struct ImportIn {
-    pub name: Option<String>, #[serde(default)] pub description: String, #[serde(default)] pub entries: Vec<Value>, #[serde(default)] pub is_public: bool,
+    pub name: Option<String>, #[serde(default)] pub description: String, #[serde(default)] pub entries: Vec<Value>,
     #[serde(default)] pub folders: Vec<String>, #[serde(default)] pub tags: String, #[serde(default)] pub edition: String,
     /// Импортировать в существующий набор (дополнить), а не создавать новый.
     pub into: Option<String>,

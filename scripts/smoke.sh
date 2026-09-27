@@ -185,7 +185,9 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" "$B
 NU=$(rt -X POST "$B/api/admin/users" -H 'content-type: application/json' -d '{"email":"new@test.ru","password":"password123","name":"Новый"}' | J "d['id']")
 rt -X PATCH "$B/api/admin/users/$NU" -H 'content-type: application/json' -d '{"is_root":true}' | J "d['is_root']" | grep -q True
 rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
-("$BIN" users revoke-root root@test.ru 2>&1 || true) | grep "единственный" >/dev/null
+"$BIN" users revoke-root root@test.ru 2>&1 | grep "root-пользователей больше нет" >/dev/null   # последнего root снять можно (с предупреждением)
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RT" "$B/api/admin/users"); [ "$code" = "403" ]
+"$BIN" users make-root root@test.ru | grep "root = yes" >/dev/null
 rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep 2499 >/dev/null
 echo "[10] профиль: два cookie, имя, аватар, смена пароля"
 hdrs=$(curl -s -D - -o /dev/null -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}')
