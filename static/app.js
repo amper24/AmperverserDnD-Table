@@ -169,7 +169,7 @@
       el('div', { class: 'field' }, el('label', {}, 'Имя (видят другие игроки)'), name),
       el('div', { class: 'field' }, el('label', {}, 'Почта'), el('input', { value: me.email, disabled: '' })),
       el('div', { class: 'muted small', style: 'margin-bottom:10px' }, 'Аккаунт создан ' + new Date(me.created_at).toLocaleDateString(), me.is_root ? ' · права root' : ''),
-      el('button', { class: 'primary', onclick: async e => { try { e.target.disabled = true; await API.patch('/api/auth/me', { name: name.value }); okmsg('Сохранено'); me.name = name.value.trim(); document.querySelector('.userlink span').textContent = me.name; } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сохранить'));
+      el('button', { class: 'primary', onclick: async e => { try { e.target.disabled = true; await API.patch('/api/auth/me', { name: name.value }); okmsg('Сохранено'); me.name = name.value.trim(); document.querySelector('.userlink > span:last-child').textContent = me.name; } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сохранить'));
     // пароль
     const oldPw = el('input', { type: 'password', autocomplete: 'current-password' }), pw1 = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'минимум 8 символов' }), pw2 = el('input', { type: 'password', autocomplete: 'new-password' });
     const pwBox = el('div', { class: 'card' }, el('h2', {}, 'Смена пароля'),
