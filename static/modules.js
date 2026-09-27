@@ -72,7 +72,7 @@ window.Modules = (function () {
   }
   function resolve(expr, ctx = {}) {
     let out = String(expr).replace(/@([a-z_]+)/gi, (_, k) => { const v = ctx[k.toLowerCase()]; return v === undefined ? '0' : String(v); });
-    out = out.replace(/\+\s*-/g, '-').replace(/к/g, 'd').replace(/\s+/g, '');
+    out = out.replace(/\+\s*-/g, '-').replace(/к/g, 'd').replace(/\s+/g, '').replace(/([+-])0(?=[+\-]|$)/g, '');
     // схлопываем константы "+5+2" оставляем — сервер посчитает
     return out;
   }
