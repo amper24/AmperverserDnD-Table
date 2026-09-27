@@ -102,6 +102,44 @@ jobs:
           git add -A && git commit -q -m "preview binary for ${GITHUB_SHA}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/preview/${GITHUB_REF_NAME}
 
+  windows:
+    name: Windows build + run.bat
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release)
+        run: cargo build --release
+      - name: run.bat as CLI
+        shell: cmd
+        run: |
+          set NO_PAUSE=1
+          call run.bat users create win@test.ru password123 --name Win --root
+          call run.bat users list
+          call run.bat help
+      - name: run.bat as server (health, login, console stop)
+        shell: pwsh
+        run: |
+          $env:NO_PAUSE = "1"; $env:NO_BROWSER = "1"; $env:PORT = "8123"
+          "" | Out-File stdin.txt
+          $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c run.bat" -RedirectStandardInput "$PWD\stdin.txt" -RedirectStandardOutput "$PWD\out.log" -RedirectStandardError "$PWD\err.log" -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep 1; try { $r = Invoke-RestMethod http://127.0.0.1:8123/api/health; if ($r.ok) { $ok = $true; break } } catch {} }
+          Get-Content out.log, err.log -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "server did not start" }
+          $login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8123/api/auth/login -ContentType "application/json" -Body '{"email":"win@test.ru","password":"password123"}'
+          if (-not $login.token) { throw "login failed" }
+          $me = Invoke-RestMethod http://127.0.0.1:8123/api/auth/me -Headers @{ Authorization = "Bearer $($login.token)" }
+          if (-not $me.is_root) { throw "root flag missing" }
+          $comp = Invoke-RestMethod "http://127.0.0.1:8123/api/compendium?q=Fireball&limit=5" -Headers @{ Authorization = "Bearer $($login.token)" }
+          if ($comp.Count -lt 1) { throw "compendium empty" }
+          $html = Invoke-WebRequest http://127.0.0.1:8123/ -UseBasicParsing
+          if ($html.Content -notmatch "static/app.js") { throw "index.html not embedded" }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Process dnd-table -ErrorAction SilentlyContinue | Stop-Process -Force
+          "Windows OK"
+
   release:
     name: Release binaries
     if: startsWith(github.ref, 'refs/tags/v')
