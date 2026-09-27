@@ -1,0 +1,7 @@
+/target/
+/data/
+*.db
+*.db-*
+.env
+.venv/
+__pycache__/

@@ -1,0 +1,152 @@
+[
+ {
+  "file": "token_00.png",
+  "name": "Воин",
+  "kind": "token"
+ },
+ {
+  "file": "token_01.png",
+  "name": "Маг",
+  "kind": "token"
+ },
+ {
+  "file": "token_02.png",
+  "name": "Плут",
+  "kind": "token"
+ },
+ {
+  "file": "token_03.png",
+  "name": "Жрец",
+  "kind": "token"
+ },
+ {
+  "file": "token_04.png",
+  "name": "Следопыт",
+  "kind": "token"
+ },
+ {
+  "file": "token_05.png",
+  "name": "Бард",
+  "kind": "token"
+ },
+ {
+  "file": "token_06.png",
+  "name": "Гоблин",
+  "kind": "token"
+ },
+ {
+  "file": "token_07.png",
+  "name": "Орк",
+  "kind": "token"
+ },
+ {
+  "file": "token_08.png",
+  "name": "Скелет",
+  "kind": "token"
+ },
+ {
+  "file": "token_09.png",
+  "name": "Зомби",
+  "kind": "token"
+ },
+ {
+  "file": "token_10.png",
+  "name": "Волк",
+  "kind": "token"
+ },
+ {
+  "file": "token_11.png",
+  "name": "Дракон",
+  "kind": "token"
+ },
+ {
+  "file": "token_12.png",
+  "name": "Бандит",
+  "kind": "token"
+ },
+ {
+  "file": "token_13.png",
+  "name": "Огр",
+  "kind": "token"
+ },
+ {
+  "file": "token_14.png",
+  "name": "Паук",
+  "kind": "token"
+ },
+ {
+  "file": "token_15.png",
+  "name": "Тролль",
+  "kind": "token"
+ },
+ {
+  "file": "token_16.png",
+  "name": "NPC",
+  "kind": "token"
+ },
+ {
+  "file": "token_17.png",
+  "name": "Босс",
+  "kind": "token"
+ },
+ {
+  "file": "prop_00.png",
+  "name": "Сундук",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_01.png",
+  "name": "Дверь",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_02.png",
+  "name": "Дерево",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_03.png",
+  "name": "Камень",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_04.png",
+  "name": "Костёр",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_05.png",
+  "name": "Бочка",
+  "kind": "prop"
+ },
+ {
+  "file": "prop_06.png",
+  "name": "Колонна",
+  "kind": "prop"
+ },
+ {
+  "file": "map_00.jpg",
+  "name": "Поляна 20x20",
+  "kind": "map"
+ },
+ {
+  "file": "map_01.jpg",
+  "name": "Каменный пол 20x20",
+  "kind": "map"
+ },
+ {
+  "file": "map_02.jpg",
+  "name": "Пещера 20x20",
+  "kind": "map"
+ },
+ {
+  "file": "map_03.jpg",
+  "name": "Пустыня 20x20",
+  "kind": "map"
+ },
+ {
+  "file": "map_04.jpg",
+  "name": "Вода 20x20",
+  "kind": "map"
+ }
+]

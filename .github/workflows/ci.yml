@@ -1,0 +1,174 @@
+name: CI
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build-test:
+    name: Build & smoke test (SQLite + MySQL)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: dnd
+          MYSQL_USER: dnd
+          MYSQL_PASSWORD: dnd
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release)
+        run: |
+          set -o pipefail
+          cargo build --release 2>&1 | tee build.log
+      - name: Clippy
+        run: cargo clippy --release 2>&1 | tee clippy.log || true
+      - name: Test deps
+        run: pip install -q websockets pillow
+      - name: Smoke test (SQLite)
+        env:
+          DATABASE_URL: sqlite://data/ci.db
+          PORT: "8099"
+        run: |
+          set -o pipefail
+          bash scripts/smoke.sh 2>&1 | tee smoke-sqlite.log
+      - name: Smoke test (MySQL)
+        env:
+          DATABASE_URL: mysql://dnd:dnd@127.0.0.1:3306/dnd
+          PORT: "8098"
+        run: |
+          set -o pipefail
+          bash scripts/smoke.sh 2>&1 | tee smoke-mysql.log
+      - name: Report logs to issue (on failure)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure: run ${{ github.run_id }} (${{ github.sha }})"
+            for f in build.log smoke-sqlite.log smoke-mysql.log; do
+              if [ -f "$f" ]; then
+                echo; echo "#### $f"; echo '```'
+                grep -v -E '^\s*(Compiling|Downloaded|Downloading|Updating|Locking|Adding|Fresh|Running)' "$f" | tail -n 250 | cut -c1-400
+                echo '```'
+              fi
+            done
+          } > report.md
+          NUM=$(gh issue list --state open --search "CI build log in:title" --json number --jq '.[0].number')
+          if [ -z "$NUM" ]; then NUM=$(gh issue create --title "CI build log" --body "Автоматические отчёты CI" | grep -oE '[0-9]+$'); fi
+          gh issue comment "$NUM" --body-file report.md
+      - name: Commit Cargo.lock if missing or changed
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || ! git diff --quiet -- Cargo.lock; then
+            git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -f Cargo.lock && git commit -m "chore: add Cargo.lock [skip ci]" && git push origin HEAD:${GITHUB_REF_NAME}
+          fi
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnd-table-linux-x86_64
+          path: target/release/dnd-table
+      # Статический musl-бинарник публикуется в служебный ref refs/preview/<ветка> (не ветка),
+      # чтобы его можно было забрать обычным git fetch там, где нет Rust (превью-песочницы).
+      - name: Preview binary (musl) -> refs/preview/<branch>
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -e
+          sudo apt-get install -y -q musl-tools >/dev/null
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --target x86_64-unknown-linux-musl
+          rm -rf /tmp/pv && mkdir -p /tmp/pv && cd /tmp/pv
+          git init -q && git config user.name "github-actions[bot]" && git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-musl/release/dnd-table" . && gzip -9 dnd-table
+          echo "${GITHUB_SHA}" > SOURCE_COMMIT
+          git add -A && git commit -q -m "preview binary for ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/preview/${GITHUB_REF_NAME}
+
+  windows:
+    name: Windows build + run.bat
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release)
+        run: cargo build --release
+      - name: run.bat as CLI
+        shell: cmd
+        run: |
+          set NO_PAUSE=1
+          call run.bat users create win@test.ru password123 --name Win --root
+          call run.bat users list
+          call run.bat help
+      - name: run.bat as server (health, login, console stop)
+        shell: pwsh
+        run: |
+          $env:NO_PAUSE = "1"; $env:NO_BROWSER = "1"; $env:PORT = "8123"
+          "" | Out-File stdin.txt
+          $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c run.bat" -RedirectStandardInput "$PWD\stdin.txt" -RedirectStandardOutput "$PWD\out.log" -RedirectStandardError "$PWD\err.log" -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep 1; try { $r = Invoke-RestMethod http://127.0.0.1:8123/api/health; if ($r.ok) { $ok = $true; break } } catch {} }
+          Get-Content out.log, err.log -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "server did not start" }
+          $login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8123/api/auth/login -ContentType "application/json" -Body '{"email":"win@test.ru","password":"password123"}'
+          if (-not $login.token) { throw "login failed" }
+          $me = Invoke-RestMethod http://127.0.0.1:8123/api/auth/me -Headers @{ Authorization = "Bearer $($login.token)" }
+          if (-not $me.is_root) { throw "root flag missing" }
+          $comp = Invoke-RestMethod "http://127.0.0.1:8123/api/compendium?q=Fireball&limit=5" -Headers @{ Authorization = "Bearer $($login.token)" }
+          if ($comp.Count -lt 1) { throw "compendium empty" }
+          $html = Invoke-WebRequest http://127.0.0.1:8123/ -UseBasicParsing
+          if ($html.Content -notmatch "static/app.js") { throw "index.html not embedded" }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Process dnd-table -ErrorAction SilentlyContinue | Stop-Process -Force
+          "Windows OK"
+
+  release:
+    name: Release binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: dnd-table-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: dnd-table-windows-x86_64.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: dnd-table-macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename
+        shell: bash
+        run: |
+          mkdir -p out
+          if [[ "${{ matrix.os }}" == windows-latest ]]; then cp target/${{ matrix.target }}/release/dnd-table.exe out/${{ matrix.asset }}; else cp target/${{ matrix.target }}/release/dnd-table out/${{ matrix.asset }}; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
