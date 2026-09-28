@@ -717,16 +717,16 @@ async fn users_create(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::R
     if let Some(u) = find_user(db, &email).await? {
         let root = u.get::<i64, _>("is_root") != 0;
         return Err(CliError::fail(format!("Пользователь {email} уже есть"))
-            .hint(format!("Сменить пароль: {PROG} users set-password {email} <новый пароль>{}", if root { format!("\nСнять права root: {PROG} users revoke-root {email}") } else { format!("\nВыдать root: {PROG} users make-root {email}") })));
+            .hint(format!("Сменить пароль: {PROG} users set-password {email} <новый пароль>{}", if root { format!("\nСнять права root: {PROG} users revoke-root {email}") } else { format!("\nВыдать root: {PROG} users make-root {email}") })).into());
     }
     let mut password = p.flag_or_arg("password", 1);
     if password.is_none() && mode.interactive() { password = Some(ask_password("create", &email)?); }
     let Some(password) = password else {
         return Err(CliError::usage(format!("Не указан пароль для {email}"))
-            .hint(format!("Как создать: {PROG} users create {email} <пароль> [--name <имя>] [--root]")));
+            .hint(format!("Как создать: {PROG} users create {email} <пароль> [--name <имя>] [--root]")).into());
     };
-    if password.is_empty() { return Err(CliError::usage("Пароль не может быть пустым")); }
-    if password.chars().count() > 200 { return Err(CliError::usage("Слишком длинный пароль (максимум 200 символов)")); }
+    if password.is_empty() { return Err(CliError::usage("Пароль не может быть пустым").into()); }
+    if password.chars().count() > 200 { return Err(CliError::usage("Слишком длинный пароль (максимум 200 символов)").into()); }
 
     let name = p.value("name").map(str::to_string);
     let root = p.has("root");
@@ -747,9 +747,9 @@ async fn users_set_password(db: &AnyPool, args: &[String], mode: CliMode) -> any
     if password.is_none() && mode.interactive() { password = Some(ask_password("set-password", email)?); }
     let Some(password) = password else {
         return Err(CliError::usage(format!("Не указан новый пароль для {email}"))
-            .hint(format!("Как сменить: {PROG} users set-password {email} <пароль>")));
+            .hint(format!("Как сменить: {PROG} users set-password {email} <пароль>")).into());
     };
-    if password.is_empty() { return Err(CliError::usage("Пароль не может быть пустым")); }
+    if password.is_empty() { return Err(CliError::usage("Пароль не может быть пустым").into()); }
     let id = find_id(db, email).await.map_err(|e| CliError::fail(e.to_string()))?;
     let hash = auth::hash_password(&password).map_err(|e| CliError::fail(e.1))?;
     sqlx::query("UPDATE users SET password_hash = ?, verified = 1 WHERE id = ?").bind(hash).bind(&id).execute(db).await?;
@@ -764,7 +764,7 @@ async fn users_rename(db: &AnyPool, args: &[String]) -> anyhow::Result<()> {
     if p.has("help") { println!("{HELP_RENAME}"); return Ok(()); }
     let email = p.need(0, "почта", format!("{PROG} users rename <email> <имя>"))?;
     let name = p.flag_or_arg("name", 1).map(|n| util::truncate(n.trim(), 64)).unwrap_or_default();
-    if name.is_empty() { return Err(CliError::usage("Не указано новое имя").hint(format!("Как переименовать: {PROG} users rename {email} Иван"))); }
+    if name.is_empty() { return Err(CliError::usage("Не указано новое имя").hint(format!("Как переименовать: {PROG} users rename {email} Иван")).into()); }
     let id = find_id(db, email).await.map_err(|e| CliError::fail(e.to_string()))?;
     sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(&name).bind(&id).execute(db).await?;
     println!("{email}: имя изменено на «{name}»");

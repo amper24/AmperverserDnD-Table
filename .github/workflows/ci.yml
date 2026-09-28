@@ -56,6 +56,24 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/smoke.sh 2>&1 | tee smoke-mysql.log
+      # CLI администрирования и консоль работающего сервера. Команда должна работать и с
+      # префиксом `dnd-table` — именно так её копируют из документации в консоль Pterodactyl
+      # (раньше это было «Неизвестная команда»), а короткий пароль должен создавать
+      # пользователя с предупреждением, а не падать.
+      - name: CLI + server console
+        env:
+          DATABASE_URL: sqlite://data/ci.db
+        run: |
+          set -euo pipefail
+          BIN=target/release/dnd-table
+          "$BIN" users create cli@test.ru 1234 --name CLI --root
+          "$BIN" users list
+          "$BIN" users show cli@test.ru
+          "$BIN" stats
+          PORT=8096 sh -c "printf 'dnd-table users list\nusers show cli@test.ru\nquit\n' | $BIN" | tee console.log | grep -q "cli@test.ru"
+          set +e; "$BIN" users создай > unknown.log 2>&1; rc=$?; set -e
+          if [ "$rc" != 2 ]; then cat unknown.log; echo "неверный код возврата: $rc (ожидался 2)"; exit 1; fi
+          grep -q "help users" unknown.log
       - name: Report logs to issue (on failure)
         if: failure()
         env:
