@@ -55,10 +55,13 @@ async fn main() -> anyhow::Result<()> {
     seed::seed(&db).await?;
     admin::ensure_root_from_env(&db).await?;
 
-    // CLI-команды администрирования (dnd-table users ..., stats, reseed)
+    // Команды администрирования (dnd-table users …, stats, reseed). Ошибка команды — выход
+    // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if admin::run_cli(&db, &args).await? {
-        return Ok(());
+    match admin::run_cli(&db, &args, admin::CliMode::Cli).await {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(e) => admin::exit_cli_error(&e),
     }
 
     let state_db = db.clone();
@@ -87,7 +90,8 @@ async fn main() -> anyhow::Result<()> {
     let db_label = cfg.database_url.split('@').last().unwrap_or("").to_string();
     tracing::info!("Edge Tablet запущен: http://{}  (БД: {})", addr, db_label);
     println!("Server listening on http://{addr}");
-    println!("Консоль: введите help для списка команд (users list, users make-root <email>, stats, stop)");
+    println!("Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table");
+    println!("         (users list, users create <email> <пароль> --root, stats, stop)");
     admin::spawn_console(state_db);
     axum::serve(listener, app).await?;
     Ok(())

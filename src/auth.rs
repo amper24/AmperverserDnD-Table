@@ -110,12 +110,18 @@ async fn send_code(st: &AppState, to: &str, code: &str) -> bool {
 #[derive(Deserialize)]
 pub struct RequestCodeIn { pub email: String }
 
-fn norm_email(e: &str) -> ApiResult<String> {
+/// Проверка и нормализация почты: одно правило на вход, регистрацию, сброс пароля и CLI
+/// (чтобы аккаунт, созданный в CLI, точно можно было использовать для входа).
+pub fn check_email(e: &str) -> Result<String, String> {
     let e = e.trim().to_lowercase();
     if e.len() < 5 || !e.contains('@') || !e.split('@').nth(1).map(|d| d.contains('.')).unwrap_or(false) {
-        return Err(AppError::bad("Некорректный email"));
+        return Err(format!("Некорректная почта: {e} (нужен вид name@domain.tld)"));
     }
     Ok(e)
+}
+
+fn norm_email(e: &str) -> ApiResult<String> {
+    check_email(e).map_err(AppError::bad)
 }
 
 async fn request_code(State(st): State<AppState>, Json(body): Json<RequestCodeIn>) -> ApiResult<Json<serde_json::Value>> {
@@ -172,9 +178,12 @@ fn verify_password(pw: &str, hash: &str) -> bool {
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     PasswordHash::new(hash).map(|h| argon2::Argon2::default().verify_password(pw.as_bytes(), &h).is_ok()).unwrap_or(false)
 }
-fn check_password(pw: &str) -> ApiResult<()> {
-    if pw.chars().count() < 8 { return Err(AppError::bad("Пароль должен быть не короче 8 символов")); }
-    if pw.len() > 200 { return Err(AppError::bad("Слишком длинный пароль")); }
+/// Правило длины пароля для веб-форм и API (CLI может создать и более короткий пароль —
+/// он предупреждает, но не запрещает: доступ к базе и так даёт полные права).
+pub fn check_password(pw: &str) -> ApiResult<()> {
+    let n = pw.chars().count();
+    if n < 8 { return Err(AppError::bad(format!("Пароль должен быть не короче 8 символов (сейчас {n})"))); }
+    if n > 200 { return Err(AppError::bad("Слишком длинный пароль (максимум 200 символов)")); }
     Ok(())
 }
 
