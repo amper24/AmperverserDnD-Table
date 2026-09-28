@@ -25,6 +25,7 @@ use axum::{
     Router,
 };
 use rust_embed::RustEmbed;
+use sqlx::Row;
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 pub use error::AppError;
@@ -92,6 +93,13 @@ async fn main() -> anyhow::Result<()> {
     println!("Server listening on http://{addr}");
     println!("Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table");
     println!("         (users list, users create <email> <пароль> --root, stats, stop)");
+    // Первый запуск: без администратора в веб-интерфейс не войти — подсказываем прямо в консоли.
+    let roots: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(&db).await?.get("n");
+    if roots == 0 {
+        println!("[!] В базе нет ни одного администратора (root). Создайте его прямо здесь:");
+        println!("      users create admin@example.com <пароль> --root");
+        println!("    или задайте ROOT_EMAIL и ROOT_PASSWORD перед запуском сервера.");
+    }
     admin::spawn_console(state_db);
     axum::serve(listener, app).await?;
     Ok(())

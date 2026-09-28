@@ -732,9 +732,13 @@ async fn users_create(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::R
     let root = p.has("root");
     let id = create(db, &email, &password, name.as_deref(), root).await.map_err(|e| CliError::fail(e.to_string()))?;
     let u = sqlx::query(&format!("SELECT {USER_COLS} FROM users WHERE id = ?")).bind(&id).fetch_one(db).await?;
-    println!("Пользователь создан: {}", u.get::<String, _>("email"));
+    let email: String = u.get("email");
+    println!("Пользователь создан: {email}");
     println!("  id: {}   имя: {}   root: {}", id, u.get::<String, _>("name"), if root { "да" } else { "нет" });
     println!("  Почта подтверждена — вход по паролю работает сразу.");
+    if !root {
+        println!("  Выдать права администратора: {PROG} users make-root {email}");
+    }
     if let Some(w) = weak_password(&password) { println!("  [!] {w}"); }
     Ok(())
 }

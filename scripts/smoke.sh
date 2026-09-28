@@ -193,7 +193,7 @@ rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
 "$BIN" users set-password admin@root.com longenough123 | grep "пароль обновлён" >/dev/null
 "$BIN" users delete admin@root.com --yes | grep "Удалён пользователь" >/dev/null
 # неверная команда: код возврата 2 и подсказка вместо «Error: unknown command»
-set +e; "$BIN" users создай >/dev/null 2>&1; rc=$?; set -e
+rc=0; "$BIN" users создай >/dev/null 2>&1 || rc=$?   # `||` — чтобы не срабатывал ERR-trap
 [ "$rc" = "2" ] || { echo "неверный код возврата: $rc (ожидался 2)"; exit 1; }
 # консоль запущенного сервера: команду можно писать с префиксом dnd-table — именно так её
 # копируют из документации в консоль Pterodactyl (раньше это было «Неизвестная команда»)
