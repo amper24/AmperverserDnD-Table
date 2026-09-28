@@ -92,7 +92,7 @@ pub struct RootCfg {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ImagesCfg {
-    pub quality: u8,
+    pub quality: u32,
     pub max_upload_mb: usize,
     pub map_max_side: u32,
     pub token_max_side: u32,
@@ -261,6 +261,7 @@ pub fn load(path: PathBuf) -> anyhow::Result<Loaded> {
         diff_keys(&defaults, &parsed, "", &mut missing, &mut unknown);
 
         let normalized = normalize(&defaults, parsed);
+        let normalized = drop_invalid(&defaults, normalized, &shown, &mut warnings);
         let cfg: Config = serde_yaml::from_value(normalized).map_err(|e| anyhow::anyhow!("неверное значение в {shown}: {e}"))?;
 
         for k in &unknown {
@@ -362,6 +363,49 @@ fn normalize(defaults: &Value, actual: Value) -> Value {
         (Value::Bool(_), Value::Number(n)) if n.as_i64() == Some(0) || n.as_i64() == Some(1) => Value::Bool(n.as_i64() == Some(1)),
         (_, v) => v,
     }
+}
+
+/// Значения неверного типа (`port: abc`, `port: 70000`) заменяются значениями по умолчанию
+/// с предупреждением, где именно ошибка, — вместо отказа запускаться с невнятной ошибкой serde.
+fn drop_invalid(defaults: &Value, mut actual: Value, shown: &str, w: &mut Vec<String>) -> Value {
+    if serde_yaml::from_value::<Config>(actual.clone()).is_ok() {
+        return actual;
+    }
+    // Все «листья» файла: (секция, ключ) или (ключ верхнего уровня, None)
+    let mut leaves: Vec<(Value, Option<Value>)> = Vec::new();
+    if let Value::Mapping(top) = &actual {
+        for (sk, sv) in top {
+            match sv {
+                Value::Mapping(inner) => leaves.extend(inner.keys().map(|k| (sk.clone(), Some(k.clone())))),
+                _ => leaves.push((sk.clone(), None)),
+            }
+        }
+    }
+    for (sk, k) in leaves {
+        let value = match &k {
+            Some(k) => actual.get(&sk).and_then(|s| s.get(k)).cloned(),
+            None => actual.get(&sk).cloned(),
+        };
+        let Some(value) = value else { continue };
+        // Пробуем подставить только этот параметр в конфигурацию по умолчанию
+        let mut probe = defaults.clone();
+        match &k {
+            Some(k) => { if let Some(m) = probe.get_mut(&sk).and_then(Value::as_mapping_mut) { m.insert(k.clone(), value.clone()); } }
+            None => { if let Some(m) = probe.as_mapping_mut() { m.insert(sk.clone(), value.clone()); } }
+        }
+        let Err(e) = serde_yaml::from_value::<Config>(probe) else { continue };
+        let name = |v: &Value| v.as_str().map(str::to_string).unwrap_or_default();
+        let key = match &k { Some(k) => format!("{}.{}", name(&sk), name(k)), None => name(&sk) };
+        let default = match &k { Some(k) => defaults.get(&sk).and_then(|s| s.get(k)), None => defaults.get(&sk) };
+        let default = default.map(|d| serde_yaml::to_string(d).unwrap_or_default().trim().to_string()).unwrap_or_default();
+        let got = serde_yaml::to_string(&value).unwrap_or_default().trim().to_string();
+        w.push(format!("{shown}: {key} = {got} — неверное значение ({e}); используется значение по умолчанию {default}."));
+        match &k {
+            Some(k) => { if let Some(m) = actual.get_mut(&sk).and_then(Value::as_mapping_mut) { m.remove(k); } }
+            None => { if let Some(m) = actual.as_mapping_mut() { m.remove(&sk); } }
+        }
+    }
+    actual
 }
 
 pub fn parse_bool(s: &str) -> Option<bool> {
@@ -583,8 +627,8 @@ pub fn render(c: &Config) -> String {
 #  Создаётся автоматически при первом запуске. После правки перезапустите сервер.
 #
 #  Переменные окружения и файл .env имеют приоритет над этим файлом (если не
-#  выключено env_overrides ниже). Имя переменной указано в [скобках] у каждого
-#  параметра. Пустая переменная считается незаданной.
+#  выключено env_overrides ниже). Имя переменной указано у каждого параметра.
+#  Пустая переменная считается незаданной.
 #
 #  Посмотреть действующие значения и откуда они взялись: команда `config`
 #  в консоли сервера или `dnd-table config`.
@@ -601,72 +645,85 @@ env_overrides: {env_overrides}
 
 # --- Веб-сервер --------------------------------------------------------------
 server:
-  # Адрес: "0.0.0.0" — доступен из сети, "127.0.0.1" — только с этого компьютера. [HOST]
+  # Адрес: "0.0.0.0" — доступен из сети, "127.0.0.1" — только с этого компьютера.
+  # Переменная: HOST
   host: {host}
-  # Порт веб-интерфейса: http://localhost:<порт>                     [PORT, SERVER_PORT]
+  # Порт веб-интерфейса (http://localhost:ПОРТ).
+  # Переменная: PORT (на Pterodactyl — SERVER_PORT)
   port: {port}
 
 # --- База данных -------------------------------------------------------------
 database:
   # SQLite (ничего ставить не нужно):  "sqlite://data/dnd.db"
   # MySQL / MariaDB (для продакшена):  "mysql://user:password@localhost:3306/dnd"
-  #                                                                     [DATABASE_URL]
+  # Переменная: DATABASE_URL
   url: {db_url}
-  # Размер пула соединений (только MySQL; для SQLite всегда 1).   [DB_MAX_CONNECTIONS]
+  # Размер пула соединений (только MySQL; для SQLite всегда 1).
+  # Переменная: DB_MAX_CONNECTIONS
   max_connections: {db_max}
 
 # --- Почта (коды подтверждения и сброса пароля) ------------------------------
-# Если host пуст — письма не отправляются, код печатается в консоль сервера.
 smtp:
-  host: {smtp_host}                                            # [SMTP_HOST]
-  # 587 — STARTTLS, 465 — TLS (SMTPS), 25 — без шифрования.           [SMTP_PORT]
+  # SMTP-сервер, например "smtp.yandex.ru". Пусто — письма не отправляются,
+  # код печатается в консоль сервера.                 Переменная: SMTP_HOST
+  host: {smtp_host}
+  # 587 — STARTTLS, 465 — TLS (SMTPS), 25 — без шифрования. Переменная: SMTP_PORT
   port: {smtp_port}
-  # auto (465 → tls, иначе starttls) | starttls | tls | none     [SMTP_ENCRYPTION]
+  # auto (порт 465 → tls, иначе starttls) | starttls | tls | none
+  # Переменная: SMTP_ENCRYPTION
   encryption: {smtp_enc}
-  user: {smtp_user}                                            # [SMTP_USER]
-  password: {smtp_password}                                    # [SMTP_PASSWORD]
-  # Адрес отправителя. У многих почтовых сервисов должен совпадать с user. [SMTP_FROM]
+  # Логин и пароль (для Яндекса/Gmail — пароль приложения).
+  # Переменные: SMTP_USER, SMTP_PASSWORD
+  user: {smtp_user}
+  password: {smtp_password}
+  # Адрес отправителя; у многих сервисов должен совпадать с user.
+  # Переменная: SMTP_FROM
   from: {smtp_from}
 
 # --- Регистрация и вход ------------------------------------------------------
 auth:
-  # Разрешить регистрацию новых аккаунтов через сайт. false — аккаунты создаёт
-  # только root (страница /admin или команда users create).     [ALLOW_REGISTRATION]
+  # Регистрация новых аккаунтов через сайт. false — аккаунты создаёт только root
+  # (страница /admin или команда users create).  Переменная: ALLOW_REGISTRATION
   allow_registration: {allow_reg}
   # Если SMTP не настроен — показывать код прямо в форме входа. Только для
-  # разработки и игры «для своих»: на публичном сервере поставьте false! [DEV_SHOW_CODE]
+  # разработки и игры «для своих»: на публичном сервере поставьте false!
+  # Переменная: DEV_SHOW_CODE
   dev_show_code: {dev_code}
-  # Сколько минут действует код из письма.                        [CODE_TTL_MINUTES]
+  # Сколько минут действует код из письма.        Переменная: CODE_TTL_MINUTES
   code_ttl_minutes: {code_ttl}
-  # Сколько неверных попыток ввода кода допускается.             [CODE_MAX_ATTEMPTS]
+  # Сколько неверных попыток ввода кода допускается. Переменная: CODE_MAX_ATTEMPTS
   code_max_attempts: {code_attempts}
-  # Сколько дней живёт сессия после входа (0 — без ограничения).      [SESSION_DAYS]
+  # Сколько дней живёт сессия после входа (0 — без ограничения).
+  # Переменная: SESSION_DAYS
   session_days: {session_days}
-  # Минимальная длина пароля в веб-формах.                     [PASSWORD_MIN_LENGTH]
+  # Минимальная длина пароля в веб-формах.         Переменная: PASSWORD_MIN_LENGTH
   password_min_length: {pw_min}
 
 # --- Администратор (root) ----------------------------------------------------
 # Если заполнено — при старте создаётся подтверждённый аккаунт с правами root
 # (если аккаунта с такой почтой ещё нет). Потом пароль отсюда можно убрать:
 # права хранятся в базе. Управление: консольные команды users … или /admin.
+# Переменные: ROOT_EMAIL, ROOT_PASSWORD
 root:
-  email: {root_email}                                          # [ROOT_EMAIL]
-  password: {root_password}                                    # [ROOT_PASSWORD]
+  email: {root_email}
+  password: {root_password}
 
 # --- Изображения (карты, токены, портреты) -----------------------------------
 images:
-  # Качество JPEG при сжатии, 1–100.                                  [IMAGE_QUALITY]
+  # Качество JPEG при сжатии, 1–100.                   Переменная: IMAGE_QUALITY
   quality: {img_quality}
-  # Максимальный размер загружаемого файла, МБ.                       [MAX_UPLOAD_MB]
+  # Максимальный размер загружаемого файла, МБ.        Переменная: MAX_UPLOAD_MB
   max_upload_mb: {img_upload}
-  # Большие картинки уменьшаются до этой стороны (пиксели):
-  map_max_side: {img_map}                                      # карты    [MAP_MAX_SIDE]
-  token_max_side: {img_token}                                  # остальное [TOKEN_MAX_SIDE]
+  # Картинки больше этого размера (по длинной стороне, пиксели) уменьшаются:
+  # карты — map_max_side, токены/портреты/предметы — token_max_side.
+  # Переменные: MAP_MAX_SIDE, TOKEN_MAX_SIDE
+  map_max_side: {img_map}
+  token_max_side: {img_token}
 
 # --- Логи --------------------------------------------------------------------
 logging:
-  # Уровень: error | warn | info | debug | trace; можно по модулям:
-  # "info,sqlx=warn", "debug,tower_http=info".                              [RUST_LOG]
+  # error | warn | info | debug | trace; можно по модулям: "debug,sqlx=warn".
+  # Переменная: RUST_LOG
   level: {log_level}
 "#,
         env_overrides = c.env_overrides,
@@ -731,6 +788,20 @@ mod tests {
         assert!(!c.auth.allow_registration);
         assert_eq!(c.auth.session_days, 30);
         assert_eq!(c.root.password, "12345678");
+    }
+
+    #[test]
+    fn invalid_values_fall_back_to_defaults() {
+        let defaults = serde_yaml::to_value(Config::default()).unwrap();
+        let v: Value = serde_yaml::from_str("server:\n  port: 70000\n  host: \"127.0.0.1\"\nauth:\n  session_days: abc\n").unwrap();
+        let mut w = Vec::new();
+        let v = drop_invalid(&defaults, normalize(&defaults, v), "config.yml", &mut w);
+        let c: Config = serde_yaml::from_value(v).unwrap();
+        assert_eq!(c.server.port, 8080);
+        assert_eq!(c.server.host, "127.0.0.1");
+        assert_eq!(c.auth.session_days, 30);
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w[0].contains("server.port"));
     }
 
     #[test]

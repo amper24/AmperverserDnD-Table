@@ -88,7 +88,7 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
         kind = "token".into();
     }
     let max_side = st.cfg.images.max_side(&kind);
-    let quality = st.cfg.images.quality;
+    let quality = st.cfg.images.quality.min(100) as u8;
     let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, quality))
         .await.map_err(|e| anyhow::anyhow!(e))?
         .map_err(|_| AppError::bad("Не удалось прочитать изображение"))?;
