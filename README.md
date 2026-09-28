@@ -248,7 +248,7 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 **Выпустить релиз** (версия тега должна совпадать с `version` в `Cargo.toml`, иначе джоб печатает предупреждение):
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.2.1 && git push origin v0.2.1
 ```
 
 Имена ассетов — публичный контракт (на них завязаны `install.bat`, `install.sh` и раздел «Windows» выше):

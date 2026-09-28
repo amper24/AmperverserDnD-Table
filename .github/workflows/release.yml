@@ -6,7 +6,7 @@ name: Release
 # ассетов в матрице ниже — часть публичного контракта: меняя их, поправьте
 # install.bat (URL), install.sh (ASSET) и run.bat/README.
 #
-#   git tag v0.2.0 && git push origin v0.2.0
+#   git tag v0.2.1 && git push origin v0.2.1
 on:
   push:
     tags: ["v*"]
