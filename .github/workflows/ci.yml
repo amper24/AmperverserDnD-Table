@@ -121,6 +121,20 @@ jobs:
           name: dnd-table.exe
           path: target/release/dnd-table.exe
           retention-days: 30
+      # Батники обязаны быть ASCII + CRLF (.gitattributes это фиксирует): с LF или
+      # кириллицей cmd.exe разбирает файл по байтам и «выполняет» мусорные слова.
+      # Проверяем здесь, чтобы поломка eol не превратилась в загадочный лог run.bat.
+      - name: Assert *.bat are ASCII with CRLF
+        shell: pwsh
+        run: |
+          foreach ($f in "run.bat", "install.bat") {
+            $bytes = [System.IO.File]::ReadAllBytes($f)
+            for ($i = 0; $i -lt $bytes.Length; $i++) {
+              if ($bytes[$i] -gt 127) { throw "$f must stay ASCII-only (byte $i = $($bytes[$i]))" }
+              if ($bytes[$i] -eq 10 -and ($i -eq 0 -or $bytes[$i-1] -ne 13)) { throw "$f must use CRLF (bare LF at byte $i) - cmd.exe will misparse it" }
+            }
+            "$f OK: ASCII + CRLF"
+          }
       - name: run.bat as CLI
         shell: cmd
         run: |
