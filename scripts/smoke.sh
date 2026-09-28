@@ -185,9 +185,22 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" "$B
 NU=$(rt -X POST "$B/api/admin/users" -H 'content-type: application/json' -d '{"email":"new@test.ru","password":"password123","name":"Новый"}' | J "d['id']")
 rt -X PATCH "$B/api/admin/users/$NU" -H 'content-type: application/json' -d '{"is_root":true}' | J "d['is_root']" | grep -q True
 rt -X DELETE "$B/api/admin/users/$NU" | grep -q '"ok":true'
-"$BIN" users revoke-root root@test.ru 2>&1 | grep "root-пользователей больше нет" >/dev/null   # последнего root снять можно (с предупреждением)
+# CLI: короткий пароль создаёт пользователя (с предупреждением), затем show/rename/set-password/delete
+"$BIN" users create admin@root.com 1234 --root | grep "Пользователь создан" >/dev/null
+"$BIN" users list | grep "admin@root.com" >/dev/null
+"$BIN" users show admin@root.com --json | grep '"is_root": true' >/dev/null
+"$BIN" users rename admin@root.com "Короткий пароль" | grep "имя изменено" >/dev/null
+"$BIN" users set-password admin@root.com longenough123 | grep "пароль обновлён" >/dev/null
+"$BIN" users delete admin@root.com --yes | grep "Удалён пользователь" >/dev/null
+# неверная команда: код возврата 2 и подсказка вместо «Error: unknown command»
+set +e; "$BIN" users создай >/dev/null 2>&1; rc=$?; set -e
+[ "$rc" = "2" ] || { echo "неверный код возврата: $rc (ожидался 2)"; exit 1; }
+# консоль запущенного сервера: команду можно писать с префиксом dnd-table — именно так её
+# копируют из документации в консоль Pterodactyl (раньше это было «Неизвестная команда»)
+printf 'dnd-table users list\nquit\n' | PORT=$((PORT+1)) "$BIN" | grep "root@test.ru" >/dev/null
+"$BIN" users revoke-root root@test.ru 2>&1 | grep "не осталось ни одного root" >/dev/null   # последнего root снять можно (с предупреждением)
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RT" "$B/api/admin/users"); [ "$code" = "403" ]
-"$BIN" users make-root root@test.ru | grep "root = yes" >/dev/null
+"$BIN" users make-root root@test.ru | grep "root = да" >/dev/null
 rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep 2499 >/dev/null
 echo "[10] профиль: два cookie, имя, аватар, смена пароля"
 hdrs=$(curl -s -D - -o /dev/null -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}')
