@@ -45,20 +45,44 @@ struct StaticFiles;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
+
+    // Конфигурация: config.yml (создаётся при первом запуске) + переменные окружения.
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let cfg_path = config::resolve_path(config::take_path_arg(&mut args));
+    let loaded = match config::load(cfg_path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Ошибка конфигурации: {e:#}");
+            eprintln!("Исправьте файл (или удалите его — при следующем запуске будет создан новый с настройками по умолчанию).");
+            std::process::exit(1);
+        }
+    };
+    let filter = tracing_subscriber::EnvFilter::try_new(&loaded.cfg.logging.level).unwrap_or_else(|_| {
+        eprintln!("logging.level = «{}» не распознан — используется info,sqlx=warn", loaded.cfg.logging.level);
+        "info,sqlx=warn".into()
+    });
     tracing_subscriber::fmt()
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn".into()))
+        .with_env_filter(filter)
         .init();
+    for m in &loaded.info { tracing::info!("{m}"); }
+    for m in &loaded.warnings { tracing::warn!("{m}"); }
+    if !loaded.overrides.is_empty() {
+        let list = loaded.overrides.iter().map(|o| format!("{} ← {}", o.key, o.var)).collect::<Vec<_>>().join(", ");
+        tracing::info!("Конфигурация: {} (перекрыто переменными окружения: {list})", config::display_path(&loaded.path));
+    } else {
+        tracing::info!("Конфигурация: {}", config::display_path(&loaded.path));
+    }
+    config::set_current(&loaded);
+    let cfg = Arc::new(loaded.cfg.clone());
 
-    let cfg = Arc::new(config::Config::from_env());
-    let (db, is_sqlite) = db::connect(&cfg.database_url).await?;
+    let (db, is_sqlite) = db::connect(&cfg.database.url, cfg.database.max_connections).await?;
     db::migrate(&db, is_sqlite).await?;
     seed::seed(&db).await?;
-    admin::ensure_root_from_env(&db).await?;
+    admin::ensure_root_from_config(&db, &cfg.root).await?;
 
-    // Команды администрирования (dnd-table users …, stats, reseed). Ошибка команды — выход
+    // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход
     // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
-    let args: Vec<String> = std::env::args().skip(1).collect();
     match admin::run_cli(&db, &args, admin::CliMode::Cli).await {
         Ok(true) => return Ok(()),
         Ok(false) => {}
@@ -77,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(admin::router())
         .merge(campaigns::router())
         .merge(scenes::router())
-        .merge(assets::router())
+        .merge(assets::router(cfg.images.max_upload_bytes()))
         .merge(characters::router())
         .merge(compendium::router())
         .merge(packs::router())
@@ -89,17 +113,22 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let addr = format!("{}:{}", cfg.host, cfg.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    let db_label = cfg.database_url.split('@').last().unwrap_or("").to_string();
+    let addr = format!("{}:{}", cfg.server.host, cfg.server.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
+        anyhow::anyhow!("не удалось занять адрес {addr}: {e}. Порт занят другим процессом? Смените server.port в {}", config::display_path(&loaded.path))
+    })?;
+    let db_label = config::mask_url(&cfg.database.url);
     tracing::info!("Edge Tablet запущен: http://{}  (БД: {})", addr, db_label);
     println!("Server listening on http://{addr}");
     println!("Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table");
-    println!("         (users list, users create <email> <пароль> --root, stats, stop)");
+    println!("         (users list, users create <email> <пароль> --root, stats, config, stop)");
+    if loaded.created {
+        println!("Настройки: {} — порт, база данных, почта, root-аккаунт и др. (после правки перезапустите сервер)", config::display_path(&loaded.path));
+    }
     if roots == 0 {
         println!("[!] В базе нет ни одного администратора (root). Создайте его прямо здесь:");
         println!("      users create admin@example.com <пароль> --root");
-        println!("    или задайте ROOT_EMAIL и ROOT_PASSWORD перед запуском сервера.");
+        println!("    или заполните root.email и root.password в {} и перезапустите сервер.", config::display_path(&loaded.path));
     }
     admin::spawn_console(state_db);
     axum::serve(listener, app).await?;

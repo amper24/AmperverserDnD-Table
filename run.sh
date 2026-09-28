@@ -4,8 +4,9 @@
 # иначе собирает через cargo (нужен Rust: https://rustup.rs).
 set -e
 cd "$(dirname "$0")"
-export PORT="${PORT:-${SERVER_PORT:-8080}}"
-[ -f .env ] || { echo "[*] .env не найден — используется SQLite (data/dnd.db). Для MySQL: cp .env.example .env"; }
+# Настройки — в config.yml (создаётся при первом запуске). PORT/SERVER_PORT, если заданы,
+# перекрывают server.port — поэтому здесь PORT специально не экспортируется.
+[ -f config.yml ] || echo "[*] config.yml ещё нет — он будет создан при первом запуске (по умолчанию SQLite в data/dnd.db)"
 
 if [ -x ./dnd-table ]; then exec ./dnd-table; fi
 if [ -x target/release/dnd-table ] && [ -z "$REBUILD" ]; then exec target/release/dnd-table; fi

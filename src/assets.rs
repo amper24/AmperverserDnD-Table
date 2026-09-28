@@ -12,13 +12,12 @@ use sqlx::Row;
 
 use crate::{auth::AuthUser, campaigns::get_member, error::ApiResult, images, util, AppError, AppState};
 
-const MAX_UPLOAD: usize = 25 * 1024 * 1024;
-
-pub fn router() -> Router<AppState> {
+/// `max_upload` — предельный размер загружаемого файла (images.max_upload_mb в config.yml).
+pub fn router(max_upload: usize) -> Router<AppState> {
     Router::new()
         .route("/api/assets", get(list).post(upload))
         .route("/api/assets/:aid", get(get_one).delete(delete_one))
-        .layer(axum::extract::DefaultBodyLimit::max(MAX_UPLOAD + 1024 * 1024))
+        .layer(axum::extract::DefaultBodyLimit::max(max_upload + 1024 * 1024))
 }
 
 fn meta(r: &sqlx::any::AnyRow) -> Value {
@@ -65,8 +64,8 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
             "file" => {
                 let fname = field.file_name().unwrap_or("image").to_string();
                 let bytes = field.bytes().await.map_err(|e| AppError::bad(e.to_string()))?;
-                if bytes.len() > MAX_UPLOAD {
-                    return Err(AppError(axum::http::StatusCode::PAYLOAD_TOO_LARGE, "Файл слишком большой".into()));
+                if bytes.len() > st.cfg.images.max_upload_bytes() {
+                    return Err(AppError(axum::http::StatusCode::PAYLOAD_TOO_LARGE, format!("Файл слишком большой (максимум {} МБ)", st.cfg.images.max_upload_mb)));
                 }
                 file = Some((fname, bytes.to_vec()));
             }
@@ -88,8 +87,8 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
     if !["map", "token", "prop", "portrait", "item"].contains(&kind.as_str()) {
         kind = "token".into();
     }
-    let max_side = if kind == "map" { 4096 } else { 1024 };
-    let quality = st.cfg.image_quality;
+    let max_side = st.cfg.images.max_side(&kind);
+    let quality = st.cfg.images.quality;
     let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, quality))
         .await.map_err(|e| anyhow::anyhow!(e))?
         .map_err(|_| AppError::bad("Не удалось прочитать изображение"))?;

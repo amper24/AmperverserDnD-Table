@@ -37,7 +37,7 @@ pub struct CreateIn { pub email: String, pub password: String, pub name: Option<
 
 async fn create_user(State(st): State<AppState>, user: AuthUser, Json(b): Json<CreateIn>) -> ApiResult<Json<Value>> {
     user.require_root()?;
-    auth::check_password(&b.password)?;
+    auth::check_password(&b.password, st.cfg.auth.password_min_length)?;
     let id = create(&st.db, &b.email, &b.password, b.name.as_deref(), b.is_root).await.map_err(|e| AppError::bad(e.to_string()))?;
     let r = sqlx::query("SELECT id, email, name, is_root, verified, password_hash, created_at FROM users WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
     Ok(Json(user_json(&r)))
@@ -58,7 +58,7 @@ async fn update_user(State(st): State<AppState>, user: AuthUser, Path(uid): Path
         sqlx::query("UPDATE users SET is_root = ? WHERE id = ?").bind(if root { 1i64 } else { 0 }).bind(&uid).execute(&st.db).await?;
     }
     if let Some(pw) = &b.password {
-        auth::check_password(pw)?;
+        auth::check_password(pw, st.cfg.auth.password_min_length)?;
         sqlx::query("UPDATE users SET password_hash = ?, verified = 1 WHERE id = ?").bind(auth::hash_password(pw)?).bind(&uid).execute(&st.db).await?;
         sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(&uid).execute(&st.db).await?;
     }
@@ -176,29 +176,33 @@ async fn find_id(db: &AnyPool, email: &str) -> anyhow::Result<String> {
     r.map(|r| r.get::<String, _>("id")).ok_or_else(|| anyhow::anyhow!("Пользователь {email} не найден"))
 }
 
-/// Автосоздание root при старте из ROOT_EMAIL / ROOT_PASSWORD (если такого пользователя ещё нет).
-/// Если пользователь с этой почтой уже есть, но без прав root — в лог пишется подсказка,
-/// как выдать права (снятые права root автоматически не восстанавливаются).
-pub async fn ensure_root_from_env(db: &AnyPool) -> anyhow::Result<()> {
-    let Ok(email) = std::env::var("ROOT_EMAIL") else { return Ok(()) };
-    let email = email.trim().to_lowercase();
+/// Автосоздание root при старте из root.email / root.password в config.yml (или ROOT_EMAIL /
+/// ROOT_PASSWORD), если такого пользователя ещё нет. Если пользователь с этой почтой уже есть,
+/// но без прав root — в лог пишется подсказка, как выдать права (снятые права root
+/// автоматически не восстанавливаются).
+pub async fn ensure_root_from_config(db: &AnyPool, root: &crate::config::RootCfg) -> anyhow::Result<()> {
+    let email = root.email.trim().to_lowercase();
     if email.is_empty() { return Ok(()); }
-    let password = std::env::var("ROOT_PASSWORD").unwrap_or_default();
+    let password = root.password.clone();
+    if let Err(e) = auth::check_email(&email) {
+        tracing::warn!("root.email: {e} — root не создан");
+        return Ok(());
+    }
     match find_user(db, &email).await? {
         Some(u) => {
             if u.get::<i64, _>("is_root") != 0 {
                 tracing::info!("root: {email}");
             } else {
-                tracing::info!("ROOT_EMAIL={email}: аккаунт есть, но без прав root. Выдать права: users make-root {email}");
+                tracing::info!("root.email = {email}: аккаунт есть, но без прав root. Выдать права: users make-root {email}");
             }
         }
         None => {
             if password.is_empty() {
-                tracing::warn!("ROOT_EMAIL={email} задан, но ROOT_PASSWORD пуст — root не создан. Создайте аккаунт командой: users create {email} <пароль> --root");
+                tracing::warn!("root.email = {email} задан, но root.password пуст — root не создан. Заполните root.password в config.yml или создайте аккаунт командой: users create {email} <пароль> --root");
                 return Ok(());
             }
             if password.chars().count() < WEB_PASSWORD_MIN {
-                tracing::warn!("ROOT_PASSWORD короче {WEB_PASSWORD_MIN} символов — такой пароль легко подобрать перебором");
+                tracing::warn!("root.password короче {WEB_PASSWORD_MIN} символов — такой пароль легко подобрать перебором");
             }
             create(db, &email, &password, Some("root"), true).await?;
             tracing::info!("root: создан аккаунт {email}");
@@ -471,6 +475,7 @@ Amperverser DnD Table (Edge Tablet) — сервер и команды адми�
 База:
   dnd-table stats [--json]         сводка по базе
   dnd-table reseed [--yes]         пересоздать базовый справочник из вшитого seed
+  dnd-table config                 файл конфигурации и действующие настройки
   dnd-table version                версия
   dnd-table help [команда]         справка (например: help users create)
 
@@ -483,8 +488,21 @@ Amperverser DnD Table (Edge Tablet) — сервер и команды адми�
   help | users list | users create <email> <пароль> --root | stats | stop
 
 Через cargo: cargo run --release -- users make-root admin@example.com
-Переменные: DATABASE_URL, ROOT_EMAIL + ROOT_PASSWORD (создание root при первом старте,
-если такого аккаунта ещё нет; снятые права root не восстанавливаются автоматически).";
+
+Настройки — в config.yml (создаётся при первом запуске; другой путь: --config <файл>
+или DND_CONFIG). Переменные окружения (DATABASE_URL, PORT, SMTP_*, ROOT_EMAIL +
+ROOT_PASSWORD, …) перекрывают значения из файла. root.email + root.password создают
+root при старте, если такого аккаунта ещё нет; снятые права root не восстанавливаются.";
+
+const HELP_CONFIG: &str = "\
+dnd-table config
+
+Показывает, какой файл конфигурации используется, какие параметры перекрыты
+переменными окружения и действующие значения (пароли скрыты).
+
+Файл config.yml создаётся при первом запуске рядом с программой (в текущем каталоге).
+Другой путь: dnd-table --config /путь/config.yml  или переменная DND_CONFIG.
+Изменения в файле применяются после перезапуска сервера.";
 
 const HELP_USERS: &str = "\
 dnd-table users — управление пользователями
@@ -588,6 +606,7 @@ fn print_help(topic: &[String]) -> Result<(), CliError> {
         "users delete" | "users del" | "users rm" | "delete" => HELP_DELETE,
         "stats" => HELP_STATS,
         "reseed" => HELP_RESEED,
+        "config" | "конфиг" => HELP_CONFIG,
         "serve" | "server" => "dnd-table [serve]\n\nЗапускает сервер (без аргументов — то же самое).\nКоманды администрирования работают и в консоли запущенного сервера: help, users list, stats, stop.",
         "version" => "dnd-table version\n\nПечатает версию бинарника.",
         other => return Err(CliError::usage(format!("Нет справки по «{other}»"))),
@@ -618,6 +637,9 @@ pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Re
         "users" | "user" => users_cmd(db, rest, mode).await?,
         "stats" => stats_cmd(db, rest).await?,
         "reseed" => reseed_cmd(db, rest, mode).await?,
+        "config" | "конфиг" => {
+            if rest.iter().any(|t| matches!(t.as_str(), "--help" | "-h" | "help")) { println!("{HELP_CONFIG}"); } else { println!("{}", crate::config::describe()); }
+        }
         other => return Err(CliError::usage(format!("Неизвестная команда: {other}")).into()),
     }
     Ok(true)

@@ -1,7 +1,7 @@
 //! Подключение к БД (MySQL или SQLite через sqlx Any) и создание схемы.
 use sqlx::{any::AnyPoolOptions, AnyPool, Row};
 
-pub async fn connect(url: &str) -> anyhow::Result<(AnyPool, bool)> {
+pub async fn connect(url: &str, max_connections: u32) -> anyhow::Result<(AnyPool, bool)> {
     sqlx::any::install_default_drivers();
     let is_sqlite = url.starts_with("sqlite");
     if is_sqlite {
@@ -21,7 +21,7 @@ pub async fn connect(url: &str) -> anyhow::Result<(AnyPool, bool)> {
         url.to_string()
     };
     let pool = AnyPoolOptions::new()
-        .max_connections(if is_sqlite { 1 } else { 10 })
+        .max_connections(if is_sqlite { 1 } else { max_connections.max(1) })
         .acquire_timeout(std::time::Duration::from_secs(30))
         .connect(&url)
         .await?;
