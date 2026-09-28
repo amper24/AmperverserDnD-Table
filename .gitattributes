@@ -1,0 +1,19 @@
+# cmd.exe misparses .bat/.cmd files with bare LF endings (it re-reads the file by
+# byte offset after labels/gotos), so Windows scripts must always be checked out
+# with CRLF, whatever the local core.autocrlf setting is.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Shell scripts must stay LF or bash on Linux/macOS/Docker chokes on '\r'.
+*.sh  text eol=lf
+
+# Never touch binaries.
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.exe binary
+*.db binary

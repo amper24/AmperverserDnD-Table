@@ -1,41 +1,89 @@
 @echo off
-chcp 65001 >nul
-setlocal
-REM Запуск Edge Tablet на Windows.
-REM Порядок: dnd-table.exe рядом (из GitHub Releases) -> уже собранный target\release\dnd-table.exe -> сборка через cargo (https://rustup.rs).
-REM Переменные: PORT (по умолчанию 8080), NO_BROWSER=1 — не открывать браузер, NO_PAUSE=1 — не ждать нажатия клавиши в конце.
+chcp 65001 >nul 2>nul
+setlocal EnableExtensions
+REM ---------------------------------------------------------------------------
+REM Edge Tablet - Windows launcher.
+REM
+REM IMPORTANT: keep this file ASCII-only and with CRLF line endings.
+REM cmd.exe parses a batch file with the console code page that is active while
+REM it reads, so any UTF-8 (Cyrillic) text here turns into garbage tokens and
+REM cmd starts "executing" random word fragments:
+REM   '.' is not recognized...  /  'EXE' is not recognized...  /  garbage words
+REM CRLF is enforced by .gitattributes.
+REM
+REM Binary lookup order:
+REM   dnd-table.exe next to this file (GitHub Releases)
+REM   target\release\dnd-table.exe
+REM   target\debug\dnd-table.exe
+REM   cargo build --release (Rust: https://rustup.rs)
+REM No Rust? Run install.bat - it downloads dnd-table.exe from Releases.
+REM
+REM Variables:
+REM   PORT=8080        listening port
+REM   NO_BROWSER=1     do not open the browser
+REM   NO_PAUSE=1       do not wait for a key press at the end (used by CI)
+REM   REBUILD=1        force cargo build even if a binary already exists
+REM Arguments are passed through to dnd-table.exe:
+REM   run.bat help
+REM   run.bat users list
+REM   run.bat users make-root admin@example.com
+REM ---------------------------------------------------------------------------
+
+REM cd FIRST: everything below (data\, .env, target\) is relative to the script.
 cd /d "%~dp0"
-if "%PORT%"=="" set PORT=8080
-if not exist data mkdir data
-if not exist .env echo [*] .env не найден — используется SQLite (data\dnd.db). Для MySQL скопируйте .env.example в .env
+
+if not defined PORT set "PORT=8080"
+if not exist "data" mkdir "data" 2>nul
+if not exist ".env" echo [*] No .env here - using SQLite (data\dnd.db). For MySQL copy .env.example to .env
 
 set "EXE="
-if exist dnd-table.exe set "EXE=dnd-table.exe"
-if not defined EXE if exist target\release\dnd-table.exe set "EXE=target\release\dnd-table.exe"
+if exist "dnd-table.exe" set "EXE=dnd-table.exe"
+if not defined EXE if exist "target\release\dnd-table.exe" set "EXE=target\release\dnd-table.exe"
+REM REBUILD=1 - ignore a stale target\debug build and go straight to cargo.
+if not defined EXE if /i not "%REBUILD%"=="1" if exist "target\debug\dnd-table.exe" set "EXE=target\debug\dnd-table.exe"
 
-if not defined EXE (
-  where cargo >nul 2>nul
-  if errorlevel 1 (
-    echo [!] cargo не найден. Установите Rust: https://rustup.rs  ^(при установке выберите msvc-toolchain и поставьте Visual Studio Build Tools, если предложит^),
-    echo     либо скачайте dnd-table.exe со страницы Releases и положите рядом с этим файлом.
-    goto :fail
-  )
-  echo [*] Сборка ^(release^)... первый раз занимает несколько минут.
-  cargo build --release
-  if errorlevel 1 (
-    echo [!] Сборка не удалась. Частая причина — нет компоновщика: установите "Visual Studio Build Tools" с компонентом "Desktop development with C++" и перезапустите.
-    goto :fail
-  )
-  set "EXE=target\release\dnd-table.exe"
-)
+if defined EXE goto :run
 
-echo [*] Запуск %EXE% на порту %PORT%. В этой консоли работают команды: help, users list, users make-root ^<email^>, stop
-if "%~1"=="" if not "%NO_BROWSER%"=="1" start "" http://localhost:%PORT%
+where cargo >nul 2>nul
+if errorlevel 1 goto :nocargo
+
+echo [*] Building with cargo (release)... the first build takes a few minutes.
+echo     No Rust and do not want to install it? Run install.bat instead.
+cargo build --release
+if errorlevel 1 goto :buildfail
+set "EXE=target\release\dnd-table.exe"
+if not exist "%EXE%" goto :buildfail
+goto :run
+
+:nocargo
+echo.
+echo [!] Neither dnd-table.exe nor cargo was found.
+echo     Option A: run install.bat - it downloads dnd-table.exe from GitHub Releases
+echo               and puts it next to this file. No Rust needed.
+echo     Option B: install Rust from https://rustup.rs - pick the MSVC toolchain plus
+echo               "Visual Studio Build Tools" when it is offered, then run run.bat again.
+goto :fail
+
+:buildfail
+echo.
+echo [!] cargo build failed. Usual cause: no linker. Install "Visual Studio Build
+echo     Tools" with the "Desktop development with C++" component and try again,
+echo     or just run install.bat to get a ready-made dnd-table.exe.
+goto :fail
+
+:run
+netstat -ano 2>nul | findstr /r /c:":%PORT% .*LISTENING" >nul
+if not errorlevel 1 echo [!] Warning: port %PORT% looks busy. Something may already be listening on it - try set PORT=8081
+
+echo [*] Starting %EXE% on port %PORT%
+echo     Console commands while it runs: help, users list, users make-root ^<email^>, stats, stop
+if "%~1"=="" if /i not "%NO_BROWSER%"=="1" start http://localhost:%PORT%
+
 "%EXE%" %*
 set "RC=%ERRORLEVEL%"
-if not "%NO_PAUSE%"=="1" pause
+if /i not "%NO_PAUSE%"=="1" pause
 exit /b %RC%
 
 :fail
-if not "%NO_PAUSE%"=="1" pause
+if /i not "%NO_PAUSE%"=="1" pause
 exit /b 1
