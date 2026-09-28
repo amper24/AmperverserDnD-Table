@@ -33,14 +33,25 @@ docker compose up -d --build
 ```
 
 ### Windows
-Без Rust — `install.bat`: скачает `dnd-table.exe` из последнего релиза в папку скрипта и запустит сервер.
+Без Rust — `install.bat`: скачает `dnd-table-windows-x86_64.exe` из **последнего** релиза, положит его рядом с собой как `dnd-table.exe`, подложит `run.bat` и запустит сервер. Запустите ещё раз, чтобы обновиться до свежего релиза.
 
 ```bat
 run.bat                 :: двойной клик или из cmd: dnd-table.exe рядом -> target\release -> сборка через cargo
 run.bat help            :: аргументы передаются бинарнику (users list, users make-root <email>, stats)
 install.bat             :: скачать готовый .exe из GitHub Releases и запустить
 ```
-Переменные: `PORT` (8080), `NO_BROWSER=1` — не открывать браузер, `NO_PAUSE=1` — не ждать клавишу в конце (используется в CI), `REBUILD=1` — пересобрать через cargo, `DND_DIR` — куда ставить `install.bat`.
+Установка в другую папку и без паузы в конце:
+```bat
+set DND_DIR=D:\dnd && set NO_PAUSE=1 && install.bat
+```
+Одной строкой (без клона репозитория) — скачиваем `install.bat` и запускаем:
+```powershell
+curl.exe -L -o install.bat https://raw.githubusercontent.com/amper24/AmperverserDnD-Table/main/install.bat; .\install.bat
+```
+
+Переменные: `PORT` (8080), `NO_BROWSER=1` — не открывать браузер, `NO_PAUSE=1` — не ждать клавишу в конце (используется в CI), `REBUILD=1` — пересобрать через cargo, `DND_DIR` — куда ставить (по умолчанию папка скрипта), `DND_URL` — откуда качать `dnd-table.exe` (зеркало, приватная сборка), `DND_RUN_URL` — откуда качать `run.bat`, если его нет рядом с `install.bat`.
+
+`install.bat` качает в `dnd-table.exe.new` и подменяет файл только после успешной загрузки: при обрыве сети/прокси или занятом (запущенном) `dnd-table.exe` прежняя версия остаётся на месте. Слишком маленький файл (HTML-заглушка прокси/антивируса) отсекается проверкой размера. Суммы SHA-256 всех файлов релиза — в `SHA256SUMS.txt` на странице релиза.
 
 Если `run.bat` печатает мусор вроде `'.' is not recognized…`, `'EXE' is not recognized…`, `'и' is not recognized…` — это cmd разбирает файл в неправильной кодировке / с неправильными переводами строк (батник был в UTF-8 с кириллицей и с LF). Сейчас `*.bat` в репозитории ASCII-only и с CRLF, это фиксирует `.gitattributes`. На уже испорченной копии: `git pull`, затем `git rm --cached run.bat install.bat && git checkout -- run.bat install.bat` (или просто свежий клон) — и батники пересохранятся с CRLF.
 
@@ -212,6 +223,8 @@ static/                 # index.html, app.js (лобби+кампания), tabl
 data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), builtin/ (30 ассетов)
 scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)
 deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh · install.bat
+.github/workflows/ci.yml      # сборка + smoke (SQLite/MySQL), Windows-джоб с run.bat/install.bat, .exe артефактом в PR
+.github/workflows/release.yml # по тегу vX.Y.Z: бинарники Linux/Windows/macOS → GitHub Release
 .gitattributes          # *.bat/*.cmd — всегда CRLF (иначе cmd.exe ломает разбор батников)
 ```
 
@@ -221,7 +234,33 @@ cargo run                       # SQLite в data/dnd.db, http://localhost:8080
 DATABASE_URL=mysql://dnd:dnd@localhost/dnd cargo run
 bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (нужны python3, websockets)
 ```
-Релиз: тег `vX.Y.Z` → CI собирает бинарники для Linux/Windows/macOS и публикует в Releases.
+
+## Сборки и релизы
+
+Три workflow-джоба в `.github/workflows/`:
+
+| Что | Когда | Результат |
+|---|---|---|
+| `ci.yml` → `build-test` | push в любую ветку, PR, тег | сборка + smoke-тесты на SQLite и MySQL, артефакт `dnd-table-linux-x86_64` |
+| `ci.yml` → `windows` | push, PR, тег | сборка под Windows, прогон `run.bat` (CLI и сервер) и `install.bat` (скачивание ассета + запуск). В **каждом pull request** публикуется артефакт **`dnd-table.exe`** — его можно скачать в Actions → нужный run → Artifacts |
+| `release.yml` → `binaries` + `publish` | push тега `v*` | бинарники Linux/Windows/macOS + `run.bat`/`install.bat`/`SHA256SUMS.txt` → GitHub Release |
+
+**Выпустить релиз** (версия тега должна совпадать с `version` в `Cargo.toml`, иначе джоб печатает предупреждение):
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Имена ассетов — публичный контракт (на них завязаны `install.bat`, `install.sh` и раздел «Windows» выше):
+
+```
+dnd-table-windows-x86_64.exe   ← install.bat (install.bat / run.bat)
+dnd-table-linux-x86_64         ← install.sh, /releases/latest/download/...
+dnd-table-macos-aarch64        ← install.sh
+run.bat · install.bat · SHA256SUMS.txt
+```
+
+Меняя имя ассета, поправьте `install.bat` (`set "REL=..."`, `DND_URL`), `install.sh` (`ASSET`) и таблицу в `release.yml`. Тег без префикса `v` (например `0.2.0`) бинарников не публикует.
 
 ## Дорожная карта
 Вход через Google (OAuth) · динамическое освещение · аудио · экспорт/импорт кампаний · расширение справочника · миграции схемы.

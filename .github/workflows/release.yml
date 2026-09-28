@@ -1,0 +1,113 @@
+name: Release
+
+# Тег вида vX.Y.Z (совпадает с version в Cargo.toml) собирает бинарники и публикует
+# GitHub Release. install.bat/install.sh качают файлы из
+# https://github.com/<owner>/<repo>/releases/latest/download/<asset>, поэтому имена
+# ассетов в матрице ниже — часть публичного контракта: меняя их, поправьте
+# install.bat (URL), install.sh (ASSET) и run.bat/README.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: dnd-table-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: dnd-table-windows-x86_64.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: dnd-table-macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (${{ matrix.target }})
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Collect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cp "target/${{ matrix.target }}/release/dnd-table.exe" "out/${{ matrix.asset }}"
+            # Батники тоже публикуем: тогда install.bat может забрать run.bat прямо
+            # из релиза, а не только из клона репозитория.
+            cp run.bat install.bat out/
+          else
+            cp "target/${{ matrix.target }}/release/dnd-table" "out/${{ matrix.asset }}"
+          fi
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.asset }}
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum ./* > /tmp/SHA256SUMS.txt
+          mv /tmp/SHA256SUMS.txt SHA256SUMS.txt
+          ls -l
+          cat SHA256SUMS.txt
+      - name: Tag vs Cargo.toml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "tag=$GITHUB_REF_NAME, Cargo.toml=$VERSION"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::warning title=Версия не совпадает::Тег $GITHUB_REF_NAME, а в Cargo.toml version = $VERSION"
+          fi
+      - name: Create/update the release and upload the files
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            Готовые сборки (скачиваются без Rust):
+
+            | ОС | Файл |
+            |---|---|
+            | Windows x86_64 | `dnd-table-windows-x86_64.exe` |
+            | Linux x86_64 | `dnd-table-linux-x86_64` |
+            | macOS arm64 | `dnd-table-macos-aarch64` |
+
+            Windows: положите `dnd-table-windows-x86_64.exe` рядом с `run.bat` и
+            переименуйте в `dnd-table.exe` — либо просто запустите `install.bat`,
+            он сам скачает ассет из последнего релиза. Linux/macOS:
+            `curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash`.
+
+            Контрольные суммы — в `SHA256SUMS.txt`.
