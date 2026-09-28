@@ -111,6 +111,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build (release)
         run: cargo build --release
+      # Артефакт кладём сразу после сборки: .exe из каждого pull request (и из ветки
+      # внутри репозитория) можно скачать в Actions → нужный run → Artifacts,
+      # даже если более поздние шаги проверок упадут.
+      - name: Upload dnd-table.exe (artifact)
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnd-table.exe
+          path: target/release/dnd-table.exe
+          retention-days: 30
       - name: run.bat as CLI
         shell: cmd
         run: |
@@ -139,36 +149,39 @@ jobs:
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Get-Process dnd-table -ErrorAction SilentlyContinue | Stop-Process -Force
           "Windows OK"
-
-  release:
-    name: Release binaries
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-test
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: dnd-table-linux-x86_64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: dnd-table-windows-x86_64.exe
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            asset: dnd-table-macos-aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --target ${{ matrix.target }}
-      - name: Rename
-        shell: bash
+      # install.bat проверяем «как у пользователя»: он должен скачать ассет релиза и
+      # запустить его. Вместо GitHub Releases поднимаем локальный файл-сервер и
+      # подкладываем его адрес через DND_URL (тот же путь /download/<asset>, что и
+      # в релизе: install.bat → dnd-table-windows-x86_64.exe → run.bat).
+      - name: install.bat (download the Windows asset from a stand-in release, then start it)
+        shell: pwsh
         run: |
-          mkdir -p out
-          if [[ "${{ matrix.os }}" == windows-latest ]]; then cp target/${{ matrix.target }}/release/dnd-table.exe out/${{ matrix.asset }}; else cp target/${{ matrix.target }}/release/dnd-table out/${{ matrix.asset }}; fi
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: out/*
+          $ErrorActionPreference = "Stop"
+          if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw "python is required to serve the stand-in release" }
+          New-Item -ItemType Directory -Force -Path rel, installdir | Out-Null
+          Copy-Item target\release\dnd-table.exe rel\dnd-table-windows-x86_64.exe
+          $http = Start-Process python -ArgumentList @("-m", "http.server", "8097", "--bind", "127.0.0.1", "--directory", "$PWD\rel") -PassThru -NoNewWindow
+          try {
+            Start-Sleep 2
+            $env:DND_URL = "http://127.0.0.1:8097/dnd-table-windows-x86_64.exe"
+            $env:DND_DIR = "$PWD\installdir"
+            $env:PORT = "8124"; $env:NO_BROWSER = "1"; $env:NO_PAUSE = "1"
+            "" | Out-File stdin.txt
+            $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c install.bat" -RedirectStandardInput "$PWD\stdin.txt" -RedirectStandardOutput "$PWD\install.log" -RedirectStandardError "$PWD\install.err.log" -PassThru -NoNewWindow
+            for ($i = 0; $i -lt 60 -and -not (Test-Path installdir\dnd-table.exe); $i++) { Start-Sleep 1 }
+            Get-Content install.log, install.err.log -ErrorAction SilentlyContinue
+            if (-not (Test-Path installdir\dnd-table.exe)) { throw "install.bat did not download dnd-table.exe" }
+            if ((Get-Item installdir\dnd-table.exe).Length -ne (Get-Item target\release\dnd-table.exe).Length) { throw "the downloaded dnd-table.exe differs from the built one" }
+            if (-not (Test-Path installdir\run.bat)) { throw "install.bat did not put run.bat next to the exe" }
+            $ok = $false
+            for ($i = 0; $i -lt 60; $i++) { Start-Sleep 1; try { $r = Invoke-RestMethod http://127.0.0.1:8124/api/health; if ($r.ok) { $ok = $true; break } } catch {} }
+            Get-Content install.log, install.err.log -ErrorAction SilentlyContinue
+            if (-not $ok) { throw "the server installed by install.bat did not start" }
+            "install.bat OK"
+          } finally {
+            # Останавливаем только то, что запустили сами: сервер -> install.bat/run.bat -> файл-сервер.
+            Get-Process dnd-table -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep 2
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            Stop-Process -Id $http.Id -Force -ErrorAction SilentlyContinue
+          }
