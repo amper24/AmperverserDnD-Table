@@ -76,7 +76,7 @@ netstat -ano 2>nul | findstr /r /c:":%PORT% .*LISTENING" >nul
 if not errorlevel 1 echo [!] Warning: port %PORT% looks busy. Something may already be listening on it - try set PORT=8081
 
 echo [*] Starting %EXE% on port %PORT%
-echo     Console commands while it runs: help, users list, users make-root ^<email^>, stats, stop
+echo     Console commands while it runs: help, users list, users create ^<email^> ^<pass^> --root, stats, stop
 if "%~1"=="" if /i not "%NO_BROWSER%"=="1" start http://localhost:%PORT%
 
 "%EXE%" %*

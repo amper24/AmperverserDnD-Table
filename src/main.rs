@@ -25,6 +25,7 @@ use axum::{
     Router,
 };
 use rust_embed::RustEmbed;
+use sqlx::Row;
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 pub use error::AppError;
@@ -55,11 +56,17 @@ async fn main() -> anyhow::Result<()> {
     seed::seed(&db).await?;
     admin::ensure_root_from_env(&db).await?;
 
-    // CLI-команды администрирования (dnd-table users ..., stats, reseed)
+    // Команды администрирования (dnd-table users …, stats, reseed). Ошибка команды — выход
+    // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if admin::run_cli(&db, &args).await? {
-        return Ok(());
+    match admin::run_cli(&db, &args, admin::CliMode::Cli).await {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(e) => admin::exit_cli_error(&e),
     }
+
+    // Первый запуск: без администратора в веб-интерфейс не войти — подсказываем прямо в консоли.
+    let roots: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(&db).await?.get("n");
 
     let state_db = db.clone();
     let state = AppState { db, cfg: cfg.clone(), hub: realtime::Hub::default(), is_sqlite };
@@ -87,7 +94,13 @@ async fn main() -> anyhow::Result<()> {
     let db_label = cfg.database_url.split('@').last().unwrap_or("").to_string();
     tracing::info!("Edge Tablet запущен: http://{}  (БД: {})", addr, db_label);
     println!("Server listening on http://{addr}");
-    println!("Консоль: введите help для списка команд (users list, users make-root <email>, stats, stop)");
+    println!("Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table");
+    println!("         (users list, users create <email> <пароль> --root, stats, stop)");
+    if roots == 0 {
+        println!("[!] В базе нет ни одного администратора (root). Создайте его прямо здесь:");
+        println!("      users create admin@example.com <пароль> --root");
+        println!("    или задайте ROOT_EMAIL и ROOT_PASSWORD перед запуском сервера.");
+    }
     admin::spawn_console(state_db);
     axum::serve(listener, app).await?;
     Ok(())
