@@ -65,6 +65,9 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => admin::exit_cli_error(&e),
     }
 
+    // Первый запуск: без администратора в веб-интерфейс не войти — подсказываем прямо в консоли.
+    let roots: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(&db).await?.get("n");
+
     let state_db = db.clone();
     let state = AppState { db, cfg: cfg.clone(), hub: realtime::Hub::default(), is_sqlite };
 
@@ -93,8 +96,6 @@ async fn main() -> anyhow::Result<()> {
     println!("Server listening on http://{addr}");
     println!("Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table");
     println!("         (users list, users create <email> <пароль> --root, stats, stop)");
-    // Первый запуск: без администратора в веб-интерфейс не войти — подсказываем прямо в консоли.
-    let roots: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(&db).await?.get("n");
     if roots == 0 {
         println!("[!] В базе нет ни одного администратора (root). Создайте его прямо здесь:");
         println!("      users create admin@example.com <пароль> --root");
