@@ -12,7 +12,7 @@
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
-  const ui = { invQ: '', invType: '', spellQ: '', onlyPrepared: false, open: new Set() };
+  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', onlyPrepared: false, spellFav: false, open: new Set() };
 
   // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
   function noteBtn(key, title) {
@@ -35,7 +35,29 @@
   const h3n = (text, key) => el('h3', { class: 'h3n' }, el('span', { class: 'grow' }, text), noteBtn(key, text));
 
   // ---- миграция старых данных в модули ----
+  /// Приводит лист к ожидаемым типам: старые записи и импорт могут содержать null вместо чисел, строк и списков.
+  function normalizeSheet() {
+    const num = (v, d) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d;
+    const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    for (const k of ['name', 'race', 'class', 'subclass', 'background', 'alignment', 'notes', 'proficiencies']) if (typeof s[k] !== 'string') s[k] = s[k] === null || s[k] === undefined ? '' : String(s[k]);
+    s.level = Math.min(20, Math.max(1, Math.round(num(s.level, 1)))); s.xp = num(s.xp, 0); s.ac = num(s.ac, 10); s.speed = num(s.speed, 30); s.initiative_bonus = num(s.initiative_bonus, 0);
+    s.proficiency_bonus = num(s.proficiency_bonus, Math.ceil(1 + s.level / 4));
+    if (s.classes !== undefined) { const list = Array.isArray(s.classes) ? s.classes.filter(c => c && typeof c === 'object' && String(c.name || '').trim() && Number(c.level) > 0) : []; if (list.length) s.classes = list; else delete s.classes; }
+    s.abilities = obj(s.abilities); for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) s.abilities[k] = num(s.abilities[k], 10);
+    s.hp = obj(s.hp); s.hp.max = num(s.hp.max, 10); s.hp.current = num(s.hp.current, s.hp.max); s.hp.temp = num(s.hp.temp, 0); if (typeof s.hp.hit_dice !== 'string' || !s.hp.hit_dice) s.hp.hit_dice = `${s.level}d8`;
+    for (const k of ['skills', 'expertise', 'saving_throws', 'conditions', 'attacks', 'inventory', 'features']) if (!Array.isArray(s[k])) s[k] = [];
+    s.death_saves = obj(s.death_saves); s.death_saves.success = num(s.death_saves.success, 0); s.death_saves.failure = num(s.death_saves.failure ?? s.death_saves.fail, 0); delete s.death_saves.fail;
+    s.currency = obj(s.currency); for (const k of ['pp', 'gp', 'ep', 'sp', 'cp']) s.currency[k] = num(s.currency[k], 0);
+    s.traits = obj(s.traits); s.notes_by = obj(s.notes_by);
+    s.spells = obj(s.spells); if (!Array.isArray(s.spells.known)) s.spells.known = []; s.spells.slots = obj(s.spells.slots); if (typeof s.spells.ability !== 'string' || !s.spells.ability) s.spells.ability = s.spells.ability ? String(s.spells.ability) : 'int';
+    for (const sl of Object.values(s.spells.slots)) { sl.max = num(sl.max, 0); sl.used = num(sl.used, 0); }
+    s.inventory = s.inventory.filter(it => it && typeof it === 'object'); s.features = s.features.filter(f => f && typeof f === 'object'); s.spells.known = s.spells.known.filter(x => x && typeof x === 'object');
+    for (const it of s.inventory) { it.qty = it.qty === null || it.qty === undefined ? undefined : num(it.qty, 1); if (it.uid) M.fillDefaults('item', it); if (it.name === null || it.name === '') it.name = 'Предмет'; }
+    for (const f of s.features) if (f.uid) M.fillDefaults('feature', f);
+    for (const x of s.spells.known) if (x.uid) { M.fillDefaults('spell', x); x.level = num(x.level, 0); }
+  }
   function migrate() {
+    normalizeSheet();
     s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.notes_by ||= {}; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
     s.inventory = Equipment.migrate(s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' })));
     s.features=s.features.map(f=>f.uid?f:M.newFeature(f));
@@ -121,10 +143,40 @@
   const docActions=(doc,kind)=>M.actionButtons(doc,ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
   const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
   function handPanel() {
+    return el('div', { class: 'equipment-panel' }, handsSection(), wornSection(), acLine());
+  }
+  // Слоты одежды: доспех, голова, шея, плащ, перчатки, пояс, обувь, два кольца. Каждый предмет подходит только к своему слоту.
+  function wornSection() {
+    const occupied = key => s.inventory.find(i => i.equipped && i.worn_slot === key);
+    return el('section', { class: 'equipment-worn' }, ...Equipment.WORN_SLOTS.map(key => {
+      const current = occupied(key);
+      const choices = s.inventory.filter(it => it.qty === 1 && Equipment.wornSlots(it.wear).includes(key));
+      return el('div', { class: 'hand-slot worn-slot' + (current ? ' filled' : '') }, el('label', {}, Equipment.slots[key]),
+        el('strong', {}, current?.name || 'Пусто'),
+        readonly || (!choices.length && !current) ? null : el('select', { 'aria-label': Equipment.slots[key], onchange: e => {
+          if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
+          if (e.target.value) inventoryOp({ op: 'equip', item_uid: e.target.value, slot: key });
+        } }, el('option', { value: '', selected: !current ? '' : null }, '— Пусто —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name))));
+    }));
+  }
+  // Из чего сложился КД (когда включён автоматический расчёт).
+  function acLine() {
+    if (!s.auto_armor) return el('p', { class: 'muted small ac-line' }, `КД задан вручную: ${s.ac}. Автоматический расчёт включается флажком «КД от доспеха».`);
+    const d = Equipment.armorClassParts(s);
+    return el('div', { class: 'ac-line-wrap' }, el('p', { class: 'muted small ac-line' }, `КД ${d.ac} = ` + d.parts.map(([n, v], i) => i ? `${n} ${v >= 0 ? '+' : ''}${v}` : `${n} ${v}`).join(' · ')),
+      ...d.notes.map(t => el('p', { class: 'small ac-warn' }, '⚠ ' + t)));
+  }
+  async function levelUp() {
+    if (!window.LevelUp) return toast('Мастер повышения уровня не загружен.');
+    await flush();
+    const ok = await LevelUp.open({ sheet: s, campaignId: ch.campaign_id, onApply: () => { dirty = true; } });
+    if (ok) { s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); } else if (dirty) { save(); }
+  }
+  function handsSection() {
     const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
     return el('section', { class: 'equipment-hands' }, ...['main', 'off'].map(key => {
       const current = occupied(key);
-      const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none');
+      const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none' && Equipment.canEquip(it));
       return el('div', { class: 'hand-slot' + (current ? ' filled' : '') }, el('label', {}, Equipment.slots[key]),
         el('strong', {}, current?.name || 'Свободна'), el('span', { class: 'muted small' }, current?.hand_slot === 'both' ? 'Один предмет занимает обе руки' : current ? Equipment.kinds[current.handedness] : 'Оружие, щит или предмет'),
         readonly ? null : el('select', { 'aria-label': Equipment.slots[key], onchange: e => {
@@ -211,7 +263,7 @@
       raceFacts ? el('small', { class: 'race-module-facts' }, raceFacts) : null,
       el('small', { class: 'muted' }, raceModule ? `Зафиксированный снимок · ${raceModule.source || raceModule.snapshot.source || 'справочник'}` : s.race ? 'Старая запись без связи с модулем — перетащите блок расы, чтобы зафиксировать источник.' : 'Раса подключается только блоком, свободный ввод отключён.'));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
-      el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', {}, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
+      el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number'), readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'small lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲ Повысить')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       el('div', { class: 'row' }, raceBlock, el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), alignmentSelect))));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
@@ -272,8 +324,12 @@
     c2.append(handPanel(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
     // Кратко: экипировка и настройка
     const wearing = s.inventory.filter(it => it.equipped);
-    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it) + ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
+    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
       el('div', { class: 'muted small', style: 'margin-top:4px' }, `Настроено: ${s.inventory.filter(i => i.attuned).length}/3 · Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт`)));
+    const favItems = s.inventory.filter(i => i.favorite), favSpells = s.spells.known.filter(x => x.favorite);
+    c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, icon('star', 14), ' Избранное'), favItems.length || favSpells.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' },
+      ...favItems.map(it => el('span', { class: 'chip', style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.equipped ? ' ✓' : ''))),
+      ...favSpells.map(x => el('span', { class: 'chip', style: 'cursor:pointer', title: 'Открыть в заклинаниях', onclick: () => { tab = 'spells'; ui.open.add(x.uid); render(); } }, '✦ ' + x.name))) : el('span', { class: 'muted small' }, 'Отметьте звёздочкой предметы и заклинания — они соберутся здесь.')));
     cols.append(c1, c2);
     return cols;
   }
@@ -285,6 +341,7 @@
     const bar = el('div', { class: 'inv-bar' },
       el('input', { placeholder: 'Поиск по предметам', value: ui.invQ, oninput: e => { ui.invQ = e.target.value; drawList(); } }),
       el('select', { onchange: e => { ui.invType = e.target.value; drawList(); } }, el('option', { value: '' }, 'Все типы'), ...Object.entries(M.ITEM_TYPES).map(([k, v]) => el('option', { value: k, selected: ui.invType === k ? '' : null }, v))),
+      el('button', { class: 'small fav-filter' + (ui.invFav ? ' on' : ''), title: 'Показать только избранное', onclick: e => { ui.invFav = !ui.invFav; e.currentTarget.classList.toggle('on', ui.invFav); drawList(); } }, icon('star', 12), ' Избранное'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const it = await M.editItem(null, { inventory: s.inventory }); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Предмет'),
       el('button', { class: 'small', onclick: () => toggleComp('item') }, 'Справочник'));
     const wallet = el('div', { class: 'wallet' }, ...['pp', 'gp', 'ep', 'sp', 'cp'].map(c => el('label', {}, { pp: 'ПМ', gp: 'ЗМ', ep: 'ЭМ', sp: 'СМ', cp: 'ММ' }[c], el('input', { type: 'number', value: s.currency[c], disabled: dis(), onchange: e => { s.currency[c] = +e.target.value; save(); } }))),
@@ -294,20 +351,22 @@
     function drawList() {
       list.innerHTML = '';
       const q = ui.invQ.toLowerCase();
-      const items = s.inventory.filter(it => (!q || it.name.toLowerCase().includes(q) || (it.desc || '').toLowerCase().includes(q) || (it.tags || []).some(t => t.toLowerCase().includes(q))) && (!ui.invType || it.type === ui.invType));
+      const items = s.inventory.filter(it => (!q || it.name.toLowerCase().includes(q) || (it.desc || '').toLowerCase().includes(q) || (it.tags || []).some(t => t.toLowerCase().includes(q))) && (!ui.invType || it.type === ui.invType) && (!ui.invFav || it.favorite));
       const sections = [['Экипировано', items.filter(i => i.equipped)], ['Рюкзак', items.filter(i => !i.equipped)]];
       for (const [title, arr] of sections) {
         if (!arr.length && title === 'Экипировано') continue;
         list.append(el('h3', { class: 'inv-sec' }, title, el('span', { class: 'muted small' }, ` ${arr.length}`)));
         const grid = el('div', { class: 'cards' });
         if (!arr.length) grid.append(el('div', { class: 'muted small', style: 'padding:12px' }, 'Пусто. Перетащите предмет из справочника, с другого листа или создайте свой.'));
-        arr.forEach(it => grid.append(itemCard(it)));
+        [...arr].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)).forEach(it => grid.append(itemCard(it)));
         list.append(grid);
       }
     }
     drawList();
     return root;
   }
+  // Звёздочка избранного: у предметов и заклинаний одна и та же.
+  const favButton = doc => el('button', { class: 'tiny fav' + (doc.favorite ? ' on' : ''), title: doc.favorite ? 'Убрать из избранного' : 'В избранное', 'aria-pressed': doc.favorite ? 'true' : 'false', onclick: e => { e.stopPropagation(); doc.favorite = !doc.favorite; save(); render(); } }, icon('star', 12));
   function itemCard(it) {
     const c = ctx();
     const open = ui.open.has(it.uid);
@@ -316,7 +375,8 @@
       el('span', { class: 'card-icon big' }, M.itemIcon(it)),
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), noteBtn('item:' + it.uid, it.name), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
       el('div', { class: 'qty', onclick: e => e.stopPropagation() }, readonly ? el('span', {}, '×' + it.qty) : [el('button', { class: 'tiny', onclick: () => { it.qty = Math.max(0, (it.qty ?? 1) - 1); if (!it.qty) { it.equipped = false; it.hand_slot = null; }; save(); render(); } }, '−'), el('span', {}, it.qty ?? 1), el('button', { class: 'tiny', onclick: () => { it.qty = (it.qty ?? 1) + 1; save(); render(); } }, '+')]),
-      readonly ? null : el('button', { disabled: it.qty === 0 ? '' : null, class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.equipped ? 'backpack' : Equipment.choices(it)[0] }); } }, icon('check', 12)));
+      readonly ? null : favButton(it),
+      readonly || !Equipment.canEquip(it) ? null : el('button', { disabled: it.qty === 0 ? '' : null, class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.equipped ? 'backpack' : it.handedness !== 'none' ? Equipment.choices(it)[0] : 'worn' }); } }, icon('check', 12)));
     card.append(head);
     const acts = itemActions(it);
     const resource = Equipment.resourceStatus(it, s.inventory);
@@ -327,13 +387,14 @@
       if (noteLine('item:' + it.uid)) body.append(noteLine('item:' + it.uid));
       if (it.desc) body.append(el('div', { class: 'card-desc' }, M.rich(it.desc, c, { prose:!!it.mechanics, prefix: `${ch.name}: ${it.name}` })));
       if (it.charges) body.append(el('div', { class: 'row small', style: 'align-items:center;gap:6px' }, 'Заряды: ', ...Array.from({ length: it.charges.max }, (_, i) => el('span', { class: 'pip' + (i < it.charges.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { if (readonly) return; it.charges.cur = i < it.charges.cur ? i : i + 1; save(); render(); } })), it.charges.recharge ? el('span', { class: 'muted' }, `(${it.charges.recharge})`) : null));
-      if (!readonly) body.append(el('label', { class: 'item-grip' }, 'Положение / хват', el('select', { onchange: e => inventoryOp({ op: 'equip', item_uid: it.uid, slot: e.target.value }) }, ...['backpack', ...Equipment.choices(it)].map(slot => el('option', { value: slot, selected: (it.equipped ? it.hand_slot || 'worn' : 'backpack') === slot ? '' : null }, Equipment.slots[slot])))));
+      if (!readonly && Equipment.canEquip(it)) body.append(el('label', { class: 'item-grip' }, it.handedness !== 'none' ? 'Положение / хват' : 'Слот', el('select', { onchange: e => inventoryOp({ op: 'equip', item_uid: it.uid, slot: e.target.value }) }, ...['backpack', ...Equipment.choices(it)].map(slot => el('option', { value: slot, selected: (it.equipped ? it.hand_slot || it.worn_slot || 'backpack' : 'backpack') === slot ? '' : null }, Equipment.slots[slot])))));
+      else if (!readonly) body.append(el('div', { class: 'muted small' }, 'Этот предмет нельзя экипировать: он лежит в рюкзаке. Если это носимая вещь, измените «Носится на» в редакторе предмета.'));
       if (it.cost || it.source) body.append(el('div', { class: 'muted small' }, [it.cost, it.source].filter(Boolean).join(' · ')));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' },
         el('button', { class: 'small', onclick: () => sendCard(it, 'item') }, 'В чат'));
       if (!readonly) menu.append(
         el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it, { inventory: s.inventory }); if (r) { Object.assign(it, r); save(); render(); } } }, 'Изменить'),
-        it.attunement ? el('button', { class: 'small', onclick: () => { it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
+        it.attunement ? el('button', { class: 'small', onclick: () => { if (!it.attuned && s.inventory.filter(i => i.attuned).length >= 3) return toast('Настроить можно не более трёх предметов одновременно.'); it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
         it.type === 'consumable' && !it.mechanics ? el('button', { class: 'small', disabled: it.qty === 0 ? '' : null, onclick: () => inventoryOp({ op: 'use', item_uid: it.uid, actions: [] }) }, 'Использовать') : null,
         ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, 'Передать') : null,
         ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, 'На стол') : null,
@@ -359,7 +420,7 @@
   async function acceptItem(p) {
     if (p.from_character_id && p.from_character_id !== id) {
       try { await API.post(`/api/characters/${p.from_character_id}/transfer`, { item_uid: p.item.uid, to_character_id: id }); toast(`${p.item.name} получено`); reload(); } catch (e) { toast('Не удалось передать: ' + e.message); }
-    } else if (!p.from_character_id) { s.inventory.push({ ...p.item, uid: M.uid(), equipped: false, hand_slot: null, attuned: false }); save(); render(); toast(`${p.item.name} добавлено`); }
+    } else if (!p.from_character_id) { s.inventory.push({ ...p.item, uid: M.uid(), equipped: false, hand_slot: null, worn_slot: null, favorite: false, attuned: false }); save(); render(); toast(`${p.item.name} добавлено`); }
   }
 
   // ---------- вкладка Заклинания ----------
@@ -372,6 +433,7 @@
       el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(c.spell), 'атака заклинанием', e, 'attack') }, 'Атака ', el('b', {}, fmtMod(c.spell))),
       el('input', { placeholder: 'Поиск', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
       el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.onlyPrepared ? '' : null, onchange: e => { ui.onlyPrepared = e.target.checked; draw(); } }), ' только подготовленные'),
+      el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.spellFav ? '' : null, onchange: e => { ui.spellFav = e.target.checked; draw(); } }), ' ★ избранные'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const x = await M.editSpell(null,{inventory:s.inventory}); if (x) { sp.known.push(x); save(); render(); } } }, '+ Заклинание'),
       el('button', { class: 'small', onclick: () => toggleComp('spell') }, 'Справочник')));
     const slots = el('div', { class: 'slots' });
@@ -387,13 +449,13 @@
     function draw() {
       list.innerHTML = '';
       const q = ui.spellQ.toLowerCase();
-      const arr = sp.known.filter(x => (!q || x.name.toLowerCase().includes(q) || (x.desc || '').toLowerCase().includes(q)) && (!ui.onlyPrepared || x.prepared || x.level === 0));
+      const arr = sp.known.filter(x => (!q || x.name.toLowerCase().includes(q) || (x.desc || '').toLowerCase().includes(q)) && (!ui.onlyPrepared || x.prepared || x.level === 0) && (!ui.spellFav || x.favorite));
       if (!arr.length) list.append(el('p', { class: 'muted small', style: 'padding:12px' }, 'Нет заклинаний. Перетащите из справочника или создайте своё.'));
       for (let l = 0; l <= 9; l++) {
         const lv = arr.filter(x => (x.level || 0) === l); if (!lv.length) continue;
         list.append(el('h3', { class: 'inv-sec' }, l === 0 ? 'Заговоры' : `${l} круг`, el('span', { class: 'muted small' }, ` ${lv.length}`)));
         const grid = el('div', { class: 'cards' });
-        lv.sort((a, b) => a.name.localeCompare(b.name)).forEach(x => grid.append(spellCard(x)));
+        lv.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || a.name.localeCompare(b.name)).forEach(x => grid.append(spellCard(x)));
         list.append(grid);
       }
     }
@@ -407,6 +469,7 @@
     card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(x.uid); else ui.open.add(x.uid); render(); } },
       el('span', { class: 'card-icon big' }, M.docIcon(sp, 'star', 22)),
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), noteBtn('spell:' + x.uid, x.name), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
+      readonly ? null : favButton(x),
       x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')) : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, icon('chat')),
       readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
     const acts = docActions(x, 'spell');
@@ -438,6 +501,9 @@
   function featsTab() {
     const c = ctx();
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'feat' });
+    if (s.level_log?.length) root.append(el('details', { class: 'card level-log', style: 'margin-bottom:12px' }, el('summary', {}, `История повышений (${s.level_log.length})`),
+      ...s.level_log.slice().reverse().map((l, i) => el('div', { class: 'level-log-row' }, el('b', {}, `${l.class} → ${l.level}`), el('span', { class: 'muted small' }, ` · хиты ${l.hp >= 0 ? '+' : ''}${l.hp}${l.total && s.classes?.length > 1 ? ' · всего ' + l.total + ' ур.' : ''}${l.choices?.length ? ' · ' + l.choices.join(' · ') : ''}`),
+        i === 0 && !readonly && window.LevelUp?.canUndo(s) ? el('button', { class: 'small', style: 'margin-left:8px', title: 'Вернуть уровень, хиты, умения и заклинания к состоянию до этого повышения', onclick: async () => { if (!confirm(`Отменить повышение до ${l.level} уровня класса «${l.class}»? Прочие правки листа сохранятся.`)) return; try { LevelUp.undo(s); s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); toast('Повышение отменено.'); } catch (e) { toast(e.message, 4000); } } }, '↶ Отменить') : null))));
     if (s.modules?.length) root.append(el('details', { class: 'card', style: 'margin-bottom:12px' },
       el('summary', {}, `Модули при создании (${s.modules.length})`),
       el('p', { class: 'muted small' }, 'Снимки выбранных модулей на момент создания. Изменения справочника не перезаписывают ваш лист.'),
@@ -550,7 +616,7 @@
         const it = M.itemFromCompendium(e, ctx());
         // AC is derived from current equipment, never incremented when copying a template.
         // Weapons enter the backpack; taking them in hand is an explicit operation.
-        it.equipped = false; it.hand_slot = null; s.inventory.push(it);
+        it.equipped = false; it.hand_slot = null; it.worn_slot = null; it.favorite = false; s.inventory.push(it);
         if (tab !== 'inv' && tab !== 'main') tab = 'inv';
         break;
       }
@@ -565,7 +631,7 @@
   let compEl;
   function toggleComp(cat) {
     if (compEl) { compEl.remove(); compEl = null; if (!cat) return; }
-    compEl = floatWindow('Справочник (перетаскивайте на лист)', el('div', { style: 'height:100%;padding:8px' }, Compendium.widget({ campaignId: ch.campaign_id, category: cat, edition: s.edition || '2014' })), { x: Math.max(0, window.innerWidth - 640), y: 60, w: 620, h: 520 });
+    compEl = floatWindow('Справочник (перетаскивайте на лист)', el('div', { style: 'height:100%;padding:8px' }, Compendium.widget({ campaignId: ch.campaign_id, category: cat, edition: s.edition || '2014' })), { x: Math.max(0, window.innerWidth - Math.min(780, window.innerWidth - 20) - 10), y: 50, w: Math.min(780, window.innerWidth - 20), h: Math.min(640, window.innerHeight - 70) });
   }
 
   render();

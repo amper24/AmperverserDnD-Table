@@ -39,3 +39,61 @@ test('legacy bolt cases do not become ammunition resources',()=>{
 test('a capitalized shield is a one-handed item, not body armor',()=>{
   const it=E.normalize({name:'Щит',type:'armor',qty:1,ac:'+2'});assert.equal(it.handedness,'one');assert.ok(E.choices(it).includes('off'));
 });
+const plain = x => JSON.parse(JSON.stringify(x));
+const inv = (...items) => E.migrate(items.map((it, i) => ({ uid: 'u' + i, qty: 1, ...it })));
+test('только носимые и держимые предметы можно экипировать; слот выводится из названия и категории (ru и en)', () => {
+  const [rope, potion, wand, chain, shield, ring, ringEn, protectionRing, brooch] = inv(
+    { name: 'Верёвка', type: 'gear' }, { name: 'Зелье лечения', type: 'magic', tags: ['Зелья'] }, { name: 'Волшебная палочка', type: 'magic', tags: ['Волшебные палочки'] },
+    { name: 'Кольчуга', type: 'armor', handedness: 'none', ac: '16' }, { name: 'Щит', type: 'armor', ac: '+2' }, { name: 'Кольцо невидимости', type: 'magic', tags: ['Кольца'] },
+    { name: 'Ring of Warmth', type: 'magic', tags: ['Rings'] }, { name: 'Кольцо защиты', type: 'magic' }, { name: 'Brooch of Shielding', type: 'magic' });
+  assert.equal(E.canEquip(rope), false); assert.deepEqual(plain(E.choices(rope)), []);
+  assert.equal(E.canEquip(potion), false);
+  assert.deepEqual(plain(E.choices(wand)), ['main', 'off']);
+  assert.equal(chain.wear, 'armor'); assert.deepEqual(plain(E.choices(chain)), ['armor']);
+  assert.equal(shield.handedness, 'one'); assert.equal(shield.wear, '');
+  assert.deepEqual(plain(E.choices(ring)), ['ring1', 'ring2']); assert.equal(ringEn.wear, 'ring');
+  assert.equal(protectionRing.handedness, 'none', '«защита» не содержит слова «щит»'); assert.equal(protectionRing.wear, 'ring');
+  assert.equal(brooch.handedness, 'none'); assert.equal(brooch.wear, 'neck');
+  const kinds = ['Cloak of Protection', 'Boots of Elvenkind', 'Amulet of Health', 'Belt of Giant Strength', 'Gauntlets of Ogre Power', 'Шлем ужаса', 'Сапоги скорохода', 'Пояс силы'].map(name => E.normalize({ name, type: 'magic' }).wear);
+  assert.deepEqual(kinds, ['cloak', 'feet', 'neck', 'belt', 'gloves', 'head', 'feet', 'belt']);
+});
+test('предметы старой схемы: «без рук» выводится заново, экипированное неносимое снимается, ничего не удаляется', () => {
+  const list = E.migrate([{ uid: 'a', name: 'Верёвка', type: 'gear', handedness: 'none', equipped: true, qty: 1 }, { uid: 'b', name: 'Жезл', type: 'magic', tags: ['Жезлы'], handedness: 'none', qty: 1 }, { uid: 'c', name: 'Плащ', type: 'magic', handedness: 'none', equipped: true, qty: 1 }]);
+  assert.equal(list.length, 3); assert.equal(list[0].equipped, false); assert.equal(list[1].handedness, 'one');
+  assert.equal(list[2].equipped, true); assert.equal(list[2].worn_slot, 'cloak');
+});
+test('в слоте один предмет: лишний снимается, кольца занимают два слота', () => {
+  const list = E.migrate([{ uid: 'a', name: 'Кольчуга', type: 'armor', handedness: 'none', ac: '16', equipped: true, qty: 1 }, { uid: 'b', name: 'Кожаный доспех', type: 'armor', handedness: 'none', ac: '11 + Лов', equipped: true, qty: 1 },
+    ...['1', '2', '3'].map(n => ({ uid: 'r' + n, name: 'Кольцо ' + n, type: 'magic', tags: ['Кольца'], equipped: true, qty: 1 }))]);
+  assert.deepEqual(list.map(i => i.equipped), [true, false, true, true, false]);
+  assert.deepEqual(list.map(i => i.worn_slot), ['armor', null, 'ring1', 'ring2', null]);
+});
+test('КД зависит от слотов: доспех по формуле, щит в руке, бонусы колец и плащей, лишнее не накапливается', () => {
+  const s = { abilities: { dex: 16 }, inventory: inv({ name: 'Полулаты', type: 'armor', handedness: 'none', ac: '15 + Лов (макс 2)', equipped: true }, { name: 'Щит', type: 'armor', ac: '+2', equipped: true },
+    { name: 'Кольцо защиты', type: 'magic', ac: '+1', equipped: true }, { name: 'Cloak of Protection', type: 'magic', ac: '+1', equipped: true }, { name: 'Сумка', type: 'gear', ac: '+1' }) };
+  assert.equal(E.armorClass(s), 17 + 2 + 1 + 1); assert.equal(E.armorClass(s), 21);
+  const parts = E.armorClassParts(s).parts; assert.deepEqual(plain(parts[0]), ['Полулаты', 17]); assert.equal(parts.length, 4);
+  s.inventory[0].equipped = false; assert.equal(E.armorClass(s), 13 + 2 + 2);
+  s.inventory[2].equipped = false; assert.equal(E.armorClass(s), 13 + 2 + 1);
+  s.inventory[4].equipped = true; E.migrate(s.inventory); assert.equal(s.inventory[4].equipped, false, 'сумка не носится, бонус не даётся');
+  const heavy = { abilities: { dex: 16 }, inventory: inv({ name: 'Кольчуга', type: 'armor', handedness: 'none', ac: '16', equipped: true }, { name: 'Кожаный доспех', type: 'armor', handedness: 'none', ac: '11 + Лов', equipped: true }) };
+  assert.equal(E.armorClass(heavy), 16, 'два доспеха не складываются: второй снят');
+});
+test('избранное сохраняется при нормализации и не подменяется мусором', () => {
+  assert.equal(E.normalize({ name: 'Меч', type: 'weapon', favorite: true }).favorite, true);
+  assert.equal(E.normalize({ name: 'Меч', type: 'weapon', favorite: 'да' }).favorite, false);
+});
+test('справочные предметы: конская упряжь и кошель не носятся, брошь щита — на шею, глаза — на голову', () => {
+  const mk = (name, type, cat) => E.normalize({ name, type, tags: [cat] });
+  assert.equal(E.canEquip(mk('Конский доспех: кольчуга', 'gear', 'Упряжь и повозки')), false);
+  assert.equal(E.canEquip(mk('Поясной кошель', 'gear', 'Снаряжение')), false);
+  const brooch = mk('Брошь щита', 'magic', 'Чудесные предметы'); assert.equal(brooch.wear, 'neck'); assert.equal(brooch.handedness, 'none');
+  assert.equal(mk('Глаза орла', 'magic', 'Чудесные предметы').wear, 'head');
+});
+test('настройка: без неё предмет не влияет на КД; требования доспеха выдают предупреждения', () => {
+  const s = { abilities: { str: 10, dex: 16 }, inventory: inv({ name: 'Кольцо защиты', type: 'magic', ac: '+1', attunement: true, attuned: false, equipped: true },
+    { name: 'Кольчуга', type: 'armor', handedness: 'none', ac: '16', str_req: 13, stealth_disadvantage: true, equipped: true }) };
+  let d = E.armorClassParts(s); assert.equal(d.ac, 16);
+  assert.equal(d.speedPenalty, 10); assert.equal(d.stealth, true); assert.equal(d.notes.length, 3);
+  s.inventory[0].attuned = true; s.abilities.str = 13; d = E.armorClassParts(s); assert.equal(d.ac, 17); assert.equal(d.speedPenalty, 0);
+});

@@ -43,6 +43,21 @@ try:
     assert len(c['sheet']['inventory']) == 4
     assert not c['sheet']['inventory'][0]['equipped'] and not c['sheet']['inventory'][1]['equipped']
     assert c['sheet']['inventory'][2]['hand_slot'] == 'both'
+    # Слоты одежды: экипировать можно только носимое, в слоте один предмет, КД считается по слотам.
+    gear = [dict(uid='chain', name='Кольчуга', type='armor', qty=1, handedness='none', ac='16'),
+            dict(uid='leather', name='Кожаный доспех', type='armor', qty=1, handedness='none', ac='11 + Лов'),
+            dict(uid='rope', name='Верёвка', type='gear', qty=1),
+            dict(uid='ring', name='Кольцо защиты', type='magic', qty=1, ac='+1', tags=['Кольца'])]
+    z = ok('POST', '/api/characters', dict(name='Slots integration', campaign_id=CID, sheet=dict(inventory=gear, abilities=dict(dex=16), auto_armor=True)))['id']
+    try:
+        assert api('POST', f'/api/characters/{z}/inventory', dict(request_id=uuid.uuid4().hex, op='equip', item_uid='rope', slot='worn'))[0] == 400
+        operation(z, 'equip', item_uid='chain', slot='worn')
+        c2 = operation(z, 'equip', item_uid='leather', slot='armor')['character']['sheet']
+        assert not c2['inventory'][0]['equipped'] and c2['inventory'][1]['worn_slot'] == 'armor' and c2['ac'] == 14
+        c2 = operation(z, 'equip', item_uid='ring', slot='worn')['character']['sheet']
+        assert c2['inventory'][3]['worn_slot'] == 'ring1' and c2['ac'] == 15
+    finally:
+        ok('DELETE', f'/api/characters/{z}')
     stale = c['sheet']
     body = dict(request_id=uuid.uuid4().hex, op='use', item_uid='bow', actions=[0, 1], mode='adv')
     a = ok('POST', f'/api/characters/{x}/inventory', body)

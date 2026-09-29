@@ -211,6 +211,9 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE packs ADD COLUMN updated_at VARCHAR(40) NULL",
     "ALTER TABLE packs ADD COLUMN published_at VARCHAR(40) NULL",
     "ALTER TABLE packs ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    // локализация наборов: базовый язык записей (ru|en) и переводы названия/описания {"en": {"name", "description"}}
+    "ALTER TABLE packs ADD COLUMN locale VARCHAR(8) NULL",
+    "ALTER TABLE packs ADD COLUMN i18n TEXT NULL",
 ];
 
 const INDEXES: &[&str] = &[

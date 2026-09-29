@@ -26,14 +26,14 @@ window.Packs = (function () {
       const tabs = el('div', { class: 'tabs', style: 'margin-bottom:8px' }, ...[['mine', 'Мои'], ['subscribed', 'Подписки'], ['public', 'Каталог']].map(([k, v]) => el('button', { class: state.scope === k ? 'active' : '', onclick: () => { state.scope = k; renderSide(); if (k === 'public') renderCatalog(); } }, v)));
       const list = el('div', { class: 'list' });
       const fileInp = el('input', { type: 'file', accept: 'application/json', class: 'hidden' });
-      fileInp.addEventListener('change', async () => { const f = fileInp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); const p = await API.post('/api/packs/import', { name: j.name || f.name.replace(/\.json$/, ''), description: j.description || '', entries: j.entries || [], folders: j.folders || [], tags: j.tags || '', edition: j.edition || '' }); toast(`Импортирован «${p.name}»: ${p.entries} записей`); await renderSide(); openPack(p.id); } catch (e) { toast('Ошибка импорта: ' + e.message, 4000); } fileInp.value = ''; });
-      side.append(tabs, el('div', { class: 'row', style: 'margin-bottom:8px;gap:4px' }, el('button', { class: 'primary small', onclick: createPack }, '+ Набор'), el('button', { class: 'small', onclick: () => fileInp.click() }, 'Импорт'), fileInp), list);
+      fileInp.addEventListener('change', async () => { const f = fileInp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); const p = await API.post('/api/packs/import', { name: j.name || f.name.replace(/\.json$/, ''), description: j.description || '', entries: j.entries || [], folders: j.folders || [], tags: j.tags || '', edition: j.edition || '', locale: j.locale || '', i18n: j.i18n || {} }); toast(`Импортирован «${p.name}»: ${p.entries} записей`); await renderSide(); openPack(p.id); } catch (e) { toast('Ошибка импорта: ' + e.message, 4000); } fileInp.value = ''; });
+      side.append(tabs, el('div', { class: 'row', style: 'margin-bottom:8px;gap:4px' }, el('button', { class: 'primary small', onclick: createPack }, '+ Набор'), el('button', { class: 'small', onclick: () => fileInp.click() }, 'Импорт'), fileInp, el('span', { class: 'grow' }), Lang.select()), list);
       if (state.scope === 'public') { list.append(el('p', { class: 'muted small' }, 'Каталог открыт справа.')); return; }
       const packs = await API.get('/api/packs?scope=' + state.scope + '&sort=updated');
       if (!packs.length) list.append(el('p', { class: 'muted small' }, state.scope === 'mine' ? 'Создайте первый набор — свои предметы, заклинания, NPC, расы, монстры и правила в одном месте.' : 'Подписок пока нет. Откройте ссылку набора от друга или найдите набор в каталоге.'));
       for (const p of packs) {
         list.append(el('div', { class: 'item' + (p.id === state.packId ? ' active' : ''), onclick: () => openPack(p.id) }, el('span', { class: 'lst-ico' }, icon('box', 18)),
-          el('div', { class: 'grow' }, el('div', {}, p.name, p.is_public ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'в каталоге') : null, p.editor && !p.mine ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'соавтор') : null),
+          el('div', { class: 'grow' }, el('div', {}, Lang.packName(p), p.is_public ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'в каталоге') : null, p.editor && !p.mine ? el('span', { class: 'badge', style: 'margin-left:6px' }, 'соавтор') : null),
             el('div', { class: 'muted small' }, `${p.entries} зап. · ${p.mine ? 'мой' : p.owner_name}${p.subscribers ? ' · ' + p.subscribers + ' подп.' : ''}`))));
       }
     }
@@ -81,7 +81,7 @@ window.Packs = (function () {
         el('button', { class: 'small', onclick: async () => download(p.name, await API.get(`/api/packs/${pid}/export`)) }, 'Экспорт JSON'));
       if (canEdit) { const fi = el('input', { type: 'file', accept: 'application/json', class: 'hidden' }); fi.addEventListener('change', async () => { const f = fi.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); const r = await API.post('/api/packs/import', { into: pid, entries: j.entries || [], folders: j.folders || [] }); toast(`Добавлено записей: ${r.added}`); openPack(pid); } catch (e) { toast('Ошибка: ' + e.message, 4000); } }); actions.append(el('button', { class: 'small', onclick: () => fi.click() }, 'Импорт в набор'), fi); }
       if (p.mine) actions.append(el('button', { class: 'small danger', onclick: async () => { if (confirm(`Удалить набор «${p.name}» со всеми записями? Подписчики потеряют доступ.`)) { await API.del('/api/packs/' + pid); state.packId = null; history.replaceState(null, '', '/packs'); renderSide(); renderIntro(); } } }, 'Удалить'));
-      head.append(cover, el('div', { class: 'grow' }, el('h1', { style: 'margin:0' }, p.name), el('div', { class: 'muted small' }, 'Автор: ' + (p.owner_name || '—')), badges, p.description ? el('p', { style: 'margin:6px 0' }, p.description) : null, actions));
+      head.append(cover, el('div', { class: 'grow' }, el('h1', { style: 'margin:0' }, Lang.packName(p)), el('div', { class: 'muted small' }, 'Автор: ' + (p.owner_name || '—')), badges, Lang.packDesc(p) ? el('p', { style: 'margin:6px 0' }, Lang.packDesc(p)) : null, actions));
       main.append(head);
 
       // папки + категории | список | карточка
@@ -117,7 +117,7 @@ window.Packs = (function () {
         let lastCat = null;
         for (const e of items) {
           if (!state.category && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
-          e.pack_name = p.name; e._mine = canEdit;
+          e.pack_name = Lang.packName(p); e._mine = canEdit;
           const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon(CAT_ICON[e.category] || 'box', 16);
           const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.role ? el('span', { class: 'muted small' }, ' · ' + e.data.role) : null), e.data?.folder && !state.folder ? el('span', { class: 'badge', title: 'Папка' }, e.data.folder) : null);
           it.addEventListener('click', () => { lst.querySelectorAll('.item').forEach(x => x.classList.remove('active')); it.classList.add('active'); showEntry(e); });
@@ -130,7 +130,7 @@ window.Packs = (function () {
         det.innerHTML = '';
         det.append(C().renderData(e, { packMine: canEdit, onChanged: refresh }));
         if (canEdit && (p.folders || []).length) {
-          const sel = el('select', { onchange: async () => { e.data.folder = sel.value || undefined; if (!sel.value) delete e.data.folder; await API.patch('/api/compendium/' + e.id, { category: e.category, name: e.name, data: e.data, pack_id: pid }); toast('Перемещено'); refresh(); } }, el('option', { value: '' }, '— без папки'), ...p.folders.map(f => el('option', { value: f, selected: e.data?.folder === f ? '' : null }, f)));
+          const sel = el('select', { onchange: async () => { const raw = await API.rawEntry(e); const rd = { ...(raw.data || {}) }; if (sel.value) rd.folder = sel.value; else delete rd.folder; await API.patch('/api/compendium/' + e.id, { category: raw.category, name: raw.name, data: rd, pack_id: pid }); toast('Перемещено'); refresh(); } }, el('option', { value: '' }, '— без папки'), ...p.folders.map(f => el('option', { value: f, selected: e.data?.folder === f ? '' : null }, f)));
           det.append(el('div', { class: 'row', style: 'margin-top:8px;gap:6px;align-items:center' }, el('span', { class: 'muted small' }, 'Папка:'), sel));
         }
       }
@@ -143,10 +143,20 @@ window.Packs = (function () {
 
     // ---------- настройки набора ----------
     async function settings(p) {
-      const d = { name: p.name, description: p.description || '', tags: p.tags || '', edition: p.edition || '', cover_asset_id: p.cover_asset_id || null };
+      const d = { name: p.name, description: p.description || '', tags: p.tags || '', edition: p.edition || '', cover_asset_id: p.cover_asset_id || null, locale: p.locale || 'ru', i18n: JSON.parse(JSON.stringify(p.i18n || {})) };
       const f = (l, n) => el('div', { class: 'field' }, el('label', {}, l), n);
+      // перевод названия и описания набора на второй язык (необязательно)
+      const other = () => d.locale === 'en' ? 'ru' : 'en';
+      const tr = () => (d.i18n[other()] = d.i18n[other()] || {});
+      const trBox = el('div', {});
+      const drawTr = () => { const l = other(); trBox.replaceChildren(el('p', { class: 'muted small' }, `Перевод набора на ${Lang.LANGS[l]} — необязательно. Показывается, когда выбран этот язык; если пусто, берётся основной текст.`),
+        f(`Название (${l.toUpperCase()})`, el('input', { value: d.i18n[l]?.name || '', oninput: e => { tr().name = e.target.value; } })),
+        f(`Описание (${l.toUpperCase()})`, el('textarea', { style: 'min-height:60px', oninput: e => { tr().description = e.target.value; } }, d.i18n[l]?.description || ''))); };
+      const localeSel = el('select', { onchange: e => { d.locale = e.target.value; drawTr(); } }, ...Object.entries(Lang.LANGS).map(([k, v]) => el('option', { value: k, selected: d.locale === k ? '' : null }, v)));
+      drawTr();
       const form = el('div', {}, f('Название', el('input', { value: d.name, oninput: e => d.name = e.target.value })), f('Описание', el('textarea', { style: 'min-height:80px', oninput: e => d.description = e.target.value }, d.description)),
         el('div', { class: 'row' }, f('Теги (через запятую)', el('input', { value: d.tags, placeholder: 'сеттинг, предметы, NPC', oninput: e => d.tags = e.target.value })), f('Редакция', el('select', { onchange: e => d.edition = e.target.value }, ...[['', 'Любая'], ['2014', '2014'], ['2024', '2024']].map(([k, v]) => el('option', { value: k, selected: d.edition === k ? '' : null }, v))))),
+        f('Язык записей набора', localeSel), trBox,
         M().imagePicker(d, 'cover_asset_id', { kind: 'item', label: 'Обложка набора' }));
       const ok = await modal('Настройки набора', form, [{ label: 'Сохранить', cls: 'primary', fn: () => d.name.trim() || false }], { wide: true });
       if (!ok) return;
@@ -211,8 +221,8 @@ window.Packs = (function () {
         for (const p of visible) {
           const cover = el('div', { class: 'pack-cover small' });
           if (p.cover_asset_id) assetURL(p.cover_asset_id).then(u => cover.append(el('img', { src: u }))).catch(() => cover.append(icon('box', 22))); else cover.append(icon('box', 22));
-          grid.append(el('div', { class: 'card pack-card' }, el('div', { class: 'row', style: 'align-items:flex-start;gap:10px' }, cover, el('div', { class: 'grow' }, el('b', {}, p.name), el('div', { class: 'muted small' }, `${p.owner_name} · ${p.entries} записей · ${p.subscribers} подп.${p.edition ? ' · ' + p.edition : ''}`))),
-            el('p', { class: 'small', style: 'margin:8px 0;max-height:60px;overflow:hidden' }, p.description || ''),
+          grid.append(el('div', { class: 'card pack-card' }, el('div', { class: 'row', style: 'align-items:flex-start;gap:10px' }, cover, el('div', { class: 'grow' }, el('b', {}, Lang.packName(p)), el('div', { class: 'muted small' }, `${p.owner_name} · ${p.entries} записей · ${p.subscribers} подп.${p.edition ? ' · ' + p.edition : ''}`))),
+            el('p', { class: 'small', style: 'margin:8px 0;max-height:60px;overflow:hidden' }, Lang.packDesc(p)),
             (p.tags || '') ? el('div', { style: 'margin-bottom:6px' }, ...p.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => el('span', { class: 'badge', style: 'margin-right:4px' }, t))) : null,
             el('div', { class: 'row', style: 'gap:4px;flex-wrap:wrap' }, el('button', { class: 'small', onclick: () => openPack(p.id) }, 'Открыть'),
               p.mine ? el('span', { class: 'badge' }, 'мой') : p.subscribed ? el('button', { class: 'small', onclick: async () => { await API.del(`/api/packs/${p.id}/subscribe`); load(); renderSide(); } }, 'Отписаться') : el('button', { class: 'small primary', onclick: async () => { await API.post(`/api/packs/${p.id}/subscribe`, {}); toast('Добавлено в подписки'); load(); renderSide(); } }, 'Подписаться'),
@@ -233,8 +243,8 @@ window.Packs = (function () {
     let p;
     try { p = await API.get('/api/packs/join/' + code); } catch (e) { root.append(el('div', { class: 'card', style: 'max-width:520px;margin:40px auto' }, el('h2', {}, 'Ссылка недействительна'), el('p', { class: 'muted' }, e.message), el('a', { href: '/packs', class: 'btn' }, 'К наборам'))); return root; }
     const cats = Object.entries(p.by_category || {}).map(([k, n]) => `${CAT_NAMES[k] || k}: ${n}`).join(', ');
-    const card = el('div', { class: 'card', style: 'max-width:560px;margin:40px auto' }, el('div', { class: 'muted small' }, 'Вас приглашают в набор'), el('h1', { style: 'margin:4px 0' }, p.name), el('div', { class: 'muted small' }, `Автор: ${p.owner_name} · ${p.entries} записей${p.edition ? ' · ' + p.edition : ''}`),
-      p.description ? el('p', {}, p.description) : null, cats ? el('p', { class: 'small' }, cats) : null,
+    const card = el('div', { class: 'card', style: 'max-width:560px;margin:40px auto' }, el('div', { class: 'muted small' }, 'Вас приглашают в набор'), el('h1', { style: 'margin:4px 0' }, Lang.packName(p)), el('div', { class: 'muted small' }, `Автор: ${p.owner_name} · ${p.entries} записей${p.edition ? ' · ' + p.edition : ''}`),
+      Lang.packDesc(p) ? el('p', {}, Lang.packDesc(p)) : null, cats ? el('p', { class: 'small' }, cats) : null,
       el('div', { class: 'row', style: 'gap:8px;margin-top:12px' }, p.mine ? el('a', { href: '/packs#pack=' + p.id, class: 'btn primary' }, 'Это ваш набор — открыть') : el('button', { class: 'primary', onclick: async () => { const r = await API.post('/api/packs/join/' + code, {}); toast(`Набор «${r.name}» добавлен`); location.href = '/packs#pack=' + r.id; } }, p.subscribed ? 'Открыть (вы уже подписаны)' : 'Добавить набор'), el('a', { href: '/packs', class: 'btn' }, 'Отмена')),
       el('p', { class: 'muted small', style: 'margin-top:10px' }, 'После добавления записи набора появятся в вашем справочнике, а мастер сможет подключить его к кампании.'));
     root.append(card);

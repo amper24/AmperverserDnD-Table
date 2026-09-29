@@ -1,24 +1,95 @@
 //! Inventory invariants and item use. Pure transformations; callers commit with revision CAS.
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+use regex::Regex;
 use serde_json::{json, Value};
 use crate::{AppError, error::ApiResult, util};
 
-pub fn handedness(it: &Value) -> String {
-    if let Some(v) = it["handedness"].as_str().filter(|v| ["none", "one", "two", "versatile"].contains(v)) { return v.into(); }
-    let text = format!("{} {} {}", it["name"].as_str().unwrap_or(""), it["desc"].as_str().unwrap_or(""), it["properties"]).to_lowercase();
+// ---- Слоты экипировки ----
+// Предмет либо берётся в руки (handedness: one / two / versatile — слоты main, off, both), либо надевается в один из слотов
+// одежды (wear: armor, head, neck, cloak, gloves, belt, feet, ring — слоты armor, head, neck, cloak, gloves, belt, feet, ring1, ring2).
+// Остальные предметы (снаряжение, расходники, боеприпасы, инструменты…) экипировать нельзя.
+pub const WEAR_KINDS: [&str; 8] = ["armor", "head", "neck", "cloak", "gloves", "belt", "feet", "ring"];
+/// Версия схемы слотов в предмете (`slots_v`): у предметов без неё хват и место ношения выводятся заново.
+const SLOTS_V: i64 = 2;
+
+pub fn worn_slots(kind: &str) -> &'static [&'static str] {
+    match kind { "armor" => &["armor"], "head" => &["head"], "neck" => &["neck"], "cloak" => &["cloak"], "gloves" => &["gloves"], "belt" => &["belt"], "feet" => &["feet"], "ring" => &["ring1", "ring2"], _ => &[] }
+}
+
+static NOT_EQUIPPABLE: OnceLock<Regex> = OnceLock::new();
+static WEAR_RULES: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+static HAND_MAGIC: OnceLock<Regex> = OnceLock::new();
+static SHIELD: OnceLock<Regex> = OnceLock::new();
+
+/// Текст для распознавания: название, теги (там категория справочника) и свойства, в нижнем регистре.
+fn item_text(it: &Value) -> String {
+    format!("{} {} {}", it["name"].as_str().unwrap_or(""), it["tags"], it["properties"]).to_lowercase()
+}
+
+/// Что носят, если хват не задан. Только для магических предметов, снаряжения и ценностей: оружие, доспех-«тип armor»,
+/// расходники, боеприпасы и инструменты сюда не попадают. Русские и английские названия (справочник двуязычный).
+fn infer_wear(it: &Value) -> &'static str {
+    let ty = it["type"].as_str().unwrap_or("");
+    if ty == "armor" { return "armor"; }
+    if !["magic", "gear", "treasure"].contains(&ty) { return ""; }
+    let text = item_text(it);
+    if NOT_EQUIPPABLE.get_or_init(|| Regex::new(r"зель|свиток|свитки|боеприпас|potion|scroll|ammunition|палочк|\bwands?\b|конск|horse|barding|упряж|седл|saddle|кошел|pouch|посох|\bstaff|жезл|\brods?\b|(?:^|[^а-яё])щит|\bshield\b").unwrap()).is_match(&text)
+        && ["брошь", "brooch", "амулет", "amulet", "ожерель", "necklace", "кольц"].iter().all(|w| !text.contains(w)) { return ""; }
+    for (kind, re) in WEAR_RULES.get_or_init(|| [
+        ("ring", r"кольц|\brings?\b"),
+        ("neck", r"амулет|ожерель|медальон|талисман|подвеск|ладанк|брошь|бусы|amulet|necklace|periapt|medallion|pendant|brooch|talisman|scarab|beads"),
+        ("head", r"шлем|шляп|колпак|корон|диадем|обруч|(?:^|[^а-яё])маск|(?:^|[^а-яё])очки|(?:^|[^а-яё])глаза|линзы|капюшон|\bhelm|\bhat\b|crown|circlet|headband|goggles|\bmask|lenses|\beyes of|\bhood|\bcap\b"),
+        ("cloak", r"плащ|накидк|мантия|одеян|(?:^|[^а-яё])роба(?:$|[^а-яё])|cloak|\bcape\b|mantle|\brobe"),
+        ("gloves", r"перчатк|рукавиц|наручи|браслет|gauntlet|glove|bracer|bracelet"),
+        ("belt", r"пояс|\bbelt\b"),
+        ("feet", r"сапог|ботин|башмак|туфл|sandal|\bboots?\b|slippers?"),
+        ("armor", r"доспех|\barmor\b|кольчуг|кирас|(?:^|[^а-яё])латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail"),
+    ].iter().map(|(k, p)| (*k, Regex::new(p).unwrap())).collect()) {
+        if re.is_match(&text) { return *kind; }
+    }
+    ""
+}
+
+/// Хват по умолчанию: оружие и щиты — в руку, волшебные палочки, посохи, жезлы и магическое оружие — тоже.
+fn infer_hands(it: &Value) -> &'static str {
+    let ty = it["type"].as_str().unwrap_or("");
+    let text = item_text(it);
+    let shield = SHIELD.get_or_init(|| Regex::new(r"(?:^|[^а-яё])щит|\bshield\b").unwrap()).is_match(&text)
+        && ["брошь", "brooch", "амулет", "amulet", "кольц"].iter().all(|w| !text.contains(w));
+    let consumable = ["зель", "свиток", "боеприпас", "potion", "scroll", "ammunition"].iter().any(|w| text.contains(w));
+    let magic_hand = ty == "magic" && !consumable
+        && HAND_MAGIC.get_or_init(|| Regex::new(r"оружие|weapon|посох|\bstaff|жезл|\brods?\b|палочк|\bwands?\b").unwrap()).is_match(&text);
+    if !(ty == "weapon" || shield || magic_hand) { return "none"; }
     if text.contains("двуруч") || text.contains("two-handed") { "two" }
     else if text.contains("универсаль") || text.contains("versatile") { "versatile" }
-    else if it["type"] == "weapon" || text.contains("щит") || text.contains("shield") { "one" }
-    else { "none" }.into()
+    else { "one" }
 }
+
+pub fn handedness(it: &Value) -> String {
+    if let Some(v) = it["handedness"].as_str().filter(|v| ["none", "one", "two", "versatile"].contains(v)) { return v.into(); }
+    infer_hands(it).into()
+}
+
+/// Место ношения предмета: пусто — надеть нельзя. Для предметов «в руках» всегда пусто.
+pub fn wear_kind(it: &Value) -> String {
+    if handedness(it) != "none" { return String::new(); }
+    if it["slots_v"].as_i64() == Some(SLOTS_V) {
+        if let Some(w) = it["wear"].as_str() { if w.is_empty() || WEAR_KINDS.contains(&w) { return w.to_string(); } }
+    }
+    infer_wear(it).to_string()
+}
+
+pub fn equippable(it: &Value) -> bool { handedness(it) != "none" || !wear_kind(it).is_empty() }
+
 pub fn slots(slot: &str) -> &[&str] { match slot { "main" => &["main"], "off" => &["off"], "both" => &["main", "off"], _ => &[] } }
-pub fn unequip(it: &mut Value) { it["equipped"] = json!(false); it["hand_slot"] = Value::Null; }
+pub fn unequip(it: &mut Value) { it["equipped"] = json!(false); it["hand_slot"] = Value::Null; it["worn_slot"] = Value::Null; }
 pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
     if !sheet.is_object() { return Err(AppError::bad("Лист должен быть объектом")); }
     if sheet.get("inventory").is_none() { sheet["inventory"] = json!([]); }
     let inv = sheet["inventory"].as_array_mut().ok_or_else(|| AppError::bad("Инвентарь должен быть списком"))?;
     if inv.len() > 2000 { return Err(AppError::bad("Слишком много предметов")); }
-    let mut seen = HashSet::new(); let mut occupied = HashSet::new();
+    let mut seen = HashSet::new(); let mut occupied = HashSet::new(); let mut worn_taken: HashSet<String> = HashSet::new();
     for it in inv {
         if let Some(m) = it.get("mechanics") { crate::mechanics::validate(m)?; }
         if !it.is_object() { return Err(AppError::bad("Неверный предмет")); }
@@ -27,7 +98,11 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
         let qty = if it.get("qty").is_none() { 1 } else { it["qty"].as_i64().ok_or_else(|| AppError::bad("Количество должно быть целым"))? };
         if !(0..=1_000_000).contains(&qty) { return Err(AppError::bad("Количество вне диапазона 0–1000000")); }
         it["qty"] = json!(qty);
+        // предметы старой схемы: «без рук» могло означать просто «не задано» — хват и место ношения выводим заново
+        if it["slots_v"].as_i64() != Some(SLOTS_V) && it["handedness"].as_str() == Some("none") { if let Some(o) = it.as_object_mut() { o.remove("handedness"); } }
         let hands = handedness(it); it["handedness"] = json!(hands);
+        let wear = wear_kind(it); it["wear"] = json!(wear); it["slots_v"] = json!(SLOTS_V);
+        it["favorite"] = json!(it["favorite"] == true);
         if hands == "versatile" {
             if let Some(actions) = it["actions"].as_array_mut() {
                 let variant = actions.iter().any(|a| { let n = a["name"].as_str().unwrap_or("").to_lowercase(); n.contains("двумя руками") || n.contains("two-hand") });
@@ -39,12 +114,27 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
             if !(0..=10000).contains(&max) || cur < 0 || cur > max { return Err(AppError::bad("Неверное число зарядов")); }
         }
         if qty != 1 && it["equipped"] == true { unequip(it); }
-        if hands == "none" || it["equipped"] != true { it["hand_slot"] = Value::Null; continue; }
-        let mut slot = it["hand_slot"].as_str().unwrap_or("").to_string();
-        if slot.is_empty() { slot = if hands == "two" { "both" } else if !occupied.contains("main") { "main" } else { "off" }.into(); }
-        let valid = match hands.as_str() { "two" => slot == "both", "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
-        if !valid || qty != 1 || slots(&slot).iter().any(|s| occupied.contains(*s)) { unequip(it); }
-        else { it["hand_slot"] = json!(slot); occupied.extend(slots(&slot).iter().map(|s| s.to_string())); }
+        if it["equipped"] != true { it["hand_slot"] = Value::Null; it["worn_slot"] = Value::Null; continue; }
+        if hands != "none" {
+            it["worn_slot"] = Value::Null;
+            let mut slot = it["hand_slot"].as_str().unwrap_or("").to_string();
+            if slot.is_empty() { slot = if hands == "two" { "both" } else if !occupied.contains("main") { "main" } else { "off" }.into(); }
+            let valid = match hands.as_str() { "two" => slot == "both", "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
+            if !valid || qty != 1 || slots(&slot).iter().any(|s| occupied.contains(*s)) { unequip(it); }
+            else { it["hand_slot"] = json!(slot); occupied.extend(slots(&slot).iter().map(|s| s.to_string())); }
+        } else if !wear.is_empty() {
+            // одежда: слот из вида предмета; кольца занимают любой из двух слотов, лишние предметы снимаются
+            it["hand_slot"] = Value::Null;
+            let allowed = worn_slots(&wear);
+            let cur = it["worn_slot"].as_str().unwrap_or("").to_string();
+            let slot = if allowed.iter().any(|s| *s == cur) && !worn_taken.contains(cur.as_str()) { cur }
+                else { allowed.iter().copied().find(|s| !worn_taken.contains(*s)).unwrap_or("").to_string() };
+            if qty != 1 || slot.is_empty() { unequip(it); }
+            else { it["worn_slot"] = json!(slot); worn_taken.insert(slot); }
+        } else {
+            // такой предмет экипировать нельзя (расходник, снаряжение, боеприпас…) — остаётся в рюкзаке
+            unequip(it);
+        }
     }
     for path in ["/features", "/spells/known"] {
         if let Some(list)=sheet.pointer_mut(path) {
@@ -62,15 +152,32 @@ pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
     let pos = inv.iter().position(|i| i["uid"] == uid).ok_or_else(|| AppError::not_found("Предмет не найден"))?;
     if slot == "backpack" { unequip(&mut inv[pos]); return normalize(sheet); }
     let hands = handedness(&inv[pos]);
-    let valid = match hands.as_str() { "none" => slot == "worn", "one" => slot == "main" || slot == "off", "two" => slot == "both", _ => !slots(slot).is_empty() };
-    if !valid { return Err(AppError::bad("Этот хват недоступен для предмета")); }
+    let wear = wear_kind(&inv[pos]);
+    let mut target = String::new();
+    if hands != "none" {
+        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", "two" => slot == "both", _ => !slots(slot).is_empty() };
+        if !valid { return Err(AppError::bad("Этот хват недоступен для предмета")); }
+    } else if !wear.is_empty() {
+        let allowed = worn_slots(&wear);
+        if slot == "worn" || slot.is_empty() {
+            // «просто надеть»: первый свободный слот вида предмета, иначе первый (вытеснит прежний)
+            let taken: Vec<String> = inv.iter().enumerate().filter(|(i, it)| *i != pos && it["equipped"] == true).filter_map(|(_, it)| it["worn_slot"].as_str().map(|s| s.to_string())).collect();
+            target = allowed.iter().copied().find(|s| !taken.iter().any(|t| t.as_str() == *s)).or_else(|| allowed.first().copied()).unwrap_or("").to_string();
+        } else if allowed.iter().any(|s| *s == slot) { target = slot.to_string(); }
+        else { return Err(AppError::bad("Предмет не подходит для этого слота")); }
+    } else {
+        return Err(AppError::bad("Этот предмет нельзя экипировать"));
+    }
     if inv[pos]["qty"] != 1 { return Err(AppError::bad("Сначала отделите один предмет от стопки")); }
-    let wearing_armor = inv[pos]["type"] == "armor";
     for (i, it) in inv.iter_mut().enumerate() {
-        if i != pos && (slots(it["hand_slot"].as_str().unwrap_or("")).iter().any(|s| slots(slot).contains(s)) || (wearing_armor && slot == "worn" && hands == "none" && it["type"] == "armor" && handedness(it) == "none")) { unequip(it); }
+        if i == pos { continue; }
+        let hand_clash = hands != "none" && slots(it["hand_slot"].as_str().unwrap_or("")).iter().any(|s| slots(slot).contains(s));
+        let worn_clash = hands == "none" && it["equipped"] == true && it["worn_slot"].as_str() == Some(target.as_str());
+        if hand_clash || worn_clash { unequip(it); }
     }
     inv[pos]["equipped"] = json!(true);
-    inv[pos]["hand_slot"] = if slot == "worn" { Value::Null } else { json!(slot) };
+    inv[pos]["hand_slot"] = if hands != "none" { json!(slot) } else { Value::Null };
+    inv[pos]["worn_slot"] = if hands == "none" { json!(target) } else { Value::Null };
     normalize(sheet)
 }
 pub fn split(sheet: &mut Value, uid: &str, qty: i64) -> ApiResult<String> {
@@ -80,7 +187,7 @@ pub fn split(sheet: &mut Value, uid: &str, qty: i64) -> ApiResult<String> {
     let have = it["qty"].as_i64().unwrap();
     if qty <= 0 || qty >= have { return Err(AppError::bad("Отделите целое количество меньше размера стопки")); }
     it["qty"] = json!(have - qty);
-    let mut copy = it.clone(); let new_uid = util::uid(); copy["uid"] = json!(new_uid); copy["qty"] = json!(qty); unequip(&mut copy); copy["attuned"] = json!(false);
+    let mut copy = it.clone(); let new_uid = util::uid(); copy["uid"] = json!(new_uid); copy["qty"] = json!(qty); unequip(&mut copy); copy["attuned"] = json!(false); copy["favorite"] = json!(false);
     partition_charges(it, &mut copy, qty, have);
     inv.push(copy); Ok(new_uid)
 }
@@ -89,17 +196,37 @@ pub fn split(sheet: &mut Value, uid: &str, qty: i64) -> ApiResult<String> {
 pub fn partition_charges(remaining: &mut Value, part: &mut Value, qty: i64, total: i64) {
     if remaining["charges"].is_object() {for key in ["cur","max"] {let have=remaining["charges"][key].as_i64().unwrap_or(0);let share=have*qty/total;remaining["charges"][key]=json!(have-share);part["charges"][key]=json!(share);}}
 }
-pub fn armor_class(sheet: &Value) -> i64 {
-    let dex = modifier(sheet, "dex"); let mut base = 10 + dex; let mut shield = 0; let mut armored = false;
-    let number = regex::Regex::new(r"[0-9]+").unwrap();
+/// КД из экипировки: основа — надетый доспех (слот armor) по своей формуле, иначе 10 + Лов; щит в руке добавляет свой бонус;
+/// прочие надетые предметы с бонусом «+N» (кольцо или плащ защиты) суммируются. Считается от текущего состояния, а не накапливается.
+pub fn armor_class(sheet: &Value) -> i64 { armor_class_parts(sheet).0 }
+
+/// (итоговый КД, части для показа: (название, вклад)).
+pub fn armor_class_parts(sheet: &Value) -> (i64, Vec<(String, i64)>) {
+    let dex = modifier(sheet, "dex"); let mut base = 10 + dex; let mut base_name = String::from("Без доспеха"); let mut shield = 0; let mut shield_name = String::new(); let mut armored = false;
+    let mut bonuses: Vec<(String, i64)> = Vec::new();
+    let number = Regex::new(r"[0-9]+").unwrap();
     for it in sheet["inventory"].as_array().into_iter().flatten() {
-        if it["type"] != "armor" || it["equipped"] != true || it["qty"].as_i64().unwrap_or(0) == 0 { continue; }
-        let text = it["ac"].as_str().map(str::to_lowercase).unwrap_or_else(|| it["ac"].to_string());
+        if it["equipped"] != true || it["qty"].as_i64().unwrap_or(0) == 0 { continue; }
+        // предмет с настройкой без настройки бонусов не даёт
+        if it["attunement"] == true && it["attuned"] != true { continue; }
+        let text = it["ac"].as_str().map(str::to_lowercase).unwrap_or_else(|| if it["ac"].is_null() { String::new() } else { it["ac"].to_string() });
         let Some(n) = number.find(&text).and_then(|m| m.as_str().parse::<i64>().ok()) else { continue };
-        if handedness(it) != "none" { shield = shield.max(n); }
-        else if !armored { base = n + if text.contains("лов") || text.contains("dex") { if text.contains("макс") || text.contains("max") { dex.min(2) } else { dex } } else { 0 }; armored = true; }
+        let name = it["name"].as_str().unwrap_or("Предмет").to_string();
+        let is_bonus = text.trim_start().starts_with('+');
+        if handedness(it) != "none" {
+            if it["type"] == "armor" && n > shield { shield = n; shield_name = name; }
+        } else if wear_kind(it) == "armor" {
+            if !is_bonus && !armored {
+                base = n + if text.contains("лов") || text.contains("dex") { if text.contains("макс") || text.contains("max") { dex.min(2) } else { dex } } else { 0 };
+                base_name = name; armored = true;
+            }
+        } else if is_bonus { bonuses.push((name, n)); }
     }
-    base + shield
+    let mut parts = vec![(base_name, base)];
+    if shield > 0 { parts.push((shield_name, shield)); }
+    let extra: i64 = bonuses.iter().map(|b| b.1).sum();
+    parts.extend(bonuses);
+    (base + shield + extra, parts)
 }
 fn modifier(sheet: &Value, key: &str) -> i64 { (sheet["abilities"][key].as_i64().unwrap_or(10) - 10).div_euclid(2) }
 pub fn resolve(expr: &str, sheet: &Value) -> ApiResult<String> {
@@ -226,6 +353,82 @@ mod tests {
         equip(&mut s,"shield","off").unwrap(); assert_eq!(s["ac"],15);
         equip(&mut s,"shield","off").unwrap(); assert_eq!(s["ac"],15);
         equip(&mut s,"bow","both").unwrap(); assert_eq!(s["ac"],13);
+    }
+    fn gear() -> Value { json!({ "abilities": { "str": 14, "dex": 16 }, "proficiency_bonus": 2, "auto_armor": true, "inventory": [
+        { "uid": "chain", "name": "Кольчуга", "type": "armor", "qty": 1, "handedness": "none", "ac": "16" },
+        { "uid": "leather", "name": "Кожаный доспех", "type": "armor", "qty": 1, "handedness": "none", "ac": "11 + Лов" },
+        { "uid": "half", "name": "Полулаты", "type": "armor", "qty": 1, "handedness": "none", "ac": "15 + Лов (макс 2)" },
+        { "uid": "shield", "name": "Щит", "type": "armor", "qty": 1, "ac": "+2" },
+        { "uid": "ring1", "name": "Кольцо защиты", "type": "magic", "qty": 1, "ac": "+1", "tags": ["Кольца"] },
+        { "uid": "ring2", "name": "Ring of Warmth", "type": "magic", "qty": 1, "tags": ["Rings"] },
+        { "uid": "ring3", "name": "Кольцо невидимости", "type": "magic", "qty": 1, "tags": ["Кольца"] },
+        { "uid": "cloak", "name": "Cloak of Protection", "type": "magic", "qty": 1, "ac": "+1" },
+        { "uid": "rope", "name": "Верёвка", "type": "gear", "qty": 1 },
+        { "uid": "potion", "name": "Зелье лечения", "type": "magic", "qty": 1, "tags": ["Зелья"] },
+        { "uid": "wand", "name": "Волшебная палочка", "type": "magic", "qty": 1, "tags": ["Волшебные палочки"] }
+    ] }) }
+    #[test] fn only_wearable_or_wieldable_items_can_be_equipped() {
+        let mut s = gear();
+        assert!(equip(&mut s, "rope", "worn").is_err());
+        assert!(equip(&mut s, "potion", "worn").is_err());
+        assert!(equip(&mut s, "chain", "worn").is_ok());
+        assert!(equip(&mut s, "wand", "main").is_ok());
+        assert!(equip(&mut s, "chain", "head").is_err(), "доспех не надевается на голову");
+        assert!(equip(&mut s, "shield", "worn").is_err(), "щит берут в руку, а не надевают");
+        // предмет, который нельзя экипировать, не становится экипированным и через лист
+        let inv = s["inventory"].as_array_mut().unwrap(); inv[8]["equipped"] = json!(true);
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"][8]["equipped"], false);
+    }
+    #[test] fn wear_is_inferred_for_russian_and_english_names_and_old_items_are_migrated() {
+        let mut s = gear(); normalize(&mut s).unwrap();
+        let wear = |i: usize| s["inventory"][i]["wear"].as_str().unwrap().to_string();
+        assert_eq!((wear(0), wear(3), wear(4), wear(5), wear(7), wear(8), wear(9), wear(10)), ("armor".into(), "".into(), "ring".into(), "ring".into(), "cloak".into(), "".into(), "".into(), "".into()));
+        assert_eq!(s["inventory"][3]["handedness"], "one");
+        assert_eq!(s["inventory"][10]["handedness"], "one", "палочку держат в руке; у предмета в старом формате «без рук» выводится заново");
+        // «защита» — не «щит»
+        assert_eq!(s["inventory"][4]["handedness"], "none");
+        let mut t = json!({ "inventory": [{ "name": "Cloak of Protection", "type": "magic" }, { "name": "Boots of Elvenkind", "type": "magic" }, { "name": "Amulet of Health", "type": "magic" }, { "name": "Belt of Giant Strength", "type": "magic" }, { "name": "Gauntlets of Ogre Power", "type": "magic" }, { "name": "Шлем ужаса", "type": "magic" }, { "name": "Brooch of Shielding", "type": "magic" }] });
+        normalize(&mut t).unwrap();
+        let kinds: Vec<String> = t["inventory"].as_array().unwrap().iter().map(|i| i["wear"].as_str().unwrap().to_string()).collect();
+        assert_eq!(kinds, ["cloak", "feet", "neck", "belt", "gloves", "head", "neck"]);
+        assert_eq!(t["inventory"][6]["handedness"], "none");
+    }
+    #[test] fn one_item_per_slot_and_two_rings() {
+        let mut s = gear();
+        equip(&mut s, "chain", "worn").unwrap(); equip(&mut s, "leather", "armor").unwrap();
+        assert_eq!(s["inventory"][0]["equipped"], false); assert_eq!(s["inventory"][1]["worn_slot"], "armor");
+        equip(&mut s, "ring1", "worn").unwrap(); equip(&mut s, "ring2", "worn").unwrap();
+        assert_eq!(s["inventory"][4]["worn_slot"], "ring1"); assert_eq!(s["inventory"][5]["worn_slot"], "ring2");
+        equip(&mut s, "ring3", "ring1").unwrap();
+        assert_eq!(s["inventory"][4]["equipped"], false); assert_eq!(s["inventory"][6]["worn_slot"], "ring1"); assert_eq!(s["inventory"][5]["equipped"], true);
+        assert!(equip(&mut s, "ring3", "neck").is_err());
+        // повреждённое состояние лечится при нормализации: два предмета в одном слоте — остаётся один
+        s["inventory"][0]["equipped"] = json!(true); s["inventory"][0]["worn_slot"] = json!("armor"); normalize(&mut s).unwrap();
+        let worn: Vec<&Value> = s["inventory"].as_array().unwrap().iter().filter(|i| i["worn_slot"] == "armor").collect();
+        assert_eq!(worn.len(), 1);
+    }
+    #[test] fn armor_class_follows_slots() {
+        let mut s = gear(); normalize(&mut s).unwrap();
+        assert_eq!(s["ac"], 13, "без доспеха: 10 + Лов");
+        equip(&mut s, "chain", "worn").unwrap(); assert_eq!(s["ac"], 16, "тяжёлый доспех без Лов");
+        equip(&mut s, "leather", "worn").unwrap(); assert_eq!(s["ac"], 14, "лёгкий: 11 + Лов");
+        equip(&mut s, "half", "worn").unwrap(); assert_eq!(s["ac"], 17, "средний: Лов не больше 2");
+        equip(&mut s, "shield", "off").unwrap(); assert_eq!(s["ac"], 19);
+        equip(&mut s, "ring1", "worn").unwrap(); assert_eq!(s["ac"], 20, "кольцо защиты +1");
+        equip(&mut s, "cloak", "worn").unwrap(); assert_eq!(s["ac"], 21, "плащ защиты +1");
+        equip(&mut s, "ring1", "backpack").unwrap(); assert_eq!(s["ac"], 20);
+        equip(&mut s, "wand", "off").unwrap(); assert_eq!(s["ac"], 18, "волшебная палочка вытеснила щит");
+        let (ac, parts) = armor_class_parts(&s);
+        assert_eq!(ac, 18); assert_eq!(parts[0], ("Полулаты".to_string(), 17)); assert_eq!(parts.len(), 2);
+    }
+    #[test] fn favorites_survive_normalization_and_are_not_copied() {
+        let mut s = gear(); s["inventory"][8]["favorite"] = json!(true); s["inventory"][9]["favorite"] = json!("да");
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"][8]["favorite"], true); assert_eq!(s["inventory"][9]["favorite"], false); assert_eq!(s["inventory"][0]["favorite"], false);
+        s["inventory"][8]["qty"] = json!(3); let uid = split(&mut s, "rope", 1).unwrap();
+        let copy = s["inventory"].as_array().unwrap().iter().find(|i| i["uid"] == uid.as_str()).unwrap().clone();
+        assert_eq!(copy["favorite"], false);
     }
     #[test] fn depleted_self_and_charges_do_not_resurrect() {
         let mut s=json!({"inventory":[{"uid":"p","type":"consumable","qty":1,"consume":{"enabled":true,"target_uid":"self","amount":1,"resource":"quantity","trigger":"use"}}]});

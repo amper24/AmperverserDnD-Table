@@ -21,16 +21,27 @@ window.Modules = (function () {
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
   // ---------- модель ----------
+  // null и undefined в записи не должны затирать значения по умолчанию (иначе в интерфейсе появляется «null»)
+  const defined = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined));
+  function fillDefaults(kind, obj) {
+    const base = ({ item: newItem, spell: newSpell, feature: newFeature })[kind]({});
+    for (const [k, v] of Object.entries(base)) if (k !== 'uid' && (obj[k] === null || obj[k] === undefined) && v !== null && v !== undefined) obj[k] = v;
+    if (!obj.uid) obj.uid = uid();
+    return obj;
+  }
   function newItem(o = {}) {
+    o = defined(o);
     return { uid: uid(), name: 'Предмет', type: 'gear', rarity: 'Обычный', qty: 1, weight: 0, cost: '', desc: '', equipped: false, attuned: false, attunement: false,
       charges: null, actions: [], tags: [], icon: '', asset_id: null, token_asset_id: null, source: '', ...o };
   }
   function newSpell(o = {}) {
+    o = defined(o);
     return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
       concentration: false, ritual: false, desc: '', prepared: false, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
   }
   /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.
   function newFeature(o = {}) {
+    o = defined(o);
     return { uid: uid(), name: 'Умение', text: '', actions: [], uses: null, asset_id: null, source: '', ...o };
   }
   /// Предмет справочника -> модуль инвентаря (с авто-действиями для оружия).
@@ -51,7 +62,7 @@ window.Modules = (function () {
       if (vers) { const m = vers.match(/\((\d+[кd]\d+)\)/); if (m) it.actions.push({ name: 'Урон двумя руками', kind: 'damage', roll: `${m[1].replace('к', 'd')}+${dmgMod}`, grip: 'two' }); }
       it.desc = it.desc || [d.damage && `Урон ${d.damage} ${d.damage_type || ''}`, props.length && `Свойства: ${props.join(', ')}`].filter(Boolean).join('. ');
     }
-    if (type === 'armor') { it.desc = it.desc || `КД ${d.ac}${d.stealth_disadvantage ? ', помеха на Скрытность' : ''}${d.str_req ? `, требуется Сила ${d.str_req}` : ''}`; it.ac = d.ac; }
+    if (type === 'armor') { it.desc = it.desc || `КД ${d.ac}${d.stealth_disadvantage ? ', помеха на Скрытность' : ''}${d.str_req ? `, требуется Сила ${d.str_req}` : ''}`; it.ac = d.ac; if (d.str_req) it.str_req = d.str_req; if (d.stealth_disadvantage) it.stealth_disadvantage = true; }
     if (d.charges) it.charges = typeof d.charges==='object'?JSON.parse(JSON.stringify(d.charges)):{ cur: d.charges, max: d.charges, recharge: d.recharge || '' };
     return Equipment.normalize(it);
   }
@@ -414,5 +425,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

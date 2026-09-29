@@ -9,16 +9,57 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, packs, util, AppError, AppState};
+use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, i18n, packs, util, AppError, AppState};
 
 pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore"];
 
-fn entry_json(r: &sqlx::any::AnyRow) -> Value {
+/// Как отдавать запись. `lang` — язык вида (слой перевода накладывается на данные, `i18n` скрыт);
+/// без `lang` и `raw=1` запись отдаётся как хранится (со всеми слоями перевода) — так работают редактор и старые клиенты.
+#[derive(Clone, Copy)]
+pub struct View { pub lang: Option<&'static str> }
+
+impl View {
+    pub fn from_query(lang: &Option<String>, raw: &Option<String>) -> View {
+        let raw = matches!(raw.as_deref(), Some("1") | Some("true"));
+        View { lang: if raw { None } else { lang.as_deref().and_then(i18n::norm_lang) } }
+    }
+}
+
+/// Базовый язык записи: у записей наборов — язык набора (`packs.locale`), у остальных — русский.
+fn base_locale(r: &sqlx::any::AnyRow) -> String {
+    let l = r.try_get::<Option<String>, _>("pack_locale").ok().flatten().unwrap_or_default();
+    i18n::norm_lang(&l).unwrap_or(i18n::DEFAULT_LANG).to_string()
+}
+
+const SELECT_ENTRY: &str = "SELECT c.*, p.locale AS pack_locale FROM compendium c LEFT JOIN packs p ON p.id = c.pack_id";
+
+fn entry_json(r: &sqlx::any::AnyRow, view: View) -> Value {
+    let base = base_locale(r);
+    let mut data = util::json_value(&util::text(r, "data"));
+    let mut name = r.get::<String, _>("name");
+    let locales = i18n::locales(&data, &base);
+    let mut lang = base.clone();
+    if let Some(want) = view.lang {
+        let (d, eff) = i18n::view(&data, &base, want);
+        data = d;
+        if eff != base {
+            // название берётся из слоя перевода; в данных отдельного поля name у записей нет
+            if let Some(o) = data.as_object_mut() {
+                if let Some(Value::String(n)) = o.remove("name") { if !n.trim().is_empty() { name = n; } }
+            }
+        }
+        lang = eff;
+    }
     json!({
-        "id": r.get::<String, _>("id"), "category": r.get::<String, _>("category"), "slug": r.get::<String, _>("slug"), "name": r.get::<String, _>("name"),
+        "id": r.get::<String, _>("id"), "category": r.get::<String, _>("category"), "slug": r.get::<String, _>("slug"), "name": name,
         "source": r.get::<String, _>("source"), "campaign_id": r.get::<Option<String>, _>("campaign_id"), "pack_id": r.get::<Option<String>, _>("pack_id"),
-        "data": util::json_value(&util::text(r, "data")),
+        "data": data, "base_locale": base, "lang": lang, "locales": locales,
     })
+}
+
+async fn fetch_entry(st: &AppState, id: &str, view: View) -> ApiResult<Value> {
+    let r = sqlx::query(&format!("{SELECT_ENTRY} WHERE c.id = ?")).bind(id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Запись не найдена"))?;
+    Ok(entry_json(&r, view))
 }
 
 pub fn slugify(name: &str) -> String {
@@ -40,7 +81,14 @@ pub struct SearchQuery {
     pub edition: Option<String>,
     /// Папка (своя категория) внутри набора: data.folder.
     pub folder: Option<String>,
+    /// Язык вида: "ru" | "en" (по умолчанию записи отдаются как хранятся, со слоями перевода).
+    pub lang: Option<String>,
+    /// raw=1 — принудительно отдать сохранённые данные без наложения перевода (для редактора).
+    pub raw: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct GetQuery { pub lang: Option<String>, pub raw: Option<String> }
 
 async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<SearchQuery>) -> ApiResult<Json<Value>> {
     // Источники: SRD (без кампании и набора) + homebrew кампании + наборы, подключённые к кампании + свои наборы
@@ -64,7 +112,7 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
             binds.push(user.id.clone()); binds.push(user.id.clone()); binds.push(user.id.clone());
         }
     }
-    let mut sql = format!("SELECT c.* FROM compendium c WHERE ({})", conds.join(" OR "));
+    let mut sql = format!("{SELECT_ENTRY} WHERE ({})", conds.join(" OR "));
     if q.category.is_some() { sql.push_str(" AND c.category = ?"); }
     let pattern = q.q.as_ref().map(|s| format!("%{}%", s.to_lowercase()));
     if pattern.is_some() { sql.push_str(" AND c.name_lc LIKE ?"); }
@@ -81,21 +129,25 @@ async fn search(State(st): State<AppState>, user: AuthUser, Query(q): Query<Sear
     if let Some(f) = &folder_pat { query = query.bind(f); }
     query = query.bind(q.limit.unwrap_or(300).clamp(1, 3000));
     let rows = query.fetch_all(&st.db).await?;
-    Ok(Json(rows.iter().map(entry_json).collect()))
+    let view = View::from_query(&q.lang, &q.raw);
+    let mut out: Vec<Value> = rows.iter().map(|r| entry_json(r, view)).collect();
+    if matches!(view.lang, Some(l) if l != i18n::DEFAULT_LANG) {
+        // порядок по названию на выбранном языке (SQL сортирует по базовому)
+        out.sort_by_key(|e| (e["category"].as_str().unwrap_or("").to_string(), e["name"].as_str().unwrap_or("").to_lowercase()));
+    }
+    Ok(Json(json!(out)))
 }
 
-async fn get_one(State(st): State<AppState>, _user: AuthUser, Path(id): Path<String>) -> ApiResult<Json<Value>> {
-    let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Запись не найдена"))?;
-    Ok(Json(entry_json(&r)))
+async fn get_one(State(st): State<AppState>, _user: AuthUser, Path(id): Path<String>, Query(q): Query<GetQuery>) -> ApiResult<Json<Value>> {
+    Ok(Json(fetch_entry(&st, &id, View::from_query(&q.lang, &q.raw)).await?))
 }
 
 #[derive(Deserialize)]
 pub struct EntryIn { pub category: String, pub name: String, #[serde(default)] pub data: Value, pub campaign_id: Option<String>, pub pack_id: Option<String> }
 
-/// Поисковый ключ: русское + английское название (если задано в data.name_en).
+/// Поисковый ключ: название, английское название (data.name_en) и переводы названия (data.i18n.*.name).
 fn name_lc(body: &EntryIn) -> String {
-    let en = body.data.get("name_en").and_then(|v| v.as_str()).unwrap_or("");
-    util::truncate(&format!("{} {}", body.name, en).trim().to_lowercase(), 128)
+    i18n::search_key(&body.name, &body.data)
 }
 
 /// Класс и раса — не объекты на карте: токена на карте у них нет.
@@ -109,6 +161,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(mut body): Json
     strip_map_token(&mut body);
     if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
     if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
+    i18n::validate(&body.data).map_err(AppError::bad)?;
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));
     }
@@ -122,8 +175,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(mut body): Json
     sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&id).bind(&campaign_id).bind(&body.pack_id).bind(&body.category).bind(slugify(&body.name)).bind(util::truncate(&body.name, 128)).bind(name_lc(&body)).bind(&source).bind(body.data.to_string())
         .execute(&st.db).await?;
-    let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
-    Ok(Json(entry_json(&r)))
+    Ok(Json(fetch_entry(&st, &id, View { lang: None }).await?))
 }
 
 /// Право редактировать: homebrew кампании — мастер; запись набора — владелец набора.
@@ -148,14 +200,14 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<Strin
     strip_map_token(&mut body);
     if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
     if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
+    i18n::validate(&body.data).map_err(AppError::bad)?;
     editable(&st, &id, &user).await?;
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));
     }
     sqlx::query("UPDATE compendium SET name = ?, name_lc = ?, data = ?, category = ?, slug = ? WHERE id = ?")
         .bind(util::truncate(&body.name, 128)).bind(name_lc(&body)).bind(body.data.to_string()).bind(&body.category).bind(slugify(&body.name)).bind(&id).execute(&st.db).await?;
-    let r = sqlx::query("SELECT * FROM compendium WHERE id = ?").bind(&id).fetch_one(&st.db).await?;
-    Ok(Json(entry_json(&r)))
+    Ok(Json(fetch_entry(&st, &id, View { lang: None }).await?))
 }
 
 async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>) -> ApiResult<Json<Value>> {

@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, compendium::CATEGORIES, error::ApiResult, util, AppError, AppState};
+use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, compendium::CATEGORIES, error::ApiResult, i18n, util, AppError, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -45,6 +45,42 @@ fn folders_of(r: &sqlx::any::AnyRow) -> Value {
     if v.is_array() { v } else { json!([]) }
 }
 
+/// Базовый язык записей набора (ru|en); у старых наборов колонка пуста — русский.
+fn locale_of(r: &sqlx::any::AnyRow) -> String {
+    i18n::norm_lang(&opt(r, "locale").unwrap_or_default()).unwrap_or(i18n::DEFAULT_LANG).to_string()
+}
+
+fn i18n_of(r: &sqlx::any::AnyRow) -> Value {
+    let v = util::json_value(&opt(r, "i18n").unwrap_or_default());
+    if v.is_object() { v } else { json!({}) }
+}
+
+/// Язык набора из тела запроса: неизвестное/пустое значение — русский.
+fn clean_locale(s: &str) -> &'static str {
+    i18n::norm_lang(s).unwrap_or(i18n::DEFAULT_LANG)
+}
+
+/// Переводы названия и описания набора: `{"en": {"name": "…", "description": "…"}}` → строка для колонки `packs.i18n`
+/// (пусто — NULL). Перевод на базовый язык набора не нужен и отбрасывается.
+fn clean_pack_i18n(v: &Value, locale: &str) -> ApiResult<Option<String>> {
+    let mut out = serde_json::Map::new();
+    match v {
+        Value::Null => {}
+        Value::Object(m) => {
+            for (lang, t) in m {
+                let Some(l) = i18n::norm_lang(lang) else { return Err(AppError::bad(format!("Язык «{lang}» не поддерживается (доступны: ru, en)"))) };
+                if l == locale { continue; }
+                let name = util::truncate(t.get("name").and_then(|x| x.as_str()).unwrap_or("").trim(), 128);
+                let description = util::truncate(t.get("description").and_then(|x| x.as_str()).unwrap_or("").trim(), 4000);
+                if name.is_empty() && description.is_empty() { continue; }
+                out.insert(l.to_string(), json!({ "name": name, "description": description }));
+            }
+        }
+        _ => return Err(AppError::bad("i18n набора должен быть объектом вида {\"en\": {\"name\": …}}")),
+    }
+    Ok(if out.is_empty() { None } else { Some(Value::Object(out).to_string()) })
+}
+
 fn pack_json(r: &sqlx::any::AnyRow, extra: Value) -> Value {
     let folders = folders_of(r);
     let mut v = json!({
@@ -53,6 +89,7 @@ fn pack_json(r: &sqlx::any::AnyRow, extra: Value) -> Value {
         "share_code": opt(r, "share_code"), "cover_asset_id": opt(r, "cover_asset_id"), "folders": folders,
         "tags": opt(r, "tags").unwrap_or_default(), "edition": opt(r, "edition").unwrap_or_default(),
         "updated_at": opt(r, "updated_at"), "published_at": opt(r, "published_at"), "version": r.try_get::<i64, _>("version").unwrap_or(1),
+        "locale": locale_of(r), "i18n": i18n_of(r),
     });
     if let (Some(dst), Some(src)) = (v.as_object_mut(), extra.as_object()) {
         for (k, val) in src { dst.insert(k.clone(), val.clone()); }
@@ -125,7 +162,7 @@ async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQu
         "public" => { sql.push_str("p.is_public = 1"); }
         _ => { sql.push_str("(p.owner_id = ? OR p.is_public = 1 OR p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?) OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); binds.push(user.id.clone()); binds.push(user.id.clone()); binds.push(user.id.clone()); }
     }
-    if let Some(s) = &q.q { sql.push_str(" AND (LOWER(p.name) LIKE ? OR LOWER(p.description) LIKE ?)"); let pat = format!("%{}%", s.to_lowercase()); binds.push(pat.clone()); binds.push(pat); }
+    if let Some(s) = &q.q { sql.push_str(" AND (LOWER(p.name) LIKE ? OR LOWER(p.description) LIKE ? OR LOWER(p.i18n) LIKE ?)"); let pat = format!("%{}%", s.to_lowercase()); binds.push(pat.clone()); binds.push(pat.clone()); binds.push(pat); }
     if let Some(t) = &q.tag { sql.push_str(" AND LOWER(p.tags) LIKE ?"); binds.push(format!("%{}%", t.to_lowercase())); }
     sql.push_str(match q.sort.as_deref() { Some("popular") => " ORDER BY subscribers DESC, p.created_at DESC", Some("updated") => " ORDER BY p.updated_at DESC, p.created_at DESC", Some("name") => " ORDER BY p.name", _ => " ORDER BY p.created_at DESC" });
     sql.push_str(" LIMIT 500");
@@ -146,14 +183,18 @@ async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQu
 pub struct PackIn {
     pub name: String, #[serde(default)] pub description: String, #[serde(default)] pub is_public: bool,
     pub cover_asset_id: Option<String>, #[serde(default)] pub tags: String, #[serde(default)] pub edition: String,
+    /// Базовый язык записей набора (ru|en) и переводы названия/описания: {"en": {"name": "…", "description": "…"}}.
+    #[serde(default)] pub locale: String, #[serde(default)] pub i18n: Value,
 }
 
 async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<PackIn>) -> ApiResult<Json<Value>> {
     if body.name.trim().is_empty() { return Err(AppError::bad("Укажите название набора")); }
     let id = util::uid();
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, cover_asset_id, tags, edition, folders) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]')")
+    let locale = clean_locale(&body.locale);
+    let tr = clean_pack_i18n(&body.i18n, locale)?;
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, cover_asset_id, tags, edition, folders, locale, i18n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)")
         .bind(&id).bind(&user.id).bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(util::now()).bind(util::now())
-        .bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).execute(&st.db).await?;
+        .bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr).execute(&st.db).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": 0, "mine": true, "subscribers": 0 }))))
 }
 
@@ -174,8 +215,11 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path(pid): Path<Stri
     if body.is_public && body.description.trim().len() < 10 {
         return Err(AppError::bad("Для публикации в каталоге добавьте описание набора (хотя бы пару предложений)"));
     }
-    sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ?, cover_asset_id = ?, tags = ?, edition = ?, updated_at = ? WHERE id = ?")
-        .bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(util::now()).bind(&pid).execute(&st.db).await?;
+    let locale = clean_locale(&body.locale);
+    let tr = clean_pack_i18n(&body.i18n, locale)?;
+    sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ?, cover_asset_id = ?, tags = ?, edition = ?, updated_at = ?, locale = ?, i18n = ? WHERE id = ?")
+        .bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(util::now())
+        .bind(locale).bind(&tr).bind(&pid).execute(&st.db).await?;
     if body.is_public && !was_public {
         sqlx::query("UPDATE packs SET published_at = ? WHERE id = ?").bind(util::now()).bind(&pid).execute(&st.db).await?;
     }
@@ -305,6 +349,7 @@ async fn export(State(st): State<AppState>, user: AuthUser, Path(pid): Path<Stri
         "name": p.get::<String, _>("name"), "description": util::text(&p, "description"),
         "folders": folders_of(&p), "tags": opt(&p, "tags").unwrap_or_default(), "edition": opt(&p, "edition").unwrap_or_default(),
         "version": p.try_get::<i64, _>("version").unwrap_or(1),
+        "locale": locale_of(&p), "i18n": i18n_of(&p),
         "entries": entries_of(&st, &pid).await?,
     })))
 }
@@ -317,8 +362,8 @@ async fn insert_entries(st: &AppState, pid: &str, source: &str, entries: &[Value
         let Some(nm) = e["name"].as_str() else { continue };
         if !CATEGORIES.contains(&cat) { continue; }
         let slug = e["slug"].as_str().map(|s| s.to_string()).unwrap_or_else(|| crate::compendium::slugify(nm));
-        let en = e["data"]["name_en"].as_str().unwrap_or("");
-        let name_lc = util::truncate(&format!("{} {}", nm, en).trim().to_lowercase(), 128);
+        i18n::validate(&e["data"]).map_err(|m| AppError::bad(format!("Запись «{nm}»: {m}")))?;
+        let name_lc = i18n::search_key(nm, &e["data"]);
         sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")
             .bind(util::uid()).bind(pid).bind(cat).bind(util::truncate(&slug, 64)).bind(util::truncate(nm, 128)).bind(name_lc).bind(util::truncate(source, 32)).bind(e["data"].to_string())
             .execute(&mut *tx).await?;
@@ -332,6 +377,8 @@ async fn insert_entries(st: &AppState, pid: &str, source: &str, entries: &[Value
 pub struct ImportIn {
     pub name: Option<String>, #[serde(default)] pub description: String, #[serde(default)] pub entries: Vec<Value>,
     #[serde(default)] pub folders: Vec<String>, #[serde(default)] pub tags: String, #[serde(default)] pub edition: String,
+    /// Язык записей и переводы названия/описания (формат amperverser-pack/2); у файлов старого формата их нет — русский.
+    #[serde(default)] pub locale: String, #[serde(default)] pub i18n: Value,
     /// Импортировать в существующий набор (дополнить), а не создавать новый.
     pub into: Option<String>,
 }
@@ -352,8 +399,10 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
     }
     let id = util::uid();
     let name = util::truncate(body.name.as_deref().unwrap_or("Импортированный набор").trim(), 128);
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&user.id).bind(&name).bind(&body.description).bind(util::now()).bind(util::now()).bind(json!(body.folders).to_string()).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).execute(&st.db).await?;
+    let locale = clean_locale(&body.locale);
+    let tr = clean_pack_i18n(&body.i18n, locale)?;
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&user.id).bind(&name).bind(&body.description).bind(util::now()).bind(util::now()).bind(json!(body.folders).to_string()).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr).execute(&st.db).await?;
     let count = insert_entries(&st, &id, &name, &body.entries).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": count, "mine": true, "subscribers": 0 }))))
 }
@@ -364,8 +413,9 @@ async fn clone_pack(State(st): State<AppState>, user: AuthUser, Path(pid): Path<
     let p = fetch(&st, &pid).await?;
     let id = util::uid();
     let name = util::truncate(&format!("{} (копия)", p.get::<String, _>("name")), 128);
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, cover_asset_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&user.id).bind(&name).bind(util::text(&p, "description")).bind(util::now()).bind(util::now()).bind(folders_of(&p).to_string()).bind(opt(&p, "tags").unwrap_or_default()).bind(opt(&p, "edition").unwrap_or_default()).bind(opt(&p, "cover_asset_id")).execute(&st.db).await?;
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, cover_asset_id, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&user.id).bind(&name).bind(util::text(&p, "description")).bind(util::now()).bind(util::now()).bind(folders_of(&p).to_string()).bind(opt(&p, "tags").unwrap_or_default()).bind(opt(&p, "edition").unwrap_or_default()).bind(opt(&p, "cover_asset_id"))
+        .bind(locale_of(&p)).bind(opt(&p, "i18n")).execute(&st.db).await?;
     let entries = entries_of(&st, &pid).await?;
     let count = insert_entries(&st, &id, &name, &entries).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": count, "mine": true, "subscribers": 0 }))))

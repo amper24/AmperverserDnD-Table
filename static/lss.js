@@ -120,7 +120,7 @@ window.LSS = (() => {
       abilities, proficiency_bonus: num(d.proficiency) || Math.ceil(1 + level / 4), saving_throws, skills, expertise,
       hp, ac: num(val(vit.ac), 10), speed: num(val(vit.speed), 30), initiative_bonus: 0, inspiration: !!d.inspiration,
       attacks, inventory, spells: { slots, known: [], ability: spellAbility }, features, traits, notes: notesParts.join('\n\n'), currency,
-      conditions: [], death_saves: { success: num(vit.deathSuccesses), fail: num(vit.deathFails) },
+      conditions: [], death_saves: { success: num(vit.deathSuccesses), failure: num(vit.deathFails) },
     };
     return { name, sheet, spellNames, warn };
   }
@@ -132,7 +132,7 @@ window.LSS = (() => {
     let missed = 0;
     for (const { name, level } of res.spellNames) {
       let e = null;
-      try { const list = await API.get('/api/compendium?category=spell&q=' + encodeURIComponent(name)); e = list.find(x => x.name.toLowerCase() === name.toLowerCase()) || list.find(x => x.name.toLowerCase().startsWith(name.toLowerCase())) || null; } catch { }
+      try { const list = await API.get('/api/compendium?category=spell&lang=ru&q=' + encodeURIComponent(name)); e = list.find(x => x.name.toLowerCase() === name.toLowerCase()) || list.find(x => x.name.toLowerCase().startsWith(name.toLowerCase())) || null; } catch { }
       if (e) known.push(M_.spellFromCompendium(e)); else { missed++; known.push(M_.newSpell({ name, level, school: '', casting_time: '', range: '', components: '', duration: '', source: 'LSS' })); }
     }
     res.sheet.spells.known = known;
