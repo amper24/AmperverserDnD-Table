@@ -8,6 +8,7 @@ mod compendium;
 mod config;
 mod db;
 mod error;
+mod i18n;
 mod images;
 mod inventory;
 mod mechanics;

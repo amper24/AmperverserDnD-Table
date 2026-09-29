@@ -193,6 +193,7 @@
         tr('et-consent', 'cookie + localStorage, обязательный', 'Ваш выбор по cookie.', '1 год'),
         tr('et-theme', 'localStorage, функциональный', 'Светлая/тёмная тема.', 'бессрочно'),
         tr('et-edition', 'localStorage, функциональный', 'Выбранная редакция правил (2014/2024) для справочника и новых персонажей.', 'бессрочно'),
+        tr('et-lang', 'localStorage, функциональный', 'Выбранный язык справочника и наборов (русский/английский).', 'бессрочно'),
         tr('sheet_tab_*', 'localStorage, функциональный', 'Последняя открытая вкладка листа персонажа.', 'бессрочно'),
         tr('dicetray_min', 'localStorage, функциональный', 'Свёрнута ли панель кубиков на столе.', 'бессрочно'),
         tr('dice-settings', 'localStorage, функциональный', 'Анимация, скорость и цвет кубиков.', 'бессрочно')),
@@ -491,7 +492,7 @@
       chat: { title: 'Чат', name: 'Чат', build: buildChat },
       chars: { title: 'Герои', name: 'Персонажи', build: buildChars },
       assets: { title: 'Ассеты', name: 'Ассеты', build: buildAssets },
-      comp: { title: 'Справ.', name: 'Справочник', build: () => el('div', { style: 'height:100%' }, Compendium.widget({ campaignId: cid, isGM })) },
+      comp: { title: 'Справ.', name: 'Справочник', build: () => el('div', { style: 'height:100%' }, Compendium.widget({ campaignId: cid, isGM, expandable: true })) },
       init: { title: 'Иниц.', name: 'Инициатива', build: buildInitiative },
     };
     if (isGM) { panels.scenes = { title: 'Сцены', name: 'Сцены', build: buildScenes }; panels.settings = { title: icon('settings'), name: 'Настройки', build: buildSettings }; }
@@ -553,7 +554,7 @@
             const p = Modules.getDrag(ev, 'application/x-item'); const sp = Modules.getDrag(ev, 'application/x-spell');
             try {
               if (p && p.from_character_id && p.from_character_id !== c.id) { await API.post(`/api/characters/${p.from_character_id}/transfer`, { item_uid: p.item.uid, to_character_id: c.id }); toast(`${p.item.name} → ${c.name}`); }
-              else if (p && !p.from_character_id) { const full = await API.get('/api/characters/' + c.id); full.sheet.inventory = [...(full.sheet.inventory || []), { ...p.item, uid: Modules.uid(), equipped: false, hand_slot: null, attuned: false }]; await API.patch('/api/characters/' + c.id, { sheet: full.sheet }); toast(`${p.item.name} → ${c.name}`); }
+              else if (p && !p.from_character_id) { const full = await API.get('/api/characters/' + c.id); full.sheet.inventory = [...(full.sheet.inventory || []), { ...p.item, uid: Modules.uid(), equipped: false, hand_slot: null, worn_slot: null, favorite: false, attuned: false }]; await API.patch('/api/characters/' + c.id, { sheet: full.sheet }); toast(`${p.item.name} → ${c.name}`); }
               else if (sp) { const full = await API.get('/api/characters/' + c.id); full.sheet.spells ||= { known: [], slots: {}, ability: 'int' }; if (!full.sheet.spells.known.some(x => x.name === sp.spell.name)) full.sheet.spells.known.push({ ...sp.spell, uid: Modules.uid() }); await API.patch('/api/characters/' + c.id, { sheet: full.sheet }); toast(`${sp.spell.name} → ${c.name}`); }
             } catch (e) { toast('Не удалось: ' + e.message, 4000); }
           });

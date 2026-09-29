@@ -20,7 +20,7 @@ pub fn default_sheet(name: &str) -> Value {
         "attacks": [], "inventory": [], "spells": { "slots": {}, "known": [], "ability": "" },
         "features": [], "traits": { "personality": "", "ideals": "", "bonds": "", "flaws": "" },
         "notes": "", "currency": { "cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0 },
-        "conditions": [], "death_saves": { "success": 0, "fail": 0 }
+        "conditions": [], "death_saves": { "success": 0, "failure": 0 }
     })
 }
 
@@ -83,7 +83,7 @@ async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<Str
     }
     item["uid"] = json!(util::uid());
     crate::inventory::unequip(&mut item);
-    item["attuned"] = json!(false);
+    item["attuned"] = json!(false); item["favorite"] = json!(false);
     src_sheet["inventory"] = json!(new_inv);
     let mut dst_inv = dst_sheet["inventory"].as_array().cloned().unwrap_or_default();
     dst_inv.push(item.clone());
@@ -289,7 +289,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             let inv = sheet["inventory"].as_array_mut().unwrap();
             let pos = inv.iter().position(|i| i["uid"] == body.item_uid).ok_or_else(|| AppError::not_found("Предмет уже отсутствует"))?;
             let mut item = inv.remove(pos); if item["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Пустую стопку нельзя выложить")); }
-            crate::inventory::unequip(&mut item); item["attuned"] = json!(false);
+            crate::inventory::unequip(&mut item); item["attuned"] = json!(false); item["favorite"] = json!(false);
             let loot_id = util::uid(); let data = json!({ "type": "loot", "loot": true, "managed_loot": true, "item": item, "x": body.x, "y": body.y, "w": body.size.clamp(10.0, 1000.0), "h": body.size.clamp(10.0, 1000.0), "name": item["name"], "owner_id": user.id });
             sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, 'prop', 5, ?, ?)")
                 .bind(&loot_id).bind(&body.scene_id).bind(data.to_string()).bind(util::now()).execute(&mut *tx).await?;
@@ -301,7 +301,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             if data["loot"] != true || !data["item"].is_object() { return Err(AppError::bad("Это не предмет на столе")); }
             let deleted = sqlx::query("DELETE FROM scene_items WHERE id = ? AND scene_id = ? AND data = ?").bind(&body.loot_id).bind(&body.scene_id).bind(raw).execute(&mut *tx).await?;
             if deleted.rows_affected() != 1 { return Err(conflict()); }
-            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::inventory::unequip(&mut item); item["attuned"] = json!(false);
+            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::inventory::unequip(&mut item); item["attuned"] = json!(false); item["favorite"] = json!(false);
             sheet["inventory"].as_array_mut().unwrap().push(item); crate::inventory::normalize(&mut sheet)?;
             scene_event = Some(json!({ "type": "item_delete", "scene_id": body.scene_id, "id": body.loot_id }));
         }

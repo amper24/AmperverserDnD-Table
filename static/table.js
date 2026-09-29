@@ -429,7 +429,7 @@ window.Table = (function () {
       await API.post('/api/characters/' + p.from_character_id + '/inventory', { request_id: crypto.randomUUID(), op: 'drop', item_uid: p.item.uid, scene_id: S.scene.id, x: pos.x, y: pos.y, size: g * .7 });
     } else {
       // Explicitly spawning a new template is distinct from moving a character's item.
-      const item = { ...p.item, uid: Modules.uid(), equipped: false, hand_slot: null, attuned: false };
+      const item = { ...p.item, uid: Modules.uid(), equipped: false, hand_slot: null, worn_slot: null, favorite: false, attuned: false };
       upsert({ layer: 'prop', z: 5, data: { type: 'loot', loot: true, item, x: pos.x, y: pos.y, w: g * .7, h: g * .7, name: item.name, owner_id: S.user.id } });
     }
     if (!silent) toast(`${p.item.name} на столе`);
