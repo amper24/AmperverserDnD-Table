@@ -58,7 +58,7 @@
   const saveVal = (k) => abMod(k) + (s.saving_throws.includes(k) ? prof() : 0);
   const passive = () => 10 + skillVal('perception', 'wis');
   const ctx = () => { const c = M.ctxFromSheet(s); window.SHEET_CTX = c; window.SHEET_EDITION = s.edition || '2014'; return c; };
-  function roll(expr, label) { M.roll(expr, `${ch.name}: ${label}`, { ctx: ctx() }); }
+  function roll(expr, label, event, kind = 'check') { M.roll(expr, `${ch.name}: ${label}`, { ctx: ctx(), kind, ...M.modeFromEvent(event) }); }
   const dis = () => readonly ? '' : null;
 
   // ---- отправка в чат / на карту / другому персонажу ----
@@ -109,6 +109,7 @@
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       readonly ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014']) : el('select', { class: 'small', style: 'flex:0;width:auto', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v))),
       tokenPick,
+      DiceEngine.button(),
       embed ? null : Theme.button(),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
     return el('div', {}, bar, head);
@@ -116,17 +117,17 @@
 
   // ---------- вкладка Основное ----------
   function mainTab() {
-    const cols = el('div', { class: 'cols' });
-    const c1 = el('div');
+    const cols = el('div', { class: 'cols sheet-main' });
+    const c1 = el('div', { class: 'sheet-proficiencies' });
     const abil = el('div', { class: 'abil' });
     for (const [k, name] of Object.entries(ABIL)) {
-      abil.append(el('div', { class: 'ab', title: 'Клик — проверка характеристики', onclick: e => { if (e.target.tagName !== 'INPUT') roll('d20' + fmtMod(abMod(k)), 'проверка ' + name); } },
+      abil.append(el('div', { class: 'ab', title: 'Клик — проверка · Alt — преимущество · Ctrl — помеха · Shift — скрытый бросок GM', onclick: e => { if (e.target.tagName !== 'INPUT') roll('d20' + fmtMod(abMod(k)), 'проверка ' + name, e); } },
         el('small', {}, name, ' ', noteBtn('ab:' + k, name)), el('div', { class: 'mod' }, fmtMod(abMod(k))), el('input', { type: 'number', value: s.abilities[k], disabled: dis(), onchange: ev => { s.abilities[k] = +ev.target.value; save(); render(); }, onclick: ev => ev.stopPropagation() })));
     }
     c1.append(abil);
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Спасброски', 'saves'), noteLine('saves'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name); } },
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Спасброски', 'saves'), noteLine('saves'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name, e); } },
       el('span', { class: 'pip' + (s.saving_throws.includes(k) ? ' on' : ''), onclick: () => { if (readonly) return; s.saving_throws = s.saving_throws.includes(k) ? s.saving_throws.filter(x => x !== k) : [...s.saving_throws, k]; save(); render(); } }), el('span', { class: 'val' }, fmtMod(saveVal(k))), name)))));
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Навыки', 'skills'), noteLine('skills'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name); } },
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Навыки', 'skills'), noteLine('skills'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name, e); } },
       el('span', { class: 'pip' + (s.expertise.includes(k) ? ' exp' : s.skills.includes(k) ? ' on' : ''), title: 'клик: нет → владение → компетентность', onclick: () => { if (readonly) return; if (s.expertise.includes(k)) { s.expertise = s.expertise.filter(x => x !== k); s.skills = s.skills.filter(x => x !== k); } else if (s.skills.includes(k)) s.expertise.push(k); else s.skills.push(k); save(); render(); } }),
       el('span', { class: 'val' }, fmtMod(skillVal(k, ab))), name, el('span', { class: 'muted', style: 'font-size:10px' }, ' (' + ABIL[ab].slice(0, 3) + ')'), noteBtn('skill:' + k, name)))),
       el('div', { class: 'muted', style: 'margin-top:6px;font-size:12px' }, 'Пассивное восприятие: ', el('b', {}, passive()), ' · Бонус мастерства: ', el('b', {}, fmtMod(prof())))));
@@ -135,7 +136,7 @@
     const hp = s.hp;
     c2.append(el('div', { class: 'stat3' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.ac = +e.target.value; save(); } })),
-      el('div', { class: 'card', style: 'cursor:pointer', onclick: () => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива') }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
+      el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
       el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
@@ -154,8 +155,8 @@
     if (s.attacks.length) act.append(el('div', { class: 'atk-row muted', style: 'font-size:11px' }, el('span', {}, 'Ручные атаки'), el('span', {}, 'Атака'), el('span', {}, 'Урон'), el('span'), el('span')));
     s.attacks.forEach((a, i) => act.append(el('div', { class: 'atk-row' },
       el('input', { value: a.name, disabled: dis(), onchange: e => { a.name = e.target.value; save(); } }), el('input', { value: a.bonus, disabled: dis(), onchange: e => { a.bonus = e.target.value; save(); } }), el('input', { value: a.damage, disabled: dis(), onchange: e => { a.damage = e.target.value; save(); } }),
-      el('button', { class: 'small', title: 'Бросок атаки', onclick: () => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)') }, icon('target')),
-      el('button', { class: 'small', title: 'Урон', onclick: () => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)') }, icon('zap')),
+      el('button', { class: 'small', title: 'Бросок атаки', onclick: e => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)', e, 'attack') }, icon('target')),
+      el('button', { class: 'small', title: 'Урон', onclick: () => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)', null, 'damage') }, icon('zap')),
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: true, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
@@ -256,7 +257,7 @@
     const spAb = sp.ability || 'int';
     root.append(el('div', { class: 'inv-bar' },
       el('label', { style: 'flex:0;white-space:nowrap' }, 'Хар-ка ', el('select', { style: 'width:auto;padding:4px', disabled: dis(), onchange: e => { sp.ability = e.target.value; save(); render(); } }, ...['int', 'wis', 'cha'].map(k => el('option', { value: k, selected: spAb === k ? '' : null }, ABIL[k])))),
-      el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => roll('d20' + fmtMod(c.spell), 'атака заклинанием') }, 'Атака ', el('b', {}, fmtMod(c.spell))),
+      el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(c.spell), 'атака заклинанием', e, 'attack') }, 'Атака ', el('b', {}, fmtMod(c.spell))),
       el('input', { placeholder: 'Поиск', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
       el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.onlyPrepared ? '' : null, onchange: e => { ui.onlyPrepared = e.target.checked; draw(); } }), ' только подготовленные'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const x = await M.editSpell(null); if (x) { sp.known.push(x); save(); render(); } } }, '+ Заклинание'),
@@ -324,6 +325,12 @@
   function featsTab() {
     const c = ctx();
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'feat' });
+    if (s.modules?.length) root.append(el('details', { class: 'card', style: 'margin-bottom:12px' },
+      el('summary', {}, `Модули при создании (${s.modules.length})`),
+      el('p', { class: 'muted small' }, 'Снимки выбранных модулей на момент создания. Изменения справочника не перезаписывают ваш лист.'),
+      ...s.modules.filter(m => m.snapshot).map(m => el('details', { style: 'margin:10px 0' },
+        el('summary', {}, `${m.snapshot.name} · ${m.source || 'Свой модуль'}`), Compendium.renderData(m.snapshot, { readOnly: true })))));
+
     root.append(el('div', { class: 'inv-bar' }, el('span', { class: 'muted small', style: 'flex:1' }, 'Умения классов, расовые особенности, черты. В тексте работают кнопки бросков: [[1d20+@prof]]{Проверка}.'),
       readonly ? null : el('button', { class: 'primary small', onclick: () => editFeature(null) }, '+ Умение'), el('button', { class: 'small', onclick: () => toggleComp('feat') }, 'Справочник')));
     const grid = el('div', { class: 'cards one' });

@@ -75,7 +75,7 @@ window.Compendium = (function () {
       el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить запись?')) { await API.del('/api/compendium/' + e.id); opts.onChanged && opts.onChanged(); } } }, 'Удалить'));
     btns.append(el('button', { class: 'small', onclick: () => copyTo(e, opts) }, 'Копировать в набор…'));
     if (window.TABLE_CTX?.ws && ['item', 'spell', 'feat', 'condition'].includes(e.category)) btns.append(el('button', { class: 'small', onclick: () => { const doc = e.category === 'item' ? M().itemFromCompendium(e) : e.category === 'spell' ? M().spellFromCompendium(e) : { name: e.name, desc: d.desc, actions: d.actions || [] }; M().sendCard({ ...M().toChatCard(doc, e.category), icon: e.category === 'item' ? (doc.icon || M().itemIconName(doc)) : e.category === 'spell' ? 'star' : 'scroll' }); } }, 'В чат'));
-    wrap.append(btns);
+    if (!opts.readOnly) wrap.append(btns);
     return wrap;
   }
 

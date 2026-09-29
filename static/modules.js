@@ -97,21 +97,14 @@ window.Modules = (function () {
 
   // ---------- броски: единый канал ----------
   /// Преимущество/помеха: первый d20 в выражении → 2d20kh1 / 2d20kl1.
-  function withMode(expr, mode) {
-    if (!mode || mode === 'normal') return expr;
-    return expr.replace(/(^|[^\dк\w])(1?)([dк])20(?!\d)(?!k)/i, (m, pre, n, d) => `${pre}2${d}20k${mode === 'adv' ? 'h' : 'l'}1`);
-  }
+  const withMode = (expr, mode) => DiceEngine.withMode(expr, mode);
   /// Режим броска по клавишам-модификаторам: Alt — преимущество, Ctrl — помеха, Shift — только мастеру.
-  function modeFromEvent(e) { return { mode: e?.altKey ? 'adv' : e?.ctrlKey || e?.metaKey ? 'dis' : 'normal', gm_only: !!e?.shiftKey }; }
+  function modeFromEvent(e) { return { mode: e?.altKey && (e?.ctrlKey || e?.metaKey) ? 'normal' : e?.altKey ? 'adv' : e?.ctrlKey || e?.metaKey ? 'dis' : 'normal', gm_only: !!e?.shiftKey }; }
   function roll(expr, label, opts = {}) {
     const ctx = opts.ctx || window.SHEET_CTX || {};
     const resolved = withMode(resolve(expr, ctx), opts.mode);
-    const msg = { type: 'roll', expr: resolved, label: label || expr, gm_only: !!opts.gm_only };
-    if (window.TABLE_CTX?.roll) return window.TABLE_CTX.roll(resolved, msg.label, msg.gm_only);
-    if (window.parent !== window) return window.parent.postMessage(msg, '*');
-    if (window.opener && !window.opener.closed) return window.opener.postMessage(msg, '*');
-    const r = rollDice(resolved);
-    toast(`${msg.label}: ${r.total}  (${r.parts.map(p => p.rolls ? '[' + p.rolls.join(',') + ']' : p.term).join(' ')})`, 4000);
+    const msg = { type: 'roll', expr: resolved, label: label || expr, kind: opts.kind || 'other', gm_only: !!opts.gm_only };
+    return DiceEngine.submit(msg);
   }
   /// Связка бросков (атака + урон + …) одним сообщением. Сервер удвоит кости урона при крите.
   function rollMulti(actions, label, opts = {}) {
@@ -120,25 +113,10 @@ window.Modules = (function () {
       expr: D20_KINDS.includes(a.kind || 'other') ? withMode(resolve(a.roll, ctx), opts.mode) : resolve(a.roll, ctx) }));
     if (!rolls.length) return;
     const msg = { type: 'multi', label: label || '', rolls, gm_only: !!opts.gm_only };
-    if (window.TABLE_CTX?.ws) return window.TABLE_CTX.ws.send(msg);
-    if (window.parent !== window) return window.parent.postMessage(msg, '*');
-    if (window.opener && !window.opener.closed) return window.opener.postMessage(msg, '*');
-    const lines = rolls.map(r => { const x = rollDice(r.expr); return `${r.name}: ${x.total}`; });
-    toast(`${msg.label}\n${lines.join('\n')}`, 5000);
+    return DiceEngine.submit(msg);
   }
   /// Рендер связки бросков в чате.
-  function renderMulti(p) {
-    const box = el('div', { class: 'multi' });
-    if (p.label) box.append(el('div', { class: 'multi-label' }, p.label));
-    for (const r of p.rolls || []) {
-      const cls = 'multi-row ' + (r.kind || 'other') + (r.crit ? ' crit' : '') + (r.fumble ? ' fumble' : '');
-      box.append(el('div', { class: cls, title: r.parts.map(x => x.rolls ? `${x.term}: [${x.rolls.map(v => x.kept && !x.kept.includes(v) ? `~${v}~` : v).join(', ')}]` : x.term).join(' ') },
-        el('span', { class: 'total' }, r.total), el('span', { class: 'grow' }, icon(ACTION_ICONS[r.kind] || 'dice', 14), ' ', r.name, r.dtype ? el('span', { class: 'muted' }, ' ' + r.dtype) : null, el('span', { class: 'muted small' }, ' ' + r.expr)),
-        r.crit ? el('span', { class: 'badge crit' }, 'КРИТ') : r.fumble ? el('span', { class: 'badge fumble' }, '1') : r.doubled ? el('span', { class: 'badge crit' }, '×2 кости') : null));
-    }
-    if (p.gm_only) box.append(el('div', { class: 'detail' }, 'только мастер'));
-    return box;
-  }
+  function renderMulti(p) { return DiceEngine.renderResult(p); }
   function sendCard(card) {
     const msg = { type: 'card', card };
     if (window.TABLE_CTX?.ws) return window.TABLE_CTX.ws.send(msg);
@@ -178,7 +156,7 @@ window.Modules = (function () {
   function textNode(t) { const f = document.createDocumentFragment(); const lines = t.split('\n'); lines.forEach((l, i) => { f.append(document.createTextNode(l)); if (i < lines.length - 1) f.append(el('br')); }); return f; }
   function rollBtn(expr, label, ctx, opts = {}) {
     const shown = ctx ? resolve(expr, ctx) : expr;
-    const b = el('button', { class: 'inline-roll' + (opts.auto ? ' auto' : ''), title: `Бросить ${shown}`, onclick: (e) => { e.stopPropagation(); e.preventDefault(); roll(expr, (opts.prefix ? opts.prefix + ': ' : '') + label, { ctx, gm_only: e.shiftKey }); } }, icon('dice', 12), ' ', label === expr ? shown : label);
+    const b = el('button', { class: 'inline-roll' + (opts.auto ? ' auto' : ''), title: `Бросить ${shown}`, onclick: (e) => { e.stopPropagation(); e.preventDefault(); roll(expr, (opts.prefix ? opts.prefix + ': ' : '') + label, { ctx, ...modeFromEvent(e) }); } }, icon('dice', 12), ' ', label === expr ? shown : label);
     return b;
   }
 
@@ -199,7 +177,7 @@ window.Modules = (function () {
     for (const a of doc.actions || []) {
       if (!a.roll) continue;
       const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
-      row.append(el('button', { class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, ...modeFromEvent(e) }); } },
+      row.append(el('button', { class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...modeFromEvent(e), mode: ['damage', 'heal'].includes(a.kind) ? 'normal' : modeFromEvent(e).mode }); } },
         icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
     const rollable = (doc.actions || []).filter(a => a.roll);

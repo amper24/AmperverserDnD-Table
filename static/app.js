@@ -194,7 +194,8 @@
         tr('et-theme', 'localStorage, функциональный', 'Светлая/тёмная тема.', 'бессрочно'),
         tr('et-edition', 'localStorage, функциональный', 'Выбранная редакция правил (2014/2024) для справочника и новых персонажей.', 'бессрочно'),
         tr('sheet_tab_*', 'localStorage, функциональный', 'Последняя открытая вкладка листа персонажа.', 'бессрочно'),
-        tr('dicetray_min', 'localStorage, функциональный', 'Свёрнута ли панель кубиков на столе.', 'бессрочно')),
+        tr('dicetray_min', 'localStorage, функциональный', 'Свёрнута ли панель кубиков на столе.', 'бессрочно'),
+        tr('dice-settings', 'localStorage, функциональный', 'Анимация, скорость и цвет кубиков.', 'бессрочно')),
       el('p', { class: 'muted small' }, 'Аналитических, рекламных и сторонних cookie нет. Функциональные ключи сохраняются только после вашего согласия; без него они живут до закрытия страницы.'),
       el('div', { class: 'row', style: 'margin:10px 0 20px' }, el('button', { class: 'small', onclick: () => Consent.settings() }, 'Настройки cookie')),
       el('h2', {}, 'Ваши права'),
@@ -377,7 +378,7 @@
     let camp;
     try { camp = await API.get('/api/campaigns/' + cid); } catch (e) { app.innerHTML = ''; app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Нет доступа'), el('p', {}, e.message), el('a', { href: '/' }, 'В лобби')))); return; }
     const isGM = camp.role === 'gm';
-    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => ws.send({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
+    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => DiceEngine.submit({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
     document.title = camp.name + ' — ' + APP_NAME;
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
@@ -407,7 +408,7 @@
       let mode = 'norm';
       const modeBtns = el('div', { class: 'seg' }, ...[['norm', 'Обычно'], ['adv', 'Преим.'], ['dis', 'Помеха']].map(([k, t]) => el('button', { class: 'small' + (k === 'norm' ? ' active' : ''), onclick: e => { mode = k; modeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.currentTarget)); } }, t)));
       const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
-      const rollExpr = (expr, label) => { ws.send({ type: 'roll', expr, label, gm_only: !!hidden?.checked }); };
+      const rollExpr = (expr, label) => DiceEngine.submit({ type: 'roll', expr, label, gm_only: !!hidden?.checked });
       const die = (d) => {
         let expr = 'd' + d, label = 'к' + d;
         if (d === 20 && mode === 'adv') { expr = '2d20kh1'; label = 'к20 с преимуществом'; } else if (d === 20 && mode === 'dis') { expr = '2d20kl1'; label = 'к20 с помехой'; }
@@ -418,7 +419,7 @@
       const go = el('button', { class: 'small', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) rollExpr(exprInp.value.trim(), exprInp.value.trim()); } }, 'Бросить');
       const collapse = el('button', { class: 'small tray-toggle', title: 'Кубики: свернуть/развернуть', onclick: () => { tray.classList.toggle('min'); LS.setItem('dicetray_min', tray.classList.contains('min') ? '1' : ''); } }, icon('dice'));
       if (LS.getItem('dicetray_min')) tray.classList.add('min');
-      tray.append(collapse, el('div', { class: 'tray-body' }, dice, modeBtns, modInp, exprInp, go, hidden ? el('label', { class: 'muted small', style: 'white-space:nowrap' }, hidden, ' скрытый') : null));
+      tray.append(collapse, el('div', { class: 'tray-body' }, dice, modeBtns, modInp, exprInp, go, DiceEngine.button(), hidden ? el('label', { class: 'muted small', style: 'white-space:nowrap' }, hidden, ' скрытый') : null));
       return tray;
     }
     canvasWrap.append(buildDiceTray());
@@ -431,7 +432,7 @@
       const add = (ico, label, fn) => menu.append(el('div', { class: 'ctxitem', onclick: () => { menu.remove(); fn().catch(e => toast('Ошибка: ' + e.message, 4000)); } }, icon(ico), ' ', label));
       const sep = () => menu.append(el('div', { class: 'ctxsep' }));
       add('user', 'Персонаж (лист + токен)', async () => {
-        const r = await newCharacterDialog(); if (!r) return;
+        const r = await newCharacterDialog({ campaignId: cid }); if (!r) return;
         const c = await API.post('/api/characters', { ...r, campaign_id: cid });
         await Table.placeTokenAtCenter({ name: c.name, hp: c.sheet?.hp?.max ?? 10, character_id: c.id, asset_id: c.portrait_asset_id, owner_id: me.id });
         panels.chars.refresh?.(); openSheet(c.id);
@@ -479,7 +480,7 @@
     }
 
     // ---- WebSocket ----
-    const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) this.sock.send(JSON.stringify(m)); } };
+    const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) { this.sock.send(JSON.stringify(m)); return true; } return false; } };
     function connect() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const s = new WebSocket(`${proto}://${location.host}/ws/${cid}` + (LS.getItem('dnd_token') ? `?token=${LS.getItem('dnd_token')}` : ''));
@@ -520,19 +521,19 @@
     let curPanel = 'chat';
     for (const [k, p] of Object.entries(panels)) tabs.append(el('button', { 'data-k': k, title: p.name, onclick: () => showPanel(k) }, p.title));
     function showPanel(k) { curPanel = k; tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.k === k)); pane.innerHTML = ''; if (!paneEls[k]) paneEls[k] = panels[k].build(); pane.append(paneEls[k]); }
+    let chatLog, initList, initState = { order: [], turn: 0, round: 1 };
     showPanel('chat');
     if (!panels.scenes) panels.scenes = {};
 
     // ---- чат ----
-    let chatLog, initList, initState = { order: [], turn: 0, round: 1 };
     function buildChat() {
       const w = el('div', { id: 'chat' });
       chatLog = el('div', { id: 'chatLog' });
       const inp = el('input', { placeholder: 'Сообщение или /r 2d6+3' });
-      const send = () => { const t = inp.value.trim(); if (!t) return; ws.send({ type: 'chat', text: t }); inp.value = ''; };
+      const send = () => { const t = inp.value.trim(); if (!t) return; const command = t.match(/^\/(?:r|roll)\s+(.+)$/i); if (command) { if (!DiceEngine.submit({ type: 'roll', expr: command[1] })) return; } else ws.send({ type: 'chat', text: t }); inp.value = ''; };
       inp.addEventListener('keydown', e => e.key === 'Enter' && send());
-      const dice = el('div', { class: 'dice' }, ...['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', '2d20kh1', '2d20kl1'].map(d => el('button', { onclick: () => ws.send({ type: 'roll', expr: d, label: d.includes('kh') ? 'преимущество' : d.includes('kl') ? 'помеха' : null }) }, d)));
-      if (isGM) dice.append(el('button', { title: 'Скрытый бросок d20 (видит только мастер)', onclick: () => ws.send({ type: 'roll', expr: 'd20', label: 'скрытый', gm_only: true }) }, 'скрытый d20'));
+      const dice = el('div', { class: 'dice' }, ...['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', '2d20kh1', '2d20kl1'].map(d => el('button', { onclick: () => DiceEngine.submit({ type: 'roll', expr: d, label: d.includes('kh') ? 'преимущество' : d.includes('kl') ? 'помеха' : null }) }, d)));
+      if (isGM) dice.append(el('button', { title: 'Скрытый бросок d20 (видит только мастер)', onclick: () => DiceEngine.submit({ type: 'roll', expr: 'd20', label: 'скрытый', gm_only: true }) }, 'скрытый d20'));
       w.append(chatLog, dice, el('div', { class: 'row' }, inp, el('button', { style: 'flex:0', onclick: send }, icon('send'))));
       API.get(`/api/campaigns/${cid}/chat`).then(hist => { hist.forEach(addMsg); });
       return w;
@@ -543,8 +544,7 @@
       const who = el('div', { class: 'who' }, m.name, ' · ', new Date(m.at).toLocaleTimeString().slice(0, 5));
       if (m.kind === 'roll') {
         const p = m.payload;
-        d.append(who, el('div', { class: 'row' }, el('span', { class: 'total' }, p.total), el('span', {}, p.label ? p.label + ' ' : '', el('span', { class: 'muted' }, p.expr))),
-          el('div', { class: 'detail' }, p.parts.map(x => x.rolls ? `${x.term}: [${x.rolls.map(r => x.kept && !x.kept.includes(r) ? `~${r}~` : r).join(', ')}]` : x.term).join(' ')), p.gm_only ? el('div', { class: 'detail' }, 'только мастер') : null);
+        d.append(who, DiceEngine.renderResult(p));
       } else if (m.kind === 'card') { d.append(who, Modules.renderChatCard(m.payload, {})); }
       else if (m.kind === 'multi') { d.append(who, Modules.renderMulti(m.payload)); }
       else if (m.kind === 'system') { d.append(el('div', { class: 'muted small' }, (m.payload.text || ''))); }
@@ -588,7 +588,7 @@
           for (const c of free) list.append(el('div', { class: 'item' }, el('span', { class: 'grow' }, c.name), el('button', { class: 'small', onclick: async () => { await API.patch('/api/characters/' + c.id, { campaign_id: cid }); refresh(); } }, '+ в кампанию')));
         }
       };
-      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const r = await newCharacterDialog(); if (r) { const c = await API.post('/api/characters', { ...r, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
+      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const r = await newCharacterDialog({ campaignId: cid }); if (r) { const c = await API.post('/api/characters', { ...r, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
         el('button', { style: 'width:100%;margin-bottom:8px', onclick: () => LSS.importDialog({ campaignId: cid, onDone: c => { refresh(); openSheet(c.id); } }) }, icon('upload'), ' Импорт из Long Story Short'),
         el('p', { class: 'muted', style: 'font-size:12px' }, 'Перетащите персонажа на стол — появится токен. Перетащите предмет с листа на персонажа — он будет передан.'), list);
       refresh(); panels.chars.refresh = refresh;
@@ -651,7 +651,7 @@
       };
       const sync = () => { render(); if (isGM) ws.send({ type: 'initiative', state: initState }); };
       if (isGM) w.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-        el('button', { class: 'small', onclick: () => { const sc = Table.getScene(); initState.order = sc.items.filter(i => i.layer === 'character' && !i.data.hidden).map(i => ({ id: i.id, name: i.data.name || '?', init: rollDice('d20').total + (i.data.monster ? mod(i.data.monster.abilities?.dex || 10) : 0), hp: i.data.hp })).sort((a, b) => b.init - a.init); initState.turn = 0; initState.round = 1; sync(); } }, 'Собрать со стола'),
+        el('button', { class: 'small', onclick: () => { const sc = Table.getScene(), rolls = []; initState.order = sc.items.filter(i => i.layer === 'character' && !i.data.hidden).map(i => { const r = DiceEngine.evaluate('d20' + fmtMod(i.data.monster ? mod(i.data.monster.abilities?.dex || 10) : 0)); rolls.push({ ...r, name: i.data.name || '?' }); return { id: i.id, name: i.data.name || '?', init: r.total, hp: i.data.hp }; }).sort((a, b) => b.init - a.init); if (rolls.length) DiceEngine.present({ label: 'Инициатива со стола', rolls }, { local: true }); initState.turn = 0; initState.round = 1; sync(); } }, 'Собрать со стола'),
         el('button', { class: 'small', onclick: async () => { const n = await prompt2('Имя'); if (!n) return; const v = +await prompt2('Инициатива', '', '10'); initState.order.push({ name: n, init: v }); initState.order.sort((a, b) => b.init - a.init); sync(); } }, '+ Вручную')));
       w.append(initList); render();
       panels.init.render = render;
@@ -718,7 +718,8 @@
     // ---- обработка WS ----
     function handleWs(m) {
       switch (m.type) {
-        case 'chat': addMsg(m); if (curPanel !== 'chat') tabs.querySelector('[data-k=chat]').style.color = 'var(--accent)'; break;
+        case 'roll_error': DiceEngine.receive(m); break;
+        case 'chat': DiceEngine.receive(m); addMsg(m); if (curPanel !== 'chat') tabs.querySelector('[data-k=chat]').style.color = 'var(--accent)'; break;
         case 'presence': presence.innerHTML = ''; m.users.forEach(u => presence.append(el('span', { class: u.role, title: u.name }, u.name.slice(0, 2).toUpperCase()))); break;
         case 'active_scene': camp.active_scene_id = m.scene_id; refreshSceneSel(); if (!isGM) loadScene(m.scene_id); break;
         case 'initiative': initState = m.state; panels.init.render?.(); if (curPanel !== 'init') tabs.querySelector('[data-k=init]').style.color = 'var(--accent)'; break;
@@ -730,11 +731,12 @@
     tabs.addEventListener('click', e => { if (e.target.dataset.k) e.target.style.color = ''; });
     // сообщения из iframe листа персонажа (броски в чат, открыть в отдельном окне)
     window.addEventListener('message', e => {
+      if (e.origin !== location.origin) return;
       const d = e.data; if (!d?.type) return;
-      if (d.type === 'roll') ws.send({ type: 'roll', expr: d.expr, label: d.label, gm_only: !!d.gm_only });
+      if (d.type === 'roll') DiceEngine.submit({ type: 'roll', expr: d.expr, label: d.label, gm_only: !!d.gm_only }, e.source);
       if (d.type === 'chat') ws.send({ type: 'chat', text: d.text });
       if (d.type === 'card') ws.send({ type: 'card', card: d.card });
-      if (d.type === 'multi') ws.send({ type: 'multi', label: d.label, rolls: d.rolls, gm_only: !!d.gm_only });
+      if (d.type === 'multi') DiceEngine.submit({ type: 'multi', label: d.label, rolls: d.rolls, gm_only: !!d.gm_only }, e.source);
       if (d.type === 'loot_drop') Table.dropLootAtCenter({ item: d.item }).then(() => toast(`${d.item.name} выложен на стол`)).catch(err => toast('Ошибка: ' + err.message));
     });
 

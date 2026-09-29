@@ -11,7 +11,7 @@ window.LS = (() => {
     setItem: (k, v) => { if (allowed(k)) real.setItem(k, v); else memStore.setItem(k, v); },
     removeItem: k => { real.removeItem(k); memStore.removeItem(k); },
     persistent,
-    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min', 'et-edition']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
+    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min', 'et-edition', 'dice-settings']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
   };
 })();
 
@@ -52,7 +52,7 @@ window.Consent = (() => {
       const row = (title, desc, ctrl) => el('div', { class: 'consent-row' }, el('div', { class: 'grow' }, el('b', {}, title), el('div', { class: 'muted small' }, desc)), ctrl);
       const body = el('div', {},
         row('Обязательные', 'Cookie сессии dnd_session / dnd_session_x, токен входа dnd_token, запись о согласии et-consent. Без них вход невозможен. Срок — 30 дней, согласие — 1 год.', el('span', { class: 'badge' }, 'всегда')),
-        row('Функциональные', 'Тема оформления (et-theme), последняя вкладка листа персонажа (sheet_tab_*), свёрнутая панель кубиков (dicetray_min). Хранятся в localStorage браузера, на сервер не передаются.', fn),
+        row('Функциональные', 'Тема оформления (et-theme), последняя вкладка листа персонажа (sheet_tab_*), свёрнутая панель кубиков (dicetray_min), настройки анимации (dice-settings). Хранятся в localStorage браузера, на сервер не передаются.', fn),
         row('Аналитика и реклама', 'Не используются. Сторонних скриптов и трекеров на сайте нет.', el('span', { class: 'badge' }, 'нет')),
         el('p', { class: 'muted small', style: 'margin-top:10px' }, 'Изменить выбор можно в любой момент: ссылка «Cookie» внизу главной страницы или в профиле. ', el('a', { href: '/privacy' }, 'Политика конфиденциальности')));
       const ok = await modal('Настройки cookie', body, [{ label: 'Сохранить', cls: 'primary', fn: () => ({ functional: fn.checked }) }, { label: 'Принять все', fn: () => ({ functional: true }) }]);
@@ -119,23 +119,6 @@ window.assetImage = function (id, onload) {
 };
 
 // ---- Кубики ----
-window.rollDice = function (expr) {
-  expr = expr.replace(/\s+/g, '').toLowerCase().replace(/к/g, 'd');
-  let total = 0; const parts = [];
-  for (const m of expr.matchAll(/([+-]?)([^+-]+)/g)) {
-    const sign = m[1] === '-' ? -1 : 1, term = m[2];
-    const d = term.match(/^(\d*)d(\d+)(k[hl]\d+)?$/);
-    if (d) {
-      const n = +(d[1] || 1), s = +d[2];
-      const rolls = Array.from({ length: n }, () => 1 + Math.floor(Math.random() * s));
-      let kept = rolls;
-      if (d[3]) { const k = +d[3].slice(2); kept = [...rolls].sort((a, b) => d[3][1] === 'h' ? b - a : a - b).slice(0, k); }
-      total += sign * kept.reduce((a, b) => a + b, 0);
-      parts.push({ term: m[1] + term, rolls, kept });
-    } else if (/^\d+$/.test(term)) { total += sign * +term; parts.push({ term: m[1] + term, value: sign * +term }); }
-  }
-  return { expr, parts, total };
-};
 window.mod = (v) => Math.floor((v - 10) / 2);
 window.fmtMod = (v) => (v >= 0 ? '+' : '') + v;
 
@@ -194,21 +177,6 @@ window.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телослож
 window.EDITIONS = { '2014': 'D&D 5e (2014)', '2024': 'D&D 5e (2024)' };
 /// Редакция по умолчанию для новых персонажей и фильтра справочника (запоминается).
 window.defaultEdition = () => LS.getItem('et-edition') || '2014';
-/// Диалог создания персонажа: имя + редакция правил. Возвращает { name, sheet } или null.
-window.newCharacterDialog = async function (defaults = {}) {
-  const name = el('input', { placeholder: 'Торин', value: defaults.name || '' });
-  const ed = defaultEdition();
-  const radios = Object.entries(EDITIONS).map(([k, v]) => el('label', { class: 'radio' }, el('input', { type: 'radio', name: 'edition', value: k, checked: k === ed ? '' : null }), ' ', v,
-    el('span', { class: 'muted small' }, k === '2014' ? ' — расы с бонусами характеристик, классика' : ' — виды без бонусов, бонусы и черта от предыстории, мастерство оружия')));
-  const box = el('div', { class: 'editor-form' }, el('div', { class: 'field' }, el('label', {}, 'Имя персонажа'), name), el('div', { class: 'field' }, el('label', {}, 'Редакция правил'), ...radios),
-    el('p', { class: 'muted small' }, 'Редакция влияет на то, какие расы, классы, заклинания и предметы предлагает справочник. Её можно сменить позже в шапке листа.'));
-  setTimeout(() => name.focus(), 50);
-  const ok = await modal('Новый персонаж', box, [{ label: 'Создать', cls: 'primary', fn: () => true }]);
-  if (!ok || !name.value.trim()) return null;
-  const edition = box.querySelector('input[name=edition]:checked')?.value || '2014';
-  LS.setItem('et-edition', edition);
-  return { name: name.value.trim(), sheet: { edition } };
-};
 window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила' };
 
 // ---- Минималистичные SVG-иконки (line icons), без эмодзи ----
