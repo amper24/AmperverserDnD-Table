@@ -989,16 +989,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .race-module-badge { width: fit-content; padding: 2px 7px; border: 1px solid var(--accent-line); border-radius: 999px; color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .07em; }
 
 /* Шапка листа: раса, класс, подкласс, предыстория и мировоззрение — одинаковые компактные блоки. */
-.sheet-head-blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-.mod-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 9px; background: transparent; cursor: copy; }
-.mod-block.filled { background: var(--panel); }
-.mod-block-head { display: flex; align-items: center; gap: 6px; }
-.mod-block-head b { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
-.mod-block-drop { margin-left: auto; color: var(--muted); font-size: 10px; opacity: .55; }
-.mod-block-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.mod-block-empty { color: var(--muted); font-size: 12px; }
-.mod-block-facts { color: var(--muted); font-size: 10px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.mod-block-note { color: var(--muted); font-size: 9.5px; opacity: .8; }
+.sheet-head-blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 6px; }
+.mod-block { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; cursor: copy; }
+.mod-block.filled { background: color-mix(in srgb, var(--panel) 55%, transparent); }
+.mod-block-head { display: flex; align-items: center; gap: 5px; }
+.mod-block-head b { color: var(--muted); font-size: 8.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; opacity: .85; }
+.mod-block-drop { margin-left: auto; color: var(--muted); font-size: 9.5px; opacity: .4; }
+.mod-block:hover .mod-block-drop { opacity: .75; }
+.mod-block-name { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
+.mod-block-empty { color: var(--muted); font-size: 11.5px; }
+.mod-block-facts { color: var(--muted); font-size: 9.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.mod-block-note { color: var(--muted); font-size: 9px; opacity: .65; }
+.mod-block:hover { border-color: var(--accent-line); }
 .mod-block-field { display: block; }
 .mod-block-input, .mod-block-select { border: 0; border-radius: 0; background: transparent; padding: 0; font-size: 13px; font-weight: 600; color: var(--text); }
 .mod-block-input:focus, .mod-block-select:focus { outline: none; border-bottom: 1px solid var(--accent); }
@@ -1010,9 +1012,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .stat-insp { cursor: pointer; }
 .stat-insp label { margin-bottom: 0; }
 .stat-insp small { display: block; font-size: 10px; line-height: 1.3; }
-.stat-insp b { color: var(--muted); }
+.stat-insp b { display: block; margin: 1px 0; color: var(--muted); font-size: 15px; font-weight: 600; letter-spacing: .01em; }
 .stat-insp.on { border-color: var(--accent-line); background: var(--accent-soft); }
 .stat-insp.on b { color: var(--accent); }
+.stat-insp:hover { border-color: var(--accent-line); }
+.stat-insp:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 
 /* Слоты по правилам D&D: что надето и какие правила проверены. */
 .slots-panel { margin-top: 8px; padding: 12px; }
@@ -1479,3 +1483,10 @@ body.lu-open { overflow: hidden; }
 /* ---- Шаг «Навыки»: панель взаимозамены навыков (правило двух источников) ---- */
 .builder-free-head { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .builder-free-head .builder-counter.flag { border-color: var(--accent-line); color: var(--accent); }
+/* ---- Шаг «Навыки»: группировка по характеристикам (как список проверок) ---- */
+.builder-skill-groups { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.builder-skill-group { display: flex; flex-direction: column; gap: 5px; }
+.builder-skill-group-head { display: flex; align-items: center; gap: 8px; }
+.builder-skill-group-head b { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.builder-skill-group-head .builder-counter { margin-left: 0; font-size: 10px; }
+.builder-skill-groups .builder-skills { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }

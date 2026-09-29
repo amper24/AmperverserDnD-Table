@@ -821,28 +821,36 @@ window.newCharacterDialog = async function (defaults = {}) {
     const skills = B.skillsState(draft);
     const box = el('section', { class: 'builder-panel builder-skills-panel' });
     const pending = pendingChoices().filter(item => item.group?.type === 'skill');
+    const preview = getPreview();
+    /// Плитка навыка: модификатор характеристики, итоговое владение и источник, если навык уже есть.
+    const skillTile = (o, { picked, full, onToggle }) => {
+      const on = picked.includes(o.key), mod = Math.floor(((preview.abilities[o.ability] ?? 10) - 10) / 2), prof = preview.proficiency_bonus || 2;
+      return el('label', { class: 'builder-skill' + (on ? ' on' : '') + (o.granted ? ' taken' : ''), title: o.granted ? `Этот навык уже даёт ${o.granted} — выберите другой` : `Владение: ${signed(mod + prof)} к проверкам` },
+        el('input', { type: 'checkbox', checked: on ? '' : null, disabled: o.granted || (!on && full) ? '' : null, onchange: e => onToggle(o, e.target.checked) }),
+        el('span', { class: 'grow' }, el('b', {}, o.name),
+          el('small', { class: 'muted' }, `${ABIL[o.ability] || o.ability} ${signed(mod)}`),
+          el('small', { class: on ? 'builder-skill-bonus on' : 'builder-skill-bonus' }, `владение ${signed(mod + prof)}`)),
+        o.granted ? el('small', { class: 'builder-skill-src' }, o.granted) : null);
+    };
+    /// Навыки идут под заголовками характеристик — как список проверок (LongStory).
+    const skillGroupsHtml = (options, opts) => el('div', { class: 'builder-skill-groups' },
+      ...Object.entries(ABIL).map(([key, name]) => ({ key, name, list: options.filter(o => (o.ability || 'str') === key) }))
+        .filter(group => group.list.length).map(group => el('section', { class: 'builder-skill-group' },
+          el('div', { class: 'builder-skill-group-head' }, el('b', {}, group.name),
+            el('span', { class: 'builder-counter' }, `${group.list.filter(o => opts.picked.includes(o.key)).length} из ${group.list.length}`)),
+          el('div', { class: 'builder-skills' }, ...group.list.map(o => skillTile(o, opts))))));
     if (skills.klass) {
       const { choose, options, picked, source } = skills.klass;
       const full = picked.length >= choose, left = Math.max(0, choose - picked.length);
       box.append(el('div', { class: 'builder-panel-head' },
         el('div', {}, el('b', {}, 'Навыки класса'), el('small', { class: 'muted' }, `${source} · выберите ${choose} ${plural(choose, 'навык', 'навыка', 'навыков')} из списка класса`)),
         el('span', { class: 'builder-counter' + (full ? ' ok' : '') + (picked.length && !full ? ' flag' : '') }, full ? `${picked.length} из ${choose} · готово` : `${picked.length} из ${choose} · ещё ${left}`)));
-      box.append(el('div', { class: 'builder-skills' }, ...options.map(o => {
-        const on = picked.includes(o.key), mod = Math.floor(((getPreview().abilities[o.ability] ?? 10) - 10) / 2), prof = getPreview().proficiency_bonus || 2;
-        return el('label', { class: 'builder-skill' + (on ? ' on' : '') + (o.granted ? ' taken' : ''), title: o.granted ? `Этот навык уже даёт ${o.granted} — выберите другой` : `Владение: ${signed(mod + prof)} к проверкам` },
-          el('input', { type: 'checkbox', checked: on ? '' : null, disabled: o.granted || (!on && full) ? '' : null, onchange: e => {
-            draft.skills = (draft.skills || []).filter(x => x !== o.key);
-            if (e.target.checked) draft.skills.push(o.key);
-            render();
-          } }),
-          el('span', { class: 'grow' }, el('b', {}, o.name),
-            el('small', { class: 'muted' }, `${ABIL[o.ability] || o.ability} ${signed(mod)}`),
-            el('small', { class: on ? 'builder-skill-bonus on' : 'builder-skill-bonus' }, `владение ${signed(mod + prof)}`)),
-          o.granted ? el('small', { class: 'builder-skill-src' }, o.granted) : null);
-      })));
-      box.append(el('p', { class: 'muted small' }, overlap.length
-        ? `Совпало с модулями: ${overlap.map(o => `${o.name} (${o.granted})`).join(', ')} — вместо них можно взять любое другое владение (см. панель ниже).`
-        : 'Одно и то же владение из двух источников не складывается: если навык уже даёт раса или предыстория, отметьте другой из списка класса.'));
+      box.append(skillGroupsHtml(options, { picked, full, onToggle: (o, checked) => {
+        draft.skills = (draft.skills || []).filter(x => x !== o.key);
+        if (checked) draft.skills.push(o.key);
+        render();
+      } }));
+      box.append(el('p', { class: 'muted small' }, overlapText(skills.klass.overlap)));
     } else box.append(el('p', { class: 'builder-note' }, 'Класс не даёт выбора навыков — владения приходят из модулей и показаны ниже.'));
     if (skills.free) {
       const { need, options, picked, overlap } = skills.free, fullFree = picked.length >= need, leftFree = Math.max(0, need - picked.length);
@@ -850,18 +858,11 @@ window.newCharacterDialog = async function (defaults = {}) {
         el('div', {}, el('b', {}, 'Взаимозамена навыков'), el('small', { class: 'muted' },
           `Правило D&D: владение из двух источников не удваивается · ${overlap.map(o => `${o.name} — ${o.granted}`).join(', ')}`)),
         el('span', { class: 'builder-counter' + (fullFree ? ' ok' : ' flag') }, fullFree ? `${picked.length} из ${need} · готово` : `${picked.length} из ${need} · ещё ${leftFree}`)));
-      box.append(el('div', { class: 'builder-skills' }, ...options.map(o => {
-        const on = picked.includes(o.key), mod = Math.floor(((getPreview().abilities[o.ability] ?? 10) - 10) / 2), prof = getPreview().proficiency_bonus || 2;
-        return el('label', { class: 'builder-skill' + (on ? ' on' : ''), title: `Владение: ${signed(mod + prof)} к проверкам` },
-          el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && fullFree ? '' : null, onchange: e => {
-            draft.freeSkills = (draft.freeSkills || []).filter(x => x !== o.key);
-            if (e.target.checked) draft.freeSkills.push(o.key);
-            render();
-          } }),
-          el('span', { class: 'grow' }, el('b', {}, o.name),
-            el('small', { class: 'muted' }, `${ABIL[o.ability] || o.ability} ${signed(mod)}`),
-            el('small', { class: on ? 'builder-skill-bonus on' : 'builder-skill-bonus' }, `владение ${signed(mod + prof)}`)));
-      })));
+      box.append(skillGroupsHtml(options, { picked, full: fullFree, onToggle: (o, checked) => {
+        draft.freeSkills = (draft.freeSkills || []).filter(x => x !== o.key);
+        if (checked) draft.freeSkills.push(o.key);
+        render();
+      } }));
     }
     const granted = skills.granted;
     box.append(el('div', { class: 'builder-granted' },
@@ -872,6 +873,11 @@ window.newCharacterDialog = async function (defaults = {}) {
       pending.length ? el('button', { class: 'builder-jump', type: 'button', onclick: () => goTo(1) }, `Выбрать навык модуля на шаге «Происхождение» →`) : null));
     return box;
   }
+  /// Пометка о совпавших навыках: понятно, что именно заменяется и почему.
+  const overlapText = overlap => overlap.length
+    ? `Совпало с модулями: ${overlap.map(o => `${o.name} (${o.granted})`).join(', ')} — вместо них можно взять любое другое владение (см. панель ниже).`
+    : 'Одно и то же владение из двух источников не складывается: если навык уже даёт раса или предыстория, отметьте другой из списка класса.';
+
   /// «1 навык», «2 навыка», «5 навыков» — счётчики в правилах D&D читаются словами.
   function plural(n, one, few, many) { const n10 = n % 10, n100 = n % 100; return n100 >= 11 && n100 <= 14 ? many : n10 === 1 ? one : n10 >= 2 && n10 <= 4 ? few : many; }
   /// Источник навыка для метки: «предыстория · Прислужник».
