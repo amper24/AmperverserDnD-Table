@@ -4,7 +4,7 @@
   "exported_at": "2026-09-27T00:00:00+03:00",
   "name": "Amperverser DnD Table (Rust)",
   "author": "amper24@users.noreply.github.com",
-  "description": "Виртуальный стол для D&D на Rust (axum + MySQL/SQLite). Основан на generic Rust egg: клонирует репозиторий и запускает cargo run --release.",
+  "description": "Виртуальный стол для D&D на Rust (axum + MySQL/SQLite). Основан на generic Rust egg: клонирует репозиторий и запускает cargo run --release. Все настройки — в config.yml (создаётся при первом запуске, правится в File Manager); переменные панели, если заполнены, перекрывают его.",
   "features": null,
   "docker_images": {
     "Rust latest": "ghcr.io/ptero-eggs/yolks:rust_latest"
@@ -30,14 +30,14 @@
     { "name": "Auto Update", "description": "git pull при каждом старте", "env_variable": "AUTO_UPDATE", "default_value": "0", "user_viewable": true, "user_editable": true, "rules": "required|boolean", "field_type": "text" },
     { "name": "Git Username", "description": "Для приватного репозитория", "env_variable": "USERNAME", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
     { "name": "Git Access Token", "description": "Для приватного репозитория", "env_variable": "ACCESS_TOKEN", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
-    { "name": "DATABASE_URL", "description": "mysql://user:pass@host:3306/db  или  sqlite://data/dnd.db", "env_variable": "DATABASE_URL", "default_value": "sqlite://data/dnd.db", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
-    { "name": "SMTP host", "description": "SMTP сервер для кодов на почту (пусто = код в консоль)", "env_variable": "SMTP_HOST", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
-    { "name": "SMTP port", "description": "", "env_variable": "SMTP_PORT", "default_value": "587", "user_viewable": true, "user_editable": true, "rules": "required|integer", "field_type": "text" },
-    { "name": "SMTP user", "description": "", "env_variable": "SMTP_USER", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
-    { "name": "SMTP password", "description": "", "env_variable": "SMTP_PASSWORD", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
-    { "name": "SMTP from", "description": "Адрес отправителя", "env_variable": "SMTP_FROM", "default_value": "noreply@example.com", "user_viewable": true, "user_editable": true, "rules": "required|string", "field_type": "text" },
-    { "name": "Почта root", "description": "Email администратора — аккаунт создаётся при первом старте (нужен и пароль). Потом правами можно управлять в консоли: help, users list, users make-root <email>", "env_variable": "ROOT_EMAIL", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:255", "field_type": "text" },
+    { "name": "DATABASE_URL", "description": "mysql://user:pass@host:3306/db  или  sqlite://data/dnd.db. Пусто = database.url из config.yml (по умолчанию SQLite)", "env_variable": "DATABASE_URL", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP host", "description": "SMTP сервер для кодов на почту. Пусто = smtp.host из config.yml (если и там пусто — код в консоль)", "env_variable": "SMTP_HOST", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP port", "description": "Пусто = smtp.port из config.yml (587)", "env_variable": "SMTP_PORT", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|integer", "field_type": "text" },
+    { "name": "SMTP user", "description": "Пусто = smtp.user из config.yml", "env_variable": "SMTP_USER", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP password", "description": "Пусто = smtp.password из config.yml", "env_variable": "SMTP_PASSWORD", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "SMTP from", "description": "Адрес отправителя. Пусто = smtp.from из config.yml", "env_variable": "SMTP_FROM", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string", "field_type": "text" },
+    { "name": "Почта root", "description": "Email администратора — аккаунт создаётся при первом старте (нужен и пароль). Пусто = root.email из config.yml. Потом правами можно управлять в консоли: help, users list, users make-root <email>", "env_variable": "ROOT_EMAIL", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:255", "field_type": "text" },
     { "name": "Пароль root", "description": "Пароль администратора (лучше 8+ символов: короткий сервер примет, но предупредит в логе)", "env_variable": "ROOT_PASSWORD", "default_value": "", "user_viewable": false, "user_editable": true, "rules": "nullable|string|max:255", "field_type": "text" },
-    { "name": "Показывать код в API (dev)", "description": "true/false — отдавать код входа в ответе API, если SMTP не настроен", "env_variable": "DEV_SHOW_CODE", "default_value": "true", "user_viewable": true, "user_editable": true, "rules": "required|string|in:true,false", "field_type": "text" }
+    { "name": "Показывать код в API (dev)", "description": "true/false — отдавать код входа в ответе API, если SMTP не настроен. Пусто = auth.dev_show_code из config.yml", "env_variable": "DEV_SHOW_CODE", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|in:true,false", "field_type": "text" }
   ]
 }

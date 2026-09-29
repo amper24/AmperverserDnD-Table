@@ -19,7 +19,7 @@ REM   cargo build --release (Rust: https://rustup.rs)
 REM No Rust? Run install.bat - it downloads dnd-table.exe from Releases.
 REM
 REM Variables:
-REM   PORT=8080        listening port
+REM   PORT=8080        listening port (overrides server.port from config.yml)
 REM   NO_BROWSER=1     do not open the browser
 REM   NO_PAUSE=1       do not wait for a key press at the end (used by CI)
 REM   REBUILD=1        force cargo build even if a binary already exists
@@ -32,9 +32,15 @@ REM ---------------------------------------------------------------------------
 REM cd FIRST: everything below (data\, .env, target\) is relative to the script.
 cd /d "%~dp0"
 
-if not defined PORT set "PORT=8080"
+REM Settings live in config.yml (created next to the exe on the first start).
+REM PORT is NOT exported on purpose: that would override server.port from
+REM config.yml. SHOW_PORT is only used for the messages and the browser.
+set "SHOW_PORT=%PORT%"
+if not defined SHOW_PORT set "SHOW_PORT=%SERVER_PORT%"
+if not defined SHOW_PORT if exist "config.yml" for /f "tokens=2 delims=: " %%a in ('findstr /r /c:"^  port:" "config.yml"') do if not defined SHOW_PORT set "SHOW_PORT=%%a"
+if not defined SHOW_PORT set "SHOW_PORT=8080"
 if not exist "data" mkdir "data" 2>nul
-if not exist ".env" echo [*] No .env here - using SQLite (data\dnd.db). For MySQL copy .env.example to .env
+if not exist "config.yml" echo [*] No config.yml yet - it will be created on the first start (SQLite in data\dnd.db by default)
 
 set "EXE="
 if exist "dnd-table.exe" set "EXE=dnd-table.exe"
@@ -72,12 +78,12 @@ echo     or just run install.bat to get a ready-made dnd-table.exe.
 goto :fail
 
 :run
-netstat -ano 2>nul | findstr /r /c:":%PORT% .*LISTENING" >nul
-if not errorlevel 1 echo [!] Warning: port %PORT% looks busy. Something may already be listening on it - try set PORT=8081
+netstat -ano 2>nul | findstr /r /c:":%SHOW_PORT% .*LISTENING" >nul
+if not errorlevel 1 echo [!] Warning: port %SHOW_PORT% looks busy. Something may already be listening on it - change server.port in config.yml or set PORT=8081
 
-echo [*] Starting %EXE% on port %PORT%
+echo [*] Starting %EXE% on port %SHOW_PORT% (settings: config.yml)
 echo     Console commands while it runs: help, users list, users create ^<email^> ^<pass^> --root, stats, stop
-if "%~1"=="" if /i not "%NO_BROWSER%"=="1" start http://localhost:%PORT%
+if "%~1"=="" if /i not "%NO_BROWSER%"=="1" start http://localhost:%SHOW_PORT%
 
 "%EXE%" %*
 set "RC=%ERRORLEVEL%"

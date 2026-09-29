@@ -14,7 +14,9 @@ WORKDIR /app
 COPY --from=builder /build/target/release/dnd-table /app/dnd-table
 RUN ln -s /app/dnd-table /usr/local/bin/dnd-table
 RUN mkdir -p /app/data
-ENV HOST=0.0.0.0 PORT=8080 RUST_LOG=info,sqlx=warn
+# config.yml создаётся при первом запуске в /app/data (смонтируйте том, чтобы он сохранялся).
+# HOST/PORT заданы переменными: снаружи контейнер всегда слушает 8080 (см. HEALTHCHECK).
+ENV HOST=0.0.0.0 PORT=8080 DND_CONFIG=/app/data/config.yml
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fs http://localhost:8080/api/health || exit 1
 CMD ["/app/dnd-table"]

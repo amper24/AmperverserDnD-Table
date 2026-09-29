@@ -3,7 +3,13 @@
   const app = document.getElementById('app');
   const APP_NAME = 'Edge Tablet';
   let me = null;
-  try { me = await API.get('/api/auth/me'); } catch { me = null; }
+  // Публичные настройки сервера (config.yml → auth): регистрация, минимальная длина пароля
+  const SETTINGS = { allow_registration: true, password_min_length: 8 };
+  const [meRes, setRes] = await Promise.allSettled([API.get('/api/auth/me'), API.get('/api/auth/settings')]);
+  me = meRes.status === 'fulfilled' ? meRes.value : null;
+  if (setRes.status === 'fulfilled') Object.assign(SETTINGS, setRes.value);
+  const PW_MIN = SETTINGS.password_min_length || 8;
+  const CAN_REGISTER = SETTINGS.allow_registration !== false;
   window.ME = me;
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
@@ -39,7 +45,7 @@
     return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
       me ? el('span', { class: 'userbox' }, el('a', { href: '/profile', class: 'userlink', title: 'Профиль' }, avatarEl(me, 26), el('span', {}, me.name)),
         el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); go('/'); } }, 'Выйти'))
-        : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), ' ', el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация')));
+        : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), CAN_REGISTER ? ' ' : null, CAN_REGISTER ? el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация') : null));
   }
 
   // ================= Страница входа / регистрации (отдельная) =================
@@ -63,7 +69,7 @@
       }
     }
     const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { if (/<a /.test(e.message)) err.innerHTML = e.message; else err.textContent = e.message; } finally { btn.disabled = false; } };
-    const tabs = () => el('div', { class: 'tabs auth-tabs' }, el('button', { class: mode === 'login' ? 'active' : '', onclick: () => show('login') }, 'Вход'), el('button', { class: mode === 'register' ? 'active' : '', onclick: () => show('register') }, 'Регистрация'));
+    const tabs = () => el('div', { class: 'tabs auth-tabs' }, el('button', { class: mode === 'login' ? 'active' : '', onclick: () => show('login') }, 'Вход'), CAN_REGISTER ? el('button', { class: mode === 'register' ? 'active' : '', onclick: () => show('register') }, 'Регистрация') : null);
     const google = () => el('button', { class: 'google', disabled: '', title: 'Появится позже' }, el('span', { class: 'g' }, 'G'), 'Войти через Google', el('span', { class: 'badge' }, 'скоро'));
     const codeHint = (r) => r.sent ? `Код отправлен на ${pendingEmail}. Проверьте почту и папку «Спам».` : 'Почтовый сервер не настроен — код показан ниже (режим разработки).';
     const toVerify = (r) => { show('verify'); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) box.querySelector('input.code').value = r.dev_code; };
@@ -79,9 +85,10 @@
         return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), el('div', { class: 'or' }, 'или'), google()];
       },
       register() {
-        const name = inp({ placeholder: 'Имя', autocomplete: 'nickname', maxlength: 64 }), email = inp({ type: 'email', placeholder: 'you@example.com', autocomplete: 'email' }), pw = inp({ type: 'password', placeholder: 'минимум 8 символов', autocomplete: 'new-password' }), pw2 = inp({ type: 'password', placeholder: 'ещё раз', autocomplete: 'new-password' });
+        if (!CAN_REGISTER) return [tabs(), el('p', { class: 'muted' }, 'Регистрация на этом сервере отключена. Попросите администратора создать вам аккаунт, затем войдите.'), el('button', { class: 'primary wide', onclick: () => show('login') }, 'Ко входу')];
+        const name = inp({ placeholder: 'Имя', autocomplete: 'nickname', maxlength: 64 }), email = inp({ type: 'email', placeholder: 'you@example.com', autocomplete: 'email' }), pw = inp({ type: 'password', placeholder: `минимум ${PW_MIN} символов`, autocomplete: 'new-password' }), pw2 = inp({ type: 'password', placeholder: 'ещё раз', autocomplete: 'new-password' });
         const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
-          if (pw.value.length < 8) throw new Error('Пароль должен быть не короче 8 символов');
+          if (pw.value.length < PW_MIN) throw new Error(`Пароль должен быть не короче ${PW_MIN} символов`);
           if (pw.value !== pw2.value) throw new Error('Пароли не совпадают');
           pendingEmail = email.value.trim();
           toVerify(await API.post('/api/auth/register', { email: pendingEmail, password: pw.value, name: name.value.trim() || null }));
@@ -95,7 +102,7 @@
         return [el('h2', {}, 'Подтвердите почту'), el('p', { class: 'muted small code-info' }), f('Код из письма', code), btn, err, resend, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); show('login'); } }, 'Назад ко входу'))];
       },
       reset() {
-        const email = inp({ type: 'email', placeholder: 'you@example.com', value: pendingEmail, autocomplete: 'email' }), code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6 }), pw = inp({ type: 'password', placeholder: 'новый пароль (8+ символов)', autocomplete: 'new-password' });
+        const email = inp({ type: 'email', placeholder: 'you@example.com', value: pendingEmail, autocomplete: 'email' }), code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6 }), pw = inp({ type: 'password', placeholder: `новый пароль (${PW_MIN}+ символов)`, autocomplete: 'new-password' });
         const step2 = el('div', { class: 'hidden' }, el('p', { class: 'muted small code-info' }), f('Код из письма', code), f('Новый пароль', pw));
         const btn = el('button', { class: 'primary wide', onclick: () => busy(btn, async () => {
           pendingEmail = email.value.trim();
@@ -116,7 +123,7 @@
     app.append(el('div', { class: 'home' }, topbar(),
       el('section', { class: 'hero' }, el('div', { class: 'hero-text' },
         el('h1', {}, APP_NAME), el('p', { class: 'lead' }, 'Виртуальный стол для D&D: карты, токены, туман войны, кубики в чате, листы персонажей с перетаскиваемыми предметами и заклинаниями, справочник на русском и свои наборы правил.'),
-        el('div', { class: 'hero-cta' }, el('a', { href: '/register', class: 'btn primary big' }, 'Создать аккаунт'), el('a', { href: '/login', class: 'btn big' }, 'Войти')))),
+        el('div', { class: 'hero-cta' }, CAN_REGISTER ? el('a', { href: '/register', class: 'btn primary big' }, 'Создать аккаунт') : null, el('a', { href: '/login', class: `btn big${CAN_REGISTER ? '' : ' primary'}` }, 'Войти')))),
       el('section', { class: 'wrap' }, el('h2', {}, 'Разделы'), sectionCards()),
       el('section', { class: 'wrap' }, el('h2', {}, 'Как начать'), el('ol', { class: 'steps' },
         el('li', {}, el('b', {}, 'Зарегистрируйтесь'), ' — почта, пароль и код подтверждения из письма.'), el('li', {}, el('b', {}, 'Создайте кампанию'), ' и отправьте игрокам ссылку-приглашение.'),
@@ -235,7 +242,7 @@
       el('div', { class: 'muted small', style: 'margin-bottom:10px' }, 'Аккаунт создан ' + new Date(me.created_at).toLocaleDateString(), me.is_root ? ' · права root' : ''),
       el('button', { class: 'primary', onclick: async e => { try { e.target.disabled = true; await API.patch('/api/auth/me', { name: name.value }); okmsg('Сохранено'); me.name = name.value.trim(); document.querySelector('.userlink > span:last-child').textContent = me.name; } catch (err) { fail(err); } finally { e.target.disabled = false; } } }, 'Сохранить'));
     // пароль
-    const oldPw = el('input', { type: 'password', autocomplete: 'current-password' }), pw1 = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'минимум 8 символов' }), pw2 = el('input', { type: 'password', autocomplete: 'new-password' });
+    const oldPw = el('input', { type: 'password', autocomplete: 'current-password' }), pw1 = el('input', { type: 'password', autocomplete: 'new-password', placeholder: `минимум ${PW_MIN} символов` }), pw2 = el('input', { type: 'password', autocomplete: 'new-password' });
     const pwBox = el('div', { class: 'card' }, el('h2', {}, 'Смена пароля'),
       el('div', { class: 'field' }, el('label', {}, 'Текущий пароль'), oldPw), el('div', { class: 'field' }, el('label', {}, 'Новый пароль'), pw1), el('div', { class: 'field' }, el('label', {}, 'Повторите новый пароль'), pw2),
       el('p', { class: 'muted small' }, 'После смены пароля все остальные устройства будут разлогинены. Если пароль забыт — «Забыли пароль?» на странице входа.'),

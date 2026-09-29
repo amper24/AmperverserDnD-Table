@@ -25,16 +25,24 @@ services:
         condition: service_healthy
     ports:
       - "${PORT:-8080}:8080"
+    # Настройки: том dnd_data -> /app/data/config.yml (создаётся при первом запуске,
+    # править: docker compose exec app vi /app/data/config.yml или через docker cp).
+    # Переменные ниже перекрывают config.yml; пустые значения не учитываются.
+    volumes:
+      - dnd_data:/app/data
     environment:
       DATABASE_URL: mysql://dnd:${MYSQL_PASSWORD:-dnd}@db:3306/dnd
       SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_ENCRYPTION: ${SMTP_ENCRYPTION:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
-      DEV_SHOW_CODE: ${DEV_SHOW_CODE:-true}
+      SMTP_FROM: ${SMTP_FROM:-}
+      DEV_SHOW_CODE: ${DEV_SHOW_CODE:-}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-}
       ROOT_EMAIL: ${ROOT_EMAIL:-}
       ROOT_PASSWORD: ${ROOT_PASSWORD:-}
 
 volumes:
   dnd_mysql:
+  dnd_data:

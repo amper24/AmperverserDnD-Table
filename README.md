@@ -21,9 +21,10 @@ curl -fsSL https://raw.githubusercontent.com/amper24/AmperverserDnD-Table/main/i
 cp .env.example .env
 docker compose up -d --build
 ```
+`config.yml` создаётся в томе `dnd_data` (`/app/data/config.yml` внутри контейнера); переменные из `.env` перекрывают его.
 
 ### Pterodactyl (generic Rust egg)
-Импортируйте `deploy/pterodactyl-egg.json` (Admin → Nests → Import Egg) — это стандартный [generic-rust](https://eggs.pterodactyl.io/egg/generic-rust-generic/) egg с преднастроенным репозиторием и переменными (`DATABASE_URL`, SMTP). Старт: `cargo run --release`; порт берётся из `SERVER_PORT` автоматически; строка готовности — `Server listening on`.
+Импортируйте `deploy/pterodactyl-egg.json` (Admin → Nests → Import Egg) — это стандартный [generic-rust](https://eggs.pterodactyl.io/egg/generic-rust-generic/) egg с преднастроенным репозиторием и переменными (`DATABASE_URL`, SMTP). Старт: `cargo run --release`; порт берётся из `SERVER_PORT` автоматически; строка готовности — `Server listening on`. Настройки — в `config.yml` в корне сервера (File Manager); он создаётся при первом старте. Заполненные переменные панели перекрывают файл; чтобы панель не мешала, поставьте в файле `env_overrides: false`.
 
 Можно использовать и оригинальный generic-rust egg: укажите `GIT_ADDRESS=https://github.com/amper24/AmperverserDnD-Table`, а в Startup Configuration → done: `Server listening on`.
 
@@ -57,16 +58,45 @@ curl.exe -L -o install.bat https://raw.githubusercontent.com/amper24/Amperverser
 
 ---
 
-## Настройка (`.env` или переменные окружения)
-| Переменная | Описание |
-|---|---|
-| `DATABASE_URL` | `mysql://user:pass@host:3306/db` или `sqlite://data/dnd.db` (по умолчанию) |
-| `PORT`, `HOST` | порт/адрес (8080 / 0.0.0.0). На Pterodactyl используется `SERVER_PORT` |
-| `SMTP_HOST/PORT/USER/PASSWORD/FROM` | почта для кодов входа. Если `SMTP_HOST` пуст — код печатается в консоль |
-| `DEV_SHOW_CODE` | `true` — код также возвращается в ответе API и подставляется в форму (только для разработки!) |
-| `IMAGE_QUALITY` | качество JPEG при сжатии картинок (82) |
-| `ROOT_EMAIL`, `ROOT_PASSWORD` | автосоздание root-аккаунта при старте (см. «Root и CLI»). Если пользователь с такой почтой уже есть — ему выдаётся root |
-| `RUST_LOG` | уровень логов (`info,sqlx=warn`) |
+## Настройка (`config.yml`)
+
+При первом запуске рядом с программой (в текущем каталоге) создаётся **`config.yml`** — в нём с комментариями собраны все важные параметры. Отредактируйте его и перезапустите сервер.
+
+```yaml
+env_overrides: true          # false — игнорировать переменные окружения (кроме SERVER_PORT)
+server:   { host: "0.0.0.0", port: 8080 }
+database: { url: "sqlite://data/dnd.db", max_connections: 10 }
+smtp:     { host: "", port: 587, encryption: "auto", user: "", password: "", from: "noreply@example.com" }
+auth:     { allow_registration: true, dev_show_code: true, code_ttl_minutes: 10, code_max_attempts: 5, session_days: 30, password_min_length: 8 }
+root:     { email: "", password: "" }
+images:   { quality: 82, max_upload_mb: 25, map_max_side: 4096, token_max_side: 1024 }
+logging:  { level: "info,sqlx=warn" }
+```
+(в самом файле — развёрнутый вид с пояснением к каждой строке)
+
+* **Где лежит:** `./config.yml`; другой путь — `dnd-table --config /путь/config.yml` или переменная `DND_CONFIG` (в Docker — `/app/data/config.yml`).
+* **Приоритет:** значения по умолчанию → `config.yml` → переменные окружения и `.env`. Пустая переменная считается незаданной. Если панель хостинга всегда передаёт свои переменные (Pterodactyl), поставьте `env_overrides: false` — тогда всё берётся из файла, кроме порта панели `SERVER_PORT`. Какие параметры перекрыты переменными, сервер пишет в лог при старте.
+* **Проверить:** команда `config` в консоли сервера (или `dnd-table config`) — путь к файлу, источники значений и действующие настройки (пароли скрыты).
+* **Обновления:** если в новой версии появились параметры, сервер сам допишет их в `config.yml` (ваши значения сохраняются), а прежний файл положит рядом как `config.yml.bak`. Опечатки в именах параметров выводятся в лог предупреждением; значения вне допустимого диапазона исправляются с предупреждением. Ошибка синтаксиса YAML останавливает запуск с номером строки.
+* `config.yml` содержит пароли — он в `.gitignore`, не коммитьте его.
+
+| Параметр `config.yml` | Переменная | Описание |
+|---|---|---|
+| `server.host`, `server.port` | `HOST`, `PORT` / `SERVER_PORT` | адрес и порт (0.0.0.0 / 8080) |
+| `database.url` | `DATABASE_URL` | `mysql://user:pass@host:3306/db` или `sqlite://data/dnd.db` |
+| `database.max_connections` | `DB_MAX_CONNECTIONS` | пул соединений MySQL (SQLite — всегда 1) |
+| `smtp.host/port/user/password/from` | `SMTP_HOST/PORT/USER/PASSWORD/FROM` | почта для кодов. Если `host` пуст — код печатается в консоль |
+| `smtp.encryption` | `SMTP_ENCRYPTION` | `auto` (465 → TLS, иначе STARTTLS), `starttls`, `tls`, `none` |
+| `auth.allow_registration` | `ALLOW_REGISTRATION` | `false` — регистрация через сайт закрыта, аккаунты создаёт root |
+| `auth.dev_show_code` | `DEV_SHOW_CODE` | `true` — без SMTP код возвращается в ответе API и подставляется в форму (только для разработки!) |
+| `auth.code_ttl_minutes`, `auth.code_max_attempts` | `CODE_TTL_MINUTES`, `CODE_MAX_ATTEMPTS` | срок жизни кода из письма и число попыток ввода |
+| `auth.session_days` | `SESSION_DAYS` | срок жизни сессии в днях (0 — без ограничения) |
+| `auth.password_min_length` | `PASSWORD_MIN_LENGTH` | минимальная длина пароля в веб-формах |
+| `root.email`, `root.password` | `ROOT_EMAIL`, `ROOT_PASSWORD` | автосоздание root-аккаунта при старте (см. «Root и CLI»). Если пользователь с такой почтой уже есть — он не меняется |
+| `images.quality` | `IMAGE_QUALITY` | качество JPEG при сжатии картинок (82) |
+| `images.max_upload_mb` | `MAX_UPLOAD_MB` | максимальный размер загружаемого файла, МБ (25) |
+| `images.map_max_side`, `images.token_max_side` | `MAP_MAX_SIDE`, `TOKEN_MAX_SIDE` | до какой стороны уменьшаются карты и остальные картинки (4096 / 1024) |
+| `logging.level` | `RUST_LOG` | уровень логов (`info,sqlx=warn`) |
 
 ## Авторизация
 
@@ -141,12 +171,13 @@ curl.exe -L -o install.bat https://raw.githubusercontent.com/amper24/Amperverser
 
 ### Как получить root
 
-Вариант 1 — переменные окружения (удобно для Docker и Pterodactyl):
+Вариант 1 — `config.yml` (или переменные окружения `ROOT_EMAIL` / `ROOT_PASSWORD` — удобно для Docker и Pterodactyl):
+```yaml
+root:
+  email: "admin@example.com"
+  password: "очень-секретно"   # лучше 8+ символов: короткий пароль сервер примет, но предупредит в логе
 ```
-ROOT_EMAIL=admin@example.com
-ROOT_PASSWORD=очень-секретно   # лучше 8+ символов: короткий пароль сервер примет, но предупредит в логе
-```
-При первом старте сервер создаст подтверждённый аккаунт с root. Если аккаунт с такой почтой уже есть, сервер его не трогает (в лог выводится подсказка) — права выдаются командой `users make-root`. Переменные можно потом убрать — флаг сохраняется в БД.
+При старте сервер создаст подтверждённый аккаунт с root. Если аккаунт с такой почтой уже есть, сервер его не трогает (в лог выводится подсказка) — права выдаются командой `users make-root`. Пароль потом можно убрать из файла — флаг сохраняется в БД.
 
 Вариант 2 — консоль сервера (Pterodactyl, `docker attach`, терминал с `run.sh`): пока сервер работает, команды вводятся прямо в его консоль — как есть или с префиксом `dnd-table`, как в этой документации:
 ```
@@ -167,7 +198,7 @@ dnd-table users make-root admin@example.com
 
 ### Команды CLI
 
-Все команды используют `DATABASE_URL` из окружения/`.env` (по умолчанию `sqlite://data/dnd.db`). Их можно выполнять при работающем сервере.
+Все команды используют базу из `config.yml` (`database.url`) или `DATABASE_URL` из окружения/`.env` (по умолчанию `sqlite://data/dnd.db`). Их можно выполнять при работающем сервере. Другой файл конфигурации — `--config <файл>` в любом месте командной строки.
 
 | Команда | Что делает |
 |---|---|
@@ -182,6 +213,7 @@ dnd-table users make-root admin@example.com
 | `dnd-table users delete <email> [--yes]` | удалить пользователя вместе с его кампаниями, персонажами, наборами и ресурсами |
 | `dnd-table stats [--json]` | сводка: пользователи (и сколько root), кампании, персонажи, ассеты, базовый справочник, наборы |
 | `dnd-table reseed [--yes]` | удалить базовые записи справочника и залить их заново из вшитого seed (правки root в базовых записях теряются; наборы и homebrew не трогаются) |
+| `dnd-table config` | путь к `config.yml`, какие параметры перекрыты переменными окружения, действующие настройки (пароли скрыты) |
 | `dnd-table help [команда]` | справка (например, `dnd-table help users create`), `dnd-table version` — версия бинарника |
 | `stop` (только в консоли сервера) | остановить сервер |
 
@@ -213,7 +245,7 @@ dnd-table users make-root admin@example.com
 Cargo.toml              # в корне — как требует Pterodactyl generic-rust egg
 src/
   main.rs               # axum-роутер, встроенная статика (rust-embed)
-  config.rs db.rs       # .env, схема БД (MySQL/SQLite через sqlx Any)
+  config.rs db.rs       # config.yml + переменные окружения, схема БД (MySQL/SQLite через sqlx Any)
   auth.rs               # коды на почту (lettre), сессии, экстрактор AuthUser
   campaigns.rs scenes.rs assets.rs characters.rs compendium.rs
   realtime.rs           # WebSocket-хаб: стол, чат, броски, права игрок/мастер

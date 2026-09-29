@@ -40,6 +40,10 @@ jobs:
           cargo build --release 2>&1 | tee build.log
       - name: Clippy
         run: cargo clippy --release 2>&1 | tee clippy.log || true
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          cargo test --release 2>&1 | tee test.log
       - name: Test deps
         run: pip install -q websockets pillow
       - name: Smoke test (SQLite)
@@ -63,7 +67,7 @@ jobs:
         run: |
           {
             echo "### CI failure: run ${{ github.run_id }} (${{ github.sha }})"
-            for f in build.log smoke-sqlite.log smoke-mysql.log; do
+            for f in build.log test.log smoke-sqlite.log smoke-mysql.log; do
               if [ -f "$f" ]; then
                 echo; echo "#### $f"; echo '```'
                 grep -v -E '^\s*(Compiling|Downloaded|Downloading|Updating|Locking|Adding|Fresh|Running)' "$f" | tail -n 250 | cut -c1-400

@@ -14,11 +14,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
 
-use crate::{error::ApiResult, util, AppError, AppState};
+use crate::{config::SmtpSecurity, error::ApiResult, util, AppError, AppState};
 
 pub const COOKIE: &str = "dnd_session";
 pub const COOKIE_X: &str = "dnd_session_x";
-const CODE_TTL_MIN: i64 = 10;
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -53,10 +52,24 @@ pub fn session_token(headers: &HeaderMap) -> Option<String> {
 }
 
 pub async fn user_by_token(st: &AppState, token: &str) -> ApiResult<Option<AuthUser>> {
-    let row = sqlx::query("SELECT u.id, u.email, u.name, u.is_root, u.avatar_asset_id, u.created_at FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
+    let row = sqlx::query("SELECT u.id, u.email, u.name, u.is_root, u.avatar_asset_id, u.created_at, s.created_at AS session_created FROM users u JOIN sessions s ON s.user_id = u.id WHERE s.token = ?")
         .bind(token)
         .fetch_optional(&st.db)
         .await?;
+    // Срок жизни сессии (auth.session_days в config.yml; 0 — без ограничения)
+    if let Some(r) = &row {
+        let days = st.cfg.auth.session_days;
+        if days > 0 {
+            let created: String = r.get("session_created");
+            let expired = chrono::DateTime::parse_from_rfc3339(&created)
+                .map(|t| t + chrono::Duration::days(days) < chrono::Utc::now())
+                .unwrap_or(false);
+            if expired {
+                sqlx::query("DELETE FROM sessions WHERE token = ?").bind(token).execute(&st.db).await?;
+                return Ok(None);
+            }
+        }
+    }
     Ok(row.map(|r| AuthUser { id: r.get("id"), email: r.get("email"), name: r.get("name"), is_root: r.get::<i64, _>("is_root") != 0, avatar_asset_id: r.get("avatar_asset_id"), created_at: r.get("created_at") }))
 }
 
@@ -71,26 +84,44 @@ pub fn router() -> Router<AppState> {
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/me", get(me).patch(update_me))
         .route("/api/auth/change-password", post(change_password))
+        .route("/api/auth/settings", get(public_settings))
+}
+
+/// Публичные настройки для форм входа/регистрации (из config.yml).
+async fn public_settings(State(st): State<AppState>) -> Json<serde_json::Value> {
+    let a = &st.cfg.auth;
+    Json(json!({
+        "allow_registration": a.allow_registration,
+        "password_min_length": a.password_min_length,
+        "code_ttl_minutes": a.code_ttl_minutes,
+        "max_upload_mb": st.cfg.images.max_upload_mb,
+    }))
 }
 
 // ---------- отправка почты ----------
 async fn send_code(st: &AppState, to: &str, code: &str) -> bool {
-    let cfg = &st.cfg;
-    if cfg.smtp_host.is_empty() {
+    let cfg = &st.cfg.smtp;
+    let ttl = st.cfg.auth.code_ttl_minutes;
+    if cfg.host.is_empty() {
         tracing::warn!("SMTP не настроен. Код для {}: {}", to, code);
         println!("\n===== КОД ПОДТВЕРЖДЕНИЯ для {to}: {code} =====\n");
         return false;
     }
     let result: anyhow::Result<()> = async {
         let email = Message::builder()
-            .from(cfg.smtp_from.parse()?)
+            .from(cfg.from.parse()?)
             .to(to.parse()?)
             .subject(format!("Код входа: {code}"))
             .header(ContentType::TEXT_PLAIN)
-            .body(format!("Ваш код подтверждения Edge Tablet: {code}\nКод действует {CODE_TTL_MIN} минут."))?;
-        let mut builder = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)?.port(cfg.smtp_port);
-        if !cfg.smtp_user.is_empty() {
-            builder = builder.credentials(Credentials::new(cfg.smtp_user.clone(), cfg.smtp_password.clone()));
+            .body(format!("Ваш код подтверждения Edge Tablet: {code}\nКод действует {ttl} мин."))?;
+        let builder = match cfg.security() {
+            SmtpSecurity::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.host)?,
+            SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.host)?,
+            SmtpSecurity::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.host),
+        };
+        let mut builder = builder.port(cfg.port);
+        if !cfg.user.is_empty() {
+            builder = builder.credentials(Credentials::new(cfg.user.clone(), cfg.password.clone()));
         }
         builder.build().send(email).await?;
         Ok(())
@@ -132,13 +163,14 @@ async fn request_code(State(st): State<AppState>, Json(body): Json<RequestCodeIn
 /// Выпустить и отправить код подтверждения на почту.
 async fn issue_code(st: &AppState, email: &str) -> ApiResult<serde_json::Value> {
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
-    let expires = (chrono::Utc::now() + chrono::Duration::minutes(CODE_TTL_MIN)).to_rfc3339();
+    let ttl = st.cfg.auth.code_ttl_minutes;
+    let expires = (chrono::Utc::now() + chrono::Duration::minutes(ttl)).to_rfc3339();
     sqlx::query("UPDATE auth_codes SET used = 1 WHERE email = ? AND used = 0").bind(email).execute(&st.db).await?;
     sqlx::query("INSERT INTO auth_codes (email, code, expires_at, attempts, used) VALUES (?, ?, ?, 0, 0)")
         .bind(email).bind(&code).bind(&expires).execute(&st.db).await?;
     let sent = send_code(st, email, &code).await;
-    let mut out = json!({ "ok": true, "sent": sent, "ttl_min": CODE_TTL_MIN });
-    if !sent && st.cfg.dev_show_code {
+    let mut out = json!({ "ok": true, "sent": sent, "ttl_min": ttl });
+    if !sent && st.cfg.auth.dev_show_code {
         out["dev_code"] = json!(code);
     }
     Ok(out)
@@ -157,7 +189,7 @@ async fn consume_code(st: &AppState, email: &str, code: &str) -> ApiResult<()> {
     if expired {
         return Err(AppError::bad("Код не запрошен или истёк"));
     }
-    if attempts >= 5 {
+    if attempts >= st.cfg.auth.code_max_attempts {
         sqlx::query("UPDATE auth_codes SET used = 1 WHERE id = ?").bind(id).execute(&st.db).await?;
         return Err(AppError::bad("Слишком много попыток, запросите новый код"));
     }
@@ -178,11 +210,12 @@ fn verify_password(pw: &str, hash: &str) -> bool {
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     PasswordHash::new(hash).map(|h| argon2::Argon2::default().verify_password(pw.as_bytes(), &h).is_ok()).unwrap_or(false)
 }
-/// Правило длины пароля для веб-форм и API (CLI может создать и более короткий пароль —
-/// он предупреждает, но не запрещает: доступ к базе и так даёт полные права).
-pub fn check_password(pw: &str) -> ApiResult<()> {
+/// Правило длины пароля для веб-форм и API; `min` — auth.password_min_length из config.yml
+/// (CLI может создать и более короткий пароль — он предупреждает, но не запрещает: доступ к базе
+/// и так даёт полные права).
+pub fn check_password(pw: &str, min: usize) -> ApiResult<()> {
     let n = pw.chars().count();
-    if n < 8 { return Err(AppError::bad(format!("Пароль должен быть не короче 8 символов (сейчас {n})"))); }
+    if n < min { return Err(AppError::bad(format!("Пароль должен быть не короче {min} символов (сейчас {n})"))); }
     if n > 200 { return Err(AppError::bad("Слишком длинный пароль (максимум 200 символов)")); }
     Ok(())
 }
@@ -196,7 +229,9 @@ async fn start_session(st: &AppState, headers: &HeaderMap, user_id: &str, email:
     // За HTTPS-прокси (в т.ч. во фрейме на другом домене) нужен SameSite=None; Secure
     let https = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).map(|v| v.starts_with("https")).unwrap_or(false);
     let _ = https;
-    let max_age = 60 * 60 * 24 * 30;
+    // Срок cookie = auth.session_days; «без ограничения» — 400 дней (максимум, который допускают браузеры)
+    let days = if st.cfg.auth.session_days > 0 { st.cfg.auth.session_days } else { 400 };
+    let max_age = 60 * 60 * 24 * days;
     // Ставим два cookie: обычный (SameSite=Lax, работает по http и в своей вкладке) и «фреймовый»
     // (SameSite=None; Secure; Partitioned — для встраивания на чужой домен по https). Сервер принимает любой.
     let c1 = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}");
@@ -206,13 +241,18 @@ async fn start_session(st: &AppState, headers: &HeaderMap, user_id: &str, email:
     Ok(resp)
 }
 
+const REGISTRATION_OFF: &str = "Регистрация на этом сервере отключена — попросите администратора создать вам аккаунт";
+
 #[derive(Deserialize)]
 pub struct RegisterIn { pub email: String, pub password: String, pub name: Option<String> }
 
 /// Регистрация: email + пароль + имя → код подтверждения на почту.
 async fn register(State(st): State<AppState>, Json(body): Json<RegisterIn>) -> ApiResult<Json<serde_json::Value>> {
+    if !st.cfg.auth.allow_registration {
+        return Err(AppError::forbidden(REGISTRATION_OFF));
+    }
     let email = norm_email(&body.email)?;
-    check_password(&body.password)?;
+    check_password(&body.password, st.cfg.auth.password_min_length)?;
     let name = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| util::truncate(s, 64)).unwrap_or_else(|| email.split('@').next().unwrap_or("Игрок").to_string());
     let hash = hash_password(&body.password)?;
     let existing = sqlx::query("SELECT id, verified, password_hash FROM users WHERE email = ?").bind(&email).fetch_optional(&st.db).await?;
@@ -265,8 +305,11 @@ pub struct VerifyIn { pub email: String, pub code: String, pub name: Option<Stri
 /// Подтверждение почты кодом → аккаунт активирован, сессия открыта.
 async fn verify(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<VerifyIn>) -> ApiResult<Response> {
     let email = norm_email(&body.email)?;
-    consume_code(&st, &email, &body.code).await?;
     let existing = sqlx::query("SELECT id, name FROM users WHERE email = ?").bind(&email).fetch_optional(&st.db).await?;
+    if existing.is_none() && !st.cfg.auth.allow_registration {
+        return Err(AppError::forbidden(REGISTRATION_OFF));
+    }
+    consume_code(&st, &email, &body.code).await?;
     let (user_id, name) = match existing {
         Some(r) => (r.get::<String, _>("id"), r.get::<String, _>("name")),
         None => {
@@ -287,7 +330,7 @@ pub struct ResetIn { pub email: String, pub code: String, pub password: String }
 /// Сброс/установка пароля по коду из письма.
 async fn reset_password(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<ResetIn>) -> ApiResult<Response> {
     let email = norm_email(&body.email)?;
-    check_password(&body.password)?;
+    check_password(&body.password, st.cfg.auth.password_min_length)?;
     consume_code(&st, &email, &body.code).await?;
     let r = sqlx::query("SELECT id, name FROM users WHERE email = ?").bind(&email).fetch_optional(&st.db).await?;
     let Some(r) = r else { return Err(AppError::bad("Аккаунт с такой почтой не найден — зарегистрируйтесь")) };
@@ -340,7 +383,7 @@ pub struct ChangePasswordIn { pub old_password: String, pub password: String }
 
 /// Смена пароля: старый + новый; остальные сессии завершаются.
 async fn change_password(State(st): State<AppState>, headers: HeaderMap, user: AuthUser, Json(body): Json<ChangePasswordIn>) -> ApiResult<Json<serde_json::Value>> {
-    check_password(&body.password)?;
+    check_password(&body.password, st.cfg.auth.password_min_length)?;
     let r = sqlx::query("SELECT password_hash FROM users WHERE id = ?").bind(&user.id).fetch_one(&st.db).await?;
     let hash: Option<String> = r.get("password_hash");
     if let Some(h) = hash { if !verify_password(&body.old_password, &h) { return Err(AppError::bad("Старый пароль неверен")); } }

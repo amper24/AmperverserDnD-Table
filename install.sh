@@ -19,7 +19,7 @@ fi
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  [ -n "$PORT" ] && sed -i.bak "s/^PORT=.*/PORT=$PORT/" .env && rm -f .env.bak
+  [ -n "$PORT" ] && sed -i.bak "s/^#* *PORT=.*/PORT=$PORT/" .env && rm -f .env.bak
   if [ "$MODE" = "docker" ]; then
     MP=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')
     printf "\nMYSQL_PASSWORD=%s\nMYSQL_ROOT_PASSWORD=%s\n" "$MP" "$MP" >> .env

@@ -9,7 +9,7 @@ REM newer release - it always fetches the newest build.
 REM
 REM Variables:
 REM   DND_DIR=<path>   install into a folder of your choice (default: here)
-REM   PORT=8080        listening port
+REM   PORT=8080        listening port (default: server.port in config.yml)
 REM   NO_BROWSER=1     do not open the browser
 REM   NO_PAUSE=1       do not wait for a key press at the end
 REM   DND_URL=<url>    where to take dnd-table.exe from (mirror/private build/tests)
@@ -23,7 +23,6 @@ if not defined DND_URL set "DND_URL=%REL%/dnd-table-windows-x86_64.exe"
 if not defined DND_RUN_URL set "DND_RUN_URL=%REL%/run.bat"
 if not defined DND_DIR set "DND_DIR=%HERE%"
 if "%DND_DIR:~-1%"=="\" set "DND_DIR=%DND_DIR:~0,-1%"
-if not defined PORT set "PORT=8080"
 if not defined NO_PAUSE set "PAUSE_ME=1"
 
 echo [*] Edge Tablet installer
@@ -69,7 +68,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager
 if not exist "%DND_DIR%\run.bat" echo [!] Warning: run.bat was not downloaded - start dnd-table.exe directly if it is missing.
 
 :hasrun
-echo [*] Starting the server on port %PORT% (Ctrl+C or the console command "stop" to quit)
+echo [*] Starting the server (Ctrl+C or the console command "stop" to quit)
+echo     Settings: %DND_DIR%\config.yml - created on the first start
 cd /d "%DND_DIR%"
 if not exist "%DND_DIR%\run.bat" goto :direct
 REM run.bat must not pause on its own - this script pauses once at the end.
