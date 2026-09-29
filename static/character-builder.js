@@ -464,11 +464,19 @@ window.CharacterBuilder = (() => {
     }).filter(Boolean);
     const picked = (draft.skills || []).filter(key => options.some(o => o.key === key) && !taken.has(key));
     const source = klass?.name || '';
-    return { granted: unique, klass: options.length && choose ? { source, choose, options, picked } : null };
+    // Правило PHB (2014) и SRD 2024: владение из двух источников не складывается — вместо
+    // совпавшего навыка игрок берёт любой другой. Считаем такие замены отдельным списком.
+    const overlap = options.filter(o => o.granted);
+    const freeOptions = SKILLS.map(([key, name, ability]) => ({ key, name, ability, granted: unique.find(g => g.key === key) ? sourceLabel(unique.find(g => g.key === key)) : '' }))
+      .filter(o => !o.granted && !picked.includes(o.key));
+    const freeNeed = Math.min(overlap.length, freeOptions.length);
+    const freePicked = (draft.freeSkills || []).filter(key => freeOptions.some(o => o.key === key));
+    return { granted: unique, klass: options.length && choose ? { source, choose, options, picked, overlap } : null,
+      free: freeNeed ? { need: freeNeed, options: freeOptions, picked: freePicked, overlap } : null };
   }
   function build(draft) {
     const s = { name: draft.name.trim(), edition: draft.edition, level: 1, alignment: draft.alignment || '', abilities: { ...draft.abilities },
-      race: '', class: '', background: '', proficiency_bonus: 2, saving_throws: [], skills: [...(draft.skills || [])],
+      race: '', class: '', background: '', proficiency_bonus: 2, saving_throws: [], skills: [...new Set([...(draft.skills || []), ...(draft.freeSkills || [])])],
       hp: { max: 0, current: 0, temp: 0, hit_dice: '1d8' }, speed: 30, features: [], ac: 10, auto_armor: true,
       spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [],
       inventory: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
@@ -626,7 +634,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     name: defaults.name || '', edition: defaultEdition(), alignment: '',
     traits: Object.fromEntries(['player_name', 'faith', 'age', 'height', 'weight', 'eyes', 'skin', 'hair', 'personality', 'ideals', 'bonds', 'flaws', 'appearance', 'backstory'].map(k => [k, ''])),
     abilities: Object.fromEntries(B.keys.map((k, i) => [k, [15, 14, 13, 12, 10, 8][i]])),
-    selected: {}, spells: [], skills: [], languages: [], bonuses: {}, picks: {}, method: 'standard', rolls: [], equipment: emptyEquipment()
+    selected: {}, spells: [], skills: [], freeSkills: [], languages: [], bonuses: {}, picks: {}, method: 'standard', rolls: [], equipment: emptyEquipment()
   };
   const draft = JSON.parse(JSON.stringify(emptyDraft));
   const steps = ['Концепция', 'Происхождение', 'Характеристики', 'Навыки', 'Заклинания', 'Снаряжение', 'Личность', 'Проверка'];
@@ -707,6 +715,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     if (index === 3) {
       const skills = B.skillsState(draft);
       if (skills.klass && skills.klass.picked.length !== skills.klass.choose) return `Навыки класса: выбрано ${skills.klass.picked.length} из ${skills.klass.choose}.`;
+      if (skills.free && skills.free.picked.length !== skills.free.need) return `Совпавшие навыки: выберите ещё ${skills.free.need - skills.free.picked.length} — любое владение вместо уже полученного.`;
       const needed = languageRule();
       if (needed && (draft.languages || []).length !== needed) return `Языки: выбрано ${(draft.languages || []).length} из ${needed}.`;
       return '';
@@ -741,12 +750,12 @@ window.newCharacterDialog = async function (defaults = {}) {
     const selected = draft.selected[category];
     const select = el('select', { 'aria-label': CAT_NAMES[category], onchange: e => {
       draft.selected[category] = entries.find(x => x.id === e.target.value);
-      if (category === 'background') { draft.bonuses = {}; draft.languages = []; }
+      if (category === 'background') { draft.bonuses = {}; draft.languages = []; draft.freeSkills = []; }
       if (category === 'race') {
         const known = knownRaceLanguages();
         draft.languages = (draft.languages || []).filter(x => !known.has(String(x).toLocaleLowerCase()));
       }
-      if (category === 'class') { draft.skills = []; draft.spells = []; }
+      if (category === 'class') { draft.skills = []; draft.freeSkills = []; draft.spells = []; }
       if (category === 'class' || category === 'background') draft.equipment = emptyEquipment();
       render();
     } }, el('option', { value: '' }, 'Выберите…'), ...entries.filter(e => e.category === category).map(e => el('option', { value: e.id, selected: selected?.id === e.id ? '' : null }, e.name + ' · ' + e.source)));
@@ -831,8 +840,29 @@ window.newCharacterDialog = async function (defaults = {}) {
             el('small', { class: on ? 'builder-skill-bonus on' : 'builder-skill-bonus' }, `владение ${signed(mod + prof)}`)),
           o.granted ? el('small', { class: 'builder-skill-src' }, o.granted) : null);
       })));
-      box.append(el('p', { class: 'muted small' }, 'Одно и то же владение из двух источников не складывается: если навык уже даёт раса или предыстория, отметьте другой из списка класса.'));
+      box.append(el('p', { class: 'muted small' }, overlap.length
+        ? `Совпало с модулями: ${overlap.map(o => `${o.name} (${o.granted})`).join(', ')} — вместо них можно взять любое другое владение (см. панель ниже).`
+        : 'Одно и то же владение из двух источников не складывается: если навык уже даёт раса или предыстория, отметьте другой из списка класса.'));
     } else box.append(el('p', { class: 'builder-note' }, 'Класс не даёт выбора навыков — владения приходят из модулей и показаны ниже.'));
+    if (skills.free) {
+      const { need, options, picked, overlap } = skills.free, fullFree = picked.length >= need, leftFree = Math.max(0, need - picked.length);
+      box.append(el('div', { class: 'builder-panel-head builder-free-head' },
+        el('div', {}, el('b', {}, 'Взаимозамена навыков'), el('small', { class: 'muted' },
+          `Правило D&D: владение из двух источников не удваивается · ${overlap.map(o => `${o.name} — ${o.granted}`).join(', ')}`)),
+        el('span', { class: 'builder-counter' + (fullFree ? ' ok' : ' flag') }, fullFree ? `${picked.length} из ${need} · готово` : `${picked.length} из ${need} · ещё ${leftFree}`)));
+      box.append(el('div', { class: 'builder-skills' }, ...options.map(o => {
+        const on = picked.includes(o.key), mod = Math.floor(((getPreview().abilities[o.ability] ?? 10) - 10) / 2), prof = getPreview().proficiency_bonus || 2;
+        return el('label', { class: 'builder-skill' + (on ? ' on' : ''), title: `Владение: ${signed(mod + prof)} к проверкам` },
+          el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && fullFree ? '' : null, onchange: e => {
+            draft.freeSkills = (draft.freeSkills || []).filter(x => x !== o.key);
+            if (e.target.checked) draft.freeSkills.push(o.key);
+            render();
+          } }),
+          el('span', { class: 'grow' }, el('b', {}, o.name),
+            el('small', { class: 'muted' }, `${ABIL[o.ability] || o.ability} ${signed(mod)}`),
+            el('small', { class: on ? 'builder-skill-bonus on' : 'builder-skill-bonus' }, `владение ${signed(mod + prof)}`)));
+      })));
+    }
     const granted = skills.granted;
     box.append(el('div', { class: 'builder-granted' },
       el('div', { class: 'builder-granted-head' }, el('b', {}, 'Уже владеет'), el('span', { class: 'builder-counter' }, String(granted.length))),
@@ -1002,7 +1032,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     if (step === 0) {
       add(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Восемь понятных шагов — от концепции до готового листа. Расы, классы и предыстории подключаются как блоки из справочника, а навыки и снаряжение собираются по правилам.')),
         field('Имя персонажа', el('input', { value: draft.name, maxlength: 128, placeholder: 'Как вас будут помнить?', oninput: e => draft.name = e.target.value })),
-        field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.skills = []; draft.languages = []; draft.bonuses = {}; draft.equipment = emptyEquipment(); load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
+        field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.skills = []; draft.freeSkills = []; draft.languages = []; draft.bonuses = {}; draft.equipment = emptyEquipment(); load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
         el('p', { class: 'muted small' }, '2014: бонусы характеристик от расы. 2024: от предыстории. Пользовательские модули доступны из ваших наборов и наборов кампании.'));
     }
     if (step === 1 || step === 4) {

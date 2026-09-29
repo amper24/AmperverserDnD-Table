@@ -35,11 +35,16 @@ window.Equipment = (() => {
     return '';
   }
   // Хват по умолчанию: оружие, щиты, магические палочки/посохи/жезлы/оружие.
+  // Фокусировки и инструменты держат в руке: священный символ (не амулет), магическая и
+  // друидическая фокусировка, музыкальный инструмент. Амулет или подвеска — на шее, не в руке.
+  const FOCUS = /фокусиров|focus|священн[а-яё]* символ|holy symbol|инструмент|instrument|лютн|флейт|рожок|барабан|арфа|дудочк/i;
+  const AMULET_FOCUS = /амулет|amulet|подвеск|ожерель/;
   function inferHands(it) {
     const text = itemText(it);
     const consumable = ['зель', 'свиток', 'боеприпас', 'potion', 'scroll', 'ammunition'].some(w => text.includes(w));
     const magicHand = it.type === 'magic' && !consumable && HAND_MAGIC.test(text);
-    if (!(it.type === 'weapon' || (SHIELD.test(text) && !JEWELRY.test(text)) || magicHand)) return 'none';
+    const focusHand = it.type === 'gear' && !consumable && FOCUS.test(text) && !AMULET_FOCUS.test(text);
+    if (!(it.type === 'weapon' || (SHIELD.test(text) && !JEWELRY.test(text)) || magicHand || focusHand)) return 'none';
     return /двуруч|two-handed/.test(text) ? 'two' : /универсаль|versatile/.test(text) ? 'versatile' : 'one';
   }
   const handednessOf = it => ['none', 'one', 'two', 'versatile'].includes(it.handedness) ? it.handedness : inferHands(it);

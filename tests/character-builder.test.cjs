@@ -136,3 +136,46 @@ test('choice definitions are validated before they reach the sheet', () => {
   assert.match(B.validateChoices([choiceGroup('p', 'proficiency', [['o', 'Владение', ' ']])]), /владение/i);
   assert.match(B.validateChoices([ok[0], ok[0]]), /код/i);
 });
+
+test('правило взаимозамены: навык из двух источников заменяется любым другим', () => {
+  const d = draft();
+  d.selected.class.data.skills = { choose: 2, from: ['Религия', 'Скрытность', 'Атлетика'] };
+  d.selected.background.data.skills = ['Религия'];               // Религия уже есть от предыстории
+  const st = B.skillsState(d);
+  assert.equal(st.klass.choose, 2);
+  assert.equal(st.klass.overlap.length, 1, 'Религия приходит и от класса, и от предыстории');
+  assert.equal(st.free.need, 1, 'вместо совпавшего навыка — любое другое владение');
+  assert.equal(st.free.options.some(o => o.key === 'religion'), false, 'уже известный навык в заменах не предлагается');
+  d.skills = ['Скрытность', 'Атлетика'];
+  d.freeSkills = ['religion'];
+  assert.equal(B.build(d).skills.filter(k => k === 'religion').length, 1, 'навык не удваивается');
+});
+
+test('взаимозамена не появляется, когда пересечений нет', () => {
+  const d = draft();
+  d.selected.class.data.skills = { choose: 1, from: ['Скрытность', 'Атлетика'] };
+  d.selected.background.data.skills = ['Религия'];
+  const st = B.skillsState(d);
+  assert.equal(st.free, null);
+  assert.equal(st.klass.overlap.length, 0);
+});
+
+test('замены фильтруются: занятые и чужие навыки в зачёт не идут', () => {
+  const d = draft();
+  d.selected.class.data.skills = { choose: 1, from: ['Религия', 'Скрытность'] };
+  d.selected.background.data.skills = ['Религия'];
+  d.skills = ['Скрытность'];
+  d.freeSkills = ['Скрытность', 'religion', 'НетТакого'];
+  const st = B.skillsState(d);
+  assert.deepEqual(JSON.parse(JSON.stringify(st.free.picked)), [], 'Скрытность выбрана классом, Религия занята предысторией, остального нет в списке');
+});
+
+test('навыки из замен попадают на лист один раз', () => {
+  const d = draft();
+  d.selected.class.data.skills = { choose: 1, from: ['Религия', 'Скрытность', 'Атлетика'] };
+  d.selected.background.data.skills = ['Религия'];
+  d.skills = ['stealth'];
+  d.freeSkills = ['athletics'];                                   // замена за совпавшую Религию
+  const s = B.build(d);
+  assert.deepEqual([...s.skills].sort(), ['athletics', 'religion', 'stealth']);
+});

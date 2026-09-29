@@ -1476,3 +1476,6 @@ body.lu-open { overflow: hidden; }
 .comp-compact.comp-narrow .comp-back { display: inline-flex; position: sticky; top: 0; z-index: 2; }
 .comp-compact.comp-narrow .comp-compact-list { min-height: 140px; }
 .comp-compact-entry .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---- Шаг «Навыки»: панель взаимозамены навыков (правило двух источников) ---- */
+.builder-free-head { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.builder-free-head .builder-counter.flag { border-color: var(--accent-line); color: var(--accent); }
