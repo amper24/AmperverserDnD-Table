@@ -25,6 +25,28 @@ window.Mechanics = (() => {
     if(kind==='passive') Object.assign(b,{field:'speed',value:30});
     return b;
   }
+  /// Стартовый набор блоков для **новой** записи создания персонажа: влияет на характеристики,
+  /// владения и даёт заготовку умения. Только для расы, класса и предыстории; правится как обычные блоки.
+  const STARTERS = {
+    race: () => ({ version: VERSION, origin: 'starter', programs: [
+      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
+        { ...block('passive'), field: 'speed', value: 30 },
+        { ...block('passive'), field: 'asi.str', value: 2 },
+        { ...block('passive'), field: 'languages', value: ['Общий'] } ] },
+      { id: uid(), name: 'Умение расы', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите особенность расы: что она даёт и когда применяется.' }] } ] }),
+    class: () => ({ version: VERSION, origin: 'starter', programs: [
+      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
+        { ...block('passive'), field: 'hit_die', value: 'd8' },
+        { ...block('passive'), field: 'saves', value: ['str'] },
+        { ...block('passive'), field: 'skills', value: { choose: 2, from: [] } } ] },
+      { id: uid(), name: 'Умение класса', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите умение 1 уровня: что оно даёт и когда применяется.' }] } ] }),
+    background: () => ({ version: VERSION, origin: 'starter', programs: [
+      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
+        { ...block('passive'), field: 'skills', value: [] },
+        { ...block('passive'), field: 'languages', value: [] } ] },
+      { id: uid(), name: 'Умение предыстории', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите умение предыстории.' }] } ] }),
+  };
+  function starter(category) { const make = STARTERS[category]; return make ? make() : undefined; }
   function migrate(doc, category='item') {
     if(doc.mechanics) return doc.mechanics;
     const blocks=[], extra=[];
@@ -99,7 +121,20 @@ window.Mechanics = (() => {
       const nav=el('div',{class:'mechanics-programs'},...m.programs.map((p,i)=>el('button',{class:i===selected?'active':'',onclick:()=>{selected=i;render();}},p.name)),el('button',{onclick:()=>{m.programs.push(makeProgram());selected=m.programs.length-1;render();}},'+ Действие'));
       root.append(el('div',{class:'mechanics-heading'},el('div',{},el('h3',{},'Конструктор механик'),el('p',{class:'muted small'},'Соберите действие из блоков. Описание ничего не исполняет. Порядок — сверху вниз; при ошибке откатывается вся цепочка.')),el('span',{class:'badge'},'BLOCKS · v1')),nav);
       if(!p) { root.append(el('p',{class:'muted'},'Добавьте действие или начните с рецепта ниже.')); }
-      const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Рецепты:'),...['potion','weapon','craft','spell'].map(k=>el('button',{class:'small',onclick:()=>{const prog=makeProgram();if(k==='potion'){prog.name='Выпить зелье';prog.blocks=[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')];}if(k==='weapon'){prog.name='Атака';prog.blocks=[block('attack'),block('damage')];}if(k==='craft'){prog.name='Изготовить';prog.blocks=[{...block('consume'),source:'tag',tag:'ingredient'},block('grant_item')];}if(k==='spell'){prog.name='Сотворить';prog.blocks=[{...block('consume'),resource:'slot',source:'self',slot_level:1}, {...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}];}m.programs.push(prog);selected=m.programs.length-1;render();}}, {potion:'Зелье → хиты → флакон',weapon:'Атака → урон',craft:'Сырьё → предмет',spell:'Ячейка → лечение'}[k])));
+      const RECIPES={
+        potion:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}),
+        weapon:()=>({name:'Атака',blocks:[block('attack'),block('damage')]}),
+        craft:()=>({name:'Изготовить',blocks:[{...block('consume'),source:'tag',tag:'ingredient'},block('grant_item')]}),
+        spell:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}]}),
+        // Рецепты создания персонажа: влияют на характеристики / владения или дают умение.
+        asi:()=>({name:'Характеристики',trigger:'passive',blocks:[{...block('passive'),field:'asi.str',value:2}]}),
+        skills:()=>({name:'Навыки',trigger:'passive',blocks:[{...block('passive'),field:'skills',value:{choose:2,from:[]}}]}),
+        feature:()=>({name:'Умение',blocks:[{...block('manual'),text:'Опишите умение: что оно даёт и когда применяется.'}]}),
+        proficiency:()=>({name:'Владения',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}),
+      };
+      const RECIPE_LABELS={potion:'Зелье → хиты → флакон',weapon:'Атака → урон',craft:'Сырьё → предмет',spell:'Ячейка → лечение',asi:'Бонус характеристики',skills:'Навыки на выбор',feature:'Умение (блоки)',proficiency:'Владение'};
+      const presetList=['race','class','background'].includes(options.category||'item')?['asi','skills','feature','proficiency']:['potion','weapon','craft','spell'];
+      const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Рецепты:'),...presetList.map(k=>el('button',{class:'small',onclick:()=>{const prog=makeProgram(),r=RECIPES[k]();prog.name=r.name;prog.blocks=r.blocks;if(r.trigger)prog.trigger=r.trigger;m.programs.push(prog);selected=m.programs.length-1;render();}},RECIPE_LABELS[k])));
       root.append(presets); if(!p) return;
       root.append(el('div',{class:'block-program-header'},field('Название действия',input(p,'name')),field('Когда',select([['use','По нажатию «Использовать»'],['passive','Параметры при создании']],p.trigger,v=>p.trigger=v)),el('button',{class:'small',onclick:()=>{const copy=clone(p);copy.id=uid();copy.name+=' (копия)';copy.blocks.forEach(b=>b.id=uid());m.programs.push(copy);selected=m.programs.length-1;render();}},'Копия'),el('button',{class:'small danger',onclick:()=>{if(confirm('Удалить действие со всеми блоками?')){m.programs.splice(selected,1);render();}}},'Удалить действие')));
       const workspace=el('div',{class:'block-workspace'}), palette=el('aside',{class:'block-palette'},el('b',{},'Добавить блок'),...Object.entries(TYPES).map(([k,[name,color]])=>el('button',{class:'palette-block '+color,onclick:()=>{if(p.blocks.length>=32)return toast('Не более 32 блоков.');p.blocks.push(block(k));render();}},'+ '+name)));
@@ -170,5 +205,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,migrate,validate,editor,preview,buttons,programSummary,passiveData};
+  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,migrate,validate,editor,preview,buttons,programSummary,passiveData};
 })();

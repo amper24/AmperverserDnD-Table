@@ -302,7 +302,11 @@ window.Modules = (function () {
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const state = { name: entry?.name || '' };
     const json = el('textarea', { style: 'min-height:160px;font-family:monospace;font-size:12px' }, JSON.stringify(d, null, 2));
-    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })), visualsRow(d, { tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }));
+    // Класс и раса — не объекты на карте: у них только изображение карточки, токена нет.
+    const NO_TOKEN = category === 'race' || category === 'class';
+    if (!entry && !d.mechanics) { const starter = window.Mechanics?.starter?.(category); if (starter) d.mechanics = starter; }
+    const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })),
+      visualsRow(d, { noToken: NO_TOKEN, imageLabel: NO_TOKEN ? 'Изображение (карточка справочника)' : undefined, tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }));
     if (gopts.folders && gopts.folders.length) simple.append(f('Папка в наборе', el('select', { onchange: e => { if (e.target.value) d.folder = e.target.value; else delete d.folder; } }, el('option', { value: '' }, '— без папки'), ...gopts.folders.map(x => el('option', { value: x, selected: d.folder === x ? '' : null }, x)))));
     if (category === 'npc') {
       simple.append(el('div', { class: 'row' }, f('Роль', el('input', { value: d.role || '', placeholder: 'трактирщик, капитан стражи…', oninput: e => d.role = e.target.value })), f('Раса', el('input', { value: d.race || '', oninput: e => d.race = e.target.value })), f('Фракция', el('input', { value: d.faction || '', oninput: e => d.faction = e.target.value })),
@@ -344,8 +348,15 @@ window.Modules = (function () {
       renderTr(); simple.append(f('Особенности', tr));
 
     }
+    // Варианты выбора «либо / либо»: игрок решает при создании персонажа (CharacterBuilder).
+    if (['race', 'class', 'background'].includes(category) && window.CharacterBuilder?.choiceEditor) simple.append(window.CharacterBuilder.choiceEditor(d));
     simple.append(Mechanics.editor(d, {category}));
-    return modal(entry ? 'Редактировать' : 'Новая запись', simple, [{label:'Сохранить', cls:'primary', fn:()=>{const error=Mechanics.validate(d.mechanics);if(error){toast(error);return false;}return {name:state.name,data:d};}}], {wide:true});
+    return modal(entry ? 'Редактировать' : 'Новая запись', simple, [{label:'Сохранить', cls:'primary', fn:()=>{
+      if (NO_TOKEN) delete d.token_asset_id;
+      if (!(d.choices || []).length) delete d.choices;
+      const error=Mechanics.validate(d.mechanics); if(error){toast(error);return false;}
+      const cerr=window.CharacterBuilder?.validateChoices?.(d.choices)||''; if(cerr){toast(cerr);return false;}
+      return {name:state.name,data:d};}}], {wide:true});
   }
 
   // ---------- drag&drop payloads ----------

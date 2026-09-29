@@ -636,3 +636,27 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media(max-width:700px){.mechanics-editor{padding:11px}.block-workspace{grid-template-columns:1fr}.block-palette{position:static;flex-direction:row;flex-wrap:wrap}.block-palette>b{width:100%}.block-palette .palette-block{font-size:11px;padding:6px}.mechanic-block header{gap:4px;flex-wrap:wrap}.block-switch{margin-left:auto}.block-field{min-width:100px}.mechanics-heading .badge{display:none}}
 @media(max-width:700px){.editor-form>.row,.editor-form .equipment-editor>.row{flex-wrap:wrap}.editor-form .visuals{flex-direction:column;align-items:stretch}.editor-form .imgpick-btns>.row{flex-wrap:wrap}.editor-form .imgpick-btns button{flex:0 1 auto}.editor-form .row .field{min-width:110px}}
 .block-checks{display:flex;gap:9px;flex-wrap:wrap;width:100%;font-size:12px}.block-checks label{display:flex;align-items:center;gap:5px}.block-checks input{width:auto}
+
+/* Мастер создания: выбор «либо / либо» в модулях; редактор вариантов выбора */
+.builder-choices { margin-top: 16px; }
+.builder-choices h3 { font-family: Georgia, 'Times New Roman', serif; }
+.builder-choice { border-top: 1px solid var(--border); padding: 12px 0 4px; }
+.builder-choice > div:first-child { margin-bottom: 4px; }
+.builder-choice > p { margin: 0 0 8px; }
+.builder-choice-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.builder-choice-option { display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--border); border-radius: 6px; padding: 10px; cursor: pointer; }
+.builder-choice-option:has(:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.builder-choice-option input { width: auto; margin-top: 2px; accent-color: var(--accent); }
+.builder-choice-option b { display: block; }
+.builder-choice-option small { display: block; color: var(--muted); }
+.choices-editor .choice-group { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--panel2, var(--bg)); }
+.choices-editor .choice-options { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.choices-editor .choice-option { align-items: center; }
+.choices-editor .ability-bonus { gap: 6px; flex-wrap: wrap; }
+.choices-editor .ability-bonus label { display: flex; align-items: center; gap: 3px; font-size: 11px; }
+.choices-editor details summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.choice-error { color: var(--danger); }
+@media (max-width: 700px) {
+  .builder-choice-options { grid-template-columns: 1fr; }
+  .choices-editor .choice-option { flex-wrap: wrap; }
+}

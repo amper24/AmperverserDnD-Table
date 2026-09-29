@@ -40,6 +40,16 @@ window.Compendium = (function () {
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
     block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${t.name}` })));
+    if (Array.isArray(d.choices) && d.choices.length) {
+      wrap.append(el('h3', { style: 'margin-top:12px' }, 'Выбор при создании'));
+      for (const g of d.choices) {
+        const count = Number(g.count) || 1;
+        wrap.append(el('p', {}, el('b', {}, (g.name || 'Выбор') + '. '),
+          el('span', { class: 'muted small' }, `${window.CharacterBuilder?.CHOICE_TYPES?.[g.type] || g.type} · выбрать ${count}${g.optional ? ' (необязательно)' : ''}. `),
+          (g.options || []).map(o => o.name).join(' · ')));
+        for (const o of g.options || []) if (o.value && o.value.text) wrap.append(el('div', { class: 'card-desc' }, el('b', {}, o.name + '. '), M().rich(String(o.value.text), ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${o.name}` })));
+      }
+    }
     block('Подрасы / линии', d.subraces, s => typeof s === 'string' ? el('p', {}, s) : el('p', {}, el('b', {}, s.name + ' (' + asi(s.asi) + '). '), s.text));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].text !== undefined) block('Действия', d.actions, a => {
       const p = el('p', {}, el('b', {}, a.name + '. '));
