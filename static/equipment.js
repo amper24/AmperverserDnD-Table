@@ -72,6 +72,25 @@ window.Equipment = (() => {
     if (!it.equipped) { it.hand_slot = null; it.worn_slot = null; }
     return it;
   }
+  // Раскладка стартового набора: доспех на тело, щит во вторую руку, одноручное оружие — в основную.
+  // Двуручное оружие берётся в обе руки только если щита нет: иначе персонаж остаётся со щитом,
+  // а оружие ждёт в рюкзаке. Слоты проверяет migrate(): стопки и конфликты не создают дублей.
+  function equipDefaults(inventory, options = {}) {
+    const canHands = options.hands !== false, canWear = options.wear !== false;
+    const free = it => (it.qty ?? 1) === 1 && !it.equipped;
+    const shieldOf = it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it));
+    const oneHanded = it => ['one', 'versatile'].includes(handednessOf(it));
+    const hold = (it, slot) => { it.equipped = true; it.hand_slot = slot; it.worn_slot = null; };
+    const held = slot => inventory.some(it => it.equipped && (it.hand_slot === slot || it.hand_slot === 'both'));
+    if (canWear) for (const it of inventory) if (free(it) && handednessOf(it) === 'none' && wearKind(it) === 'armor') { it.equipped = true; it.worn_slot = 'armor'; break; }
+    if (canHands) {
+      for (const it of inventory) if (free(it) && shieldOf(it) && !held('off') && !held('both')) { hold(it, 'off'); break; }
+      for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it) && oneHanded(it) && !held('main')) { hold(it, 'main'); break; }
+      if (!held('main') && !held('off')) for (const it of inventory) if (free(it) && handednessOf(it) === 'two' && !shieldOf(it)) { hold(it, 'both'); break; }
+      if (!held('main')) for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it)) { hold(it, 'main'); break; }
+    }
+    return migrate(inventory);
+  }
   function migrate(inventory) {
     const occupied = new Set(), worn = new Set();
     inventory.forEach(it => {
@@ -153,5 +172,5 @@ window.Equipment = (() => {
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, wearKinds, WORN_SLOTS, normalize, migrate, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, wearKinds, WORN_SLOTS, normalize, migrate, equipDefaults, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
 })();
