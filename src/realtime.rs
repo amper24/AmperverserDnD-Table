@@ -57,6 +57,17 @@ impl Hub {
             }
         }
     }
+    async fn send_to_user(&self, cid: &str, user_id: &str, msg: &Value) {
+        let text = msg.to_string();
+        let rooms = self.rooms.read().await;
+        if let Some(room) = rooms.get(cid) {
+            for c in room.values() {
+                if c.user_id == user_id {
+                    let _ = c.tx.send(text.clone());
+                }
+            }
+        }
+    }
     async fn roll_error(&self, cid: &str, conn_id: u64, request_id: &Value, message: &str) {
         let rooms = self.rooms.read().await;
         if let Some(c) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
@@ -140,7 +151,7 @@ async fn handle_socket(socket: WebSocket, st: AppState, cid: String, user: auth:
 
 // ---------- броски кубиков ----------
 pub fn roll_expression(expr: &str) -> Option<Value> {
-    let expr: String = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase().replace('к', "d");
+    let expr: String = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
     // Match the WHOLE expression: the old token scan silently accepted d20++5 or trailing signs.
     let grammar = Regex::new(r"^[+-]?(?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+)(?:[+-](?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+))*$").ok()?;
     if expr.is_empty() || expr.len() > 64 || !grammar.is_match(&expr) { return None; }
@@ -185,13 +196,15 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
 
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
 pub(crate) fn double_dice(expr: &str) -> String {
-    let expr = expr.to_lowercase().replace('к', "d");
-    let re = Regex::new(r"(\d*)([dк])(\d+)").unwrap();
+    let expr = expr.to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
+    let re = Regex::new(r"(\d*)(d)(\d+)(?:k([hl])(\d+))?").unwrap();
     re.replace_all(&expr, |c: &regex::Captures| {
         let n: i64 = if c[1].is_empty() { 1 } else {
             match c[1].parse() { Ok(n) => n, Err(_) => return c[0].to_string() }
         };
-        format!("{}{}{}", n.saturating_mul(2), &c[2], &c[3])
+        let keep = c.get(5).and_then(|v| v.as_str().parse::<i64>().ok()).map(|v| v.saturating_mul(2));
+        let keep_suffix = match (c.get(4), keep) { (Some(mode), Some(keep)) => format!("k{}{}", mode.as_str(), keep), _ => String::new() };
+        format!("{}{}{}{}", n.saturating_mul(2), &c[2], &c[3], keep_suffix)
     }).into_owned()
 }
 
@@ -265,12 +278,22 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула или превышен лимит кубиков.").await; return;
             };
             let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
+            let private = !gm_only && msg["visibility"].as_str() == Some("private");
+            let color = msg["dice_color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or("#a881e8");
             r["label"] = msg["label"].clone();
             r["gm_only"] = json!(gm_only);
+            r["visibility"] = json!(if private { "private" } else { "campaign" });
+            r["dice_color"] = json!(color);
             r["request_id"] = json!(msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>());
             r["kind"] = msg["kind"].clone();
-            if let Some(out) = save_chat(st, cid, user, "roll", &r).await {
-                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
+            let storage_kind = if private { "private_roll" } else { "roll" };
+            if let Some(mut out) = save_chat(st, cid, user, storage_kind, &r).await {
+                // В базе приватные броски хранятся отдельным видом и никогда не попадут в
+                // общий чат; подключённым вкладкам владельца отдаём обычный формат roll.
+                out["kind"] = json!("roll");
+                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; }
+                else if private { st.hub.send_to_user(cid, &user.id, &out).await; }
+                else { st.hub.broadcast(cid, &out, None).await; }
             }
         }
         // связка бросков одним сообщением: атака + урон (+ что угодно). Крит по атаке удваивает кости урона.
@@ -279,6 +302,8 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 st.hub.roll_error(cid, conn_id, &msg["request_id"], "Связка должна содержать 1–8 бросков.").await; return;
             };
             let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
+            let private = !gm_only && msg["visibility"].as_str() == Some("private");
+            let color = msg["dice_color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or("#a881e8");
             let mut out_rolls = Vec::new();
             let mut crit = false;
             for r in list.iter().take(8) {
@@ -304,9 +329,13 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 out_rolls.push(rolled);
             }
             if out_rolls.is_empty() { return; }
-            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "request_id": msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>(), "rolls": out_rolls });
-            if let Some(out) = save_chat(st, cid, user, "multi", &payload).await {
-                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
+            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "visibility": if private { "private" } else { "campaign" }, "dice_color": color, "request_id": msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>(), "rolls": out_rolls });
+            let storage_kind = if private { "private_multi" } else { "multi" };
+            if let Some(mut out) = save_chat(st, cid, user, storage_kind, &payload).await {
+                out["kind"] = json!("multi");
+                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; }
+                else if private { st.hub.send_to_user(cid, &user.id, &out).await; }
+                else { st.hub.broadcast(cid, &out, None).await; }
             }
         }
         // эфемерные события стола
@@ -462,6 +491,8 @@ mod dice_tests {
     fn totals_and_critical_dice() {
         assert_eq!(roll_expression("2d1-3+d1").unwrap()["total"], 0);
         assert_eq!(double_dice("1d8+2d6+3"), "2d8+4d6+3");
+        assert_eq!(double_dice("4d6kh3+1d8kl1+5"), "8d6kh6+2d8kl2+5");
+        assert_eq!(roll_expression("−d6+2").unwrap()["expr"], "-d6+2");
         assert_eq!(nat_d20(&json!({"parts":[{"sides":20,"kept":[20]}]})), (true, false));
     }
 }

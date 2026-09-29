@@ -185,7 +185,13 @@ window.Mechanics = (() => {
         if(b.when && b.when!=='always' && !gate) return 'Условному блоку нужна предшествующая атака или спасбросок.';
         if(['attack','save'].includes(b.kind)) gate=true;
         if(b.dice) {
-          if(b.dice.advanced) { if(b.dice.advanced.length>128) return 'Слишком длинная формула.'; }
+          if(b.dice.advanced) {
+            if(b.dice.advanced.length>64) return 'Формула слишком длинная (максимум 64 символа).';
+            if(window.DiceEngine?.parse) {
+              try { window.DiceEngine.parse(String(b.dice.advanced).replace(/@[a-z_]+/gi, '0')); }
+              catch { return 'Неверная формула кубов. Пример: 2d6+@str.'; }
+            }
+          }
           else if(!Number.isInteger(b.dice.count)||b.dice.count<0||b.dice.count>100||!Number.isInteger(b.dice.sides)||b.dice.sides<1||b.dice.sides>1000||!Number.isInteger(b.dice.bonus)||Math.abs(b.dice.bonus)>1000000) return 'Проверьте числа в блоке кубиков.';
         }
         if(['consume','grant_item'].includes(b.kind)&&(!Number.isInteger(b.amount)||b.amount<1||b.amount>10000)) return 'Количество расхода / выдачи: целое от 1 до 10000.';
@@ -214,9 +220,13 @@ window.Mechanics = (() => {
           {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name},
           {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name},
           window.SHEET_CTX||{},'',{disabled:options.disabled,note:'Отдельный бросок: без расхода и эффектов'});
-        program.classList.add('all');
-        program.title='Вся цепочка целиком: расход, эффекты и удвоение костей при крите. '+programSummary(p);
-        root.append(el('div',{class:'actions-row'},row,program));
+        const pureAttackDamage = blocks.length === 2 && blocks.some(b=>b.kind==='attack') && blocks.some(b=>b.kind==='damage');
+        if(pureAttackDamage) root.append(el('div',{class:'actions-row'},row));
+        else {
+          program.classList.add('all');
+          program.title='Вся цепочка целиком: расход, эффекты и удвоение костей при крите. '+programSummary(p);
+          root.append(el('div',{class:'actions-row'},row,program));
+        }
       } else root.append(program);
     }
     return root;

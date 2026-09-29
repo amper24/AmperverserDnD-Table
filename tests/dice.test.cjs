@@ -35,6 +35,8 @@ test('negative terms and constants are computed exactly', () => {
 test('critical attack doubles damage dice, not modifier or healing', () => {
   const result = D.evaluateBatch([{kind:'attack',expr:'d20+5'},{kind:'damage',expr:'d8+3'},{kind:'heal',expr:'d4+2'}],()=>.999);
   assert.equal(result[0].crit,true); assert.equal(result[1].expr,'2d8+3'); assert.equal(result[1].total,19); assert.equal(result[2].expr,'d4+2');
+  assert.equal(D.doubleDice('4d6kh3+1d8kl1+5'), '8d6kh6+2d8kl2+5', 'keep counts double with the dice pool');
+  assert.equal(D.parse('−d6+2').expr, '-d6+2', 'typographic minus is normalized before validation');
 });
 test('a later noncritical attack resets the critical state', () => {
   const values=[.999,.5,0,0];

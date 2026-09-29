@@ -93,7 +93,22 @@ window.Modules = (function () {
     // схлопываем константы "+5+2" оставляем — сервер посчитает
     return out;
   }
-  const DICE_RE = /(\d*[dк]\d+(?:k[hl]\d+)?(?:\s*[+\-]\s*(?:\d+|@[a-z_]+))*)/gi;
+  // Извлекает целые формулы, в том числе несколько костей в одном выражении:
+  // «1d6+1d4+3» — одна кнопка, а не три отдельных броска.
+  const DICE_RE = /[+\-−]?\d*[dк]\d+(?:k[hl]\d+)?(?:\s*[+\-−]\s*(?:\d*[dк]\d+(?:k[hl]\d+)?|\d+|@[a-z_]+))*/gi;
+  const FORMULA_WORD = /[\p{L}\p{N}_]/u;
+  function diceExpressions(text) {
+    const source = String(text || ''), out = [];
+    DICE_RE.lastIndex = 0;
+    let m;
+    while ((m = DICE_RE.exec(source))) {
+      const expr = m[0].replace(/\s+/g, '').replace(/−/g, '-');
+      const before = source[m.index - 1] || '', after = source[m.index + m[0].length] || '';
+      if ((before && FORMULA_WORD.test(before) && !expr.startsWith('-')) || (after && FORMULA_WORD.test(after))) continue;
+      out.push({ expr, index: m.index, end: m.index + m[0].length });
+    }
+    return out;
+  }
 
   // ---------- броски: единый канал ----------
   /// Преимущество/помеха: первый d20 в выражении → 2d20kh1 / 2d20kl1.
@@ -137,12 +152,12 @@ window.Modules = (function () {
       // {{@dc}} — подстановка значения из листа (Сл {{@dc}}, +{{@prof}}); {{текст}} — выделение
       const v = p.match(/^\{\{([^}]+)\}\}$/);
       if (v) { const inner = v[1].trim(); const isVar = /^@[a-z_]+$/i.test(inner) || /@[a-z_]+/i.test(inner) && /^[-+*\d\s@a-z_]+$/i.test(inner); wrap.append(el('b', { class: 'inline-val', title: inner }, isVar ? evalConst(inner, ctx) : inner)); continue; }
-      // авто-обнаружение кубиков в обычном тексте
-      let last = 0; const re = new RegExp(DICE_RE.source, 'gi'); let mm;
-      while ((mm = re.exec(p))) {
-        if (mm.index > last) wrap.append(textNode(p.slice(last, mm.index)));
-        wrap.append(rollBtn(mm[1].trim(), mm[1].trim(), ctx, { ...opts, auto: true }));
-        last = mm.index + mm[0].length;
+      // Автоссылки охватывают полную формулу: несколько костей и модификаторов бросаются вместе.
+      let last = 0;
+      for (const match of diceExpressions(p)) {
+        if (match.index > last) wrap.append(textNode(p.slice(last, match.index)));
+        wrap.append(rollBtn(match.expr, match.expr, ctx, { ...opts, auto: true }));
+        last = match.end;
       }
       if (last < p.length) wrap.append(textNode(p.slice(last)));
     }
@@ -399,5 +414,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

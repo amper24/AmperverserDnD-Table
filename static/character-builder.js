@@ -2,25 +2,36 @@
 window.CharacterBuilder = (() => {
   const keys = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   const short = { СИЛ: 'str', ЛОВ: 'dex', ТЕЛ: 'con', ИНТ: 'int', МДР: 'wis', ХАР: 'cha' };
+  const ALIGNMENTS = ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
+  const LANGUAGES = ['Общий', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Абиссальный', 'Небесный', 'Драконий', 'Глубинная речь', 'Инфернальный', 'Первичный', 'Сильван', 'Подземный общий'];
   const modifier = n => Math.floor((n - 10) / 2);
+  const appendProficiency = (s, label, values) => {
+    const list = Array.isArray(values) ? values : typeof values === 'string' ? [values] : [];
+    const text = list.map(x => String(x || '').trim()).filter(Boolean).join(', ');
+    if (text && !s.proficiencies.includes(text)) s.proficiencies += `${label}: ${text}\n`;
+  };
   const handlers = new Map();
   const register = (category, apply) => handlers.set(category, apply);
   const feature = (s, name, text, source, mechanics) => s.features.push(Modules.newFeature({ name, text: text || '', source, mechanics }));
   register('race', (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name; if (d.speed) s.speed = d.speed;
     if (s.edition === '2014') for (const k of keys) s.abilities[k] += Number(d.asi?.[k]) || 0;
-    if (Array.isArray(d.languages)) s.proficiencies += d.languages.join(', ') + '\n';
+    appendProficiency(s, 'Языки расы', d.languages);
   });
   register('class', (s, e) => {
     const d = e.data || {}; s.class = e.name; s.saving_throws = [...(d.saves || [])];
     s.hp.hit_dice = '1' + (d.hit_die || 'd8'); s.spells.ability = d.spellcasting || '';
     for (const name of d.features?.['1'] || []) feature(s, name, d.feature_texts?.[name], e.name, window.Mechanics?.forFeature(d.mechanics,name));
-    s.proficiencies += [d.armor, d.weapons].filter(Boolean).join('\n') + '\n';
+    appendProficiency(s, 'Доспехи', d.armor);
+    appendProficiency(s, 'Оружие', d.weapons);
+    appendProficiency(s, 'Инструменты', d.tools);
     if (d.starting_equipment) s.notes += 'Стартовое снаряжение — выберите и добавьте в инвентарь:\n' + d.starting_equipment + '\n';
   });
   register('background', (s, e) => {
     const d = e.data || {}; s.background = e.name;
     for (const name of Array.isArray(d.skills)?d.skills:[]) { const skill = SKILLS.find(([k, n]) => k === name || n === name); if (skill) s.skills.push(skill[0]); }
+    appendProficiency(s, 'Инструменты предыстории', d.tools);
+    appendProficiency(s, 'Языки предыстории', Array.isArray(d.languages) || typeof d.languages === 'string' ? d.languages : null);
     if (d.feature) feature(s, d.feature, d.feature_text, e.name, window.Mechanics?.forFeature(d.mechanics,d.feature));
     if (d.feat) feature(s, d.feat, 'Описание и варианты выбора — в справочнике черт.', e.name);
     if (d.equipment) s.notes += 'Снаряжение предыстории — выберите и добавьте в инвентарь:\n' + d.equipment + '\n';
@@ -109,10 +120,11 @@ window.CharacterBuilder = (() => {
     return { need, got, done: group.optional ? got <= need : got === need };
   }
   function build(draft) {
-    const s = { name: draft.name.trim(), edition: draft.edition, level: 1, abilities: { ...draft.abilities },
+    const s = { name: draft.name.trim(), edition: draft.edition, level: 1, alignment: draft.alignment || '', abilities: { ...draft.abilities },
       race: '', class: '', background: '', proficiency_bonus: 2, saving_throws: [], skills: [...(draft.skills || [])],
       hp: { max: 0, current: 0, temp: 0, hit_dice: '1d8' }, speed: 30, features: [],
-      spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [] };
+      spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [],
+      traits: Object.fromEntries(['player_name', 'faith', 'age', 'height', 'weight', 'eyes', 'skin', 'hair', 'personality', 'ideals', 'bonds', 'flaws', 'appearance', 'backstory'].map(k => [k, String(draft.traits?.[k] || '')])) };
     const picks = draft.picks || {}, chosen = [];
     const entries = ['race', 'class', 'background'].map(k => draft.selected[k]).filter(Boolean).concat(draft.spells || []);
     const race = draft.selected.race;
@@ -154,6 +166,7 @@ window.CharacterBuilder = (() => {
       s.modules.push({ schema_version: 1, entry_id: e.id, category: e.category, source: e.source, pack_id: e.pack_id || null, snapshot: JSON.parse(JSON.stringify(e)) });
     }
     if (s.edition === '2024') for (const k of keys) s.abilities[k] += Number(draft.bonuses?.[k]) || 0;
+    appendProficiency(s, 'Языки предыстории', draft.languages);
     s.skills = [...new Set(s.skills)];
     s.hp.max = s.hp.current = Math.max(1, Number(s.hp.hit_dice.split('d')[1]) + modifier(s.abilities.con));
     s.ac = 10 + modifier(s.abilities.dex);
@@ -248,13 +261,21 @@ window.CharacterBuilder = (() => {
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 4d6, три лучших', rolls: results.map((r, i) => ({ ...r, name: `Набор ${i + 1}` })) }, { local: true });
     return results.map(r => { const p = r.parts[0]; return { dice: p.rolls, dropped: p.rolls.findIndex((_, i) => !p.kept_indices.includes(i)), total: r.total }; });
   }
-  return { register, build, rollStats, keys, short, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList };
+  return { register, build, rollStats, keys, short, ALIGNMENTS, LANGUAGES, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList };
 })();
 
 window.newCharacterDialog = async function (defaults = {}) {
   const B = CharacterBuilder;
-  const draft = { name: defaults.name || '', edition: defaultEdition(), abilities: Object.fromEntries(B.keys.map((k, i) => [k, [15, 14, 13, 12, 10, 8][i]])), selected: {}, spells: [], skills: [], bonuses: {}, picks: {}, method: 'standard', rolls: [] };
-  const steps = ['Концепция', 'Происхождение', 'Характеристики', 'Магия', 'Готовый лист'];
+  const draft = { name: defaults.name || '', edition: defaultEdition(), alignment: '', traits: { player_name: '', faith: '', age: '', height: '', weight: '', eyes: '', skin: '', hair: '', personality: '', ideals: '', bonds: '', flaws: '', appearance: '', backstory: '' }, abilities: Object.fromEntries(B.keys.map((k, i) => [k, [15, 14, 13, 12, 10, 8][i]])), selected: {}, spells: [], skills: [], languages: [], bonuses: {}, picks: {}, method: 'standard', rolls: [] };
+  const steps = ['Концепция', 'Происхождение', 'Характеристики', 'Заклинания', 'Личность', 'Проверка'];
+  const stepTips = [
+    'Задайте имя и выберите редакцию правил.',
+    'Выберите расу, класс и предысторию — это записи-модули из справочника.',
+    'Распределите характеристики и выберите навыки класса.',
+    'Необязательный шаг: добавьте подходящие заклинания.',
+    'Укажите мировоззрение и детали, которые помогут отыгрывать персонажа.',
+    'Проверьте итоговые значения и выбранные блоки перед созданием листа.'
+  ];
   let step = 0, entries = [], loading = false, error = '', request = 0, query = '';
   const root = el('div', { class: 'character-builder' });
   const status = el('p', { class: 'builder-error', role: 'alert' });
@@ -266,6 +287,9 @@ window.newCharacterDialog = async function (defaults = {}) {
     if (step >= 1) {
       const pending = availableChoices().filter(({ group }) => !B.choiceState(group, draft.picks[group.id]).done);
       if (pending.length) return 'Сделайте выбор в модулях: ' + pending.map(x => x.group.name || 'вариант').join(', ') + '.';
+      const languageCount = Number(draft.selected.background?.data?.languages);
+      if (Number.isInteger(languageCount) && languageCount > 0 && (draft.languages || []).length !== languageCount)
+        return `Выберите ${languageCount} языка предыстории.`;
     }
     if (step >= 2) {
       if (Object.values(draft.abilities).some(n => !Number.isInteger(n) || n < 3 || n > 20)) return 'Базовые характеристики: целые числа от 3 до 20.';
@@ -288,17 +312,30 @@ window.newCharacterDialog = async function (defaults = {}) {
     } catch (e) { if (version === request) error = e.message; }
     if (version === request) { loading = false; render(); }
   }
+  function knownRaceLanguages() {
+    const race = draft.selected.race, list = B.asList(race?.data?.languages);
+    if (race?.data?.parent) {
+      const candidates = (draft.catalog || []).filter(e => e.category === 'race' && e.name === race.data.parent && !e.data?.subrace);
+      const parent = candidates.find(e => e.pack_id === race.pack_id && e.source === race.source) || candidates[0];
+      if (parent) list.push(...B.asList(parent.data?.languages));
+    }
+    return new Set(list.map(x => String(x).toLocaleLowerCase()));
+  }
   function choose(category) {
     const selected = draft.selected[category];
     const select = el('select', { 'aria-label': CAT_NAMES[category], onchange: e => {
       draft.selected[category] = entries.find(x => x.id === e.target.value);
-      if (category === 'background') draft.bonuses = {};
+      if (category === 'background') { draft.bonuses = {}; draft.languages = []; }
+      if (category === 'race') {
+        const known = knownRaceLanguages();
+        draft.languages = (draft.languages || []).filter(x => !known.has(String(x).toLocaleLowerCase()));
+      }
       if (category === 'class') { draft.skills = []; draft.spells = []; }
       render();
     } }, el('option', { value: '' }, 'Выберите…'), ...entries.filter(e => e.category === category).map(e => el('option', { value: e.id, selected: selected?.id === e.id ? '' : null }, e.name + ' · ' + e.source)));
     const d = selected?.data || {};
     return el('section', { class: 'builder-module' }, field(CAT_NAMES[category], select),
-      selected ? el('div', {}, el('p', { class: 'muted small' }, [d.hit_die && 'Кость хитов: ' + d.hit_die, d.primary && 'Основная: ' + d.primary, d.speed && 'Скорость: ' + d.speed + ' фт.'].filter(Boolean).join(' · ')), el('p', { class: 'builder-description' }, d.desc || (d.traits || []).map(t => t.name).join(' · ') || 'Подробности — в справочнике.'), el('details', {}, el('summary', {}, 'Описание модуля'), Compendium.renderData(selected, { readOnly: true }))) : null,
+      selected ? el('div', {}, el('p', { class: 'muted small' }, [d.hit_die && 'Кость хитов: ' + d.hit_die, d.primary && 'Основная: ' + d.primary, d.speed && 'Скорость: ' + d.speed + ' фт.'].filter(Boolean).join(' · ')), el('p', { class: 'builder-description' }, d.desc || (d.traits || []).map(t => t.name).join(' · ') || 'Подробности — в справочнике.'), category === 'race' ? el('p', { class: 'builder-readonly-note small' }, 'Раса — цельный блок справочника. Текст и особенности здесь не редактируются; выберите другой блок или создайте отдельную запись расы.') : null, el('details', {}, el('summary', {}, 'Поля записи'), Compendium.renderData(selected, { readOnly: true }))) : null,
       el('button', { class: 'small', onclick: async () => { try { await Compendium.editEntry(null, { category, onSaved: load }); } catch (e) { toast(e.message); } } }, '+ Создать свой модуль'));
   }
   /// Группы выбора «либо / либо», объявленные выбранными модулями.
@@ -338,21 +375,46 @@ window.newCharacterDialog = async function (defaults = {}) {
     }
     return box;
   }
+  function backgroundLanguageSection() {
+    const needed = Number(draft.selected.background?.data?.languages);
+    if (!Number.isInteger(needed) || needed < 1) return null;
+    const known = knownRaceLanguages();
+    const options = B.LANGUAGES.filter(x => !known.has(x.toLocaleLowerCase()));
+    const selected = draft.languages || [];
+    return el('section', { class: 'builder-module builder-language-picks' },
+      el('h3', {}, 'Языки от предыстории'),
+      el('p', { class: 'muted small' }, `Выберите ${needed} дополнительных языка. Уже выбрано: ${selected.length} из ${needed}.`),
+      el('div', { class: 'builder-language-grid' }, ...options.map(language => el('label', { class: 'builder-language-option' },
+        el('input', { type: 'checkbox', checked: selected.includes(language) ? '' : null, onchange: e => {
+          const next = selected.filter(x => x !== language);
+          if (e.target.checked) {
+            if (next.length >= needed) return render();
+            next.push(language);
+          }
+          draft.languages = next; render();
+        } }), language))));
+  }
   function render() {
     root.replaceChildren(); status.textContent = '';
-    root.append(el('div', { class: 'builder-steps' }, ...steps.map((n, i) => el('span', { class: i === step ? 'active' : i < step ? 'done' : '', 'aria-current': i === step ? 'step' : null }, `${i + 1}. ${n}`))));
+    root.append(el('nav', { class: 'builder-steps', 'aria-label': 'Шаги создания персонажа' }, ...steps.map((n, i) => el('button', {
+      type: 'button', class: i === step ? 'active' : i < step ? 'done' : 'future', disabled: i >= step ? '' : null,
+      'aria-current': i === step ? 'step' : null, onclick: () => { if (i < step) { step = i; render(); } }
+    }, el('span', { class: 'builder-step-number' }, String(i + 1)), el('span', { class: 'builder-step-name' }, n)))));
+    root.append(el('div', { class: 'builder-step-context' }, el('b', {}, `Шаг ${step + 1} из ${steps.length} · ${steps[step]}`),
+      el('span', { class: 'muted small' }, stepTips[step]),
+      el('div', { class: 'builder-progress' }, el('span', { style: `width:${((step + 1) / steps.length) * 100}%` }))));
     const body = el('div', { class: 'builder-body' });
     root.append(body);
     if (step === 0) {
-      body.append(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Пять коротких шагов — и ваш лист готов к приключению. Все выбранные модули сохранятся вместе с персонажем.')),
+      body.append(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Шесть понятных шагов — от концепции до готового листа. Расы, классы и предыстории подключаются как блоки из справочника, а не вводятся свободным текстом.')),
         field('Имя персонажа', el('input', { value: draft.name, maxlength: 128, placeholder: 'Как вас будут помнить?', oninput: e => draft.name = e.target.value })),
-        field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.skills = []; draft.bonuses = {}; load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
+        field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.skills = []; draft.languages = []; draft.bonuses = {}; load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
         el('p', { class: 'muted small' }, '2014: бонусы характеристик от расы. 2024: от предыстории. Пользовательские модули доступны из ваших наборов и наборов кампании.'));
     }
     if (step === 1 || step === 3) {
       if (loading) body.append(el('p', { role: 'status' }, 'Загружаем модули…'));
       else if (error) body.append(el('p', { role: 'alert' }, 'Не удалось загрузить: ' + error), el('button', { onclick: load }, 'Повторить'));
-      else if (step === 1) body.append(el('div', { class: 'builder-modules' }, ...['race', 'class', 'background'].map(choose)), choiceSection());
+      else if (step === 1) body.append(el('div', { class: 'builder-modules' }, ...['race', 'class', 'background'].map(choose)), choiceSection(), backgroundLanguageSection());
       else {
         body.append(el('h2', {}, 'Книга заклинаний'), el('p', { class: 'muted' }, 'Необязательный шаг. Выбирайте заговоры и заклинания 1-го круга. Ограничения класса и число известных заклинаний проверьте с мастером.'),
           el('input', { type: 'search', value: query, placeholder: 'Найти заклинание…', 'aria-label': 'Поиск заклинаний', oninput: e => { query = e.target.value; updateSpells(); } }),
@@ -386,13 +448,60 @@ window.newCharacterDialog = async function (defaults = {}) {
       })));
     }
     if (step === 4) {
+      const traitField = (key, label, placeholder, wide = false) => field(label, el('textarea', {
+        maxlength: 1500, rows: wide ? 4 : 3, placeholder, class: wide ? 'builder-long-field' : '',
+        oninput: e => draft.traits[key] = e.target.value
+      }, draft.traits[key] || ''));
+      const alignment = el('select', { 'aria-label': 'Мировоззрение', onchange: e => draft.alignment = e.target.value },
+        ...B.ALIGNMENTS.map(value => el('option', { value, selected: (draft.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
+      const identityFields = el('div', { class: 'builder-identity-grid' },
+        traitField('personality', 'Черты характера', 'Например: сначала слушает, потом действует.'),
+        traitField('ideals', 'Идеалы', 'Что герой считает правильным?'),
+        traitField('bonds', 'Привязанности', 'Кого или что герой защищает?'),
+        traitField('flaws', 'Слабости', 'Что часто мешает герою?'),
+        traitField('appearance', 'Дополнительные приметы', 'Шрамы, татуировки, голос, манеры.', true),
+        traitField('backstory', 'Предыстория героя', 'Откуда он и почему отправился в путь.', true));
+      const bioField = (key, label, placeholder = '') => field(label, el('input', { value: draft.traits[key] || '', maxlength: 120, placeholder, oninput: e => draft.traits[key] = e.target.value }));
+      const identityBasics = el('section', { class: 'builder-identity-extra' },
+        el('h3', {}, 'Анкета героя · необязательно'),
+        el('p', { class: 'muted small' }, 'Внесите детали персонажа, которые часто забывают при создании листа.'),
+        el('div', { class: 'builder-identity-extra-grid' },
+          bioField('player_name', 'Имя игрока'), bioField('faith', 'Божество или вера'), bioField('age', 'Возраст', 'например, 120 лет'),
+          bioField('height', 'Рост', 'например, 180 см'), bioField('weight', 'Вес', 'например, 75 кг'), bioField('eyes', 'Глаза'),
+          bioField('skin', 'Кожа'), bioField('hair', 'Волосы')));
+      body.append(el('section', { class: 'builder-identity' },
+        el('h2', {}, 'Мировоззрение и личность'),
+        el('p', { class: 'muted' }, 'Укажите мировоззрение, личные ориентиры и детали биографии. Все поля необязательны.'),
+        field('Мировоззрение', alignment), identityBasics, identityFields));
+    }
+    if (step === 5) {
       const s = B.build(draft);
-      body.append(el('div', { class: 'builder-paper' }, el('span', { class: 'builder-eyebrow' }, 'ЛИСТ ПЕРСОНАЖА · ' + EDITIONS[s.edition]), el('h2', {}, s.name), el('p', {}, [s.race, s.class + ' · 1 уровень', s.background].join(' / ')), el('div', { class: 'builder-abilities' }, ...B.keys.map(k => el('div', { class: 'builder-ability' }, el('label', {}, ABIL[k]), el('strong', {}, signed(Math.floor((s.abilities[k] - 10) / 2))), el('span', {}, s.abilities[k])))), el('div', { class: 'builder-summary' }, ...[['Хиты', s.hp.max], ['КД без брони', s.ac], ['Скорость, фт.', s.speed], ['Бонус мастерства', '+2']].map(([n, v]) => el('div', {}, el('strong', {}, v), el('small', {}, n)))), el('h3', {}, 'Подключённые модули'), el('p', {}, s.modules.map(m => m.snapshot.name).join(' · ')),
+      const skillNames = s.skills.map(key => SKILLS.find(([k]) => k === key)?.[1] || key);
+      const saves = s.saving_throws.map(key => ABIL[key] || key);
+      const narrative = [['Игрок', s.traits.player_name], ['Божество или вера', s.traits.faith], ['Возраст', s.traits.age], ['Рост', s.traits.height], ['Вес', s.traits.weight], ['Глаза', s.traits.eyes], ['Кожа', s.traits.skin], ['Волосы', s.traits.hair], ['Черты характера', s.traits.personality], ['Идеалы', s.traits.ideals], ['Привязанности', s.traits.bonds], ['Слабости', s.traits.flaws], ['Дополнительные приметы', s.traits.appearance], ['Предыстория героя', s.traits.backstory]].filter(([, value]) => value);
+      body.append(el('div', { class: 'builder-paper' },
+        el('span', { class: 'builder-eyebrow' }, 'ЛИСТ ПЕРСОНАЖА · ' + EDITIONS[s.edition]),
+        el('h2', {}, s.name),
+        el('p', { class: 'builder-review-subtitle' }, [s.race, s.class + ' · 1 уровень', s.background].join(' / ')),
+        el('div', { class: 'builder-review-alignment' }, el('span', { class: 'muted small' }, 'Мировоззрение'), el('strong', {}, s.alignment || 'Не выбрано')),
+        el('div', { class: 'builder-abilities' }, ...B.keys.map(k => el('div', { class: 'builder-ability' }, el('label', {}, ABIL[k]), el('strong', {}, signed(Math.floor((s.abilities[k] - 10) / 2))), el('span', {}, s.abilities[k])))),
+        el('div', { class: 'builder-summary' }, ...[['Хиты', `${s.hp.max} · ${s.hp.hit_dice}`], ['КД без брони', s.ac], ['Скорость, фт.', s.speed], ['Бонус мастерства', '+2']].map(([n, v]) => el('div', {}, el('strong', {}, v), el('small', {}, n)))),
+        el('div', { class: 'builder-review-grid' },
+          el('section', {}, el('h3', {}, 'Владения и подготовка'),
+            el('p', {}, el('b', {}, 'Спасброски: '), saves.join(', ') || 'не выбраны'),
+            el('p', {}, el('b', {}, 'Навыки: '), skillNames.join(', ') || 'не выбраны'),
+            el('p', { class: 'builder-review-text' }, s.proficiencies || 'Языки и владения не указаны.'),
+            s.spells.ability ? el('p', {}, el('b', {}, 'Заклинательная характеристика: '), ABIL[s.spells.ability] || s.spells.ability) : null),
+          el('section', {}, el('h3', {}, 'Личность'),
+            ...(narrative.length ? narrative.map(([label, value]) => el('p', { class: 'builder-review-text' }, el('b', {}, label + ': '), value)) : [el('p', { class: 'muted small' }, 'Личность можно дополнить на вкладке «Заметки».')]))),
+        el('h3', {}, 'Подключённые блоки'),
+        el('p', { class: 'builder-review-text' }, s.modules.map(m => m.snapshot.name).join(' · ')),
         s.creation.choices.length ? el('p', { class: 'muted small' }, 'Выбор в модулях: ' + s.creation.choices.map(c => `${c.group} — ${c.name}`).join(' · ')) : null,
-        el('p', { class: 'muted small' }, `Умений: ${s.features.length} · Заклинаний: ${s.spells.known.length}. Снаряжение, ячейки заклинаний и особые формулы КД настройте на листе — варианты снаряжения сохранены в заметках.`)));
+        s.notes ? el('details', { class: 'builder-review-notes' }, el('summary', {}, 'Стартовое снаряжение и заметки'), el('p', { class: 'builder-review-text' }, s.notes)) : null,
+        el('p', { class: 'muted small' }, `Умений: ${s.features.length} · Заклинаний: ${s.spells.known.length}. Снаряжение из описания модулей сохранено в заметках — его можно добавить в инвентарь после создания.`)));
     }
     const nav = el('div', { class: 'builder-nav' }, el('button', { disabled: step === 0 ? '' : null, onclick: () => { step--; render(); } }, '← Назад'), el('span', { class: 'muted small' }, `${step + 1} / ${steps.length}`));
-    if (step < 4) nav.append(el('button', { class: 'primary', onclick: () => {
+    if (step < 5) nav.append(el('button', { class: 'primary', onclick: () => {
       const msg = valid(); if (msg) { status.textContent = msg; return; }
       const skills = (window.Mechanics&&draft.selected.class?Mechanics.passiveData(draft.selected.class):draft.selected.class)?.data?.skills;
       if (step === 2 && skills?.choose && (skills.from || []).length && draft.skills.length !== Number(skills.choose)) { status.textContent = `Выберите ${skills.choose} навыка класса.`; return; }
@@ -402,7 +511,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   }
   render(); load();
   const result = await modal('Создание персонажа', root, [{ label: 'Создать персонажа', cls: 'primary builder-submit', fn: () => {
-    if (step !== 4) { status.textContent = 'Пройдите шаги и проверьте готовый лист.'; return false; }
+    if (step !== 5) { status.textContent = 'Пройдите шаги и проверьте готовый лист.'; return false; }
     const msg = valid(); if (msg) { status.textContent = msg; return false; }
     LS.setItem('et-edition', draft.edition);
     return { name: draft.name.trim(), sheet: B.build(draft) };
