@@ -177,6 +177,8 @@
     root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; LS.setItem('sheet_tab_' + id, k); render(); } }, n))));
     root.append({ main: mainTab, inv: invTab, spells: spellsTab, feats: featsTab, notes: notesTab }[tab]());
     app.append(root);
+    // Кубики — док в левом нижнем углу, журнал бросков — в правом (ставится один раз).
+    DiceEngine.dock();
     if (!readonly) bindDrops(root);
   }
 
@@ -204,7 +206,6 @@
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       readonly ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014']) : el('select', { class: 'small', style: 'flex:0;width:auto', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v))),
       tokenPick,
-      DiceEngine.button(),
       el('button', { class: 'small', onclick: () => { if (!dirty || confirm('Отбросить несохранённые изменения и загрузить актуальный лист?')) reload(true); } }, 'Обновить'),
       embed ? null : Theme.button(),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));

@@ -47,6 +47,106 @@ window.Mechanics = (() => {
       { id: uid(), name: 'Умение предыстории', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите умение предыстории.' }] } ] }),
   };
   function starter(category) { const make = STARTERS[category]; return make ? make() : undefined; }
+  /// Библиотека шаблонов: готовые цепочки блоков. build() собирает новую программу.
+  /// creation — шаблоны для расы, класса и предыстории (параметры создания персонажа).
+  const TEMPLATES = [
+    { id:'weapon', group:'Бой', name:'Атака → урон', hint:'Оружейная атака и урон с модификатором Силы/Ловкости', chain:['attack','damage'],
+      build:()=>({name:'Атака',blocks:[block('attack'),block('damage')]}) },
+    { id:'spell_attack', group:'Бой', name:'Атака заклинанием → урон', hint:'Бонус атаки заклинанием, урон, сравнение с КД цели', chain:['attack','damage'],
+      build:()=>({name:'Атака заклинанием',blocks:[{...block('attack'),dice:dice('1d20+@spell')},{...block('damage'),dice:dice('1d10+@spell_mod')}]}) },
+    { id:'save_damage', group:'Бой', name:'Спасбросок цели → урон', hint:'Цель спасается; при провале получает урон', chain:['save','damage'],
+      build:()=>({name:'Урон по площади',blocks:[block('save'),{...block('damage'),when:'hit'}]}) },
+    { id:'ammo_attack', group:'Бой', name:'Патрон → атака → урон', hint:'Расход боеприпаса перед каждой атакой', chain:['consume','attack','damage'],
+      build:()=>({name:'Выстрел',blocks:[{...block('consume'),source:'tag',tag:'стрела',trigger:'attack'},block('attack'),block('damage')]}) },
+    { id:'double_attack', group:'Бой', name:'Две атаки', hint:'Два удара: урон каждого бросается отдельно', chain:['attack','damage','attack','damage'],
+      build:()=>({name:'Две атаки',blocks:[block('attack'),block('damage'),block('attack'),block('damage')]}) },
+    { id:'potion', group:'Лечение', name:'Зелье → хиты → флакон', hint:'Расход предмета, лечение, выдача пустого флакона', chain:['consume','heal','grant_item'],
+      build:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}) },
+    { id:'spell', group:'Лечение', name:'Ячейка → лечение', hint:'Расход ячейки и лечение цели', chain:['consume','heal'],
+      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}]}) },
+    { id:'temp_hp', group:'Лечение', name:'Временные хиты', hint:'Берутся максимумом, не суммируются', chain:['temp_hp'],
+      build:()=>({name:'Временные хиты',blocks:[{...block('temp_hp'),dice:dice('1d6+2')}]}) },
+    { id:'heal_temp', group:'Лечение', name:'Лечение + временные хиты', hint:'Сначала лечение, затем запас сверху', chain:['heal','temp_hp'],
+      build:()=>({name:'Лечение с запасом',blocks:[{...block('heal'),dice:dice('1d8+3')},{...block('temp_hp'),dice:dice('1d6')}]}) },
+    { id:'heal_charge', group:'Лечение', name:'Заряд → лечение', hint:'Тратит заряд предмета, а не количество', chain:['consume','heal'],
+      build:()=>({name:'Использовать заряд',blocks:[{...block('consume'),resource:'charges',source:'self'},{...block('heal'),dice:dice('2d4+2')}]}) },
+    { id:'craft', group:'Предметы', name:'Сырьё → предмет', hint:'Расход по метке и выдача нового предмета', chain:['consume','grant_item'],
+      build:()=>({name:'Изготовить',blocks:[{...block('consume'),source:'tag',tag:'ingredient'},block('grant_item')]}) },
+    { id:'grant_ammo', group:'Предметы', name:'Выдать боеприпасы', hint:'Выдача пачки с меткой ресурса', chain:['grant_item'],
+      build:()=>({name:'Выдать',blocks:[{...block('grant_item'),amount:20,item:{...block('grant_item').item,name:'Стрелы',type:'ammo',ammo_tag:'стрела'}}]}) },
+    { id:'consume_only', group:'Предметы', name:'Расход заряда', hint:'Только списание ресурса, без эффектов', chain:['consume'],
+      build:()=>({name:'Потратить заряд',blocks:[{...block('consume'),resource:'charges',source:'self'}]}) },
+    { id:'condition_on', group:'Умения и эффекты', name:'Наложить состояние', hint:'Добавляет состояние владельцу или цели', chain:['condition'],
+      build:()=>({name:'Наложить',blocks:[{...block('condition'),condition:'Отравленный'}]}) },
+    { id:'condition_off', group:'Умения и эффекты', name:'Снять состояние', hint:'Убирает состояние, например яд или страх', chain:['condition'],
+      build:()=>({name:'Снять',blocks:[{...block('condition'),condition:'Испуганный',operation:'remove'}]}) },
+    { id:'buff', group:'Умения и эффекты', name:'Изменить показатель', hint:'Скорость, хиты, инициатива, характеристика', chain:['adjust'],
+      build:()=>({name:'Усиление',blocks:[{...block('adjust'),field:'speed',amount:10}]}) },
+    { id:'check', group:'Умения и эффекты', name:'Проверка характеристики', hint:'Отдельный бросок d20 с модификатором', chain:['roll'],
+      build:()=>({name:'Проверка',blocks:[{...block('roll'),dice:dice('1d20+@str')}]}) },
+    { id:'uses_effect', group:'Умения и эффекты', name:'Умение с запасом использований', hint:'Списание использования и ручное правило', chain:['consume','manual'],
+      build:()=>({name:'Применить',blocks:[{...block('consume'),resource:'uses',source:'self'},{...block('manual'),text:'Опишите, что делает умение и когда применяется.'}]}) },
+    { id:'require_effect', group:'Умения и эффекты', name:'Условие → эффект', hint:'Проверка показателя перед изменением', chain:['require','adjust'],
+      build:()=>({name:'Под условием',blocks:[{...block('require'),field:'hp.current',minimum:1},{...block('adjust'),field:'speed',amount:10}]}) },
+    { id:'manual', group:'Умения и эффекты', name:'Ручное правило', hint:'Не исполняется: требует подтверждения перед цепочкой', chain:['manual'],
+      build:()=>({name:'Правило',blocks:[{...block('manual'),text:'Опишите правило, которое мастер применяет вручную.'}]}) },
+    { id:'asi', creation:true, group:'Персонаж', name:'Бонус характеристики', hint:'+2 или +1 к одной-двум характеристикам', chain:['passive'],
+      build:()=>({name:'Характеристики',trigger:'passive',blocks:[{...block('passive'),field:'asi.str',value:2}]}) },
+    { id:'skills', creation:true, group:'Персонаж', name:'Навыки на выбор', hint:'Игрок выбирает указанное число навыков', chain:['passive'],
+      build:()=>({name:'Навыки',trigger:'passive',blocks:[{...block('passive'),field:'skills',value:{choose:2,from:[]}}]}) },
+    { id:'saves', creation:true, group:'Персонаж', name:'Владение спасбросками', hint:'Владение выбранными спасбросками', chain:['passive'],
+      build:()=>({name:'Спасброски',trigger:'passive',blocks:[{...block('passive'),field:'saves',value:[]}]}) },
+    { id:'hit_die', creation:true, group:'Персонаж', name:'Кость хитов класса', hint:'d6, d8, d10 или d12 — максимум на первом уровне', chain:['passive'],
+      build:()=>({name:'Хиты',trigger:'passive',blocks:[{...block('passive'),field:'hit_die',value:'d8'}]}) },
+    { id:'spellcasting', creation:true, group:'Персонаж', name:'Характеристика заклинателя', hint:'От чего считаются СЛ и бонус атаки', chain:['passive'],
+      build:()=>({name:'Заклинания',trigger:'passive',blocks:[{...block('passive'),field:'spellcasting',value:'int'}]}) },
+    { id:'armor', creation:true, group:'Персонаж', name:'Владение доспехами', hint:'Строка владения доспехами и щитами', chain:['passive'],
+      build:()=>({name:'Доспехи',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}) },
+    { id:'weapons_prof', creation:true, group:'Персонаж', name:'Владение оружием', hint:'Строка владения оружием и инструментами', chain:['passive'],
+      build:()=>({name:'Оружие',trigger:'passive',blocks:[{...block('passive'),field:'weapons',value:''}]}) },
+    { id:'languages', creation:true, group:'Персонаж', name:'Языки', hint:'Список языков или число языков на выбор', chain:['passive'],
+      build:()=>({name:'Языки',trigger:'passive',blocks:[{...block('passive'),field:'languages',value:[]}]}) },
+    { id:'speed', creation:true, group:'Персонаж', name:'Скорость', hint:'Скорость персонажа в футах', chain:['passive'],
+      build:()=>({name:'Скорость',trigger:'passive',blocks:[{...block('passive'),field:'speed',value:30}]}) },
+    { id:'feature', creation:true, group:'Персонаж', name:'Умение', hint:'Особенность расы, класса или предыстории', chain:['manual'],
+      build:()=>({name:'Умение',blocks:[{...block('manual'),text:'Опишите умение: что оно даёт и когда применяется.'}]}) },
+    { id:'proficiency', creation:true, group:'Персонаж', name:'Владение', hint:'Произвольная строка владения', chain:['passive'],
+      build:()=>({name:'Владения',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}) },
+  ];
+  /// Быстрые шаблоны по категории: самые ходовые цепочки — одним нажатием.
+  const QUICK = {
+    item: ['potion','weapon','save_damage','manual'],
+    spell: ['spell','spell_attack','save_damage','temp_hp'],
+    feature: ['uses_effect','condition_on','buff','manual'],
+    monster: ['weapon','save_damage','condition_on','manual'],
+    race: ['asi','skills','feature','proficiency'],
+    class: ['hit_die','skills','feature','proficiency'],
+    background: ['asi','skills','feature','proficiency'],
+  };
+  QUICK.default = ['weapon','potion','save_damage','manual'];
+  const templates = (category) => TEMPLATES.filter(t => ['race','class','background'].includes(category) ? !!t.creation : !t.creation);
+  /// Галерея шаблонов: группы, описание и цепочка блоков — вместо плоского списка кнопок.
+  function templatePicker(category = 'item') {
+    const all = templates(category), query = el('input', { placeholder: 'Найти шаблон…', 'aria-label': 'Поиск шаблона' });
+    const grid = el('div', { class: 'template-grid' });
+    let chosen = null;
+    const card = (t) => el('button', { class: 'template-card', title: t.hint,
+        onclick: () => { chosen = t; grid.closest('.modal')?.querySelector('.template-add')?.click(); } },
+      el('div', { class: 'template-card-head' }, el('b', {}, t.name), el('span', { class: 'badge' }, t.group)),
+      el('div', { class: 'muted small' }, t.hint),
+      el('div', { class: 'template-chain' }, ...t.chain.map(k => el('span', { class: 'template-block ' + (TYPES[k]?.[1] || 'control') }, TYPES[k]?.[0] || k))));
+    const render = () => {
+      const q = String(query.value || '').toLowerCase().trim();
+      const found = all.filter(t => !q || (t.name + ' ' + t.hint + ' ' + t.group).toLowerCase().includes(q));
+      const groups = [...new Set(found.map(t => t.group))];
+      grid.replaceChildren(...groups.flatMap(g => [el('h4', {}, g), el('div', { class: 'template-group' }, ...found.filter(t => t.group === g).map(card))]),
+        found.length ? null : el('p', { class: 'muted' }, 'Ничего не найдено. Измените запрос или соберите цепочку вручную.'));
+    };
+    query.addEventListener('input', render);
+    render();
+    const body = el('div', { class: 'template-picker' }, query, grid);
+    return modal('Шаблоны блоков', body, [{ label: 'Добавить шаблон', cls: 'primary template-add', fn: () => chosen || false }], { wide: true });
+  }
   function migrate(doc, category='item') {
     if(doc.mechanics) return doc.mechanics;
     const blocks=[], extra=[];
@@ -105,7 +205,19 @@ window.Mechanics = (() => {
     const root=el('div',{class:'action-buttons mechanics-buttons'});
     for(const p of doc.mechanics?.programs || []) {
       if(p.trigger!=='use') continue;
-      root.append(el('button',{class:'act-btn',disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},el('span',{},p.name),el('small',{},` ${p.blocks.filter(b=>b.enabled!==false).length} блоков`)));
+      const blocks=(p.blocks||[]).filter(b=>b.enabled!==false);
+      const program=el('button',{class:'act-btn',disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},el('span',{},p.name),el('small',{},` ${blocks.length} блоков`));
+      // Атака с уроном показывается как на листах: попадание и урон — две отдельные кнопки.
+      const atk=blocks.find(b=>b.kind==='attack'), dmg=blocks.find(b=>b.kind==='damage');
+      if(atk&&dmg&&window.Modules?.attackRow){
+        const row=window.Modules.attackRow(p.name,
+          {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name},
+          {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name},
+          window.SHEET_CTX||{},'',{disabled:options.disabled,note:'Отдельный бросок: без расхода и эффектов'});
+        program.classList.add('all');
+        program.title='Вся цепочка целиком: расход, эффекты и удвоение костей при крите. '+programSummary(p);
+        root.append(el('div',{class:'actions-row'},row,program));
+      } else root.append(program);
     }
     return root;
   }
@@ -121,20 +233,12 @@ window.Mechanics = (() => {
       const nav=el('div',{class:'mechanics-programs'},...m.programs.map((p,i)=>el('button',{class:i===selected?'active':'',onclick:()=>{selected=i;render();}},p.name)),el('button',{onclick:()=>{m.programs.push(makeProgram());selected=m.programs.length-1;render();}},'+ Действие'));
       root.append(el('div',{class:'mechanics-heading'},el('div',{},el('h3',{},'Конструктор механик'),el('p',{class:'muted small'},'Соберите действие из блоков. Описание ничего не исполняет. Порядок — сверху вниз; при ошибке откатывается вся цепочка.')),el('span',{class:'badge'},'BLOCKS · v1')),nav);
       if(!p) { root.append(el('p',{class:'muted'},'Добавьте действие или начните с рецепта ниже.')); }
-      const RECIPES={
-        potion:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}),
-        weapon:()=>({name:'Атака',blocks:[block('attack'),block('damage')]}),
-        craft:()=>({name:'Изготовить',blocks:[{...block('consume'),source:'tag',tag:'ingredient'},block('grant_item')]}),
-        spell:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}]}),
-        // Рецепты создания персонажа: влияют на характеристики / владения или дают умение.
-        asi:()=>({name:'Характеристики',trigger:'passive',blocks:[{...block('passive'),field:'asi.str',value:2}]}),
-        skills:()=>({name:'Навыки',trigger:'passive',blocks:[{...block('passive'),field:'skills',value:{choose:2,from:[]}}]}),
-        feature:()=>({name:'Умение',blocks:[{...block('manual'),text:'Опишите умение: что оно даёт и когда применяется.'}]}),
-        proficiency:()=>({name:'Владения',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}),
-      };
-      const RECIPE_LABELS={potion:'Зелье → хиты → флакон',weapon:'Атака → урон',craft:'Сырьё → предмет',spell:'Ячейка → лечение',asi:'Бонус характеристики',skills:'Навыки на выбор',feature:'Умение (блоки)',proficiency:'Владение'};
-      const presetList=['race','class','background'].includes(options.category||'item')?['asi','skills','feature','proficiency']:['potion','weapon','craft','spell'];
-      const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Рецепты:'),...presetList.map(k=>el('button',{class:'small',onclick:()=>{const prog=makeProgram(),r=RECIPES[k]();prog.name=r.name;prog.blocks=r.blocks;if(r.trigger)prog.trigger=r.trigger;m.programs.push(prog);selected=m.programs.length-1;render();}},RECIPE_LABELS[k])));
+      const pick=(id)=>TEMPLATES.find(t=>t.id===id);
+      const addTemplate=(t)=>{const prog=makeProgram(),made=t.build();prog.name=made.name;prog.blocks=made.blocks;if(made.trigger)prog.trigger=made.trigger;m.programs.push(prog);selected=m.programs.length-1;render();};
+      const quickIds=QUICK[options.category||'item']||QUICK.default;
+      const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Шаблоны:'),
+        ...quickIds.map(id=>{const t=pick(id);return t?el('button',{class:'small',title:t.hint,onclick:()=>addTemplate(t)},t.name):null;}),
+        el('button',{class:'small primary',title:'Все шаблоны по группам с описанием',onclick:async()=>{const t=await templatePicker(options.category||'item');if(t)addTemplate(t);}},'Все шаблоны ▸'));
       root.append(presets); if(!p) return;
       root.append(el('div',{class:'block-program-header'},field('Название действия',input(p,'name')),field('Когда',select([['use','По нажатию «Использовать»'],['passive','Параметры при создании']],p.trigger,v=>p.trigger=v)),el('button',{class:'small',onclick:()=>{const copy=clone(p);copy.id=uid();copy.name+=' (копия)';copy.blocks.forEach(b=>b.id=uid());m.programs.push(copy);selected=m.programs.length-1;render();}},'Копия'),el('button',{class:'small danger',onclick:()=>{if(confirm('Удалить действие со всеми блоками?')){m.programs.splice(selected,1);render();}}},'Удалить действие')));
       const workspace=el('div',{class:'block-workspace'}), palette=el('aside',{class:'block-palette'},el('b',{},'Добавить блок'),...Object.entries(TYPES).map(([k,[name,color]])=>el('button',{class:'palette-block '+color,onclick:()=>{if(p.blocks.length>=32)return toast('Не более 32 блоков.');p.blocks.push(block(k));render();}},'+ '+name)));
@@ -205,5 +309,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,migrate,validate,editor,preview,buttons,programSummary,passiveData};
+  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,templatePicker,migrate,validate,editor,preview,buttons,programSummary,passiveData};
 })();

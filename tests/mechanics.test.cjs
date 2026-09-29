@@ -25,3 +25,21 @@ test('starter templates give race and class valid creation blocks that project i
   const cls=M.passiveData({data:{mechanics:M.starter('class')}});
   assert.equal(cls.data.hit_die,'d8');assert.deepEqual(JSON.parse(JSON.stringify(cls.data.saves)),['str']);assert.equal(cls.data.skills.choose,2);
 });
+test('template library builds valid programs and keeps creation templates apart',()=>{
+  const ids=c=>M.templates(c).map(t=>t.id);
+  for(const cat of ['item','spell','feature','monster','race','class','background']){
+    const list=M.templates(cat);
+    assert.ok(list.length>=8,cat+': '+list.length);
+    for(const t of list){
+      const p=t.build();
+      assert.ok(p.name&&p.blocks.length,cat+' / '+t.id);
+      assert.ok(t.hint&&t.chain.length,cat+' / '+t.id);
+      const m={version:1,programs:[{id:'x',name:p.name,trigger:p.trigger||'use',blocks:p.blocks}]};
+      assert.equal(M.validate(m),'',cat+' / '+t.id);
+      const again=t.build();assert.notEqual(again.blocks[0].id,p.blocks[0].id,'each template build gets fresh ids');
+    }
+  }
+  assert.ok(!ids('item').some(id=>ids('race').includes(id)),'creation templates are separate');
+  for(const id of ['asi','skills','saves','hit_die','spellcasting','languages','feature'])assert.ok(ids('race').includes(id),id);
+  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('save_damage'));
+});

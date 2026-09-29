@@ -358,12 +358,6 @@ button.primary, .btn.primary { font-weight: 600; }
 .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl tr:last-child td { border-bottom: none; }
 /* ---- кубики на столе ---- */
-.dicetray { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 8px; z-index: 5; max-width: calc(100% - 200px); }
-.dicetray .tray-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dicetray .dice { margin: 0; }
-.dicetray .dice button { font-weight: 600; min-width: 40px; }
-.dicetray input { padding: 4px 6px; font-size: 12px; }
-.dicetray.min .tray-body { display: none; }
 .seg { display: inline-flex; }
 .seg button { border-radius: 0; margin-left: -1px; }
 .seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
@@ -573,8 +567,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 /* Unified dice layer: never captures table gestures outside its result card. */
 .dice-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 10050; }
 .dice-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.dice-toast { position: absolute; right: 22px; bottom: 22px; width: min(440px, calc(100vw - 32px)); max-height: min(60vh, 520px); overflow: auto; padding: 16px; background: var(--panel); border: 1px solid var(--accent-line); border-top: 3px solid #a881e8; border-radius: 12px; box-shadow: 0 12px 70px #0009; pointer-events: none; opacity: 0; transform: translateY(12px); transition: opacity .2s, transform .2s; }
-.dice-toast.revealed { pointer-events: auto; opacity: 1; transform: none; }
+.dice-overlay { animation: diceIn .18s ease-out; }
+@keyframes diceIn { from { opacity: 0 } to { opacity: 1 } }
+.dice-overlay.leaving { opacity: 0; transition: opacity .4s ease-in; }
+/* Результат — не модальное окно: появился, показался и ушёл сам. */
+.dice-toast { position: absolute; left: 50%; bottom: 18px; width: min(440px, calc(100vw - 32px)); max-height: min(52vh, 460px); overflow: auto; padding: 14px 16px; background: var(--panel); border: 1px solid var(--accent-line); border-top: 3px solid #a881e8; border-radius: 12px; box-shadow: 0 12px 70px #0009; pointer-events: none; opacity: 0; transform: translate(-50%, 12px); transition: opacity .2s, transform .2s; }
+.dice-toast.revealed { pointer-events: auto; opacity: 1; transform: translate(-50%, 0); }
+.dice-overlay.leaving .dice-toast { opacity: 0; transform: translate(-50%, 8px); }
 .dice-toast-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; margin-bottom: 8px; }
 .dice-toast-head button { padding: 0 8px; font-size: 20px; background: transparent; border: 0; }
 .dice-toast-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
@@ -604,6 +603,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .dice-toast { transition: none; transform: none; } }
 @media print { .dice-overlay { display: none; } }
 .dice-skip { position: absolute; top: 16px; right: 16px; pointer-events: auto; border-radius: 20px; font-size: 12px; background: var(--panel); box-shadow: var(--shadow); }
+
+/* Постоянный интерфейс кубиков: слева — бросок, справа — личный журнал. */
+.dice-dock { position: fixed; left: 14px; bottom: 14px; z-index: 9000; display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; box-shadow: var(--shadow); max-width: calc(100vw - 28px); }
+.dice-dock-toggle { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; }
+.dice-dock-body { display: flex; flex-direction: column; gap: 6px; }
+.dice-dock-body .dice { margin: 0; }
+.dice-dock-body .dice button { min-width: 40px; padding: 5px 7px; font-weight: 600; }
+.dice-dock-body .row { flex-wrap: nowrap; }
+.dice-dock input { padding: 4px 6px; font-size: 12px; }
+.dice-dock.min .dice-dock-body { display: none; }
+.dice-log-button { position: fixed; right: 14px; bottom: 14px; z-index: 9000; display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-radius: 22px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.dice-log-count { font-size: 10px; padding: 1px 6px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+@media (max-width: 720px) {
+  .dice-dock { left: 10px; bottom: 10px; right: auto; max-width: calc(100vw - 120px); }
+  .dice-log-button { right: 10px; bottom: 10px; padding: 9px 12px; }
+  .dice-log-button span:not(.dice-log-count) { display: none; }
+  .dice-toast { bottom: 68px; }
+}
 
 /* Hands reference inventory items; a two-handed grip is one item, not two copies. */
 .equipment-hands { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
@@ -660,3 +677,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .builder-choice-options { grid-template-columns: 1fr; }
   .choices-editor .choice-option { flex-wrap: wrap; }
 }
+
+/* Атака как на листах D&D: название · попадание · урон */
+.attack-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; }
+.attack-row-name { font-size: 12px; font-weight: 600; min-width: 90px; }
+.attack-row .act-btn { padding: 4px 10px; }
+/* Галерея шаблонов блоков */
+.template-picker { min-height: 200px; }
+.template-picker > input { margin-bottom: 12px; }
+.template-grid h4 { margin: 14px 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.template-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.template-card { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel2, var(--bg)); }
+.template-card:hover { border-color: var(--accent); }
+.template-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.template-chain { display: flex; flex-wrap: wrap; gap: 4px; }
+.template-block { font-size: 10px; padding: 2px 7px; border-radius: 9px; border: 1px solid var(--block-color); color: var(--block-color); }
+@media (max-width: 600px) { .template-group { grid-template-columns: 1fr; } }
