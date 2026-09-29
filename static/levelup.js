@@ -774,7 +774,7 @@ window.LevelUp = (() => {
         const fkey = n => n ? `${n.tagName}|${n.className}|${(n.getAttribute('aria-label') || n.textContent || '').slice(0, 60)}` : '', ae = document.activeElement, focusKey = ae && shell.contains(ae) && ae.tagName !== 'INPUT' ? fkey(ae) : '';
         shell.innerHTML = '';
         const accent = classColor(st.p?.entry || st.entry); root.style.setProperty('--lu-acc', accent); root.style.setProperty('--lu-acc-rgb', hexRgb(accent));
-        shell.className = 'lu-shell' + (st.loading || st.error || !st.entry ? ' single' : '') + (st.done ? ' single' : '');
+        shell.className = 'lu-shell' + (st.loading || st.error || !st.entry ? ' single' : '');
         if (st.loading) { shell.append(h('div', 'lu-loading', h('div', 'lu-spinner'), h('p', 'muted', 'Загружаю данные класса…'))); return; }
         if (st.error || !st.entry) {
           shell.append(h('div', 'lu-loading', h('h2', '', 'Не удалось подобрать класс'), h('p', 'muted', st.error || `Класс «${sheet.class || '—'}» не найден в справочнике выбранной редакции. Перетащите блок класса на лист или выберите его ниже.`),
@@ -782,7 +782,6 @@ window.LevelUp = (() => {
             el('button', { onclick: () => close(st.applied) }, 'Закрыть')));
           return;
         }
-        if (st.done) { shell.append(doneView()); return; }
         const list = steps(), cur = list[st.step], p = st.p, info = hpInfo();
         const side = h('aside', 'lu-side', h('div', 'lu-side-top', crest(p.total.to, 'lg'), h('div', 'lu-side-title', p.entry.name), h('div', 'lu-side-sub', p.isNew ? `Новый класс · всего ${p.total.to}` : p.multi ? `${p.from} → ${p.to} · всего ${p.total.to}` : `Уровень ${p.from} → ${p.to}`)),
           h('ol', 'lu-steps', ...list.map((s, i) => h('li', 'lu-step' + (i === st.step ? ' cur' : '') + (i < st.step ? ' done' : ''),
@@ -813,23 +812,12 @@ window.LevelUp = (() => {
           const res = apply(sheet, st.p, { hp: st.hp, subclass: st.subclass, asi: st.asi.mode === 'feat' || st.p.epic ? { mode: 'feat', feat: st.asi.feat } : { mode: 'asi', plus: st.asi.plus }, expertise: st.expertise, cantrips: st.cantrips, spells: st.spells, drop: st.drop,
             picks: st.pick, feats: st.pfeat, texts: st.ptext, swap: st.pswap, secrets: st.secrets, skills: st.skills }, { resolve: resolveEntry });
           st.applied = true; st.done = { log: res.log, level: sheet.level };
-          toast(`Уровень повышен: ${sheet.level}. Хиты: ${sheet.hp.max}.`);
-          if (onApply) onApply(); render();
+          toast(`Уровень повышен: ${sheet.level} — вернулись на лист персонажа. Хиты: ${sheet.hp.max}.`, 5000);
+          if (onApply) onApply();
+          // После повышения сразу возвращаемся на страницу персонажа: итог виден на листе.
+          close(true);
         } catch (e) { console.error(e); toast('Не удалось повысить уровень: ' + e.message, 4000); }
       }
-      const doneView = () => {
-        const log = st.done.log, again = sheet.level < MAX_LEVEL, isNewCls = log.choices.some(c => c.startsWith('Новый класс'));
-        return h('div', 'lu-main lu-done', h('div', 'lu-confetti', ...Array.from({ length: 28 }, (_, i) => el('i', { style: `--i:${i};--x:${(i * 37) % 100}%;--d:${(i % 7) * .18}s;--r:${(i * 53) % 360}deg` }))),
-          h('div', 'lu-content anim', h('div', 'lu-done-hero', crest(sheet.level, 'xl'), h('small', 'lu-kick', isNewCls ? 'Новый класс' : 'Уровень повышен'), h('h1', '', log.class + (isNewCls ? '' : ` — ${log.level} уровень`)), h('p', 'muted', `${sheet.class} · всего ${sheet.level} ур. · максимум хитов ${sheet.hp.max}`)),
-            h('section', 'lu-panel', h('div', 'lu-sum-row', h('span', 'lu-sum-ic', '♥'), h('span', 'lu-sum-k', 'Хиты'), h('b', '', sign(log.hp))), ...log.choices.map(c => h('div', 'lu-sum-row', h('span', 'lu-sum-ic', '◆'), h('span', 'lu-sum-k', c.split(':')[0]), h('b', '', c.includes(':') ? c.slice(c.indexOf(':') + 1).trim() : '')))),
-            h('p', 'muted small', 'Изменения уже на листе. Последнее повышение можно отменить на вкладке «Умения» → «История повышений».')),
-          h('footer', 'lu-foot', h('span', 'grow'), el('button', { type: 'button', onclick: () => close(true) }, 'Закрыть'), again ? el('button', { type: 'button', class: 'primary', onclick: restart }, 'Повысить ещё →') : null));
-      };
-      function resetChoices() {
-        Object.assign(st, { subclass: null, expertise: [], cantrips: [], spells: [], drop: [], pick: {}, pfeat: {}, ptext: {}, pswap: {}, secrets: [], skills: [], q: '', lvFilter: 0, featQ: '', asi: { mode: 'asi', plus: {}, feat: null }, hp: { mode: 'avg', roll: 0, manual: '' } });
-      }
-      function selectClass(entry) { st.entry = entry; resetChoices(); const step = st.step; init(); st.step = step; render(); }
-      function restart() { st.done = null; resetChoices(); const entry = st.entry; st.entry = entry; init(); }
       function choose(entry) { st.entry = entry; sheet.class = entry.name; init(); }
       function init() {
         st.p = plan(sheet, st.entry, sheet.edition || '2014', { resolve: resolveEntry }); st.step = 0;

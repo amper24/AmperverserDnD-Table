@@ -57,6 +57,8 @@ window.Equipment = (() => {
     // предметы старой схемы: «без рук» могло означать «не задано» — хват и место ношения выводим заново
     if (it.slots_v !== SLOTS_V && it.handedness === 'none') delete it.handedness;
     it.handedness = handednessOf(it); it.wear = wearKind(it); it.slots_v = SLOTS_V; it.favorite = it.favorite === true;
+    // Настройка (attunement) есть только у предметов, которые её требуют: иначе флажок — мусор из старых данных.
+    if (it.attuned && it.attunement !== true) it.attuned = false;
     if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = /болт|bolt/.test(text) ? 'bolt' : /стрел|arrow/.test(text) ? 'arrow' : /пул|bullet/.test(text) ? 'bullet' : '';
     if (it.consume === undefined) {
       if (it.type === 'consumable') it.consume = { enabled: true, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
@@ -71,6 +73,25 @@ window.Equipment = (() => {
     if (it.qty !== 1) it.equipped = false;
     if (!it.equipped) { it.hand_slot = null; it.worn_slot = null; }
     return it;
+  }
+  // Раскладка стартового набора: доспех на тело, щит во вторую руку, одноручное оружие — в основную.
+  // Двуручное оружие берётся в обе руки только если щита нет: иначе персонаж остаётся со щитом,
+  // а оружие ждёт в рюкзаке. Слоты проверяет migrate(): стопки и конфликты не создают дублей.
+  function equipDefaults(inventory, options = {}) {
+    const canHands = options.hands !== false, canWear = options.wear !== false;
+    const free = it => (it.qty ?? 1) === 1 && !it.equipped;
+    const shieldOf = it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it));
+    const oneHanded = it => ['one', 'versatile'].includes(handednessOf(it));
+    const hold = (it, slot) => { it.equipped = true; it.hand_slot = slot; it.worn_slot = null; };
+    const held = slot => inventory.some(it => it.equipped && (it.hand_slot === slot || it.hand_slot === 'both'));
+    if (canWear) for (const it of inventory) if (free(it) && handednessOf(it) === 'none' && wearKind(it) === 'armor') { it.equipped = true; it.worn_slot = 'armor'; break; }
+    if (canHands) {
+      for (const it of inventory) if (free(it) && shieldOf(it) && !held('off') && !held('both')) { hold(it, 'off'); break; }
+      for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it) && oneHanded(it) && !held('main')) { hold(it, 'main'); break; }
+      if (!held('main') && !held('off')) for (const it of inventory) if (free(it) && handednessOf(it) === 'two' && !shieldOf(it)) { hold(it, 'both'); break; }
+      if (!held('main')) for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it)) { hold(it, 'main'); break; }
+    }
+    return migrate(inventory);
   }
   function migrate(inventory) {
     const occupied = new Set(), worn = new Set();
@@ -91,6 +112,13 @@ window.Equipment = (() => {
         else { it.worn_slot = slot; worn.add(slot); }
       } else { it.equipped = false; it.hand_slot = null; it.worn_slot = null; }
     });
+    // Правило настройки: не больше трёх предметов одновременно (PHB/DMG), лишние «отпускаются».
+    let attuned = 0;
+    for (const it of inventory) {
+      if (!it.attuned) continue;
+      if (it.attunement === true && attuned < 3) attuned++;
+      else it.attuned = false;
+    }
     return inventory;
   }
   // КД: основа — надетый доспех по его формуле (иначе 10 + Лов), щит в руке добавляет свой бонус, прочие надетые предметы с «+N» суммируются.
@@ -147,11 +175,34 @@ window.Equipment = (() => {
         field('Скрытность', el('span', { class: 'row', style: 'align-items:center;gap:6px' }, el('input', { type: 'checkbox', style: 'width:auto', checked: it.stealth_disadvantage ? '' : null, onchange: e => { if (e.target.checked) it.stealth_disadvantage = true; else delete it.stealth_disadvantage; } }), 'помеха'))),
       el('p', {class:'muted small'}, 'Расход количества, боеприпасов и зарядов задаётся блоком «Расход ресурса» ниже.'));
   }
+  // Слоты по правилам: что где надето и какие правила D&D соблюдены или нарушены.
+  function slotsAudit(sheet) {
+    const all = (sheet.inventory || []).filter(it => it && it.equipped && (it.qty ?? 1) === 1);
+    const bySlot = {};
+    for (const it of all) { const slot = it.hand_slot || it.worn_slot; if (slot) (bySlot[slot] ||= []).push(it); }
+    const rows = ['main', 'off', 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
+      .map(key => ({ key, label: slots[key], items: bySlot[key] || [] }));
+    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it)));
+    const armor = all.filter(it => it.worn_slot === 'armor' && wearKind(it) === 'armor');
+    const twoHanded = bySlot.both || [];
+    const rings = [...(bySlot.ring1 || []), ...(bySlot.ring2 || [])];
+    const attunedItems = (sheet.inventory || []).filter(it => it.attuned);
+    const check = (ok, text, detail) => ({ ok: !!ok, text, detail: ok ? '' : detail });
+    const checks = [
+      check(armor.length <= 1, 'Один доспех одновременно', 'надето больше одного доспеха — лишний снимите'),
+      check(shields.length <= 1, 'Не больше одного щита', 'щит считается только один — второй не даёт бонуса'),
+      check(!twoHanded.length || !(bySlot.off || []).length, 'Двуручное оружие занимает обе руки', 'вторая рука занята — двуручный хват невозможен'),
+      check(rings.length <= 2, 'Кольца — по одному на руку', 'надето больше двух колец'),
+      check(!attunedItems.length || attunedItems.every(it => it.attunement === true), 'Настраиваются только предметы с настройкой', 'есть настроенный предмет без требования настройки'),
+      check(attunedItems.filter(it => it.attunement === true).length <= 3, 'Настройка — не больше трёх предметов', 'настроено больше трёх предметов'),
+    ];
+    return { rows, checks, bad: checks.filter(c => !c.ok).length, attuned: attunedItems.filter(it => it.attunement === true).length };
+  }
   function validate(it) {
     if (!Number.isInteger(it.qty) || it.qty < 0 || it.qty > 1000000) return 'Количество должно быть целым от 0 до 1000000.';
     if (it.charges && (!Number.isInteger(it.charges.max) || !Number.isInteger(it.charges.cur) || it.charges.max < 0 || it.charges.max > 10000 || it.charges.cur < 0 || it.charges.cur > it.charges.max)) return 'Заряды: целые числа, текущие не больше максимума (до 10000).';
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, wearKinds, WORN_SLOTS, normalize, migrate, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
 })();
