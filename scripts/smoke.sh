@@ -69,7 +69,8 @@ gm -X POST "$B/api/campaigns/$CID/scenes/$SID/duplicate" | J "d['name']" | grep 
 [ "$(pl "$B/api/campaigns/$CID/scenes" | J "len(d)")" = "2" ]
 CH=$(pl -X POST "$B/api/characters" -H 'content-type: application/json' -d "{\"name\":\"Торин\",\"campaign_id\":\"$CID\"}" | J "d['id']")
 [ "$(gm "$B/api/characters?campaign_id=$CID" | J "d[0]['name']")" = "Торин" ]
-gm -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d '{"sheet":{"name":"Торин","level":3}}' | J "d['sheet']['level']" | grep -q 3
+REV=$(pl "$B/api/characters/$CH" | J "d['revision']")
+gm -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d "{\"sheet\":{\"_revision\":$REV,\"name\":\"Торин\",\"level\":3}}" | J "d['sheet']['level']" | grep -q 3
 pl -X PATCH "$B/api/characters/$CH" >/dev/null   # пустой PATCH (проверка прав из листа)
 
 echo "[4b] наборы (packs)"
@@ -110,13 +111,21 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X 
 
 echo "[4c] передача предметов между персонажами"
 CH2=$(gm -X POST "$B/api/characters" -H 'content-type: application/json' -d "{\"name\":\"Гимли\",\"campaign_id\":\"$CID\"}" | J "d['id']")
-pl -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d '{"sheet":{"name":"Торин","level":3,"inventory":[{"uid":"u1","name":"Факел","qty":5,"type":"gear"}]}}' >/dev/null
+REV=$(pl "$B/api/characters/$CH" | J "d['revision']")
+pl -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d "{\"sheet\":{\"_revision\":$REV,\"name\":\"Торин\",\"level\":3,\"inventory\":[{\"uid\":\"u1\",\"name\":\"Факел\",\"qty\":5,\"type\":\"gear\"}]}}" >/dev/null
 pl -X POST "$B/api/characters/$CH/transfer" -H 'content-type: application/json' -d "{\"item_uid\":\"u1\",\"to_character_id\":\"$CH2\",\"qty\":2}" | grep -q '"ok":true'
 [ "$(pl "$B/api/characters/$CH" | J "d['sheet']['inventory'][0]['qty']")" = "3" ]
 [ "$(gm "$B/api/characters/$CH2" | J "d['sheet']['inventory'][0]['qty']")" = "2" ]
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/characters/$CH2/transfer" -H 'content-type: application/json' -d "{\"item_uid\":\"u1\",\"to_character_id\":\"$CH\"}"); [ "$code" = "403" ]
 gm -X DELETE "$B/api/characters/$CH2" | grep -q '"ok":true'
 
+echo "[4d] inventory links and atomic operations"
+B="$B" GM="$GM" PL="$PL" CID="$CID" SID="$SID" python3 tests/inventory-api.py
+
+# Inventory tests above legitimately add chat records. Assert the WS delta, not
+# a hard-coded total, while still verifying hidden rolls stay GM-only.
+CHAT_PL_BEFORE=$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")
+CHAT_GM_BEFORE=$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")
 echo "[5] WebSocket: чат, броски, права игрока"
 python3 - "$B" "$CID" "$SID" "$GM" "$PL" <<'PY'
 import sys, json, asyncio
@@ -160,8 +169,8 @@ asyncio.run(main())
 PY
 echo "[5b] состояние после WS"
 [ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "(len(d['items']), d['fog']['enabled'])")" = "(1, True)" ]
-[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "2" ]   # системное сообщение о передаче + бросок; скрытый бросок мастера игроку не виден
-[ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "3" ]
+[ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "$((CHAT_PL_BEFORE + 1))" ]   # only the public roll is visible to the player
+[ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "$((CHAT_GM_BEFORE + 2))" ]
 
 echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]

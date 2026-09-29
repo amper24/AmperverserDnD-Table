@@ -1,0 +1,49 @@
+{
+  "2014": {
+    "records": 1294,
+    "categories": {
+      "spell": 319,
+      "monster": 334,
+      "item": 599,
+      "class": 12,
+      "race": 13,
+      "background": 1,
+      "feat": 1,
+      "condition": 15
+    },
+    "blocks": {
+      "consume": 339,
+      "manual": 4086,
+      "attack": 585,
+      "damage": 725,
+      "roll": 100,
+      "heal": 6,
+      "grant_item": 4,
+      "passive": 109,
+      "condition": 30
+    }
+  },
+  "2024": {
+    "records": 1205,
+    "categories": {
+      "spell": 339,
+      "monster": 341,
+      "item": 444,
+      "class": 12,
+      "race": 33,
+      "background": 4,
+      "feat": 17,
+      "condition": 15
+    },
+    "blocks": {
+      "consume": 339,
+      "manual": 3664,
+      "attack": 499,
+      "damage": 811,
+      "heal": 3,
+      "grant_item": 1,
+      "passive": 90,
+      "condition": 30
+    }
+  }
+}

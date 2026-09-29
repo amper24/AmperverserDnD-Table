@@ -9,6 +9,8 @@ mod config;
 mod db;
 mod error;
 mod images;
+mod inventory;
+mod mechanics;
 mod packs;
 mod realtime;
 mod scenes;

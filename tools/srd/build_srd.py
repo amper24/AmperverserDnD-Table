@@ -306,7 +306,8 @@ def conditions(ed):
 
 def build(ed):
     res = spells(ed) + monsters(ed) + equipment(ed) + classes(ed) + races(ed) + backgrounds(ed) + feats(ed) + conditions(ed)
-    return res
+    from mechanics import convert
+    return convert(res, ed)
 
 
 if __name__ == '__main__':

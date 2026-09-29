@@ -98,6 +98,8 @@ async fn duplicate(State(st): State<AppState>, user: AuthUser, Path((cid, sid)):
         .bind(&nid).bind(&cid).bind(&name).bind(util::text(&s, "grid")).bind(util::text(&s, "fog")).bind(util::now()).execute(&st.db).await?;
     let items = sqlx::query("SELECT * FROM scene_items WHERE scene_id = ?").bind(&sid).fetch_all(&st.db).await?;
     for it in items {
+        // Physical inventory loot is not copied along with the scene template.
+        if util::json_value(&util::text(&it, "data"))["managed_loot"] == true { continue; }
         sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(util::uid()).bind(&nid).bind(it.get::<String, _>("layer")).bind(it.get::<i64, _>("z")).bind(util::text(&it, "data")).bind(util::now())
             .execute(&st.db).await?;

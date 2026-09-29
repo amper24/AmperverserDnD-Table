@@ -8,11 +8,18 @@ name: Release
 #
 #   git tag v0.2.0 && git push origin v0.2.0
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (must match Cargo.toml, e.g. v0.4.0)'
+        required: true
+        type: string
   push:
     tags: ["v*"]
 
 env:
   CARGO_TERM_COLOR: never
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -36,6 +43,11 @@ jobs:
             asset: dnd-table-macos-aarch64
     steps:
       - uses: actions/checkout@v4
+      - name: Validate release version
+        shell: bash
+        run: |
+          VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          test "$RELEASE_TAG" = "v$VERSION"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -96,15 +108,13 @@ jobs:
           cat SHA256SUMS.txt
       - name: Tag vs Cargo.toml
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
           VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
-          echo "tag=$GITHUB_REF_NAME, Cargo.toml=$VERSION"
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "::warning title=Версия не совпадает::Тег $GITHUB_REF_NAME, а в Cargo.toml version = $VERSION"
-          fi
+          test "$RELEASE_TAG" = "v$VERSION"
       - name: Create/update the release and upload the files
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           fail_on_unmatched_files: true
           draft: false

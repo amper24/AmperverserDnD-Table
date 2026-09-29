@@ -46,7 +46,7 @@ impl Hub {
             }
         }
     }
-    async fn send_to_role(&self, cid: &str, role: &str, msg: &Value) {
+    pub(crate) async fn send_to_role(&self, cid: &str, role: &str, msg: &Value) {
         let text = msg.to_string();
         let rooms = self.rooms.read().await;
         if let Some(room) = rooms.get(cid) {
@@ -55,6 +55,12 @@ impl Hub {
                     let _ = c.tx.send(text.clone());
                 }
             }
+        }
+    }
+    async fn roll_error(&self, cid: &str, conn_id: u64, request_id: &Value, message: &str) {
+        let rooms = self.rooms.read().await;
+        if let Some(c) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
+            let _ = c.tx.send(json!({ "type": "roll_error", "request_id": request_id, "message": message }).to_string());
         }
     }
     async fn presence(&self, cid: &str) -> Value {
@@ -135,36 +141,41 @@ async fn handle_socket(socket: WebSocket, st: AppState, cid: String, user: auth:
 // ---------- броски кубиков ----------
 pub fn roll_expression(expr: &str) -> Option<Value> {
     let expr: String = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase().replace('к', "d");
-    if expr.is_empty() || expr.len() > 64 || !expr.chars().all(|c| c.is_ascii_digit() || "d+-khl".contains(c)) {
-        return None;
-    }
+    // Match the WHOLE expression: the old token scan silently accepted d20++5 or trailing signs.
+    let grammar = Regex::new(r"^[+-]?(?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+)(?:[+-](?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+))*$").ok()?;
+    if expr.is_empty() || expr.len() > 64 || !grammar.is_match(&expr) { return None; }
     let term_re = Regex::new(r"([+-]?)([^+-]+)").ok()?;
-    let dice_re = Regex::new(r"^(\d*)d(\d+)(k[hl]\d+)?$").ok()?;
+    let dice_re = Regex::new(r"^([0-9]*)d([0-9]+)(k[hl][0-9]+)?$").ok()?;
     let mut rng = rand::thread_rng();
     let mut total: i64 = 0;
+    let mut dice_count: usize = 0;
     let mut parts = Vec::new();
     for cap in term_re.captures_iter(&expr) {
+        if parts.len() >= 32 { return None; }
         let sign = if &cap[1] == "-" { -1 } else { 1 };
         let term = &cap[2];
         if let Some(d) = dice_re.captures(term) {
-            let n: i64 = d.get(1).map(|m| m.as_str()).filter(|s| !s.is_empty()).and_then(|s| s.parse().ok()).unwrap_or(1);
+            let n: usize = if d[1].is_empty() { 1 } else { d[1].parse().ok()? };
             let sides: i64 = d[2].parse().ok()?;
-            if n > 100 || sides > 1000 || sides < 1 || n < 1 {
-                return None;
-            }
+            if n < 1 || n > 100 || !(1..=1000).contains(&sides) { return None; }
+            dice_count += n;
+            if dice_count > 100 { return None; }
+            let count: usize = match d.get(3) { Some(k) => k.as_str()[2..].parse().ok()?, None => n };
+            if count < 1 || count > n { return None; }
             let rolls: Vec<i64> = (0..n).map(|_| rng.gen_range(1..=sides)).collect();
-            let mut kept = rolls.clone();
+            let mut kept_indices: Vec<usize> = (0..n).collect();
             if let Some(k) = d.get(3) {
-                let ks = k.as_str();
-                let count: usize = ks[2..].parse().ok()?;
-                let mut sorted = rolls.clone();
-                if &ks[1..2] == "h" { sorted.sort_by(|a, b| b.cmp(a)); } else { sorted.sort(); }
-                kept = sorted.into_iter().take(count).collect();
+                if &k.as_str()[1..2] == "h" { kept_indices.sort_by_key(|&i| -rolls[i]); }
+                else { kept_indices.sort_by_key(|&i| rolls[i]); }
             }
+            kept_indices.truncate(count);
+            kept_indices.sort_unstable();
+            let kept: Vec<i64> = kept_indices.iter().map(|&i| rolls[i]).collect();
             total += sign * kept.iter().sum::<i64>();
-            parts.push(json!({ "term": format!("{}{}", &cap[1], term), "rolls": rolls, "kept": kept, "sides": sides }));
+            parts.push(json!({ "term": format!("{}{}", &cap[1], term), "rolls": rolls, "kept": kept, "kept_indices": kept_indices, "sides": sides }));
         } else {
             let v: i64 = term.parse().ok()?;
+            if v > 1_000_000 { return None; }
             total += sign * v;
             parts.push(json!({ "term": format!("{}{}", &cap[1], term), "value": sign * v }));
         }
@@ -173,16 +184,19 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
 }
 
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
-fn double_dice(expr: &str) -> String {
+pub(crate) fn double_dice(expr: &str) -> String {
+    let expr = expr.to_lowercase().replace('к', "d");
     let re = Regex::new(r"(\d*)([dк])(\d+)").unwrap();
-    re.replace_all(expr, |c: &regex::Captures| {
-        let n: i64 = c.get(1).map(|m| m.as_str()).filter(|s| !s.is_empty()).and_then(|s| s.parse().ok()).unwrap_or(1);
-        format!("{}{}{}", n * 2, &c[2], &c[3])
+    re.replace_all(&expr, |c: &regex::Captures| {
+        let n: i64 = if c[1].is_empty() { 1 } else {
+            match c[1].parse() { Ok(n) => n, Err(_) => return c[0].to_string() }
+        };
+        format!("{}{}{}", n.saturating_mul(2), &c[2], &c[3])
     }).into_owned()
 }
 
 /// Есть ли среди оставленных костей d20 естественная 20 / 1 (по первому d20-терму).
-fn nat_d20(r: &Value) -> (bool, bool) {
+pub(crate) fn nat_d20(r: &Value) -> (bool, bool) {
     if let Some(parts) = r["parts"].as_array() {
         for p in parts {
             if p["sides"].as_i64() == Some(20) {
@@ -215,6 +229,10 @@ pub async fn system_message(st: &AppState, cid: &str, user: &auth::AuthUser, tex
 async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, role: &str, msg: Value) {
     let is_gm = role == "gm";
     let t = msg["type"].as_str().unwrap_or("");
+    if matches!(t, "roll" | "multi") && msg["gm_only"].as_bool().unwrap_or(false) && !is_gm {
+        st.hub.roll_error(cid, conn_id, &msg["request_id"], "Скрытые броски доступны только мастеру. Бросок не отправлен.").await;
+        return;
+    }
     match t {
         "chat" => {
             let text: String = msg["text"].as_str().unwrap_or("").chars().take(2000).collect::<String>().trim().to_string();
@@ -237,23 +255,29 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             // карточка предмета/заклинания в чат (с кнопками бросков на стороне клиента)
             let mut card = msg["card"].clone();
             if !card.is_object() { return; }
-            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner"].contains(&k.as_str())); }
+            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner", "item_ref"].contains(&k.as_str())); }
             if let Some(out) = save_chat(st, cid, user, "card", &card).await {
                 st.hub.broadcast(cid, &out, None).await;
             }
         }
         "roll" => {
-            let Some(mut r) = roll_expression(msg["expr"].as_str().unwrap_or("d20")) else { return };
+            let Some(mut r) = roll_expression(msg["expr"].as_str().unwrap_or("d20")) else {
+                st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула или превышен лимит кубиков.").await; return;
+            };
             let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
             r["label"] = msg["label"].clone();
             r["gm_only"] = json!(gm_only);
+            r["request_id"] = json!(msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>());
+            r["kind"] = msg["kind"].clone();
             if let Some(out) = save_chat(st, cid, user, "roll", &r).await {
                 if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
             }
         }
         // связка бросков одним сообщением: атака + урон (+ что угодно). Крит по атаке удваивает кости урона.
         "multi" => {
-            let Some(list) = msg["rolls"].as_array() else { return };
+            let Some(list) = msg["rolls"].as_array().filter(|l| !l.is_empty() && l.len() <= 8) else {
+                st.hub.roll_error(cid, conn_id, &msg["request_id"], "Связка должна содержать 1–8 бросков.").await; return;
+            };
             let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
             let mut out_rolls = Vec::new();
             let mut crit = false;
@@ -265,19 +289,22 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                     expr = double_dice(&expr);
                     doubled = true;
                 }
-                let Some(mut rolled) = roll_expression(&expr) else { continue };
+                let Some(mut rolled) = roll_expression(&expr) else {
+                    st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула в связке. Вся связка отменена.").await; return;
+                };
                 let (nat20, nat1) = nat_d20(&rolled);
-                if kind == "attack" && nat20 { crit = true; }
+                if kind == "attack" { crit = nat20; }
                 rolled["name"] = r["name"].clone();
                 rolled["kind"] = json!(kind);
                 rolled["dtype"] = r["dtype"].clone();
                 rolled["crit"] = json!(nat20 && kind != "damage" && kind != "heal");
                 rolled["fumble"] = json!(nat1 && kind != "damage" && kind != "heal");
                 rolled["doubled"] = json!(doubled);
+                rolled["base_expr"] = r["expr"].clone();
                 out_rolls.push(rolled);
             }
             if out_rolls.is_empty() { return; }
-            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "rolls": out_rolls });
+            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "request_id": msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>(), "rolls": out_rolls });
             if let Some(out) = save_chat(st, cid, user, "multi", &payload).await {
                 if gm_only { st.hub.send_to_role(cid, "gm", &out).await; } else { st.hub.broadcast(cid, &out, None).await; }
             }
@@ -317,7 +344,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                         let Some(row) = row else { continue };
                         let mut data = util::json_value(&util::text(&row, "data"));
                         if let (Some(dst), Some(src)) = (data.as_object_mut(), it["data"].as_object()) {
-                            for (k, v) in src { dst.insert(k.clone(), v.clone()); }
+                            for (k, v) in src { if dst.get("managed_loot") != Some(&json!(true)) || PLAYER_FIELDS.contains(&k.as_str()) { dst.insert(k.clone(), v.clone()); } }
                         }
                         let z = it["z"].as_i64().unwrap_or_else(|| row.get::<i64, _>("z"));
                         let layer = it["layer"].as_str().map(|s| s.to_string()).unwrap_or_else(|| row.get::<String, _>("layer"));
@@ -362,17 +389,20 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
         None => None,
     };
 
+    // A delayed move must never resurrect a picked-up/deleted token.
+    if id.is_some() && existing.is_none() { return; }
+    if id.is_none() && data["managed_loot"] == true { return; }
     let (final_id, layer, z, data) = match existing {
         Some(row) => {
             let old = util::json_value(&util::text(&row, "data"));
             let mut layer: String = row.get("layer");
             let mut z: i64 = row.get("z");
-            let merged = if is_gm {
+            let merged = if is_gm && old["managed_loot"] != true {
                 layer = layer_in.unwrap_or(layer);
                 z = z_in.unwrap_or(z);
                 data
             } else {
-                if !player_can_edit(&old, &user.id) {
+                if !is_gm && !player_can_edit(&old, &user.id) {
                     return;
                 }
                 // игроку разрешено менять только позицию/поворот/хиты/состояния своего токена
@@ -385,8 +415,9 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
                 m
             };
             let id = id.unwrap();
-            let _ = sqlx::query("UPDATE scene_items SET layer = ?, z = ?, data = ?, updated_at = ? WHERE id = ?")
+            let updated = sqlx::query("UPDATE scene_items SET layer = ?, z = ?, data = ?, updated_at = ? WHERE id = ?")
                 .bind(&layer).bind(z).bind(merged.to_string()).bind(util::now()).bind(&id).execute(&st.db).await;
+            if !updated.is_ok_and(|r| r.rows_affected() > 0) { return; }
             (id, layer, z, merged)
         }
         None => {
@@ -406,4 +437,31 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
         }
     };
     st.hub.broadcast(cid, &json!({ "type": "item_upsert", "scene_id": scene_id, "item": { "id": final_id, "scene_id": scene_id, "layer": layer, "z": z, "data": data } }), None).await;
+}
+
+#[cfg(test)]
+mod dice_tests {
+    use super::*;
+    #[test]
+    fn strict_expressions_and_limits() {
+        for expr in ["", "+", "d20+", "d20++5", "d20--2", "2garbage", "0d6", "d0", "101d6", "60d6+41d6", "2d6kh0", "2d6kh3", "d1001", "1000001", "999999999999999999999999d6"] {
+            assert!(roll_expression(expr).is_none(), "accepted {expr}");
+        }
+        for expr in ["d20", "-d4+5", "4d6kh3", "2d20kl1", "2К6 + 3", "d100", "0", "100d1", "d1000"] {
+            assert!(roll_expression(expr).is_some(), "rejected {expr}");
+        }
+    }
+    #[test]
+    fn duplicate_faces_keep_exact_indices() {
+        let r = roll_expression("4d1kh3+2").unwrap();
+        assert_eq!(r["total"], 5);
+        assert_eq!(r["parts"][0]["kept_indices"], json!([0, 1, 2]));
+        assert_eq!(r["parts"][0]["kept"], json!([1, 1, 1]));
+    }
+    #[test]
+    fn totals_and_critical_dice() {
+        assert_eq!(roll_expression("2d1-3+d1").unwrap()["total"], 0);
+        assert_eq!(double_dice("1d8+2d6+3"), "2d8+4d6+3");
+        assert_eq!(nat_d20(&json!({"parts":[{"sides":20,"kept":[20]}]})), (true, false));
+    }
 }

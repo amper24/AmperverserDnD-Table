@@ -40,6 +40,11 @@ jobs:
           cargo build --release 2>&1 | tee build.log
       - name: Clippy
         run: cargo clippy --release 2>&1 | tee clippy.log || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript tests (including all standard block schemas)
+        run: node --test tests/*.test.cjs
       - name: Unit tests
         run: |
           set -o pipefail

@@ -129,6 +129,13 @@ CREATE TABLE IF NOT EXISTS characters (
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS character_operations (
+  character_id VARCHAR(32) NOT NULL,
+  request_id VARCHAR(64) NOT NULL,
+  result {MEDIUMTEXT} NOT NULL,
+  PRIMARY KEY (character_id, request_id),
+  FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS chat_messages (
   id {AUTOINC},
   campaign_id VARCHAR(32) NOT NULL,
@@ -189,6 +196,7 @@ CREATE TABLE IF NOT EXISTS compendium (
 
 /// Миграции для уже существующих баз (ошибки "колонка уже есть" игнорируются).
 const ALTERS: &[&str] = &[
+    "ALTER TABLE characters ADD COLUMN revision BIGINT NOT NULL DEFAULT 0",
     "ALTER TABLE compendium ADD COLUMN pack_id VARCHAR(32) NULL",
     "ALTER TABLE compendium ADD COLUMN name_lc VARCHAR(128) NULL",
     "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL",
