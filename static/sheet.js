@@ -198,9 +198,21 @@
     if (!readonly) portrait.addEventListener('click', () => pf.click());
     const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: 'token', label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
     const inp = (key, ph, type = 'text') => el('input', { value: s[key] ?? '', placeholder: ph, type, disabled: dis(), onchange: e => { s[key] = type === 'number' ? +e.target.value : e.target.value; if (key === 'level') s.proficiency_bonus = Math.ceil(1 + s.level / 4); save(); if (['level', 'name'].includes(key)) render(); } });
+    const raceModule = (s.modules || []).slice().reverse().find(m => m.category === 'race' && m.snapshot);
+    const alignmentOptions = window.CharacterBuilder?.ALIGNMENTS || ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
+    const alignmentSelect = el('select', { 'aria-label': 'Мировоззрение', disabled: dis(), onchange: e => { s.alignment = e.target.value; save(); } },
+      ...(!alignmentOptions.includes(s.alignment || '') ? [el('option', { value: s.alignment, selected: '' }, 'Текущее: ' + s.alignment)] : []),
+      ...alignmentOptions.map(value => el('option', { value, selected: (s.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
+    const raceData = raceModule?.snapshot?.data || {};
+    const raceFacts = [raceData.speed && `Скорость ${raceData.speed} фт.`, ...(Array.isArray(raceData.languages) ? raceData.languages : raceData.languages ? [raceData.languages] : [])].filter(Boolean).join(' · ');
+    const raceBlock = el('div', { class: 'dropslot race-module-block', 'data-cat': 'race', role: 'group', 'aria-label': 'Блок расы', title: 'Раса — неизменяемый текстовый снимок модуля справочника. Заменить можно другим блоком расы.' },
+      el('span', { class: 'race-module-badge' }, 'БЛОК СПРАВОЧНИКА ⤓'),
+      el('strong', {}, s.race || 'Перетащите блок расы из справочника'),
+      raceFacts ? el('small', { class: 'race-module-facts' }, raceFacts) : null,
+      el('small', { class: 'muted' }, raceModule ? `Зафиксированный снимок · ${raceModule.source || raceModule.snapshot.source || 'справочник'}` : s.race ? 'Старая запись без связи с модулем — перетащите блок расы, чтобы зафиксировать источник.' : 'Раса подключается только блоком, свободный ввод отключён.'));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', {}, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
-      el('div', { class: 'row' }, el('div', { class: 'dropslot', 'data-cat': 'race' }, el('label', {}, 'Раса ⤓'), inp('race', 'перетащите из справочника')), el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), inp('alignment', '')))));
+      el('div', { class: 'row' }, raceBlock, el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), alignmentSelect))));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
@@ -460,8 +472,8 @@
   // ---------- вкладка Заметки ----------
   function notesTab() {
     const root = el('div', { class: 'cols2' });
-    const pers = el('div', { class: 'card' }, el('h3', {}, 'Личность'));
-    for (const [k, n] of [['personality', 'Черты характера'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['flaws', 'Слабости'], ['appearance', 'Внешность'], ['backstory', 'Предыстория']]) pers.append(el('div', { class: 'field' }, el('label', {}, n), el('textarea', { disabled: dis(), style: 'min-height:48px', onchange: e => { s.traits[k] = e.target.value; save(); } }, s.traits[k] || '')));
+    const pers = el('div', { class: 'card sheet-personality-notes' }, el('h3', {}, 'Личность и анкета'));
+    for (const [k, n] of [['player_name', 'Имя игрока'], ['faith', 'Божество или вера'], ['age', 'Возраст'], ['height', 'Рост'], ['weight', 'Вес'], ['eyes', 'Глаза'], ['skin', 'Кожа'], ['hair', 'Волосы'], ['personality', 'Черты характера'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['flaws', 'Слабости'], ['appearance', 'Дополнительные приметы'], ['backstory', 'Предыстория']]) pers.append(el('div', { class: 'field' }, el('label', {}, n), el('textarea', { disabled: dis(), style: 'min-height:48px', onchange: e => { s.traits[k] = e.target.value; save(); } }, s.traits[k] || '')));
     const notes = el('div', { class: 'card' }, el('h3', {}, 'Заметки'), el('textarea', { disabled: dis(), style: 'min-height:220px', onchange: e => { s.notes = e.target.value; save(); render(); } }, s.notes || ''),
       s.notes ? el('div', { class: 'card-desc', style: 'margin-top:6px' }, M.rich(s.notes, ctx(), { prefix: ch.name + ': заметки' })) : el('p', { class: 'muted small' }, 'В заметках работают кнопки бросков: [[1d20+@prof]]{Проверка} и переменные {{@hp_max}}.'),
       el('div', { class: 'field', style: 'margin-top:8px' }, el('label', {}, 'Владения и языки'), el('textarea', { disabled: dis(), style: 'min-height:60px', onchange: e => { s.proficiencies = e.target.value; save(); } }, s.proficiencies || '')));
@@ -485,16 +497,28 @@
     root.addEventListener('drop', e => { if (e.defaultPrevented) return; e.preventDefault(); handleDrop(e); });
   }
   function handleDrop(e, slotCat) {
-    const comp = M.getDrag(e, 'application/x-compendium'); if (comp) return applyEntry(comp, slotCat);
+    const comp = M.getDrag(e, 'application/x-compendium');
+    if (slotCat) {
+      if (!comp) { toast('В этот слот можно перетащить только блок соответствующей категории из справочника.'); return; }
+      return applyEntry(comp, slotCat);
+    }
+    if (comp) return applyEntry(comp);
     const item = M.getDrag(e, 'application/x-item'); if (item) return acceptItem(item);
     const spell = M.getDrag(e, 'application/x-spell'); if (spell) { if (!s.spells.known.some(x => x.name === spell.spell.name)) { s.spells.known.push({ ...spell.spell, uid: M.uid(), prepared: false }); save(); render(); toast(`${spell.spell.name} добавлено`); } }
   }
   function applyEntry(e, slotCat) {
+    if (slotCat && e.category !== slotCat) {
+      toast(`В блок «${({race:'Раса',class:'Класс',background:'Предыстория'}[slotCat] || slotCat)}» можно перетащить только соответствующую запись справочника.`);
+      return;
+    }
     e=Mechanics.passiveData(e);
     const d = e.data || {};
     switch (e.category) {
       case 'race': {
         s.race = d.subrace && d.parent ? `${d.parent} (${e.name})` : e.name;
+        s.modules ||= [];
+        s.modules = s.modules.filter(m => m.category !== 'race');
+        s.modules.push({ schema_version: 1, entry_id: e.id, category: 'race', source: e.source, pack_id: e.pack_id || null, snapshot: JSON.parse(JSON.stringify(e)) });
         if (d.asi && Object.keys(d.asi).length && confirm(`Применить бонусы расы к характеристикам? (${Object.entries(d.asi).filter(([k]) => ABIL[k]).map(([k, v]) => ABIL[k] + ' +' + v).join(', ')})`)) for (const [k, v] of Object.entries(d.asi)) if (ABIL[k]) s.abilities[k] += v;
         if (d.speed) s.speed = d.speed;
         (d.traits || []).forEach(t => { if (!s.features.some(f => f.name === t.name)) s.features.push(M.newFeature({ name:t.name,text:t.text,mechanics:t.mechanics||Mechanics.forFeature(d.mechanics,t.name) })); });

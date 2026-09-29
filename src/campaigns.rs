@@ -185,12 +185,16 @@ pub struct ChatQuery { pub limit: Option<i64> }
 async fn chat_history(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Query(q): Query<ChatQuery>) -> ApiResult<Json<Value>> {
     let m = get_member(&st, &cid, &user.id).await?;
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
-    let rows = sqlx::query("SELECT m.id, m.user_id, m.kind, m.payload, m.created_at, u.name FROM chat_messages m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? ORDER BY m.id DESC LIMIT ?")
-        .bind(&cid).bind(limit).fetch_all(&st.db).await?;
-    let mut out: Vec<Value> = rows.iter().map(|r| json!({
-        "id": r.get::<i64, _>("id"), "user_id": r.get::<String, _>("user_id"), "name": r.get::<String, _>("name"),
-        "kind": r.get::<String, _>("kind"), "payload": util::json_value(&util::text(&r, "payload")), "at": r.get::<String, _>("created_at"),
-    })).filter(|m_| m.is_gm() || !m_["payload"]["gm_only"].as_bool().unwrap_or(false)).collect();
+    let rows = sqlx::query("SELECT m.id, m.user_id, m.kind, m.payload, m.created_at, u.name FROM chat_messages m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? AND (m.kind NOT IN ('private_roll', 'private_multi') OR m.user_id = ?) ORDER BY m.id DESC LIMIT ?")
+        .bind(&cid).bind(&user.id).bind(limit).fetch_all(&st.db).await?;
+    let mut out: Vec<Value> = rows.iter().map(|r| {
+        let stored_kind: String = r.get("kind");
+        let kind = match stored_kind.as_str() { "private_roll" => "roll", "private_multi" => "multi", other => other };
+        json!({
+            "id": r.get::<i64, _>("id"), "user_id": r.get::<String, _>("user_id"), "name": r.get::<String, _>("name"),
+            "kind": kind, "payload": util::json_value(&util::text(&r, "payload")), "at": r.get::<String, _>("created_at"),
+        })
+    }).filter(|m_| m.is_gm() || !m_["payload"]["gm_only"].as_bool().unwrap_or(false)).collect();
     out.reverse();
     Ok(Json(Value::Array(out)))
 }

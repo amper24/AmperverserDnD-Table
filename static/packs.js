@@ -50,12 +50,12 @@ window.Packs = (function () {
     }
 
     async function createPack() {
-      const name = el('input', { placeholder: 'Например: Хроники Тавернтона' }), desc = el('textarea', { style: 'min-height:70px', placeholder: 'Что внутри, для какой кампании или сеттинга' });
+      const name = el('input', { placeholder: 'Например: Хроники Тавернтона' }), desc = el('textarea', { style: 'min-height:70px', placeholder: 'Что внутри, для какой кампании или сеттинга' }), tags = el('input', { placeholder: 'Например: фэнтези, север, магические предметы' });
       const ed = el('select', {}, el('option', { value: '' }, 'Любая редакция'), el('option', { value: '2014' }, 'D&D 5e 2014'), el('option', { value: '2024' }, 'D&D 5e 2024'));
       setTimeout(() => name.focus(), 50);
-      const ok = await modal('Новый набор', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Название'), name), el('div', { class: 'field' }, el('label', {}, 'Описание'), desc), el('div', { class: 'field' }, el('label', {}, 'Редакция правил'), ed)), [{ label: 'Создать', cls: 'primary', fn: () => name.value.trim() || false }]);
+      const ok = await modal('Новый набор', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Название'), name), el('div', { class: 'field' }, el('label', {}, 'Описание'), desc), el('div', { class: 'field' }, el('label', {}, 'Теги через запятую'), tags), el('div', { class: 'field' }, el('label', {}, 'Редакция правил'), ed)), [{ label: 'Создать', cls: 'primary', fn: () => name.value.trim() || false }]);
       if (!ok) return;
-      const p = await API.post('/api/packs', { name: ok, description: desc.value, edition: ed.value });
+      const p = await API.post('/api/packs', { name: ok, description: desc.value, tags: tags.value, edition: ed.value });
       state.scope = 'mine'; await renderSide(); openPack(p.id);
     }
 
@@ -185,16 +185,30 @@ window.Packs = (function () {
     async function renderCatalog() {
       state.packId = null; history.replaceState(null, '', '/packs');
       main.innerHTML = '';
-      const q = el('input', { placeholder: 'Поиск по каталогу…', style: 'max-width:320px' });
-      const sort = el('select', {}, el('option', { value: 'popular' }, 'Популярные'), el('option', { value: 'updated' }, 'Недавно обновлённые'), el('option', { value: 'name' }, 'По названию'));
+      const q = el('input', { placeholder: 'Поиск по названию и описанию…', style: 'min-width:220px;flex:2' });
+      const tagSel = el('select', { 'aria-label': 'Фильтр по тегу' }, el('option', { value: '' }, 'Все теги'));
+      const editionSel = el('select', { 'aria-label': 'Фильтр по редакции' }, ...[['', 'Все редакции'], ['2014', '5e · 2014'], ['2024', '5e · 2024']].map(([v, n]) => el('option', { value: v }, n)));
+      const sort = el('select', { 'aria-label': 'Сортировка наборов' }, el('option', { value: 'popular' }, 'Популярные'), el('option', { value: 'updated' }, 'Недавно обновлённые'), el('option', { value: 'name' }, 'По названию'));
       const grid = el('div', { class: 'cards', style: 'margin-top:12px' });
-      main.append(el('h1', {}, 'Каталог наборов'), el('p', { class: 'muted' }, 'Опубликованные наборы других мастеров. Подпишитесь, чтобы использовать как есть, или клонируйте к себе, чтобы править.'), el('div', { class: 'row', style: 'gap:6px' }, q, sort), grid);
-      let timer;
+      const filters = el('div', { class: 'pack-catalog-filters' }, q, tagSel, editionSel, sort);
+      main.append(el('h1', {}, 'Каталог наборов'), el('p', { class: 'muted' }, 'Опубликованные наборы других мастеров. Фильтруйте по тегам и редакции, подписывайтесь или клонируйте наборы.'), filters, grid);
+      let timer, tagRequest;
+      async function loadTags() {
+        const version = {}; tagRequest = version;
+        try {
+          const packs = await API.get('/api/packs?scope=public&sort=name');
+          if (tagRequest !== version) return;
+          const counts = new Map();
+          for (const p of packs) for (const t of String(p.tags || '').split(',').map(x => x.trim()).filter(Boolean)) counts.set(t, (counts.get(t) || 0) + 1);
+          tagSel.replaceChildren(el('option', { value: '' }, 'Все теги'), ...[...counts].sort(([a], [b]) => a.localeCompare(b, 'ru')).map(([t, n]) => el('option', { value: t }, `${t} · ${n}`)));
+        } catch { /* tag filter remains optional if the catalog is unavailable */ }
+      }
       async function load() {
-        const packs = await API.get(`/api/packs?scope=public&sort=${sort.value}${q.value ? '&q=' + encodeURIComponent(q.value) : ''}`);
+        const packs = await API.get(`/api/packs?scope=public&sort=${sort.value}${q.value ? '&q=' + encodeURIComponent(q.value) : ''}${tagSel.value ? '&tag=' + encodeURIComponent(tagSel.value) : ''}`);
+        const visible = packs.filter(p => (!editionSel.value || p.edition === editionSel.value) && (!tagSel.value || String(p.tags || '').split(',').some(t => t.trim().toLocaleLowerCase() === tagSel.value.toLocaleLowerCase())));
         grid.innerHTML = '';
-        if (!packs.length) grid.append(el('p', { class: 'muted' }, 'В каталоге пока пусто. Опубликуйте свой набор первым.'));
-        for (const p of packs) {
+        if (!visible.length) grid.append(el('p', { class: 'muted' }, 'Наборов под эти фильтры не найдено. Измените тег, редакцию или поиск.'));
+        for (const p of visible) {
           const cover = el('div', { class: 'pack-cover small' });
           if (p.cover_asset_id) assetURL(p.cover_asset_id).then(u => cover.append(el('img', { src: u }))).catch(() => cover.append(icon('box', 22))); else cover.append(icon('box', 22));
           grid.append(el('div', { class: 'card pack-card' }, el('div', { class: 'row', style: 'align-items:flex-start;gap:10px' }, cover, el('div', { class: 'grow' }, el('b', {}, p.name), el('div', { class: 'muted small' }, `${p.owner_name} · ${p.entries} записей · ${p.subscribers} подп.${p.edition ? ' · ' + p.edition : ''}`))),
@@ -205,8 +219,9 @@ window.Packs = (function () {
               el('button', { class: 'small', onclick: async () => { const c = await API.post(`/api/packs/${p.id}/clone`, {}); toast('Копия создана'); state.scope = 'mine'; await renderSide(); openPack(c.id); } }, 'Клонировать'))));
         }
       }
-      q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); }); sort.addEventListener('change', load);
-      load();
+      q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      tagSel.addEventListener('change', load); editionSel.addEventListener('change', load); sort.addEventListener('change', load);
+      loadTags(); load();
     }
 
     return root;

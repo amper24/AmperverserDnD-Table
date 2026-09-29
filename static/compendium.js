@@ -106,7 +106,7 @@ window.Compendium = (function () {
   /// Редактор записи: визуальный (предмет/заклинание/общий) + выбор, куда сохранить (набор или homebrew кампании).
   async function editEntry(e, o = {}) {
     let category = e?.category || o.category || 'item';
-    if (!e) {
+    if (!e && !o.directDestination) {
       const cat = el('select', {}, ...Object.entries(CAT_NAMES).map(([k, v]) => el('option', { value: k, selected: category === k ? '' : null }, v)));
       const packs = await myPacks();
       const dest = el('select', {}, o.packId ? el('option', { value: 'pack:' + o.packId, selected: '' }, 'этот набор') : null, o.campaignId && o.isGM ? el('option', { value: 'campaign:' + o.campaignId }, 'Homebrew этой кампании') : null, ...packs.filter(p => p.id !== o.packId).map(p => el('option', { value: 'pack:' + p.id }, 'Набор: ' + p.name)), window.ME?.is_root ? el('option', { value: 'base' }, 'Базовый справочник (root)') : null, el('option', { value: 'new' }, '+ Новый набор…'));
@@ -134,45 +134,513 @@ window.Compendium = (function () {
     try { if (e?.id) await API.patch('/api/compendium/' + e.id, body); else await API.post('/api/compendium', body); toast('Сохранено'); o.onSaved && o.onSaved(); } catch (err) { toast('Ошибка: ' + err.message, 4000); }
   }
 
+  // Полноэкранная мастерская справочника: фильтры/рубрики | список | карточка.
+  // Повторяет рабочее пространство наборов, сохраняя компактный виджет для стола и листа.
+  function workspaceWidget(opts = {}) {
+    const root = el('div', { class: 'comp comp-workspace' });
+    const side = el('aside', { class: 'comp-side' });
+    const main = el('section', { class: 'comp-list-pane' });
+    const det = el('section', { class: 'det comp-detail' }, el('div', { class: 'comp-empty' }, icon('book', 30), el('b', {}, 'Выберите запись'), el('span', { class: 'muted small' }, 'Откройте карточку, чтобы прочитать описание, бросить кубы, скопировать запись или перетащить её на стол.')));
+    const srcSel = el('select', { 'aria-label': 'Источник записей' }, el('option', { value: '' }, 'Все источники'));
+    const packTagSel = el('select', { 'aria-label': 'Фильтр по тегу набора' }, el('option', { value: '' }, 'Все теги наборов'));
+    const edition0 = opts.edition || defaultEdition();
+    const edSel = el('select', { 'aria-label': 'Редакция правил' }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: edition0 === k ? '' : null }, v)), el('option', { value: '', selected: edition0 === '' ? '' : null }, 'Все редакции'));
+    const q = el('input', { type: 'search', placeholder: 'Название, ключевое слово…', 'aria-label': 'Поиск в справочнике' });
+    const sort = el('select', { 'aria-label': 'Сортировка' }, el('option', { value: 'name' }, 'По названию'), el('option', { value: 'source' }, 'По источнику'));
+    const nav = el('div', { class: 'comp-nav' });
+    const facetBar = el('div', { class: 'comp-facets', 'aria-label': 'Дополнительные фильтры' });
+    const lst = el('div', { class: 'list lst comp-list' });
+    const count = el('span', { class: 'muted small comp-count' }, 'Загружаем…');
+    const addButton = el('button', { class: 'primary small', onclick: () => createRecord() }, '+ Своя запись');
+    side.append(el('div', { class: 'comp-side-title' }, icon('book', 18), el('b', {}, 'Справочник')),
+      el('label', { class: 'comp-filter-label' }, 'ИСТОЧНИК', srcSel),
+      el('label', { class: 'comp-filter-label' }, 'ТЕГ НАБОРА', packTagSel),
+      el('label', { class: 'comp-filter-label' }, 'РЕДАКЦИЯ', edSel),
+      el('div', { class: 'pack-folder-h' }, 'Категории'), nav);
+    const toolbar = el('div', { class: 'comp-toolbar' }, q, count, sort, addButton);
+    main.append(toolbar, facetBar, lst);
+    root.append(side, main, det);
+
+    const state = { source: '', packTag: '', category: '', folder: '', query: '', sort: 'name', facets: {} };
+    let timer, request = 0, rawItems = [], packNames = {}, packTags = {}, folders = [], folderLists = {}, activeId = null;
+    const sourceKey = e => e.pack_id ? 'pack:' + e.pack_id : e.campaign_id ? 'hb' : 'srd';
+    const countLabel = n => { const n100 = n % 100, n10 = n % 10; const word = n100 >= 11 && n100 <= 14 ? 'записей' : n10 === 1 ? 'запись' : n10 >= 2 && n10 <= 4 ? 'записи' : 'записей'; return `${n} ${word}`; };
+    const sourceLabel = e => e.pack_id ? (packNames[e.pack_id] || e.pack_name || 'Набор') : e.campaign_id ? 'Homebrew кампании' : 'Базовый SRD';
+    const packTagList = p => String(p.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+    const foldersFor = items => {
+      const found = new Map();
+      for (const e of items) if (e.data?.folder) {
+        const key = sourceKey(e) + '|' + e.data.folder;
+        if (!found.has(key)) found.set(key, { key, name: e.data.folder, source: sourceLabel(e), packId: e.pack_id || null, count: 0 });
+        found.get(key).count++;
+      }
+      if (state.source.startsWith('pack:')) {
+        const packId = state.source.slice(5), definitions = folderLists[packId];
+        if (Array.isArray(definitions)) {
+          for (const name of definitions) {
+            const key = 'pack:' + packId + '|' + name;
+            if (!found.has(key)) found.set(key, { key, name, source: packNames[packId] || 'Набор', packId, count: 0 });
+          }
+          for (const [key, folder] of found) if (folder.packId === packId && !definitions.includes(folder.name)) found.delete(key);
+        }
+      }
+      return [...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    };
+    const navItem = (label, active, number, onclick, extraClass = '', extra = null) => el('div', { class: 'pack-folder comp-nav-item' + (active ? ' active' : '') + (extraClass ? ' ' + extraClass : ''), role: 'button', tabindex: '0', onclick, onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onclick(); } } }, el('span', { class: 'grow' }, label), number != null ? el('span', { class: 'muted small' }, number) : null, extra);
+
+    side.append(el('div', { class: 'comp-source-loading muted small' }, 'Загружаем наборы…'));
+    (async () => {
+      try {
+        const mine = await myPacks();
+        let subscribed = [], campaign = [];
+        try { subscribed = await API.get('/api/packs?scope=subscribed'); } catch { /* подписки не мешают просмотру справочника */ }
+        if (opts.campaignId) { try { campaign = await API.get(`/api/campaigns/${opts.campaignId}/packs`); } catch { /* справочник работает и без списка кампаний */ } }
+        const known = new Set(mine.map(p => p.id));
+        const all = [...mine, ...subscribed.filter(p => !known.has(p.id)), ...campaign.filter(p => !known.has(p.id) && !subscribed.some(s => s.id === p.id))];
+        const tagCounts = new Map();
+        for (const p of all) {
+          packNames[p.id] = p.name; packTags[p.id] = packTagList(p);
+          if (Array.isArray(p.folders)) folderLists[p.id] = p.folders;
+          for (const tag of packTags[p.id]) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+          srcSel.append(el('option', { value: 'pack:' + p.id }, 'Набор: ' + p.name));
+        }
+        packTagSel.replaceChildren(el('option', { value: '' }, 'Все теги наборов'), ...[...tagCounts].sort(([a], [b]) => a.localeCompare(b, 'ru')).map(([tag, n]) => el('option', { value: tag }, `${tag} · ${n}`)));
+        srcSel.append(el('option', { value: 'srd' }, 'Базовый SRD'));
+        if (opts.campaignId) srcSel.append(el('option', { value: 'hb' }, 'Homebrew кампании'));
+      } catch { /* filters remain usable if packs aren't available */ }
+      side.querySelector('.comp-source-loading')?.remove();
+      if (rawItems.length) { renderNav(rawItems); renderList(); }
+    })();
+
+    function createRecord() {
+      const packId = state.source.startsWith('pack:') ? state.source.slice(5) : null;
+      const directHomebrew = state.source === 'hb' && opts.campaignId && opts.isGM;
+      const directBase = state.source === 'srd' && window.ME?.is_root;
+      const canWriteSource = packId ? (packsCache || []).some(p => p.id === packId) : !!(directHomebrew || directBase);
+      editEntry(null, {
+        campaignId: directHomebrew ? opts.campaignId : null, isGM: !!opts.isGM,
+        packId: canWriteSource && packId ? packId : null, directDestination: canWriteSource,
+        folders: packId ? (folderLists[packId] || []) : [], folder: state.folder && packId ? state.folder.slice(state.folder.indexOf('|') + 1) : undefined,
+        category: state.category || 'item', onSaved: load
+      });
+    }
+
+    async function saveFolders(packId, names) {
+      const result = await API.post(`/api/packs/${packId}/folders`, { folders: names });
+      folderLists[packId] = result.folders || names;
+      await load();
+    }
+    async function renameFolder(folder) {
+      const name = await prompt2('Новое название папки', '', folder.name);
+      if (!name || name === folder.name) return;
+      const entries = await API.get(`/api/compendium?pack_id=${folder.packId}&folder=${encodeURIComponent(folder.name)}&limit=3000`);
+      for (const e of entries) {
+        e.data.folder = name;
+        await API.patch('/api/compendium/' + e.id, { category: e.category, name: e.name, data: e.data, pack_id: folder.packId });
+      }
+      const current = folderLists[folder.packId] || [];
+      const renamedFolders = [...new Set(current.map(x => x === folder.name ? name : x))];
+      await saveFolders(folder.packId, renamedFolders);
+      if (state.folder === folder.key) state.folder = 'pack:' + folder.packId + '|' + name;
+      renderNav(rawItems); renderList();
+    }
+    async function removeFolder(folder) {
+      if (!confirm(`Удалить папку «${folder.name}»? Записи останутся в наборе без папки.`)) return;
+      const current = folderLists[folder.packId] || [];
+      const result = await API.post(`/api/packs/${folder.packId}/folders`, { folders: current.filter(x => x !== folder.name) });
+      folderLists[folder.packId] = result.folders || current.filter(x => x !== folder.name);
+      if (state.folder === folder.key) state.folder = '';
+      await load();
+    }
+    function renderNav(items) {
+      nav.replaceChildren();
+      const categoryCounts = Object.fromEntries(Object.keys(CAT_NAMES).map(k => [k, 0]));
+      for (const e of items) categoryCounts[e.category] = (categoryCounts[e.category] || 0) + 1;
+      nav.append(navItem('Все записи', !state.category && !state.folder, items.length, () => { state.category = ''; state.folder = ''; state.facets = {}; renderNav(items); renderList(); }));
+      for (const [k, label] of Object.entries(CAT_NAMES)) nav.append(navItem(label, state.category === k && !state.folder, categoryCounts[k] || 0, () => { state.category = k; state.folder = ''; state.facets = {}; renderNav(items); renderList(); }));
+      folders = foldersFor(items);
+      if (folders.length || state.source.startsWith('pack:')) {
+        const selectedPackId = state.source.startsWith('pack:') ? state.source.slice(5) : null;
+        const canManage = !!selectedPackId && ((packsCache || []).some(p => p.id === selectedPackId) || window.ME?.is_root);
+        nav.append(el('div', { class: 'pack-folder-h comp-folder-heading' }, el('span', { class: 'grow' }, 'Папки'), canManage ? el('button', { class: 'small ghost', title: 'Новая папка', onclick: async () => {
+          const name = await prompt2('Название папки', 'Например: Персонажи таверны');
+          if (!name) return;
+          try { await saveFolders(selectedPackId, [...(folderLists[selectedPackId] || []), name]); }
+          catch (e) { toast('Не удалось создать папку: ' + e.message, 4000); }
+        } }, '+') : null));
+        if (!folders.length) nav.append(el('div', { class: 'muted small', style: 'padding:2px 8px' }, canManage ? 'Добавьте папку для группировки записей.' : 'В наборе пока нет папок.'));
+        for (const f of folders) {
+          const canEditFolder = !!(f.packId && ((packsCache || []).some(p => p.id === f.packId) || window.ME?.is_root));
+          const actions = canEditFolder ? el('span', { class: 'folder-menu' },
+            el('button', { class: 'small ghost', title: 'Переименовать папку', onclick: async ev => { ev.stopPropagation(); try { await renameFolder(f); } catch (e) { toast('Не удалось переименовать папку: ' + e.message, 4000); } } }, icon('edit', 12)),
+            el('button', { class: 'small ghost', title: 'Удалить папку (записи останутся)', onclick: async ev => { ev.stopPropagation(); try { await removeFolder(f); } catch (e) { toast('Не удалось удалить папку: ' + e.message, 4000); } } }, icon('close', 12))) : null;
+          nav.append(navItem(el('span', {}, f.name, el('small', { class: 'comp-folder-source' }, f.source)), state.folder === f.key, f.count, () => { state.folder = f.key; state.category = ''; state.facets = {}; renderNav(items); renderList(); }, 'comp-folder-entry', actions));
+        }
+      }
+      renderFacets();
+    }
+
+    const listValues = value => Array.isArray(value) ? value.map(String).map(x => x.trim()).filter(Boolean) : value === undefined || value === null || value === '' ? [] : typeof value === 'string' ? value.split(/[;,]/).map(x => x.trim()).filter(Boolean) : [String(value)];
+    function facetDefinitions(items) {
+      const relevant = state.category ? items.filter(e => e.category === state.category) : items;
+      const definitions = [];
+      const add = (key, label, values, display = x => x) => {
+        const unique = [...new Set(values.map(String).map(x => x.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }));
+        if (unique.length > 1 || state.facets[key]) definitions.push({ key, label, options: unique.map(value => [value, display(value)]) });
+      };
+      if (state.category === 'item') {
+        add('item.type', 'Тип предмета', [...new Set(relevant.map(e => e.data?.type).filter(Boolean))], v => M().ITEM_TYPES?.[v] || v);
+        add('item.rarity', 'Редкость', [...new Set(relevant.map(e => e.data?.rarity).filter(Boolean))]);
+        add('item.tag', 'Тег предмета', relevant.flatMap(e => listValues(e.data?.tags)));
+      } else if (state.category === 'spell') {
+        add('spell.level', 'Круг', [...new Set(relevant.map(e => e.data?.level).filter(v => v !== undefined && v !== null))], v => Number(v) === 0 ? 'Заговор' : `${v} круг`);
+        add('spell.school', 'Школа', relevant.map(e => e.data?.school).filter(Boolean));
+        add('spell.class', 'Класс', relevant.flatMap(e => listValues(e.data?.classes)));
+      } else if (state.category === 'monster') {
+        add('monster.type', 'Тип существа', relevant.map(e => e.data?.type).filter(Boolean));
+        add('monster.size', 'Размер', relevant.map(e => e.data?.size).filter(Boolean));
+        add('monster.cr', 'Опасность', relevant.map(e => e.data?.cr).filter(v => v !== undefined && v !== null));
+      } else if (state.category === 'race') {
+        add('race.size', 'Размер', relevant.map(e => e.data?.size).filter(Boolean));
+        add('race.parent', 'Основной вид', relevant.map(e => e.data?.parent).filter(Boolean));
+        add('race.speed', 'Скорость', relevant.map(e => e.data?.speed).filter(Boolean), v => `${v} фт.`);
+      } else if (state.category === 'class') {
+        add('class.hit_die', 'Кость хитов', relevant.map(e => e.data?.hit_die).filter(Boolean));
+        add('class.primary', 'Основная характеристика', relevant.map(e => e.data?.primary).filter(Boolean));
+      } else if (state.category === 'background') {
+        add('background.feature', 'Умение предыстории', relevant.map(e => e.data?.feature).filter(Boolean));
+        add('background.tool', 'Инструмент', relevant.flatMap(e => listValues(e.data?.tools)));
+      } else if (state.category === 'npc') {
+        add('npc.role', 'Роль', relevant.map(e => e.data?.role).filter(Boolean));
+        add('npc.faction', 'Фракция', relevant.map(e => e.data?.faction).filter(Boolean));
+        add('npc.attitude', 'Отношение', relevant.map(e => e.data?.attitude).filter(Boolean));
+      }
+      if (!state.category) add('entry.tag', 'Тег записи', rawItems.flatMap(e => listValues(e.data?.tags)));
+      return definitions;
+    }
+    function renderFacets() {
+      facetBar.replaceChildren();
+      const definitions = facetDefinitions(rawItems);
+      if (!definitions.length) { facetBar.hidden = true; return; }
+      facetBar.hidden = false;
+      for (const def of definitions) {
+        const values = [...def.options];
+        if (state.facets[def.key] && !values.some(([v]) => v === state.facets[def.key])) values.unshift([state.facets[def.key], state.facets[def.key]]);
+        const select = el('select', { 'aria-label': def.label, title: def.label, onchange: () => { if (select.value) state.facets[def.key] = select.value; else delete state.facets[def.key]; renderList(); } },
+          el('option', { value: '' }, def.label), ...values.map(([v, label]) => el('option', { value: v, selected: state.facets[def.key] === v ? '' : null }, label)));
+        facetBar.append(select);
+      }
+      if (Object.keys(state.facets).length) facetBar.append(el('button', { class: 'small ghost', onclick: () => { state.facets = {}; renderFacets(); renderList(); } }, 'Сбросить фильтры'));
+    }
+    function facetMatches(e) {
+      const d = e.data || {};
+      const value = key => ({
+        'item.type': () => e.category === 'item' ? d.type : '', 'item.rarity': () => e.category === 'item' ? d.rarity : '',
+        'item.tag': () => e.category === 'item' ? listValues(d.tags) : [],
+        'spell.level': () => e.category === 'spell' ? String(d.level ?? '') : '', 'spell.school': () => e.category === 'spell' ? d.school : '',
+        'spell.class': () => e.category === 'spell' ? listValues(d.classes) : [],
+        'monster.type': () => e.category === 'monster' ? d.type : '', 'monster.size': () => e.category === 'monster' ? d.size : '', 'monster.cr': () => e.category === 'monster' ? d.cr : '',
+        'race.size': () => e.category === 'race' ? d.size : '', 'race.parent': () => e.category === 'race' ? d.parent : '', 'race.speed': () => e.category === 'race' ? d.speed : '',
+        'class.hit_die': () => e.category === 'class' ? d.hit_die : '', 'class.primary': () => e.category === 'class' ? d.primary : '',
+        'background.feature': () => e.category === 'background' ? d.feature : '', 'background.tool': () => e.category === 'background' ? listValues(d.tools) : [],
+        'npc.role': () => e.category === 'npc' ? d.role : '', 'npc.faction': () => e.category === 'npc' ? d.faction : '', 'npc.attitude': () => e.category === 'npc' ? d.attitude : '',
+        'entry.tag': () => listValues(d.tags)
+      }[key] || (() => ''))();
+      return Object.entries(state.facets).every(([key, expected]) => listValues(value(key)).includes(String(expected)));
+    }
+    function filteredItems() {
+      let items = rawItems.filter(e => (!state.category || e.category === state.category) && (!state.folder || (sourceKey(e) + '|' + (e.data?.folder || '')) === state.folder) && (!state.packTag || (packTags[e.pack_id] || []).includes(state.packTag)) && facetMatches(e));
+      if (state.sort === 'source') items.sort((a, b) => sourceLabel(a).localeCompare(sourceLabel(b), 'ru') || a.name.localeCompare(b.name, 'ru'));
+      else items.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      return items;
+    }
+
+    function showEntry(e, row) {
+      activeId = e.id;
+      lst.querySelectorAll('.item').forEach(x => x.classList.toggle('active', x === row));
+      det.replaceChildren(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load }));
+      const availableFolders = e.pack_id && folderLists[e.pack_id];
+      if ((e._mine || window.ME?.is_root) && Array.isArray(availableFolders) && availableFolders.length) {
+        const data = { ...(e.data || {}) };
+        const picker = el('select', { 'aria-label': 'Папка записи', onchange: async () => {
+          if (picker.value) data.folder = picker.value; else delete data.folder;
+          try { await API.patch('/api/compendium/' + e.id, { category: e.category, name: e.name, data, pack_id: e.pack_id }); toast('Запись перемещена'); load(); }
+          catch (err) { toast('Не удалось переместить: ' + err.message, 4000); }
+        } }, el('option', { value: '' }, '— без папки'), ...availableFolders.map(name => el('option', { value: name, selected: data.folder === name ? '' : null }, name)));
+        det.append(el('div', { class: 'comp-folder-control' }, el('span', { class: 'muted small' }, 'Папка записи'), picker));
+      }
+    }
+
+    function renderList() {
+      const items = filteredItems();
+      lst.replaceChildren();
+      count.textContent = countLabel(items.length);
+      if (!items.length) {
+        activeId = null;
+        det.replaceChildren(el('div', { class: 'comp-empty' }, icon('book', 30), el('b', {}, 'Пустая рубрика'), el('span', { class: 'muted small' }, 'Измените фильтры или добавьте запись в набор.')));
+        lst.append(el('div', { class: 'comp-no-results' }, el('span', {}, 'В этой рубрике пока пусто.'), el('span', { class: 'muted small' }, 'Измените фильтры или добавьте запись в набор.')));
+        return;
+      }
+      const rows = new Map();
+      for (const e of items) {
+        e.pack_name = packNames[e.pack_id] || e.pack_name;
+        e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const row = el('div', { class: 'item comp-entry', role: 'button', tabindex: '0', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, el('b', {}, e.name), el('small', { class: 'muted comp-entry-source' }, sourceLabel(e))), e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null);
+        rows.set(e.id, row);
+        row.addEventListener('click', () => showEntry(e, row));
+        row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showEntry(e, row); } });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        lst.append(row);
+      }
+      const active = items.find(e => e.id === activeId);
+      if (active && rows.has(active.id)) showEntry(active, rows.get(active.id));
+      else { activeId = null; det.replaceChildren(el('div', { class: 'comp-empty' }, icon('book', 30), el('b', {}, 'Выберите запись'), el('span', { class: 'muted small' }, 'Карточка появится здесь справа.'))); }
+    }
+
+    async function load() {
+      const version = ++request;
+      count.textContent = 'Загружаем…';
+      const params = new URLSearchParams({ limit: '3000' });
+      if (q.value.trim()) params.set('q', q.value.trim());
+      if (edSel.value) params.set('edition', edSel.value);
+      if (state.source.startsWith('pack:')) params.set('pack_id', state.source.slice(5));
+      else if (opts.campaignId) params.set('campaign_id', opts.campaignId);
+      try {
+        let items = await API.get('/api/compendium?' + params);
+        if (state.source.startsWith('pack:')) {
+          const packId = state.source.slice(5);
+          if (!Object.prototype.hasOwnProperty.call(folderLists, packId)) {
+            try { const pack = await API.get('/api/packs/' + packId); folderLists[packId] = pack.folders || []; packNames[packId] = pack.name || packNames[packId]; }
+            catch { folderLists[packId] = []; }
+          }
+        }
+        if (version !== request) return;
+        if (state.source === 'srd') items = items.filter(e => !e.campaign_id && !e.pack_id);
+        else if (state.source === 'hb') items = items.filter(e => e.campaign_id);
+        if (state.packTag) items = items.filter(e => e.pack_id && (packTags[e.pack_id] || []).includes(state.packTag));
+        rawItems = items;
+        renderNav(rawItems);
+        const retained = activeId && rawItems.some(e => e.id === activeId);
+        if (!retained) activeId = null;
+        renderList();
+      } catch (e) {
+        if (version !== request) return;
+        count.textContent = 'Ошибка загрузки';
+        lst.replaceChildren(el('div', { class: 'comp-no-results' }, el('b', {}, 'Не удалось загрузить справочник'), el('span', { class: 'muted small' }, e.message), el('button', { class: 'small', onclick: load }, 'Повторить')));
+      }
+    }
+
+    srcSel.addEventListener('change', () => { state.source = srcSel.value; state.packTag = ''; packTagSel.value = ''; state.category = ''; state.folder = ''; state.facets = {}; load(); });
+    packTagSel.addEventListener('change', () => { state.packTag = packTagSel.value; state.source = ''; srcSel.value = ''; state.category = ''; state.folder = ''; state.facets = {}; load(); });
+    edSel.addEventListener('change', load);
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 240); });
+    sort.addEventListener('change', () => { state.sort = sort.value; renderList(); });
+    load();
+    root.reload = load;
+    return root;
+  }
+
   // Виджет: категории + источник + поиск + список + карточка.
   // opts: campaignId, isGM, packId (режим редактирования набора), category (стартовая)
   function widget(opts = {}) {
-    const root = el('div', { class: 'comp' });
-    const left = el('div', { style: 'display:flex;flex-direction:column;min-height:0' });
-    const catSel = el('select', {}, el('option', { value: '' }, 'Все категории'), ...Object.entries(CAT_NAMES).map(([k, v]) => el('option', { value: k, selected: opts.category === k ? '' : null }, v)));
-    const srcSel = el('select', { title: 'Источник' }, el('option', { value: '' }, 'Все источники'));
+    if (!opts.packId && !opts.campaignId && !opts.category && !opts.compact) return workspaceWidget(opts);
+    const root = el('div', { class: 'comp comp-compact' });
+    const left = el('div', { class: 'comp-compact-controls' });
+    const catSel = el('select', { 'aria-label': 'Категория' }, el('option', { value: '' }, 'Все категории'), ...Object.entries(CAT_NAMES).map(([k, v]) => el('option', { value: k, selected: opts.category === k ? '' : null }, v)));
+    const srcSel = el('select', { title: 'Источник', 'aria-label': 'Источник' }, el('option', { value: '' }, 'Все источники'));
     const ed0 = opts.edition || window.SHEET_EDITION || defaultEdition();
-    const edSel = el('select', { title: 'Редакция правил' }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: ed0 === k ? '' : null }, v)), el('option', { value: '', selected: ed0 === '' ? '' : null }, 'Обе редакции'));
-    const q = el('input', { placeholder: 'Поиск…' });
-    const lst = el('div', { class: 'list lst', style: 'flex:1;margin-top:6px' });
-    const det = el('div', { class: 'det' }, el('p', { class: 'muted' }, 'Выберите запись. Записи можно перетаскивать на лист персонажа или на стол. Кубики в тексте — кликабельны.'));
-    left.append(catSel, el('div', { style: 'height:4px' }), opts.packId ? null : el('div', { class: 'row', style: 'gap:4px' }, edSel, srcSel), el('div', { style: 'height:4px' }), q, lst);
-    left.append(el('button', { class: 'small', style: 'margin-top:6px', onclick: () => editEntry(null, { campaignId: opts.campaignId, isGM: opts.isGM, packId: opts.packId, category: catSel.value || 'item', onSaved: load }) }, '+ Своя запись'));
+    const edSel = el('select', { title: 'Редакция правил', 'aria-label': 'Редакция правил' }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: ed0 === k ? '' : null }, v)), el('option', { value: '', selected: ed0 === '' ? '' : null }, 'Обе редакции'));
+    const packTagSel = el('select', { title: 'Тег набора', 'aria-label': 'Фильтр по тегу набора' }, el('option', { value: '' }, 'Все теги наборов'));
+    const folderSel = el('select', { title: 'Папка набора', 'aria-label': 'Папка' }, el('option', { value: '' }, 'Все папки'));
+    const q = el('input', { placeholder: 'Название или ключевое слово…', 'aria-label': 'Поиск по справочнику' });
+    const facetBar = el('div', { class: 'comp-facets comp-compact-facets', 'aria-label': 'Фильтры по свойствам' });
+    const count = el('span', { class: 'comp-compact-count' }, 'Загрузка…');
+    const heading = el('div', { class: 'comp-compact-heading' }, icon('book', 16), el('div', { class: 'grow' }, el('b', {}, 'Записи'), el('small', { class: 'muted' }, 'Выбери или перетащи на лист')), count);
+    const lst = el('div', { class: 'list lst comp-compact-list' });
+    const det = el('div', { class: 'det comp-compact-detail' }, el('div', { class: 'comp-compact-empty' }, icon('book', 26), el('b', {}, 'Выбери запись'), el('span', { class: 'muted small' }, 'Описание и действия появятся здесь.')));
+    const sourceRow = el('div', { class: 'comp-compact-filter-row' }, edSel, srcSel);
+    const packRow = el('div', { class: 'comp-compact-filter-row' }, packTagSel, folderSel);
+    left.append(heading, catSel, sourceRow, packRow, q, facetBar, lst,
+      el('button', { class: 'small comp-compact-create', onclick: () => editEntry(null, { campaignId: opts.campaignId, isGM: opts.isGM, packId: opts.packId, category: catSel.value || 'item', onSaved: load }) }, '+ Создать свою запись'));
+    if (opts.packId) { sourceRow.hidden = true; packTagSel.hidden = true; packRow.classList.add('comp-compact-filter-row-single'); }
     root.append(left, det);
-    let timer, packNames = {};
-    (async () => { if (opts.packId) return; const mine = await myPacks(); let camp = []; if (opts.campaignId) { try { camp = await API.get(`/api/campaigns/${opts.campaignId}/packs`); } catch { } } const all = [...mine, ...camp.filter(p => !mine.some(m => m.id === p.id))]; all.forEach(p => { packNames[p.id] = p.name; srcSel.append(el('option', { value: 'pack:' + p.id }, p.name)); }); srcSel.append(el('option', { value: 'srd' }, 'База (SRD)')); if (opts.campaignId) srcSel.append(el('option', { value: 'hb' }, 'Homebrew кампании')); })();
-    async function load() {
-      const params = new URLSearchParams(); if (catSel.value) params.set('category', catSel.value); if (q.value) params.set('q', q.value); if (edSel.value) params.set('edition', edSel.value); params.set('limit', '3000');
-      const src = srcSel.value;
-      if (opts.packId) params.set('pack_id', opts.packId); else if (src.startsWith('pack:')) params.set('pack_id', src.slice(5)); else if (opts.campaignId) params.set('campaign_id', opts.campaignId);
-      let items = await API.get('/api/compendium?' + params);
-      if (src === 'srd') items = items.filter(e => !e.campaign_id && !e.pack_id); if (src === 'hb') items = items.filter(e => e.campaign_id);
-      lst.innerHTML = '';
-      if (!items.length) lst.append(el('p', { class: 'muted small', style: 'padding:8px' }, 'Ничего не найдено'));
+
+    let timer, request = 0, packNames = {}, packTags = {}, rawItems = [], activeId = null;
+    let facets = {};
+    const listValues = value => (Array.isArray(value) ? value : String(value ?? '').split(/[,;|]/)).map(x => String(x).trim()).filter(Boolean);
+    const packTagValues = p => String(p.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+
+    function fieldValues(e, key) {
+      const d = e.data || {};
+      switch (key) {
+        case 'item.type': return e.category === 'item' ? d.type : '';
+        case 'item.category': return e.category === 'item' ? d.category : '';
+        case 'item.rarity': return e.category === 'item' ? d.rarity : '';
+        case 'item.property': return e.category === 'item' ? listValues(d.properties) : [];
+        case 'item.tag': return e.category === 'item' ? listValues(d.tags) : [];
+        case 'spell.level': return e.category === 'spell' ? String(d.level ?? '') : '';
+        case 'spell.school': return e.category === 'spell' ? d.school : '';
+        case 'spell.class': return e.category === 'spell' ? listValues(d.classes) : [];
+        case 'monster.type': return e.category === 'monster' ? d.type : '';
+        case 'monster.size': return e.category === 'monster' ? d.size : '';
+        case 'monster.cr': return e.category === 'monster' ? d.cr : '';
+        case 'race.size': return e.category === 'race' ? d.size : '';
+        case 'class.hit_die': return e.category === 'class' ? d.hit_die : '';
+        case 'background.tool': return e.category === 'background' ? listValues(d.tools) : [];
+        case 'npc.role': return e.category === 'npc' ? d.role : '';
+        case 'npc.faction': return e.category === 'npc' ? d.faction : '';
+        case 'entry.tag': return listValues(d.tags);
+        default: return '';
+      }
+    }
+    function facetDefinitions(items) {
+      const definitions = [], category = catSel.value;
+      const add = (key, label, values, format = v => String(v)) => {
+        const opts = new Map();
+        for (const value of values) {
+          if (value === undefined || value === null || value === '') continue;
+          const v = String(value);
+          opts.set(v, format(v));
+        }
+        if (opts.size) definitions.push({ key, label, options: [...opts].sort((a, b) => a[1].localeCompare(b[1], 'ru')) });
+      };
+      const data = items.map(e => e.data || {});
+      if (category === 'item') {
+        add('item.type', 'Тип предмета', data.map(d => d.type), v => M().ITEM_TYPES?.[v] || v);
+        add('item.category', 'Категория', data.map(d => d.category));
+        add('item.rarity', 'Редкость', data.map(d => d.rarity));
+        add('item.property', 'Свойство', data.flatMap(d => listValues(d.properties)));
+        add('item.tag', 'Тег предмета', data.flatMap(d => listValues(d.tags)));
+      } else if (category === 'spell') {
+        add('spell.level', 'Уровень', data.map(d => d.level), v => v === '0' ? 'Заговор' : `${v} круг`);
+        add('spell.school', 'Школа', data.map(d => d.school));
+        add('spell.class', 'Класс', data.flatMap(d => listValues(d.classes)));
+      } else if (category === 'monster') {
+        add('monster.type', 'Тип существа', data.map(d => d.type));
+        add('monster.size', 'Размер', data.map(d => d.size));
+        add('monster.cr', 'Опасность', data.map(d => d.cr));
+      } else if (category === 'race') add('race.size', 'Размер', data.map(d => d.size));
+      else if (category === 'class') add('class.hit_die', 'Кость хитов', data.map(d => d.hit_die));
+      else if (category === 'background') add('background.tool', 'Инструмент', data.flatMap(d => listValues(d.tools)));
+      else if (category === 'npc') {
+        add('npc.role', 'Роль', data.map(d => d.role));
+        add('npc.faction', 'Фракция', data.map(d => d.faction));
+      }
+      if (!category) add('entry.tag', 'Тег записи', data.flatMap(d => listValues(d.tags)));
+      return definitions;
+    }
+    function renderFacets() {
+      facetBar.replaceChildren();
+      const definitions = facetDefinitions(rawItems);
+      facetBar.hidden = !definitions.length;
+      if (!definitions.length) return;
+      for (const def of definitions) {
+        const values = [...def.options];
+        if (facets[def.key] && !values.some(([v]) => v === facets[def.key])) values.unshift([facets[def.key], facets[def.key]]);
+        const select = el('select', { 'aria-label': def.label, title: def.label, onchange: () => { if (select.value) facets[def.key] = select.value; else delete facets[def.key]; renderList(); } },
+          el('option', { value: '' }, def.label), ...values.map(([v, label]) => el('option', { value: v, selected: facets[def.key] === v ? '' : null }, label)));
+        facetBar.append(select);
+      }
+      if (Object.keys(facets).length) facetBar.append(el('button', { class: 'small ghost', onclick: () => { facets = {}; renderFacets(); renderList(); } }, 'Сбросить'));
+    }
+    function updateFolders(items) {
+      const prev = folderSel.value;
+      const folders = [...new Set(items.map(e => e.data?.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+      folderSel.replaceChildren(el('option', { value: '' }, 'Все папки'), ...folders.map(f => el('option', { value: f, selected: prev === f ? '' : null }, f)));
+      if (prev && !folders.includes(prev)) folderSel.value = '';
+    }
+    function matchingItems() {
+      return rawItems.filter(e => {
+        if (folderSel.value && e.data?.folder !== folderSel.value) return false;
+        if (packTagSel.value && !(packTags[e.pack_id] || []).some(t => t.toLocaleLowerCase() === packTagSel.value.toLocaleLowerCase())) return false;
+        return Object.entries(facets).every(([key, expected]) => listValues(fieldValues(e, key)).includes(String(expected)));
+      });
+    }
+    function selectEntry(e, row) {
+      activeId = e.id;
+      lst.querySelectorAll('.item').forEach(x => x.classList.toggle('active', x === row));
+      det.replaceChildren(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load }));
+    }
+    function renderList() {
+      const items = matchingItems();
+      lst.replaceChildren();
+      count.textContent = String(items.length);
+      if (!items.length) lst.append(el('div', { class: 'comp-compact-no-results' }, icon('search', 18), el('span', {}, 'Ничего не найдено'), el('small', { class: 'muted' }, 'Попробуй изменить фильтры.')));
       let lastCat = null;
+      const rows = new Map();
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
         const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
-        const it = el('div', { class: 'item', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
-        it.addEventListener('click', () => { lst.querySelectorAll('.item').forEach(x => x.classList.remove('active')); it.classList.add('active'); det.innerHTML = ''; det.append(renderData(e, { isGM: opts.isGM, campaignId: opts.campaignId, packMine: e._mine, onChanged: load })); });
-        it.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
-        lst.append(it);
+        const row = el('div', { class: 'item comp-compact-entry', role: 'button', tabindex: '0', draggable: 'true', title: 'Нажми, чтобы открыть, или перетащи на лист' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
+        rows.set(e.id, row);
+        row.addEventListener('click', () => selectEntry(e, row));
+        row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectEntry(e, row); } });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        lst.append(row);
+      }
+      const active = items.find(e => e.id === activeId);
+      if (active && rows.has(active.id)) selectEntry(active, rows.get(active.id));
+      else if (activeId) { activeId = null; det.replaceChildren(el('p', { class: 'muted' }, 'Выберите запись. Перетаскивайте её на лист персонажа или на стол.')); }
+    }
+    async function load() {
+      const version = ++request;
+      try {
+        const params = new URLSearchParams();
+        if (catSel.value) params.set('category', catSel.value);
+        if (q.value.trim()) params.set('q', q.value.trim());
+        if (edSel.value && !opts.packId) params.set('edition', edSel.value);
+        params.set('limit', '3000');
+        const src = srcSel.value;
+        if (opts.packId) params.set('pack_id', opts.packId);
+        else if (src.startsWith('pack:')) params.set('pack_id', src.slice(5));
+        else if (opts.campaignId) params.set('campaign_id', opts.campaignId);
+        let items = await API.get('/api/compendium?' + params);
+        if (src === 'srd') items = items.filter(e => !e.campaign_id && !e.pack_id);
+        else if (src === 'hb') items = items.filter(e => e.campaign_id);
+        if (packTagSel.value) items = items.filter(e => e.pack_id && (packTags[e.pack_id] || []).some(t => t.toLocaleLowerCase() === packTagSel.value.toLocaleLowerCase()));
+        if (version !== request) return;
+        rawItems = items;
+        updateFolders(rawItems);
+        renderFacets();
+        renderList();
+      } catch (e) {
+        if (version !== request) return;
+        lst.replaceChildren(el('p', { class: 'muted small', style: 'padding:8px' }, 'Не удалось загрузить: ' + e.message));
       }
     }
-    catSel.addEventListener('change', load); srcSel.addEventListener('change', load); edSel.addEventListener('change', () => { if (!opts.edition && !window.SHEET_EDITION && edSel.value) LS.setItem('et-edition', edSel.value); load(); });
+    async function loadPackOptions() {
+      try {
+        let packs = await myPacks();
+        if (opts.packId) {
+          const p = await API.get('/api/packs/' + opts.packId);
+          packs = [...packs.filter(x => x.id !== p.id), p];
+        } else if (opts.campaignId) {
+          let camp = []; try { camp = await API.get(`/api/campaigns/${opts.campaignId}/packs`); } catch { }
+          packs = [...packs, ...camp.filter(p => !packs.some(m => m.id === p.id))];
+        }
+        packTags = Object.fromEntries(packs.map(p => [p.id, packTagValues(p)]));
+        packNames = Object.fromEntries(packs.map(p => [p.id, p.name]));
+        if (!opts.packId) {
+          for (const p of packs) srcSel.append(el('option', { value: 'pack:' + p.id }, p.name));
+          srcSel.append(el('option', { value: 'srd' }, 'База (SRD)'));
+          if (opts.campaignId) srcSel.append(el('option', { value: 'hb' }, 'Homebrew кампании'));
+        }
+        const tags = [...new Set(packs.flatMap(packTagValues))].sort((a, b) => a.localeCompare(b, 'ru'));
+        packTagSel.replaceChildren(el('option', { value: '' }, 'Все теги наборов'), ...tags.map(t => el('option', { value: t }, t)));
+        if (srcSel.value && ![...srcSel.options].some(o => o.value === srcSel.value)) srcSel.value = '';
+        load();
+      } catch { /* keep the compendium usable without pack metadata */ }
+    }
+    catSel.addEventListener('change', () => { facets = {}; folderSel.value = ''; renderFacets(); load(); });
+    srcSel.addEventListener('change', () => { folderSel.value = ''; load(); });
+    edSel.addEventListener('change', () => { if (!opts.edition && !window.SHEET_EDITION && edSel.value) LS.setItem('et-edition', edSel.value); load(); });
+    packTagSel.addEventListener('change', () => { folderSel.value = ''; load(); });
+    folderSel.addEventListener('change', renderList);
     q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
     load();
+    loadPackOptions();
     root.reload = load;
     return root;
   }

@@ -513,7 +513,7 @@
       const dice = el('div', { class: 'dice' }, ...['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', '2d20kh1', '2d20kl1'].map(d => el('button', { onclick: () => DiceEngine.submit({ type: 'roll', expr: d, label: d.includes('kh') ? 'преимущество' : d.includes('kl') ? 'помеха' : null }) }, d)));
       if (isGM) dice.append(el('button', { title: 'Скрытый бросок d20 (видит только мастер)', onclick: () => DiceEngine.submit({ type: 'roll', expr: 'd20', label: 'скрытый', gm_only: true }) }, 'скрытый d20'));
       w.append(chatLog, dice, el('div', { class: 'row' }, inp, el('button', { style: 'flex:0', onclick: send }, icon('send'))));
-      API.get(`/api/campaigns/${cid}/chat`).then(hist => { hist.forEach(addMsg); });
+      API.get(`/api/campaigns/${cid}/chat`).then(hist => { DiceEngine.hydrate(hist); hist.forEach(addMsg); });
       return w;
     }
     function addMsg(m) {

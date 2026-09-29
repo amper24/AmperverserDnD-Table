@@ -28,6 +28,27 @@ test('build applies modules and derives first-level values without mutating draf
   assert.equal(JSON.stringify(d), before); assert.equal(JSON.stringify(B.build(d)), JSON.stringify(s));
   s.modules[0].snapshot.data.asi.con = 99; assert.equal(d.selected.race.data.asi.con, 2);
 });
+test('creation keeps alignment, roleplay details, languages and forgotten tool proficiencies', () => {
+  const d = draft();
+  d.alignment = 'Нейтрально-доброе';
+  d.traits = { player_name: 'Игрок', faith: 'Селунэ', age: '120 лет', personality: 'Любит задавать вопросы.', ideals: 'Свобода.', bonds: 'Старый компас.', flaws: 'Слишком доверчив.', appearance: 'Шрам на щеке.', backstory: 'Покинул родной город.' };
+  d.languages = ['Эльфийский', 'Гномий'];
+  d.selected.class.data.tools = ['Набор игрового кубика'];
+  d.selected.background.data.tools = ['Набор травника'];
+  d.selected.background.data.languages = 2;
+  const s = B.build(d);
+  assert.equal(s.alignment, 'Нейтрально-доброе');
+  assert.equal(s.traits.personality, 'Любит задавать вопросы.');
+  assert.equal(s.traits.appearance, 'Шрам на щеке.');
+  assert.equal(s.traits.player_name, 'Игрок');
+  assert.equal(s.traits.faith, 'Селунэ');
+  assert.equal(s.traits.age, '120 лет');
+  assert.match(s.proficiencies, /Набор игрового кубика/);
+  assert.match(s.proficiencies, /Набор травника/);
+  assert.match(s.proficiencies, /Эльфийский, Гномий/);
+  assert.ok(s.proficiencies.includes('\n'), 'proficiency groups should be separated by real line breaks');
+  assert.equal(B.ALIGNMENTS.length, 11);
+});
 test('changing race never stacks previous bonuses', () => {
   const d = draft(); B.build(d); d.selected.race = entry('race', 'Эльф', { asi: { dex: 2 } });
   const s = B.build(d); assert.equal(s.abilities.con, 10); assert.equal(s.abilities.dex, 12); assert.equal(s.hp.max, 10);

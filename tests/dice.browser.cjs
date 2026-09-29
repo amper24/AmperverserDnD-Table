@@ -43,15 +43,24 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('Escape');
 
     // A network request sends once, does not locally render or consume dice, and waits for server values.
-    const id=await page.evaluate(() => { window.sent=[];window.TABLE_CTX={isGM:true,ws:{send:m=>{sent.push(m);return true;}}};return DiceEngine.submit({type:'roll',expr:'d20+5',label:'Серверная проверка'}); });
+    const id=await page.evaluate(() => { window.sent=[];LS.setItem('dice-settings',JSON.stringify({animate:false,speed:1,color:'#e35b82'}));window.TABLE_CTX={isGM:true,ws:{send:m=>{sent.push(m);return true;}}};return DiceEngine.submit({type:'roll',expr:'d20+5',label:'Серверная проверка'}); });
     assert.equal(await page.locator('.dice-overlay').count(),0);
-    const msg={type:'chat',kind:'roll',id:42,at:'2026-09-29T12:00:00Z',user_id:'one',name:'Мастер',payload:{expr:'d20+5',label:'Серверная проверка',request_id:id,total:25,parts:[{term:'d20',rolls:[20],kept:[20],kept_indices:[0],sides:20},{term:'+5',value:5}]}};
+    const msg={type:'chat',kind:'roll',id:42,at:'2026-09-29T12:00:00Z',user_id:'one',name:'Мастер',payload:{expr:'d20+5',label:'Серверная проверка',visibility:'campaign',dice_color:'#e35b82',request_id:id,total:25,parts:[{term:'d20',rolls:[20],kept:[20],kept_indices:[0],sides:20},{term:'+5',value:5}]}};
     await page.evaluate(m=>{DiceEngine.receive(m);DiceEngine.receive(m);},msg);
     assert.equal(await page.locator('.dice-toast .dice-total').textContent(),'25');
     assert.equal(await page.evaluate(()=>sent.length),1);
+    assert.equal(await page.evaluate(()=>sent[0].dice_color),'#e35b82');
+    assert.equal(await page.evaluate(()=>sent[0].visibility),'campaign');
+    assert.equal(await page.locator('.dice-toast .dice-result').evaluate(e=>getComputedStyle(e).getPropertyValue('--dice-color').trim()),'#e35b82');
+    await page.keyboard.press('Escape');
+    const privateId=await page.evaluate(()=>DiceEngine.submit({type:'roll',expr:'d20',visibility:'private'}));
+    assert.equal(await page.evaluate(()=>sent[1].visibility),'private');
+    const privateMsg={...msg,id:43,payload:{...msg.payload,expr:'d20',label:'Личный бросок',visibility:'private',request_id:privateId,total:12,parts:[{term:'d20',rolls:[12],kept:[12],kept_indices:[0],sides:20}]}};
+    await page.evaluate(m=>DiceEngine.receive(m),privateMsg);
+    assert.equal(await page.locator('.dice-toast .dice-private-mark').textContent(),'Только вам');
     await page.keyboard.press('Escape');
     const rejected=await page.evaluate(()=>{TABLE_CTX.isGM=false;return DiceEngine.submit({type:'roll',expr:'d20',gm_only:true});});
-    assert.equal(rejected,null); assert.equal(await page.evaluate(()=>sent.length),1);
+    assert.equal(rejected,null); assert.equal(await page.evaluate(()=>sent.length),2);
     const disconnected=await page.evaluate(()=>{TABLE_CTX.ws.send=()=>false;return DiceEngine.submit({expr:'d20'});});
     assert.equal(disconnected,null);
 
@@ -65,12 +74,19 @@ const assert = require('node:assert/strict');
 
     await page.setViewportSize({width:390,height:844});
     await page.evaluate(()=>{DiceEngine.openPanel();});
+    assert.equal(await page.locator('.dice-journal').count(),1);
+    assert.equal(await page.locator('.modal-bg').count(),0);
     await page.getByLabel('Формула броска').fill('2d6++4');
     await page.getByRole('button',{name:'Бросить',exact:true}).click();
     assert.equal(await page.locator('.dice-overlay').count(),0);
     await page.getByLabel('Формула броска').fill('2d6+4');
     await page.getByRole('button',{name:'Бросить',exact:true}).click();
     const box=await page.locator('.dice-toast').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);
+    await page.keyboard.press('Escape');
+    await page.evaluate(()=>{window.parallelSent=[];TABLE_CTX={isGM:true,ws:{send:m=>{parallelSent.push(m);return true;}}};DiceEngine.dock({gm:true});});
+    await page.locator('.dice-dock .dice button').filter({hasText:'к6'}).click({modifiers:['Shift']});
+    assert.equal(await page.evaluate(()=>parallelSent[0].type),'multi');
+    assert.equal(await page.evaluate(()=>parallelSent[0].rolls.length),2);
     assert.deepEqual(errors,[]);
     console.log('PASS: animated meshes, click-through, reduced motion, authoritative network results, deduplication, privacy, offline, critical reroll, validation, mobile UI');
   } finally { await browser.close(); }
