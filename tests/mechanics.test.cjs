@@ -11,3 +11,35 @@ test('curated healing uses edition-correct dice; potions consume then heal then 
 test('monster extracted conditional dice never become one automatically executed attack',()=>{const data=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));const m=data.find(e=>e.category==='monster'&&e.data.name_en==='Aboleth').data.mechanics;assert.ok(m.programs.every(p=>p.blocks.filter(b=>b.dice).length<=1));assert.ok(m.programs.flatMap(p=>p.blocks).every(b=>b.apply!==true));});
 test('standard ammo defaults conserve package weight and distinguish firearm resources',()=>{for(const ed of ['2014','2024']){const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));for(const e of data){const d=e.data.mechanics.item_defaults;if(!d)continue;assert.ok(Number.isInteger(d.qty)&&d.qty>1);assert.ok(Math.abs(d.qty*d.unit_weight-e.data.weight)<1e-9,e.slug);if(e.data.name_en==='Bullets, Firearm')assert.equal(d.ammo_tag,'firearm_bullet');}}});
 test('named feature projection preserves mechanics without sharing mutable blocks',()=>{const m={version:1,programs:[{id:'rage',name:'Ярость',feature_name:'Ярость',trigger:'use',blocks:[{id:'b',kind:'manual',text:'Правило'}]},{id:'profile',name:'Параметры',trigger:'passive',blocks:[]}]};const f=M.forFeature(m,'Ярость');assert.equal(f.programs.length,1);f.programs[0].blocks[0].text='Изменено';assert.equal(m.programs[0].blocks[0].text,'Правило');assert.equal(M.forFeature(m,'Иное'),undefined);});
+test('starter templates give race and class valid creation blocks that project into the entry',()=>{
+  for(const cat of ['race','class','background']){
+    const m=M.starter(cat);
+    assert.equal(m.version,1,cat);
+    assert.equal(M.validate(m),'',cat);
+    assert.ok(m.programs.some(p=>p.trigger==='passive'&&p.blocks.some(b=>b.kind==='passive')),cat);
+    assert.ok(m.programs.some(p=>p.trigger==='use'),cat);
+  }
+  assert.equal(M.starter('item'),undefined);
+  const race=M.passiveData({data:{mechanics:M.starter('race')}});
+  assert.equal(race.data.speed,30);assert.equal(race.data.asi.str,2);
+  const cls=M.passiveData({data:{mechanics:M.starter('class')}});
+  assert.equal(cls.data.hit_die,'d8');assert.deepEqual(JSON.parse(JSON.stringify(cls.data.saves)),['str']);assert.equal(cls.data.skills.choose,2);
+});
+test('template library builds valid programs and keeps creation templates apart',()=>{
+  const ids=c=>M.templates(c).map(t=>t.id);
+  for(const cat of ['item','spell','feature','monster','race','class','background']){
+    const list=M.templates(cat);
+    assert.ok(list.length>=8,cat+': '+list.length);
+    for(const t of list){
+      const p=t.build();
+      assert.ok(p.name&&p.blocks.length,cat+' / '+t.id);
+      assert.ok(t.hint&&t.chain.length,cat+' / '+t.id);
+      const m={version:1,programs:[{id:'x',name:p.name,trigger:p.trigger||'use',blocks:p.blocks}]};
+      assert.equal(M.validate(m),'',cat+' / '+t.id);
+      const again=t.build();assert.notEqual(again.blocks[0].id,p.blocks[0].id,'each template build gets fresh ids');
+    }
+  }
+  assert.ok(!ids('item').some(id=>ids('race').includes(id)),'creation templates are separate');
+  for(const id of ['asi','skills','saves','hit_die','spellcasting','languages','feature'])assert.ok(ids('race').includes(id),id);
+  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('save_damage'));
+});

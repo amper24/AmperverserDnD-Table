@@ -10,6 +10,54 @@ fn bounded(v: &Value, k: &str, low: i64, high: i64) -> ApiResult<i64> { v[k].as_
 fn field_ok(s: &str) -> bool { ["speed","initiative_bonus","currency.gp","currency.sp","hp.max","abilities.str","abilities.dex","abilities.con","abilities.int","abilities.wis","abilities.cha"].contains(&s) }
 fn pointer(s: &str) -> String { format!("/{}", s.replace('.', "/")) }
 pub fn validate(m: &Value) -> ApiResult<()> { validate_depth(m, 0) }
+/// Выбор «либо / либо» при создании персонажа: `data.choices` расы, класса или предыстории.
+/// Ограниченная схема: группа (тип, сколько выбрать) и до 18 вариантов со значением по типу.
+const CHOICE_TYPES: &[&str] = &["ability","skill","language","feature","proficiency"];
+const ABILITIES: &[&str] = &["str","dex","con","int","wis","cha"];
+pub fn validate_choices(v: &Value) -> ApiResult<()> {
+    let groups = v.as_array().filter(|a| a.len() <= 12).ok_or_else(|| bad("Некорректные варианты выбора"))?;
+    let mut gids = HashSet::new();
+    for g in groups {
+        let gid = text(g, "id");
+        if gid.is_empty() || gid.len() > 64 || !gids.insert(gid) { return Err(bad("У каждой группы выбора должен быть свой код")); }
+        if text(g, "name").trim().is_empty() || text(g, "name").chars().count() > 120 { return Err(bad("Название группы выбора: до 120 символов")); }
+        let kind = text(g, "type");
+        if !CHOICE_TYPES.contains(&kind) { return Err(bad("Неизвестный тип варианта выбора")); }
+        let opts = g["options"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("В группе выбора от 1 до 18 вариантов"))?;
+        let count = g["count"].as_i64().unwrap_or(1);
+        if !(0..=(opts.len() as i64)).contains(&count) { return Err(bad("Сколько вариантов выбрать: от 0 до числа вариантов")); }
+        let mut oids = HashSet::new();
+        for o in opts {
+            let oid = text(o, "id");
+            if oid.is_empty() || oid.len() > 64 || !oids.insert(oid) { return Err(bad("У каждого варианта должен быть свой код")); }
+            if text(o, "name").trim().is_empty() || text(o, "name").chars().count() > 120 { return Err(bad("Название варианта: до 120 символов")); }
+            match kind {
+                "ability" => {
+                    let bonus = o["value"].as_object().filter(|m| !m.is_empty() && m.len() <= 6).ok_or_else(|| bad("Бонус характеристики задаётся объектом"))?;
+                    for (k, n) in bonus { if !ABILITIES.contains(&k.as_str()) || n.as_i64().filter(|n| (-5..=5).contains(n)).is_none() { return Err(bad("Бонус характеристики: целое от -5 до +5")); } }
+                }
+                "skill" => {
+                    let skills = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("Навыки варианта задаются списком"))?;
+                    if !skills.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 40)) { return Err(bad("Некорректный навык в варианте выбора")); }
+                }
+                "language" => {
+                    let langs = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("Языки варианта задаются списком"))?;
+                    if !langs.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 80)) { return Err(bad("Некорректный язык в варианте выбора")); }
+                }
+                "feature" => {
+                    let t = text(&o["value"], "text");
+                    if t.trim().is_empty() || t.chars().count() > 4000 { return Err(bad("Описание умения варианта: до 4000 символов")); }
+                    if !o["value"]["mechanics"].is_null() { validate_depth(&o["value"]["mechanics"], 0)?; }
+                }
+                _ => {
+                    let s = o["value"].as_str().unwrap_or("");
+                    if s.trim().is_empty() || s.chars().count() > 200 { return Err(bad("Описание владения: до 200 символов")); }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
     if depth>4 || m.to_string().len()>1_000_000 || m["version"]!=1 { return Err(bad("Неподдерживаемая или слишком большая схема механик")); }
     let ps=m["programs"].as_array().filter(|a|a.len()<=256).ok_or_else(||bad("Некорректные действия"))?;
@@ -137,5 +185,17 @@ pub fn execute(sheet: &mut Value, mut target: Option<&mut Value>, category: &str
     fn fixture() -> Value {json!({"hp":{"max":20,"current":1,"temp":0},"inventory":[{"uid":"p","name":"Potion","qty":2,"type":"consumable","mechanics":{"version":1,"programs":[{"id":"use","name":"Drink","trigger":"use","blocks":[{"id":"c","kind":"consume","resource":"quantity","source":"self","amount":1,"trigger":"use"},{"id":"h","kind":"heal","target":"self","dice":{"count":0,"sides":6,"bonus":7,"stat":""}},{"id":"g","kind":"grant_item","target":"self","amount":1,"item":{"name":"Vial","type":"gear"}}]}]}}]})}
     #[test] fn potion_is_atomic_and_stacks_identical_rewards(){let mut s=fixture();execute(&mut s,None,"item","p","use","",false,false).unwrap();assert_eq!(s["hp"]["current"],8);assert_eq!(s["inventory"][0]["qty"],1);execute(&mut s,None,"item","p","use","",false,false).unwrap();assert_eq!(s["inventory"].as_array().unwrap().len(),2);assert_eq!(s["inventory"][1]["qty"],2);let before=s.clone();assert!(execute(&mut s,None,"item","p","use","",false,false).is_err());assert_eq!(s,before);}
     #[test] fn late_failure_rolls_back_everything(){let mut s=fixture();s["inventory"][0]["mechanics"]["programs"][0]["blocks"][2]["target"]=json!("target");let before=s.clone();assert!(execute(&mut s,None,"item","p","use","",false,false).is_err());assert_eq!(s,before);}
+    #[test] fn creation_choices_are_bounded(){
+        let one=json!([{"id":"g","name":"Бонус","type":"ability","count":1,"options":[{"id":"o","name":"+2 Сила","value":{"str":2}}]}]);
+        validate_choices(&one).unwrap();
+        let feature=json!([{"id":"g","name":"Линия","type":"feature","count":1,"options":[{"id":"o","name":"Дракон","value":{"text":"Дыхание"}}]}]);
+        validate_choices(&feature).unwrap();
+        let mut too_many=one.clone();too_many[0]["count"]=json!(5);assert!(validate_choices(&too_many).is_err());
+        let mut unknown=one.clone();unknown[0]["type"]=json!("other");assert!(validate_choices(&unknown).is_err());
+        let mut huge=one.clone();huge[0]["options"][0]["value"]=json!({"str":9});assert!(validate_choices(&huge).is_err());
+        let mut blank=one.clone();blank[0]["options"][0]["value"]=json!({});assert!(validate_choices(&blank).is_err());
+        let mut empty=one.clone();empty[0]["options"]=json!([]);assert!(validate_choices(&empty).is_err());
+        assert!(validate_choices(&json!({})).is_err());
+    }
     #[test] fn healing_does_not_include_proficiency(){let s=json!({"abilities":{"wis":16},"proficiency_bonus":4,"spells":{"ability":"wis"}});assert_eq!(inventory::resolve("1d8+@spell_mod",&s).unwrap(),"1d8+3");}
 }

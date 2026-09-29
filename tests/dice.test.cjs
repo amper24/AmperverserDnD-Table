@@ -51,3 +51,18 @@ test('native secure random produces bounded results for every supported die', ()
     assert.ok(r.parts[0].rolls.every(v=>v>=1&&v<=sides)); assert.ok(r.total>=100&&r.total<=100*sides);
   }
 });
+test('dice model: every face carries a number and the rolled face turns to the viewer', () => {
+  for (const sides of [4, 6, 8, 10, 12, 20, 100]) {
+    const m = D.mesh(sides);
+    assert.equal(m.faces.length, m.normals.length, 'd' + sides);
+    for (let value = 1; value <= sides; value++) {
+      const { labels, target } = D.faceLabels(sides, m.faces.length, value);
+      assert.equal(labels.length, m.faces.length);
+      assert.equal(labels[target], value, `d${sides} face ${value}`);
+      assert.equal(labels.filter(v => v === value).length, 1, `d${sides} value ${value} once`);
+      // Доворот: нормаль грани с результатом смотрит точно на зрителя (ось Z).
+      const p = D.rotate(m.normals[target], D.faceAngles(m.normals[target], 0.7));
+      assert.ok(Math.abs(p[2] - 1) < 1e-9 && Math.hypot(p[0], p[1]) < 1e-9, `d${sides}/${value} → ${JSON.stringify(p)}`);
+    }
+  }
+});

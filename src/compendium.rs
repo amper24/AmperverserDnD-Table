@@ -98,8 +98,17 @@ fn name_lc(body: &EntryIn) -> String {
     util::truncate(&format!("{} {}", body.name, en).trim().to_lowercase(), 128)
 }
 
-async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<EntryIn>) -> ApiResult<Json<Value>> {
+/// Класс и раса — не объекты на карте: токена на карте у них нет.
+fn strip_map_token(body: &mut EntryIn) {
+    if matches!(body.category.as_str(), "race" | "class") {
+        if let Some(o) = body.data.as_object_mut() { o.remove("token_asset_id"); }
+    }
+}
+
+async fn create(State(st): State<AppState>, user: AuthUser, Json(mut body): Json<EntryIn>) -> ApiResult<Json<Value>> {
+    strip_map_token(&mut body);
     if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
+    if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));
     }
@@ -135,8 +144,10 @@ async fn editable(st: &AppState, id: &str, user: &AuthUser) -> ApiResult<()> {
     Err(AppError::forbidden("Базовые записи нельзя менять — скопируйте в свой набор"))
 }
 
-async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>, Json(body): Json<EntryIn>) -> ApiResult<Json<Value>> {
+async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>, Json(mut body): Json<EntryIn>) -> ApiResult<Json<Value>> {
+    strip_map_token(&mut body);
     if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
+    if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
     editable(&st, &id, &user).await?;
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));

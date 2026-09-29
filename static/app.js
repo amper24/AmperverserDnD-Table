@@ -399,30 +399,8 @@
     const side = el('div', { id: 'side' });
     root.append(canvasWrap, side);
 
-    // ---- панель кубиков на столе ----
-    function buildDiceTray() {
-      const tray = el('div', { class: 'dicetray' });
-      const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', style: 'width:52px' });
-      const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', style: 'width:130px' });
-      const hidden = isGM ? el('input', { type: 'checkbox', style: 'width:auto', title: 'Скрытый бросок — видит только мастер' }) : null;
-      let mode = 'norm';
-      const modeBtns = el('div', { class: 'seg' }, ...[['norm', 'Обычно'], ['adv', 'Преим.'], ['dis', 'Помеха']].map(([k, t]) => el('button', { class: 'small' + (k === 'norm' ? ' active' : ''), onclick: e => { mode = k; modeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.currentTarget)); } }, t)));
-      const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
-      const rollExpr = (expr, label) => DiceEngine.submit({ type: 'roll', expr, label, gm_only: !!hidden?.checked });
-      const die = (d) => {
-        let expr = 'd' + d, label = 'к' + d;
-        if (d === 20 && mode === 'adv') { expr = '2d20kh1'; label = 'к20 с преимуществом'; } else if (d === 20 && mode === 'dis') { expr = '2d20kl1'; label = 'к20 с помехой'; }
-        rollExpr(expr + modStr(), label + (modStr() ? ' ' + modStr() : ''));
-      };
-      const dice = el('div', { class: 'dice' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d} (Shift — дважды)`, onclick: e => { die(d); if (e.shiftKey) die(d); } }, 'к' + d)));
-      exprInp.addEventListener('keydown', e => { if (e.key === 'Enter' && exprInp.value.trim()) { rollExpr(exprInp.value.trim(), exprInp.value.trim()); } });
-      const go = el('button', { class: 'small', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) rollExpr(exprInp.value.trim(), exprInp.value.trim()); } }, 'Бросить');
-      const collapse = el('button', { class: 'small tray-toggle', title: 'Кубики: свернуть/развернуть', onclick: () => { tray.classList.toggle('min'); LS.setItem('dicetray_min', tray.classList.contains('min') ? '1' : ''); } }, icon('dice'));
-      if (LS.getItem('dicetray_min')) tray.classList.add('min');
-      tray.append(collapse, el('div', { class: 'tray-body' }, dice, modeBtns, modInp, exprInp, go, DiceEngine.button(), hidden ? el('label', { class: 'muted small', style: 'white-space:nowrap' }, hidden, ' скрытый') : null));
-      return tray;
-    }
-    canvasWrap.append(buildDiceTray());
+    // Кубики — постоянный док в левом нижнем углу, журнал бросков — в правом.
+    DiceEngine.dock({ gm: isGM });
 
     // ---- меню «Создать» ----
     function createMenu(anchor) {
