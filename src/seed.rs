@@ -22,13 +22,30 @@ const SEED_FILES: &[(&str, &str)] = &[("srd_2014.json", "SRD 2014"), ("srd_2024.
 
 pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
     for (file, source) in SEED_FILES {
-        let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL AND source = ?").bind(source).fetch_one(pool).await?.get("n");
-        if n > 0 { continue; }
         let Some(raw) = SeedFiles::get(file) else { tracing::warn!("{} не вшит", file); continue };
         let entries: Vec<Entry> = serde_json::from_slice(&raw.data)?;
         let count = entries.len();
         let mut tx = pool.begin().await?;
+        let rows=sqlx::query("SELECT id, name, category, slug, data FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL AND source = ?").bind(source).fetch_all(&mut *tx).await?;
+        let mut stored: std::collections::HashMap<(String,String),Vec<sqlx::any::AnyRow>>=std::collections::HashMap::new();
+        for row in rows {stored.entry((row.get("category"),row.get("slug"))).or_default().push(row);}
         for e in entries {
+            if let Some(m)=e.data.get("mechanics") {crate::mechanics::validate(m).map_err(|err|anyhow::anyhow!("Некорректная механика {}: {:?}",e.slug,err))?;}
+            let existing=stored.remove(&(e.category.clone(),e.slug.clone())).unwrap_or_default();
+            if !existing.is_empty() {
+                let mut baseline=e.data.clone();baseline.as_object_mut().unwrap().remove("mechanics");
+                for row in existing {
+                    let raw=util::text(&row,"data");let mut current=util::json_value(&raw);
+                    // Only upgrade byte-semantically matching shipped definitions. Customized rows
+                    // and previously edited blocks are never replaced by a later seed boot.
+                    if current.get("mechanics").is_none() && current==baseline && row.get::<String,_>("name")==e.name {
+                        current["mechanics"]=e.data["mechanics"].clone();
+                        sqlx::query("UPDATE compendium SET data = ? WHERE id = ? AND data = ?")
+                            .bind(current.to_string()).bind(row.get::<String,_>("id")).bind(raw).execute(&mut *tx).await?;
+                    }
+                }
+                continue;
+            }
             let name_en = e.data.get("name_en").and_then(|v| v.as_str()).unwrap_or("");
             let name_lc = util::truncate(&format!("{} {}", e.name, name_en).to_lowercase(), 128);
             sqlx::query("INSERT INTO compendium (id, campaign_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)")

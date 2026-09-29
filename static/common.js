@@ -74,12 +74,12 @@ window.API = {
     if (r.status === 401) { LS.removeItem('dnd_token'); if (!location.pathname.startsWith('/sheet/') && !location.pathname.startsWith('/login') && url !== '/api/auth/me') { go('/login?next=' + encodeURIComponent(location.pathname + location.search)); } throw new Error('unauthorized'); }
     window.wsToken = () => LS.getItem('dnd_token') || '';
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.detail || r.statusText);
+    if (!r.ok) { const error = new Error(data.detail || r.statusText); error.status = r.status; throw error; }
     if (data.token && ['/api/auth/verify', '/api/auth/login', '/api/auth/reset-password', '/api/auth/google'].includes(url)) LS.setItem('dnd_token', data.token);
     if (url === '/api/auth/logout') LS.removeItem('dnd_token');
     return data;
   },
-  get: (u) => API.req('GET', u), post: (u, b) => API.req('POST', u, b), patch: (u, b) => API.req('PATCH', u, b), del: (u) => API.req('DELETE', u),
+  get: (u) => API.req('GET', u), post: (u, b) => API.req('POST', u, u.endsWith('/transfer') ? { request_id: crypto.randomUUID(), ...b } : b), patch: (u, b) => API.req('PATCH', u, b), del: (u) => API.req('DELETE', u),
   upload: (u, form) => API.req('POST', u, form, true),
 };
 

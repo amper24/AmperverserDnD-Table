@@ -27,50 +27,51 @@ window.Compendium = (function () {
     const src = e.pack_id ? (e.pack_name || 'набор') : e.campaign_id ? 'homebrew' : e.source;
     wrap.append(el('div', { class: 'row', style: 'align-items:flex-start' }, el('h2', { style: 'flex:1' }, e.name, d.name_en && d.name_en !== e.name ? el('div', { class: 'muted small', style: 'font-weight:400' }, d.name_en) : null), el('span', { class: 'badge' }, src)));
     if (d.higher_level) rows.push(['На больших уровнях', d.higher_level]);
-    if (rows.length) wrap.append(el('table', {}, ...rows.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', {}, M().rich(String(v), ctx, { prefix: e.name }))))));
+    if (rows.length) wrap.append(el('table', {}, ...rows.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', {}, M().rich(String(v), ctx, { prose:!!d.mechanics, prefix: e.name }))))));
     if ((e.category === 'monster' || e.category === 'npc') && d.abilities) {
-      wrap.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin:6px 0' }, M().rollBtn('1d20' + fmtMod(mod(d.abilities.dex || 10)), 'Инициатива', ctx, { prefix: e.name }),
-        ...Object.entries(d.abilities).map(([k, v]) => M().rollBtn('1d20' + fmtMod(mod(v)), `${ABIL[k].slice(0, 3)} ${v} (${fmtMod(mod(v))})`, ctx, { prefix: e.name })),
-        d.hp && /\d+к\d+/.test(String(d.hp)) ? M().rollBtn(String(d.hp).match(/(\d+к\d+(?:\+\d+)?)/)[1], 'Хиты', ctx, { prefix: e.name }) : null));
+      wrap.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin:6px 0' }, M().rollBtn('1d20' + fmtMod(mod(d.abilities.dex || 10)), 'Инициатива', ctx, { prose:!!d.mechanics, prefix: e.name }),
+        ...Object.entries(d.abilities).map(([k, v]) => M().rollBtn('1d20' + fmtMod(mod(v)), `${ABIL[k].slice(0, 3)} ${v} (${fmtMod(mod(v))})`, ctx, { prose:!!d.mechanics, prefix: e.name })),
+        d.hp && /\d+к\d+/.test(String(d.hp)) ? M().rollBtn(String(d.hp).match(/(\d+к\d+(?:\+\d+)?)/)[1], 'Хиты', ctx, { prose:!!d.mechanics, prefix: e.name }) : null));
     }
+    if(d.mechanics) wrap.append(Mechanics.preview(d.mechanics,ctx));
     if (d.folder) wrap.append(el('div', { class: 'muted small' }, 'Папка: ' + d.folder));
-    if (d.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(d.desc, ctx, { prefix: e.name })));
-    if (d.hooks) wrap.append(el('p', {}, el('b', {}, 'Зацепки. '), M().rich(d.hooks, ctx, { prefix: e.name })));
+    if (d.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(d.desc, ctx, { prose:!!d.mechanics, prefix: e.name })));
+    if (d.hooks) wrap.append(el('p', {}, el('b', {}, 'Зацепки. '), M().rich(d.hooks, ctx, { prose:!!d.mechanics, prefix: e.name })));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
-    block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prefix: `${e.name}: ${t.name}` })));
+    block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${t.name}` })));
     block('Подрасы / линии', d.subraces, s => typeof s === 'string' ? el('p', {}, s) : el('p', {}, el('b', {}, s.name + ' (' + asi(s.asi) + '). '), s.text));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].text !== undefined) block('Действия', d.actions, a => {
       const p = el('p', {}, el('b', {}, a.name + '. '));
       const hit = (a.text || '').match(/([+-]\d+)\s*(?:к попаданию|к|,)/);
-      if (hit) p.append(M().rollBtn('1d20' + hit[1], 'Атака ' + hit[1], ctx, { prefix: `${e.name}: ${a.name}` }), ' ');
-      p.append(M().rich(a.text || '', ctx, { prefix: `${e.name}: ${a.name}` }));
+      if (hit && !d.mechanics) p.append(M().rollBtn('1d20' + hit[1], 'Атака ' + hit[1], ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${a.name}` }), ' ');
+      p.append(M().rich(a.text || '', ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${a.name}` }));
       return p;
     });
-    block('Легендарные действия', d.legendary_actions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prefix: e.name })));
-    if (Array.isArray(d.actions_roll) && d.actions_roll.length) wrap.append(el('div', { style: 'margin:6px 0' }, el('div', { class: 'muted small' }, 'Броски атак и урона'), M().actionButtons({ actions: d.actions_roll }, ctx, e.name)));
-    block('Реакции', d.reactions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prefix: e.name })));
+    block('Легендарные действия', d.legendary_actions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prose:!!d.mechanics, prefix: e.name })));
+    if (!d.mechanics && Array.isArray(d.actions_roll) && d.actions_roll.length) wrap.append(el('div', { style: 'margin:6px 0' }, el('div', { class: 'muted small' }, 'Броски атак и урона'), M().actionButtons({ actions: d.actions_roll }, ctx, e.name)));
+    block('Реакции', d.reactions, a => el('p', {}, el('b', {}, a.name + '. '), M().rich(a.text || '', ctx, { prose:!!d.mechanics, prefix: e.name })));
     if (d.prerequisites) wrap.append(el('p', { class: 'muted small' }, 'Требования: ' + d.prerequisites));
-    if (d.feature_text) wrap.append(el('p', {}, el('b', {}, (d.feature || 'Умение') + '. '), M().rich(d.feature_text, ctx, { prefix: e.name })));
+    if (d.feature_text) wrap.append(el('p', {}, el('b', {}, (d.feature || 'Умение') + '. '), M().rich(d.feature_text, ctx, { prose:!!d.mechanics, prefix: e.name })));
     const featList = (features, texts, title) => {
       if (!features || !Object.keys(features).length) return;
       wrap.append(el('h3', { style: 'margin-top:12px' }, title));
       Object.entries(features).sort((a, b) => +a[0] - +b[0]).forEach(([lvl, fs]) => {
         const p = el('div', { class: 'lvl-row' }, el('b', {}, lvl + ' ур.: '));
-        (Array.isArray(fs) ? fs : [fs]).forEach((n, i) => { const t = texts?.[n]; p.append(i ? ', ' : '', t ? el('a', { href: '#', class: 'feat-link', onclick: ev => { ev.preventDefault(); const nx = p.nextSibling; if (nx?.classList?.contains('feat-text') && nx.dataset.n === n) { nx.remove(); return; } if (nx?.classList?.contains('feat-text')) nx.remove(); p.after(el('div', { class: 'feat-text card-desc', 'data-n': n }, M().rich(t, ctx, { prefix: `${e.name}: ${n}` }))); } }, n) : n); });
+        (Array.isArray(fs) ? fs : [fs]).forEach((n, i) => { const t = texts?.[n]; p.append(i ? ', ' : '', t ? el('a', { href: '#', class: 'feat-link', onclick: ev => { ev.preventDefault(); const nx = p.nextSibling; if (nx?.classList?.contains('feat-text') && nx.dataset.n === n) { nx.remove(); return; } if (nx?.classList?.contains('feat-text')) nx.remove(); p.after(el('div', { class: 'feat-text card-desc', 'data-n': n }, M().rich(t, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${n}` }))); } }, n) : n); });
         wrap.append(p);
       });
     };
     featList(d.features, d.feature_texts, 'Умения по уровням');
     if (Array.isArray(d.subclasses) && d.subclasses.length) {
       wrap.append(el('h3', { style: 'margin-top:12px' }, 'Подклассы'));
-      d.subclasses.forEach(sc => { if (typeof sc === 'string') { wrap.append(el('p', {}, sc)); return; } wrap.append(el('p', {}, el('b', {}, sc.name), sc.name_en && sc.name_en !== sc.name ? el('span', { class: 'muted small' }, ' ' + sc.name_en) : null)); if (sc.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(sc.desc, ctx, { prefix: sc.name }))); featList(sc.features, sc.feature_texts, sc.name + ': умения'); });
+      d.subclasses.forEach(sc => { if (typeof sc === 'string') { wrap.append(el('p', {}, sc)); return; } wrap.append(el('p', {}, el('b', {}, sc.name), sc.name_en && sc.name_en !== sc.name ? el('span', { class: 'muted small' }, ' ' + sc.name_en) : null)); if (sc.desc) wrap.append(el('div', { class: 'card-desc' }, M().rich(sc.desc, ctx, { prose:!!d.mechanics, prefix: sc.name }))); featList(sc.features, sc.feature_texts, sc.name + ': умения'); });
     }
     // --- действия с записью ---
     const btns = el('div', { class: 'row', style: 'margin-top:12px;flex-wrap:wrap;gap:4px' });
     const isRoot = !!window.ME?.is_root;
     const canEdit = isRoot || (e.pack_id && (opts.packMine || e._mine)) || (e.campaign_id && (window.TABLE_CTX?.isGM || opts.isGM));
-    if (d.secrets && (canEdit || window.TABLE_CTX?.isGM || opts.isGM)) wrap.append(el('div', { class: 'card-desc', style: 'border-left:3px solid var(--danger,#c55);padding-left:8px;margin-top:8px' }, el('b', {}, 'Только для мастера. '), M().rich(d.secrets, ctx, { prefix: e.name })));
+    if (d.secrets && (canEdit || window.TABLE_CTX?.isGM || opts.isGM)) wrap.append(el('div', { class: 'card-desc', style: 'border-left:3px solid var(--danger,#c55);padding-left:8px;margin-top:8px' }, el('b', {}, 'Только для мастера. '), M().rich(d.secrets, ctx, { prose:!!d.mechanics, prefix: e.name })));
     if (canEdit) btns.append(el('button', { class: 'small', onclick: () => editEntry(e, { campaignId: e.campaign_id, packId: e.pack_id, onSaved: opts.onChanged }) }, 'Редактировать'),
       el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить запись?')) { await API.del('/api/compendium/' + e.id); opts.onChanged && opts.onChanged(); } } }, 'Удалить'));
     btns.append(el('button', { class: 'small', onclick: () => copyTo(e, opts) }, 'Копировать в набор…'));
@@ -111,10 +112,10 @@ window.Compendium = (function () {
     if (category === 'item') {
       const it = e ? M().itemFromCompendium(e) : null; if (it && e.data?.icon) it.icon = e.data.icon;
       const r = await M().editItem(it, { title: e ? 'Редактировать предмет' : 'Новый предмет' }); if (!r) return;
-      result = { name: r.name, data: { folder: e?.data?.folder || o.folder || undefined, type: r.type, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, category: r.tags?.[0] } };
+      result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, type: r.type, qty: r.qty, ac: r.ac, handedness: r.handedness, ammo_tag: r.ammo_tag, consume: r.consume, properties: r.properties, rarity: r.rarity, weight: r.weight, cost: r.cost, desc: r.desc, attunement: r.attunement, charges: r.charges?.max, recharge: r.charges?.recharge, actions: r.actions, tags: r.tags, icon: r.icon, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, category: r.tags?.[0] } };
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
-      result = { name: r.name, data: { folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
+      result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
     } else {
       const r = await M().editGeneric(e, category, { folders: o.folders, folder: o.folder }); if (!r) return; result = r;
     }

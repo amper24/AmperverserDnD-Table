@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Conservative, deterministic SRD -> blocks migration. Does not execute extracted prose dice.
+Re-running is idempotent. Existing non-generated mechanics are never overwritten.
+"""
+import json
+import re
+from pathlib import Path
+from collections import Counter
+
+VERSION = 1
+ORIGIN = 'srd-blocks-v1'
+PASSIVE = ('speed', 'hit_die', 'spellcasting', 'saves', 'skills', 'languages', 'armor', 'weapons')
+
+
+def block(kind, **kw):
+    return {'kind': kind, 'enabled': True, 'when': 'always', **kw}
+
+
+def dice(expr):
+    expr = str(expr).replace('к', 'd').replace(' ', '')
+    m = re.fullmatch(r'(?:(\d*)d(\d+))?([+-]?\d+)?(?:\+@([a-z_]+))?', expr)
+    if not m or not expr:
+        return {'count': 0, 'sides': 6, 'bonus': 0, 'stat': '', 'advanced': expr}
+    count, sides, bonus, stat = m.groups()
+    return {'count': int(count or 1) if sides else 0, 'sides': int(sides or 6), 'bonus': int(bonus or 0), 'stat': stat or ''}
+
+
+def program(name, blocks, trigger='use', **kw):
+    return {'name': name or 'Правило', 'trigger': trigger, 'blocks': blocks, **kw}
+
+
+def manual(text):
+    return block('manual', text=str(text))
+
+
+def cost(**kw):
+    return block('consume', resource='quantity', source='self', amount=1, trigger='use', **kw)
+
+
+def finalise(programs):
+    for i, p in enumerate(programs):
+        p['id'] = f'p{i+1}'
+        for j, b in enumerate(p['blocks']):
+            b['id'] = f'b{j+1}'
+    return {'version': VERSION, 'origin': ORIGIN, 'programs': programs}
+
+
+def convert_entry(e, edition):
+    d = e['data']
+    if d.get('mechanics', {}).get('origin', ORIGIN) != ORIGIN:
+        return e
+    category = e['category']
+    name = d.get('name_en', '')
+    programs = []
+    params = []
+    if category in ('race', 'class', 'background'):
+        params = [block('passive', field=k, value=d[k]) for k in PASSIVE if k in d]
+        params += [block('passive', field='asi.'+k, value=v) for k,v in d.get('asi', {}).items() if k in ('str','dex','con','int','wis','cha')]
+        if params:
+            programs.append(program('Параметры при создании', params, 'passive'))
+    # Stable nested feature names are carried into character creation, not executed twice.
+    for group in ('traits', 'actions', 'reactions', 'legendary_actions'):
+        if category == 'item' or category == 'spell':
+            break
+        for row in d.get(group, []) or []:
+            if isinstance(row, dict) and row.get('text'):
+                programs.append(program(row.get('name', group), [manual(row['text'])], feature_name=row.get('name',''), group=group))
+    for fname, text in d.get('feature_texts', {}).items():
+        if text:
+            programs.append(program(fname, [manual(text)], feature_name=fname))
+    if d.get('feature_text'):
+        programs.append(program(d.get('feature', 'Особенность'), [manual(d['feature_text'])], feature_name=d.get('feature','Особенность')))
+    if category == 'item' and d.get('type') == 'weapon' and d.get('damage'):
+        props = ' '.join(d.get('properties', []))
+        ranged = bool(re.search(r'дальнобойное|ranged', d.get('category',''), re.I))
+        finesse = bool(re.search(r'фехтовальное|finesse', props, re.I))
+        ab = 'dex' if ranged else 'best' if finesse else 'str'
+        atk = 'atk' if ab=='best' else 'atk_'+ab
+        actions = [block('attack', dice=dice('1d20+@'+atk), target='target', apply=False)]
+        versatile = re.search(r'(?:универсальное|versatile).*?\((\d+[кd]\d+)\)', props, re.I)
+        actions.append(block('damage', dice=dice(str(d['damage'])+'+@'+ab), damage_type=d.get('damage_type',''), target='target', apply=False, grip='one' if versatile else ''))
+        if versatile:
+            actions.append(block('damage', dice=dice(versatile[1]+'+@'+ab), damage_type=d.get('damage_type',''), target='target', apply=False, grip='two'))
+        if re.search(r'боеприпас|ammunition', props, re.I):
+            tag = 'bolt' if 'crossbow' in name.lower() else 'bullet' if 'sling' in name.lower() else 'needle' if 'blowgun' in name.lower() else 'firearm_bullet' if name.lower() in ('musket','pistol') else 'arrow'
+            actions.insert(0, block('consume', resource='quantity', source='tag', tag=tag, amount=1, trigger='attack'))
+        programs.append(program('Атака и урон', actions))
+    elif category == 'item' and name in ('Potion of Healing','Potion of Greater Healing','Potion of Superior Healing','Potion of Supreme Healing'):
+        # The 2014 magic-item umbrella is a rarity table, not a fourfold potion.
+        generic = name=='Potion of Healing' and ('greater' in d.get('desc','').lower() or 'большого' in d.get('desc','').lower()) and not e['slug'].endswith('-common')
+        if generic:
+            programs.append(program('Выбрать разновидность', [manual(d.get('desc','')+'\nИмпортируйте конкретную разновидность зелья: эта запись — таблица редкостей, не отдельное зелье.')]))
+        else:
+            expr={'Potion of Healing':'2d4+2','Potion of Greater Healing':'4d4+4','Potion of Superior Healing':'8d4+8','Potion of Supreme Healing':'10d4+20'}[name]
+            programs.append(program('Выпить зелье', [cost(),block('heal',dice=dice(expr),target='self',apply=True),block('grant_item',target='self',amount=1,item={'name':'Пустой флакон','type':'gear','qty':1,'weight':0.1,'handedness':'none','stackable':True,'actions':[]})]))
+    elif category == 'item' and (name.startswith('Potion of ') or name in ('Antitoxin (vial)','Antitoxin','Rations (1 day)','Rations')):
+        programs.append(program('Использовать', [cost(),manual(d.get('desc','') or 'Эффект и длительность применяются вручную по правилам предмета.')]))
+    elif category == 'spell':
+        blocks=[]
+        level=d.get('level',0)
+        if level:
+            blocks.append(block('consume',resource='slot',source='self',slot_level=level,amount=1,trigger='use'))
+        if name in ('Cure Wounds','Healing Word'):
+            sides=8 if name=='Cure Wounds' else 4
+            blocks.append(manual('Проверьте дистанцию, допустимость цели, компоненты и ограничения в описании. Используется базовый круг; повышение круга требует отдельной программы.'))
+            blocks.append(block('heal',dice=dice(f'{2 if edition=="2024" else 1}d{sides}+@spell_mod'),target='target',apply=True))
+        else:
+            blocks.append(manual(d.get('desc','') or 'Правила применения уточняет мастер.'))
+            # Existing explicitly authored spell roll buttons are preserved as MANUAL choices,
+            # never concatenated: delayed damage / alternatives must not all fire at once.
+            for a in d.get('actions',[]) or []:
+                if a.get('roll'):
+                    blocks[ -1 ]['text'] += '\nСправочная формула (не автоматический эффект): '+a.get('name','')+' '+str(a['roll'])
+        if d.get('higher_level'):
+            blocks.append(manual('Большие круги: '+str(d['higher_level'])))
+        programs.append(program('Сотворить (базовый круг)',blocks))
+    elif category == 'condition':
+        programs.append(program('Наложить состояние', [block('condition',target='target',operation='add',condition=e['name']), manual(d.get('desc',''))]))
+        programs.append(program('Снять состояние', [block('condition',target='target',operation='remove',condition=e['name'])]))
+    # Preserve explicit legacy roll controls as separate, opt-in dice blocks. They are
+    # NOT appended to a casting/action chain: the old extractor included delayed and
+    # conditional damage in the same list. The GM chooses which isolated roll is due.
+    legacy_rolls = d.get('actions_roll', []) if category == 'monster' else d.get('actions', []) if category == 'spell' and name not in ('Cure Wounds','Healing Word') else []
+    for action in legacy_rolls or []:
+        if not isinstance(action, dict) or not action.get('roll'):
+            continue
+        kind=action.get('kind','roll')
+        if kind not in ('attack','damage','heal','save'):
+            kind='roll'
+        # A legacy heal/save control rolled dice only. Do not silently turn it into
+        # HP mutation / target saving throw. Keep its numerical meaning as a roll.
+        if kind in ('heal','save'):
+            kind='roll'
+        expr=str(action['roll'])
+        if action.get('kind')=='heal':
+            expr=re.sub(r'@spell\b','@spell_mod',expr)
+        programs.append(program('Отдельный бросок: '+action.get('name','Кубики'),[
+            manual('Только отдельный бросок кубиков: не тратит ячейку/действие и не изменяет цель. Сверьте момент, количество и условия урона с полным описанием; поздний и альтернативный урон не бросаются вместе.'),
+            block(kind,dice=dice(expr),target='target',apply=False,damage_type=action.get('dtype',''))
+        ],roll_only=True))
+    if not programs:
+        programs.append(program('Правила применения', [manual(d.get('desc','') or 'Нет активной автоматической механики. Параметры предмета приведены в карточке.')]))
+    d['mechanics']=finalise(programs)
+    ammo_defaults={'Arrow':(20,'arrow'),'Arrows':(20,'arrow'),'Crossbow bolt':(20,'bolt'),'Bolts':(20,'bolt'),'Sling bullet':(20,'bullet'),'Bullets, Sling':(20,'bullet'),'Blowgun needle':(50,'needle'),'Needles':(50,'needle'),'Bullets, Firearm':(10,'firearm_bullet')}
+    if category=='item' and d.get('category') in ('Ammunition','Боеприпасы') and name in ammo_defaults:
+        count,tag=ammo_defaults[name]
+        d['mechanics']['item_defaults']={'qty':count,'unit_weight':d.get('weight',0)/count,'ammo_tag':tag,'type':'ammo'}
+    return e
+
+
+def convert(entries, edition):
+    return [convert_entry(e, edition) for e in entries]
+
+
+if __name__=='__main__':
+    root=Path(__file__).resolve().parents[2]
+    report={}
+    for edition in ('2014','2024'):
+        path=root/'data_seed'/f'srd_{edition}.json'
+        data=convert(json.loads(path.read_text()),edition)
+        path.write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
+        kinds=Counter(b['kind'] for e in data for p in e['data']['mechanics']['programs'] for b in p['blocks'])
+        report[edition]={'records':len(data),'categories':dict(Counter(e['category'] for e in data)),'blocks':dict(kinds)}
+    (root/'docs'/'mechanics-migration.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+    print(json.dumps(report,ensure_ascii=False,indent=2))

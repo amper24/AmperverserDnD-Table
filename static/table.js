@@ -425,29 +425,31 @@ window.Table = (function () {
   // Предмет, брошенный на стол: создаём «лут»-токен; если он пришёл с листа персонажа — убираем его оттуда
   async function dropLoot(p, w, silent) {
     const g = grid(); const pos = snapPos(w.x, w.y, g * 0.7, g * 0.7);
-    const item = { ...p.item };
     if (p.from_character_id) {
-      const ch = await API.get('/api/characters/' + p.from_character_id);
-      const inv = ch.sheet.inventory || [];
-      if (!inv.some(i => i.uid === item.uid)) { if (!silent) return toast('Предмета уже нет в инвентаре'); }
-      else { ch.sheet.inventory = inv.filter(i => i.uid !== item.uid); await API.patch('/api/characters/' + p.from_character_id, { sheet: ch.sheet }); }
+      await API.post('/api/characters/' + p.from_character_id + '/inventory', { request_id: crypto.randomUUID(), op: 'drop', item_uid: p.item.uid, scene_id: S.scene.id, x: pos.x, y: pos.y, size: g * .7 });
+    } else {
+      // Explicitly spawning a new template is distinct from moving a character's item.
+      const item = { ...p.item, uid: Modules.uid(), equipped: false, hand_slot: null, attuned: false };
+      upsert({ layer: 'prop', z: 5, data: { type: 'loot', loot: true, item, x: pos.x, y: pos.y, w: g * .7, h: g * .7, name: item.name, owner_id: S.user.id } });
     }
-    upsert({ layer: 'prop', z: 5, data: { type: 'loot', loot: true, item, x: pos.x, y: pos.y, w: g * 0.7, h: g * 0.7, name: item.name, owner_id: S.user.id, dropped_by: p.from_character_id || null } });
-    if (!silent) toast(`${item.name} на столе`);
+    if (!silent) toast(`${p.item.name} на столе`);
   }
+  const picking = new Set();
   async function pickUpLoot(it) {
-    const all = await API.get('/api/characters?campaign_id=' + S.campaign.id);
-    const mine = S.isGM ? all : all.filter(c => c.owner_id === S.user.id);
-    if (!mine.length) return toast('У вас нет персонажа в кампании');
-    let target = mine[0];
-    if (mine.length > 1) { const sel = el('select', {}, ...mine.map(c => el('option', { value: c.id }, c.name))); const ok = await modal(`Кто подбирает «${it.data.item?.name}»?`, el('div', { class: 'field' }, sel), [{ label: 'Подобрать', cls: 'primary', fn: () => sel.value }]); if (!ok) return; target = mine.find(c => c.id === ok); }
-    const ch = await API.get('/api/characters/' + target.id);
-    const item = { ...it.data.item, uid: Modules.uid(), equipped: false };
-    ch.sheet.inventory = [...(ch.sheet.inventory || []), item];
-    await API.patch('/api/characters/' + target.id, { sheet: ch.sheet });
-    S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); if (S.sel === it.id) { S.sel = null; updateProps(); }
-    S.ws.send({ type: 'chat', text: `${target.name} подбирает ${item.name}${item.qty > 1 ? ' ×' + item.qty : ''}` });
+    if (picking.has(it.id)) return;
+    picking.add(it.id);
+    try {
+      const all = await API.get('/api/characters?campaign_id=' + S.campaign.id);
+      const mine = S.isGM ? all : all.filter(c => c.owner_id === S.user.id);
+      if (!mine.length) return toast('У вас нет персонажа в кампании');
+      let target = mine[0];
+      if (mine.length > 1) { const sel = el('select', {}, ...mine.map(c => el('option', { value: c.id }, c.name))); const ok = await modal(`Кто подбирает «${it.data.item?.name}»?`, el('div', { class: 'field' }, sel), [{ label: 'Подобрать', cls: 'primary', fn: () => sel.value }]); if (!ok) return; target = mine.find(c => c.id === ok); }
+      await API.post('/api/characters/' + target.id + '/inventory', { request_id: crypto.randomUUID(), op: 'pickup', scene_id: S.scene.id, loot_id: it.id });
+      if (S.sel === it.id) { S.sel = null; updateProps(); }
+      toast(`${target.name} подбирает ${it.data.item.name}`);
+    } catch (e) { toast(e.message); } finally { picking.delete(it.id); }
   }
+
   function placeAsset(a, w) {
     const g = grid();
     let layer = a.kind === 'map' ? 'map' : a.kind === 'prop' ? 'prop' : 'character';
@@ -509,7 +511,7 @@ window.Table = (function () {
       add(d.dead ? 'Жив' : 'Мёртв', () => { d.dead = !d.dead; upsert(it); });
     }
     if (editable) {
-      add('Дублировать', () => { const c = JSON.parse(JSON.stringify(it)); delete c.id; c.data.x += grid(); c.data.y += grid(); upsert(c); });
+      if (!d.managed_loot) add('Дублировать', () => { const c = JSON.parse(JSON.stringify(it)); delete c.id; c.data.x += grid(); c.data.y += grid(); upsert(c); });
       add('Повернуть на 90°', () => { d.rotation = ((d.rotation || 0) + 90) % 360; upsert(it); });
       add('На передний план', () => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; upsert(it); });
       add('На задний план', () => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; upsert(it); });

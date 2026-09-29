@@ -127,6 +127,10 @@ window.DiceEngine = (() => {
         r.doubled ? el('span', { class: 'dice-badge' }, '×2 кости') : null);
       box.append(row);
     }
+    if (p.spent?.length) box.append(el('div', { class: 'dice-spent' }, ...p.spent.map(x => el('span', {}, `${x.name}: −${x.amount} · осталось ${x.remaining}`))));
+    if(p.effects?.length)box.append(el('div',{class:'dice-spent'},...p.effects.map(e=>el('span',{},({heal:'Лечение',damage:'Урон',temp_hp:'Временные хиты',grant_item:'Выдан предмет',condition:'Состояние',adjust:'Показатель',manual:'Ручное правило подтверждено'}[e.kind]||e.kind)+(e.amount!==undefined?': '+e.amount:'')+(e.name?' '+e.name:'')+(e.hp?` · ХП ${e.hp.current}/${e.hp.max}`:'')))));
+    if(p.program_use)box.append(el('a',{href:'/sheet/'+encodeURIComponent(p.program_use.character_id),target:'_blank',class:'small'},'Лист владельца · выполнить действие'));
+    if (p.item_use) box.append(el('a', { class: 'small', href: '/sheet/' + encodeURIComponent(p.item_use.character_id), target: '_blank' }, 'Лист владельца · использовать предмет'));
     if (p.gm_only) box.append(el('small', { class: 'muted' }, 'Скрытый бросок · только мастер / локальный лист'));
     return box;
   }
@@ -162,6 +166,8 @@ window.DiceEngine = (() => {
     if (cfg.animate && !reduced && !document.hidden) { try { animate(canvas, item.payload, cfg, finish); } catch { canvas.remove(); finish(); } } else { canvas.remove(); finish(); }
   }
   function repeat(p) {
+    if(p.program_use)return window.PROGRAM_USE?window.PROGRAM_USE(p.program_use):toast('Повторите действие на листе владельца: вся цепочка будет выполнена заново.');
+    if (p.item_use) return window.ITEM_USE ? window.ITEM_USE(p.item_use) : toast('Повторите использование на листе владельца: ресурс будет списан там.');
     return submit(p.rolls ? { type: 'multi', label: p.label, gm_only: p.gm_only, rolls: p.rolls.map(r => ({ name: r.name, kind: r.kind, dtype: r.dtype, expr: r.base_expr || (r.doubled ? r.expr.replace(/(\d+)d/g, (_, n) => `${Number(n) / 2}d`) : r.expr) })) } : { type: 'roll', expr: p.expr, label: p.label, kind: p.kind, gm_only: p.gm_only });
   }
   // Lightweight projected solid meshes, gravity, rebounds, table friction and pairwise collisions.
@@ -256,7 +262,8 @@ window.DiceEngine = (() => {
   }
   window.addEventListener?.('keydown', e => { if (e.key === 'Escape' && current) { queue = []; dismiss(); } });
   window.addEventListener?.('pagehide', () => { queue = []; dismiss(); pending.forEach(p => clearTimeout(p.timer)); pending.clear(); });
+  function committed(message) { const target = host(); if (target?.DiceEngine) target.DiceEngine.receive(message); if (!target || window.parent === window) receive(message); }
   const button=()=>el('button',{class:'small',title:'Кубики, журнал и настройки',onclick:openPanel},icon('dice',14),' Кубики');
-  return { parse, evaluate, evaluateBatch, keptIndices, withMode, doubleDice, submit, receive, present, renderResult, detail, button, openPanel, dismiss };
+  return { parse, evaluate, evaluateBatch, keptIndices, withMode, doubleDice, submit, receive, committed, present, renderResult, detail, button, openPanel, dismiss };
 })();
 window.rollDice = (...args) => DiceEngine.evaluate(...args);

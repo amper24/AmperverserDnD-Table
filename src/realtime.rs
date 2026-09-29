@@ -46,7 +46,7 @@ impl Hub {
             }
         }
     }
-    async fn send_to_role(&self, cid: &str, role: &str, msg: &Value) {
+    pub(crate) async fn send_to_role(&self, cid: &str, role: &str, msg: &Value) {
         let text = msg.to_string();
         let rooms = self.rooms.read().await;
         if let Some(room) = rooms.get(cid) {
@@ -184,7 +184,7 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
 }
 
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
-fn double_dice(expr: &str) -> String {
+pub(crate) fn double_dice(expr: &str) -> String {
     let expr = expr.to_lowercase().replace('к', "d");
     let re = Regex::new(r"(\d*)([dк])(\d+)").unwrap();
     re.replace_all(&expr, |c: &regex::Captures| {
@@ -196,7 +196,7 @@ fn double_dice(expr: &str) -> String {
 }
 
 /// Есть ли среди оставленных костей d20 естественная 20 / 1 (по первому d20-терму).
-fn nat_d20(r: &Value) -> (bool, bool) {
+pub(crate) fn nat_d20(r: &Value) -> (bool, bool) {
     if let Some(parts) = r["parts"].as_array() {
         for p in parts {
             if p["sides"].as_i64() == Some(20) {
@@ -255,7 +255,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             // карточка предмета/заклинания в чат (с кнопками бросков на стороне клиента)
             let mut card = msg["card"].clone();
             if !card.is_object() { return; }
-            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner"].contains(&k.as_str())); }
+            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner", "item_ref"].contains(&k.as_str())); }
             if let Some(out) = save_chat(st, cid, user, "card", &card).await {
                 st.hub.broadcast(cid, &out, None).await;
             }
@@ -344,7 +344,7 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                         let Some(row) = row else { continue };
                         let mut data = util::json_value(&util::text(&row, "data"));
                         if let (Some(dst), Some(src)) = (data.as_object_mut(), it["data"].as_object()) {
-                            for (k, v) in src { dst.insert(k.clone(), v.clone()); }
+                            for (k, v) in src { if dst.get("managed_loot") != Some(&json!(true)) || PLAYER_FIELDS.contains(&k.as_str()) { dst.insert(k.clone(), v.clone()); } }
                         }
                         let z = it["z"].as_i64().unwrap_or_else(|| row.get::<i64, _>("z"));
                         let layer = it["layer"].as_str().map(|s| s.to_string()).unwrap_or_else(|| row.get::<String, _>("layer"));
@@ -389,17 +389,20 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
         None => None,
     };
 
+    // A delayed move must never resurrect a picked-up/deleted token.
+    if id.is_some() && existing.is_none() { return; }
+    if id.is_none() && data["managed_loot"] == true { return; }
     let (final_id, layer, z, data) = match existing {
         Some(row) => {
             let old = util::json_value(&util::text(&row, "data"));
             let mut layer: String = row.get("layer");
             let mut z: i64 = row.get("z");
-            let merged = if is_gm {
+            let merged = if is_gm && old["managed_loot"] != true {
                 layer = layer_in.unwrap_or(layer);
                 z = z_in.unwrap_or(z);
                 data
             } else {
-                if !player_can_edit(&old, &user.id) {
+                if !is_gm && !player_can_edit(&old, &user.id) {
                     return;
                 }
                 // игроку разрешено менять только позицию/поворот/хиты/состояния своего токена
@@ -412,8 +415,9 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
                 m
             };
             let id = id.unwrap();
-            let _ = sqlx::query("UPDATE scene_items SET layer = ?, z = ?, data = ?, updated_at = ? WHERE id = ?")
+            let updated = sqlx::query("UPDATE scene_items SET layer = ?, z = ?, data = ?, updated_at = ? WHERE id = ?")
                 .bind(&layer).bind(z).bind(merged.to_string()).bind(util::now()).bind(&id).execute(&st.db).await;
+            if !updated.is_ok_and(|r| r.rows_affected() > 0) { return; }
             (id, layer, z, merged)
         }
         None => {
