@@ -990,33 +990,42 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Шапка листа: раса, класс, подкласс, предыстория и мировоззрение — одинаковые компактные блоки. */
 .sheet-head-blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 6px; }
-.mod-block { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; cursor: copy; }
+.mod-block { display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; }
+.mod-block[data-cat] { cursor: copy; }
 .mod-block.filled { background: color-mix(in srgb, var(--panel) 55%, transparent); }
 .mod-block-head { display: flex; align-items: center; gap: 5px; }
 .mod-block-head b { color: var(--muted); font-size: 8.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; opacity: .85; }
 .mod-block-drop { margin-left: auto; color: var(--muted); font-size: 9.5px; opacity: .4; }
 .mod-block:hover .mod-block-drop { opacity: .75; }
-.mod-block-name { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
-.mod-block-empty { color: var(--muted); font-size: 11.5px; }
+.mod-block-name { font-size: 12.5px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.mod-block-name.editable, .mod-block-empty.editable { cursor: text; }
+.mod-block-name.editable:hover, .mod-block-empty.editable:hover { color: var(--accent); }
+.mod-block-empty { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
 .mod-block-facts { color: var(--muted); font-size: 9.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.mod-block-note { color: var(--muted); font-size: 9px; opacity: .65; }
+.mod-block-note { color: var(--muted); font-size: 9px; opacity: .65; line-height: 1.25; }
 .mod-block:hover { border-color: var(--accent-line); }
 .mod-block-field { display: block; }
-.mod-block-input, .mod-block-select { border: 0; border-radius: 0; background: transparent; padding: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.mod-block-input, .mod-block-select { border: 0; border-radius: 0; background: transparent; padding: 0; font-size: 12.5px; font-weight: 600; line-height: 1.35; height: auto; min-height: 0; color: var(--text); }
 .mod-block-input:focus, .mod-block-select:focus { outline: none; border-bottom: 1px solid var(--accent); }
 .mod-block-input::placeholder { color: var(--muted); font-weight: 400; }
-.mod-block-select { cursor: pointer; }
+.mod-block-select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 13px;
+  background: transparent no-repeat right 1px center / 8px url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238b919c'/%3E%3C/svg%3E"); }
 .mod-block.dragover { border-color: var(--accent); background: var(--accent-soft); }
 
-/* Вдохновение: плитка рядом с КД, инициативой и скоростью. */
-.stat-insp { cursor: pointer; }
-.stat-insp label { margin-bottom: 0; }
-.stat-insp small { display: block; font-size: 10px; line-height: 1.3; }
-.stat-insp b { display: block; margin: 1px 0; color: var(--muted); font-size: 15px; font-weight: 600; letter-spacing: .01em; }
-.stat-insp.on { border-color: var(--accent-line); background: var(--accent-soft); }
-.stat-insp.on b { color: var(--accent); }
-.stat-insp:hover { border-color: var(--accent-line); }
-.stat-insp:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+/* Вдохновение: широкая полоса под КД/инициативой/скоростью — состояние видно сразу. */
+.insp-banner { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 9px 12px; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.insp-banner .insp-star { display: flex; align-items: center; justify-content: center; flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); font-size: 17px; transition: all .15s ease; }
+.insp-banner .insp-body { flex: 1; min-width: 0; }
+.insp-banner .insp-body b { display: block; font-size: 13px; line-height: 1.3; }
+.insp-banner .insp-body small { display: block; font-size: 10.5px; line-height: 1.35; }
+.insp-banner .insp-state { flex: none; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.insp-banner:hover { border-color: var(--accent-line); }
+.insp-banner:hover .insp-star { border-color: var(--accent-line); color: var(--text); }
+.insp-banner:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+.insp-banner.on { border-color: var(--accent-line); background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.insp-banner.on .insp-star { border-color: var(--accent); background: var(--accent); color: var(--on-accent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
+.insp-banner.on .insp-body b { color: var(--accent); }
+.insp-banner.on .insp-state { color: var(--accent); border-color: var(--accent-line); }
 
 /* Слоты по правилам D&D: что надето и какие правила проверены. */
 .slots-panel { margin-top: 8px; padding: 12px; }
