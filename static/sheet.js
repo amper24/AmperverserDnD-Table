@@ -12,7 +12,7 @@
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
-  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', onlyPrepared: false, spellFav: false, open: new Set() };
+  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null };
 
   // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
   function noteBtn(key, title) {
@@ -275,35 +275,58 @@
       o.control || (o.value ? el('strong', { class: 'mod-block-name' }, o.value) : el('span', { class: 'mod-block-empty' }, o.empty || 'Не выбрано')),
       o.facts ? el('small', { class: 'mod-block-facts', title: o.factsTitle || o.facts }, o.facts) : null,
       o.note ? el('small', { class: 'mod-block-note' }, o.note) : null);
-    const blockInput = (key, label, placeholder) => el('input', { class: 'mod-block-input', value: s[key] || '', placeholder, 'aria-label': label, disabled: dis(), onchange: e => { s[key] = e.target.value; save(); render(); } });
     const alignmentOptions = window.CharacterBuilder?.ALIGNMENTS || ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
-    const alignmentSelect = el('select', { class: 'mod-block-select', 'aria-label': 'Мировоззрение', disabled: dis(), onchange: e => { s.alignment = e.target.value; save(); } },
-      ...(!alignmentOptions.includes(s.alignment || '') ? [el('option', { value: s.alignment, selected: '' }, 'Текущее: ' + s.alignment)] : []),
-      ...alignmentOptions.map(value => el('option', { value, selected: (s.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
     const raceModule = moduleOf('race'), classModule = moduleOf('class'), bgModule = moduleOf('background');
     const raceData = raceModule?.snapshot?.data || {}, classData = classModule?.snapshot?.data || {}, bgData = bgModule?.snapshot?.data || {};
     const raceFacts = [raceData.speed && `скорость ${raceData.speed} фт.`, asList(raceData.languages).slice(0, 2).join(', ')].filter(Boolean).join(' · ');
     const classFacts = [`уровень ${s.level || 1}`, classData.hit_die && `кость хитов ${classData.hit_die}`, asList(classData.saves).length ? 'спасброски: ' + asList(classData.saves).map(k => ABIL[k] || k).join(', ') : ''].filter(Boolean).join(' · ');
     const bgSkills = asList(bgData.skills).map(skillLabel), bgTools = asList(bgData.tools);
     const bgFacts = [bgSkills.length ? 'навыки: ' + bgSkills.join(', ') : '', bgTools.length ? '+ инструменты: ' + bgTools.join(', ') : ''].filter(Boolean).join(' · ');
+    /// Блоки шапки: раса, класс, подкласс, предыстория и мировоззрение выглядят одинаково —
+    /// компактный блок с текстом, как у «Расы». Клик по тексту открывает правку прямо в блоке.
+    const headText = (key, value, empty) => el(value ? 'strong' : 'span',
+      { class: (value ? 'mod-block-name' : 'mod-block-empty') + (readonly ? '' : ' editable'),
+        title: readonly ? (value || '') : value ? `${value} · клик — изменить` : 'Клик — вписать',
+        onclick: readonly ? null : e => { e.stopPropagation(); ui.headEdit = key; render(); } }, value || empty);
+    const closeEdit = () => { ui.headEdit = null; render(); };
+    const editInput = (key, get, set, placeholder, listId) => {
+      const commit = () => { ui.headEdit = null; render(); };
+      const input = el('input', { class: 'mod-block-input', list: listId || null, value: get(), placeholder, 'aria-label': placeholder, disabled: dis(), onclick: e => e.stopPropagation(),
+        onchange: e => { set(e.target.value); save(); commit(); }, onkeydown: e => { if (e.key === 'Escape') { e.stopPropagation(); commit(); } } });
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+      return input;
+    };
+    const classControl = () => ui.headEdit === 'class' ? editInput('class', () => s.class, v => s.class = v, 'перетащите или впишите') : headText('class', s.class, 'перетащите или кликните');
     const subclassNames = asList(classData.subclasses), subclassListId = 'subclass-options-' + id;
-    const subclassControl = el('span', { class: 'mod-block-field' },
-      el('input', { class: 'mod-block-input', list: subclassNames.length ? subclassListId : null, value: s.subclass || '', placeholder: 'из класса или своё', 'aria-label': 'Подкласс', disabled: dis(), onchange: e => { s.subclass = e.target.value; save(); } }),
-      subclassNames.length ? el('datalist', { id: subclassListId }, ...subclassNames.map(n => el('option', { value: n }))) : null);
+    const subclassControl = () => {
+      if (ui.headEdit !== 'subclass') return headText('subclass', s.subclass, 'кликните или повысьте уровень');
+      return el('span', { class: 'mod-block-field' }, editInput('subclass', () => s.subclass, v => s.subclass = v, 'из класса или своё', subclassNames.length ? subclassListId : null),
+        subclassNames.length ? el('datalist', { id: subclassListId }, ...subclassNames.map(n => el('option', { value: n }))) : null);
+    };
+    const backgroundControl = () => ui.headEdit === 'background' ? editInput('background', () => s.background, v => s.background = v, 'перетащите или впишите') : headText('background', s.background, 'перетащите или кликните');
+    const alignmentControl = () => {
+      if (ui.headEdit !== 'alignment') return headText('alignment', s.alignment, 'кликните — выберите');
+      const sel = el('select', { class: 'mod-block-select', 'aria-label': 'Мировоззрение', disabled: dis(), onclick: e => e.stopPropagation(),
+        onchange: e => { s.alignment = e.target.value; save(); closeEdit(); }, onkeydown: e => { if (e.key === 'Escape') { e.stopPropagation(); closeEdit(); } } },
+        ...(!alignmentOptions.includes(s.alignment || '') ? [el('option', { value: s.alignment, selected: '' }, 'Текущее: ' + s.alignment)] : []),
+        ...alignmentOptions.map(value => el('option', { value, selected: (s.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
+      setTimeout(() => { try { sel.showPicker?.(); } catch { sel.focus(); } }, 0);
+      return sel;
+    };
     const blocks = el('div', { class: 'sheet-head-blocks' },
       headBlock('race', { label: 'Раса', filled: !!s.race, value: s.race, empty: 'перетащите блок',
-        facts: raceFacts, note: raceModule ? `снимок · ${raceModule.source || raceModule.snapshot.source || 'справочник'}` : s.race ? 'старая запись без связи с модулем' : 'подключается блоком из справочника',
-        hint: 'Раса — снимок модуля справочника. Перетащите другой блок расы, чтобы заменить.' }),
-      headBlock('class', { label: 'Класс', filled: !!s.class, control: blockInput('class', 'Класс', 'перетащите или впишите'),
-        facts: classFacts, note: classModule ? `снимок · ${classModule.source || 'справочник'}` : 'перетащите блок класса из справочника',
-        hint: 'Класс — блок справочника: перетащите запись, чтобы зафиксировать источник, или впишите название.' }),
-      headBlock(null, { label: 'Подкласс', filled: !!s.subclass, control: subclassControl,
+        facts: raceFacts, note: raceModule ? '' : s.race ? 'старая запись без связи с модулем' : 'подключается блоком из справочника',
+        hint: raceModule ? `Раса — снимок модуля (${raceModule.source || raceModule.snapshot.source || 'справочник'}). Перетащите другой блок расы, чтобы заменить.` : 'Раса подключается блоком из справочника: перетащите запись расы на этот блок.' }),
+      headBlock('class', { label: 'Класс', filled: !!s.class, control: classControl(),
+        facts: classFacts, note: s.class ? '' : 'блок справочника или своё название',
+        hint: classModule ? `Класс — снимок модуля (${classModule.source || 'справочник'}). Перетащите запись, чтобы заменить, или кликните, чтобы вписать своё.` : 'Перетащите блок класса из справочника или кликните, чтобы вписать название.' }),
+      headBlock(null, { label: 'Подкласс', filled: !!s.subclass, control: subclassControl(),
         facts: subclassNames.length ? `в классе: ${subclassNames.slice(0, 3).join(', ')}${subclassNames.length > 3 ? '…' : ''}` : '',
-        hint: 'Подкласс появляется на 2–3 уровне класса; свой вариант можно вписать.' }),
-      headBlock('background', { label: 'Предыстория', filled: !!s.background, control: blockInput('background', 'Предыстория', 'перетащите или впишите'),
-        facts: bgFacts, factsTitle: bgFacts, note: bgModule ? `снимок · ${bgModule.source || 'справочник'}` : 'перетащите блок предыстории из справочника',
-        hint: 'Предыстория — блок справочника: даёт навыки, инструменты и снаряжение.' }),
-      headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentSelect, hint: 'Мировоззрение влияет только на отыгрыш.' }));
+        hint: 'Подкласс появляется на 2–3 уровне класса: кликните и выберите из списка класса или впишите свой вариант.' }),
+      headBlock('background', { label: 'Предыстория', filled: !!s.background, control: backgroundControl(),
+        facts: bgFacts, factsTitle: bgFacts, note: s.background ? '' : 'блок справочника или своё название',
+        hint: bgModule ? `Предыстория — снимок модуля (${bgModule.source || 'справочник'}): даёт навыки, инструменты и снаряжение.` : 'Перетащите блок предыстории из справочника или кликните, чтобы вписать название.' }),
+      headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentControl(), hint: 'Мировоззрение влияет только на отыгрыш: кликните и выберите из списка.' }));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number'), readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'small lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲ Повысить')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       blocks));
@@ -337,16 +360,20 @@
 
     const c2 = el('div');
     const hp = s.hp;
-    /// Вдохновение: заметная плитка вместо галочки — видно состояние и понятно, что делать.
+    /// Вдохновение: широкая заметная полоса вместо галочки — состояние видно сразу, клик переключает.
     const toggleInspiration = () => { if (readonly) return; s.inspiration = !s.inspiration; save(); render(); };
-    const inspirationTile = el('div', { class: 'card stat-insp' + (s.inspiration ? ' on' : ''), role: 'button', tabindex: '0', title: s.inspiration ? 'Вдохновение есть: потратьте его на бросок с преимуществом' : 'Отметьте, когда мастер дал вдохновение', onclick: toggleInspiration,
-      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInspiration(); } } },
-      el('label', {}, 'Вдохновение'), el('b', {}, s.inspiration ? '✦ есть' : 'нет'), el('small', { class: 'muted' }, s.inspiration ? 'преимущество на бросок' : 'выдаёт мастер'));
+    const inspirationTile = el('div', { class: 'card insp-banner' + (s.inspiration ? ' on' : ''), role: 'button', tabindex: '0',
+      title: s.inspiration ? 'Вдохновение есть: потратьте его на один бросок d20 с преимуществом' : 'Мастер выдаёт вдохновение за отличную отыгровку — клик, чтобы отметить', 'aria-pressed': String(!!s.inspiration),
+      onclick: toggleInspiration, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInspiration(); } } },
+      el('span', { class: 'insp-star', 'aria-hidden': 'true' }, '✦'),
+      el('span', { class: 'insp-body' }, el('b', {}, 'Вдохновение'),
+        el('small', { class: 'muted' }, s.inspiration ? 'Есть — один бросок d20 с преимуществом' : 'Нет — выдаёт мастер за хорошую отыгровку')),
+      el('span', { class: 'insp-state' }, s.inspiration ? '✓ есть' : 'выдаёт мастер'));
     c2.append(el('div', { class: 'stat3' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
-      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } })),
-      inspirationTile));
+      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
+    c2.append(inspirationTile);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
