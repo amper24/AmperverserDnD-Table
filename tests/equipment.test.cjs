@@ -97,3 +97,38 @@ test('настройка: без неё предмет не влияет на К
   assert.equal(d.speedPenalty, 10); assert.equal(d.stealth, true); assert.equal(d.notes.length, 3);
   s.inventory[0].attuned = true; s.abilities.str = 13; d = E.armorClassParts(s); assert.equal(d.ac, 17); assert.equal(d.speedPenalty, 0);
 });
+test('настройка по правилам: только предметы с требованием, не больше трёх одновременно', () => {
+  const inv = [
+    { uid: 'a', name: 'Кольцо защиты', type: 'magic', attunement: true, attuned: true, qty: 1 },
+    { uid: 'b', name: 'Плащ защиты', type: 'magic', attunement: true, attuned: true, qty: 1 },
+    { uid: 'c', name: 'Амулет здоровья', type: 'magic', attunement: true, attuned: true, qty: 1 },
+    { uid: 'd', name: 'Сапоги эльфов', type: 'magic', attunement: true, attuned: true, qty: 1 },
+    { uid: 'e', name: 'Верёвка', type: 'gear', attuned: true, qty: 1 },
+  ];
+  E.migrate(inv);
+  assert.equal(inv.filter(i => i.attuned).length, 3, 'лишняя настройка снимается');
+  assert.equal(inv[3].attuned, false, 'четвёртый предмет с настройкой отпущен');
+  assert.equal(inv[4].attuned, false, 'предмет без требования настройки не может быть настроен');
+});
+
+test('аудит слотов называет нарушения правил и не мешает корректной экипировке', () => {
+  const sheet = { abilities: { str: 16, dex: 12 }, inventory: [
+    { uid: '1', name: 'Кольчуга', type: 'armor', ac: '16', qty: 1 },
+    { uid: '2', name: 'Щит', type: 'armor', ac: '+2', qty: 1 },
+    { uid: '3', name: 'Секира', type: 'weapon', handedness: 'two', qty: 1 },
+    { uid: '4', name: 'Кольцо защиты', type: 'magic', ac: '+1', attunement: true, qty: 1 },
+  ] };
+  E.equipDefaults(sheet.inventory);
+  const audit = E.slotsAudit(sheet);
+  assert.equal(audit.bad, 0, 'корректная раскладка не даёт нарушений: ' + JSON.stringify(audit.checks.filter(c => !c.ok)));
+  assert.equal(audit.rows.find(r => r.key === 'armor').items[0].name, 'Кольчуга');
+  assert.equal(audit.rows.find(r => r.key === 'off').items[0].name, 'Щит');
+  assert.equal(audit.attuned, 0, 'предмет с настройкой ещё не настроен');
+
+  // Двуручное оружие вместе со щитом — нарушение правил: мастер показывает предупреждение, а не молча.
+  sheet.inventory[2].equipped = true; sheet.inventory[2].hand_slot = 'both';
+  sheet.inventory[1].equipped = true; sheet.inventory[1].hand_slot = 'off';
+  const conflict = E.slotsAudit(sheet);
+  assert.ok(conflict.bad >= 1);
+  assert.ok(conflict.checks.some(c => !c.ok && /Двуручное/.test(c.text)), JSON.stringify(conflict.checks));
+});

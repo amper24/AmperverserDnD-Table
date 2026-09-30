@@ -172,6 +172,21 @@
     const ok = await LevelUp.open({ sheet: s, campaignId: ch.campaign_id, onApply: () => { dirty = true; } });
     if (ok) { s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); } else if (dirty) { save(); }
   }
+  /// Слоты по правилам D&D: что надето и какие правила соблюдены (или нарушены).
+  function slotsSection() {
+    const audit = Equipment.slotsAudit(s);
+    const cell = row => {
+      const names = row.items.map(it => it.name).filter(Boolean);
+      return el('div', { class: 'slot-cell' + (names.length ? ' filled' : ''), title: names.length ? names.join(', ') : 'пусто' },
+        el('small', {}, row.label), el('b', {}, names.length ? names.join(', ') : '—'));
+    };
+    return el('section', { class: 'card slots-panel' },
+      el('div', { class: 'slots-head' },
+        el('h3', {}, 'Слоты по правилам'),
+        el('span', { class: 'slots-mark' + (audit.bad ? ' bad' : '') + (audit.attuned >= 3 ? ' full' : '') }, audit.bad ? `${audit.bad} нарушений` : `настройка ${audit.attuned}/3`)),
+      el('div', { class: 'slots-grid' }, ...audit.rows.map(cell)),
+      el('div', { class: 'slots-checks' }, ...audit.checks.map(c => el('span', { class: 'slot-check' + (c.ok ? ' ok' : ' bad'), title: c.detail }, (c.ok ? '✓ ' : '⚠ ') + c.text))));
+  }
   function handsSection() {
     const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
     return el('section', { class: 'equipment-hands' }, ...['main', 'off'].map(key => {
@@ -250,21 +265,48 @@
     if (!readonly) portrait.addEventListener('click', () => pf.click());
     const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: 'token', label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
     const inp = (key, ph, type = 'text') => el('input', { value: s[key] ?? '', placeholder: ph, type, disabled: dis(), onchange: e => { s[key] = type === 'number' ? +e.target.value : e.target.value; if (key === 'level') s.proficiency_bonus = Math.ceil(1 + s.level / 4); save(); if (['level', 'name'].includes(key)) render(); } });
-    const raceModule = (s.modules || []).slice().reverse().find(m => m.category === 'race' && m.snapshot);
+    const moduleOf = category => (s.modules || []).slice().reverse().find(m => m.category === category && m.snapshot);
+    /// Список или строка → массив строк: языки, инструменты и навыки в записях бывают в обоих видах.
+    const asList = value => Array.isArray(value) ? value.filter(x => typeof x === 'string' && x.trim()) : typeof value === 'string' && value.trim() ? [value] : [];
+    const skillLabel = name => (SKILLS.find(([k, n]) => k === name || n.toLowerCase() === String(name).toLowerCase()) || [])[1] || name;
+    /// Компактный блок в шапке листа: раса, класс, подкласс, предыстория, мировоззрение.
+    const headBlock = (cat, o) => el('div', { class: 'dropslot mod-block' + (o.filled ? ' filled' : ''), 'data-cat': cat || null, role: 'group', 'aria-label': 'Блок: ' + o.label, title: o.hint || '' },
+      el('span', { class: 'mod-block-head' }, el('b', {}, o.label), cat ? el('span', { class: 'mod-block-drop', 'aria-hidden': 'true' }, '⤓') : null),
+      o.control || (o.value ? el('strong', { class: 'mod-block-name' }, o.value) : el('span', { class: 'mod-block-empty' }, o.empty || 'Не выбрано')),
+      o.facts ? el('small', { class: 'mod-block-facts', title: o.factsTitle || o.facts }, o.facts) : null,
+      o.note ? el('small', { class: 'mod-block-note' }, o.note) : null);
+    const blockInput = (key, label, placeholder) => el('input', { class: 'mod-block-input', value: s[key] || '', placeholder, 'aria-label': label, disabled: dis(), onchange: e => { s[key] = e.target.value; save(); render(); } });
     const alignmentOptions = window.CharacterBuilder?.ALIGNMENTS || ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
-    const alignmentSelect = el('select', { 'aria-label': 'Мировоззрение', disabled: dis(), onchange: e => { s.alignment = e.target.value; save(); } },
+    const alignmentSelect = el('select', { class: 'mod-block-select', 'aria-label': 'Мировоззрение', disabled: dis(), onchange: e => { s.alignment = e.target.value; save(); } },
       ...(!alignmentOptions.includes(s.alignment || '') ? [el('option', { value: s.alignment, selected: '' }, 'Текущее: ' + s.alignment)] : []),
       ...alignmentOptions.map(value => el('option', { value, selected: (s.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
-    const raceData = raceModule?.snapshot?.data || {};
-    const raceFacts = [raceData.speed && `Скорость ${raceData.speed} фт.`, ...(Array.isArray(raceData.languages) ? raceData.languages : raceData.languages ? [raceData.languages] : [])].filter(Boolean).join(' · ');
-    const raceBlock = el('div', { class: 'dropslot race-module-block', 'data-cat': 'race', role: 'group', 'aria-label': 'Блок расы', title: 'Раса — неизменяемый текстовый снимок модуля справочника. Заменить можно другим блоком расы.' },
-      el('span', { class: 'race-module-badge' }, 'БЛОК СПРАВОЧНИКА ⤓'),
-      el('strong', {}, s.race || 'Перетащите блок расы из справочника'),
-      raceFacts ? el('small', { class: 'race-module-facts' }, raceFacts) : null,
-      el('small', { class: 'muted' }, raceModule ? `Зафиксированный снимок · ${raceModule.source || raceModule.snapshot.source || 'справочник'}` : s.race ? 'Старая запись без связи с модулем — перетащите блок расы, чтобы зафиксировать источник.' : 'Раса подключается только блоком, свободный ввод отключён.'));
+    const raceModule = moduleOf('race'), classModule = moduleOf('class'), bgModule = moduleOf('background');
+    const raceData = raceModule?.snapshot?.data || {}, classData = classModule?.snapshot?.data || {}, bgData = bgModule?.snapshot?.data || {};
+    const raceFacts = [raceData.speed && `скорость ${raceData.speed} фт.`, asList(raceData.languages).slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+    const classFacts = [`уровень ${s.level || 1}`, classData.hit_die && `кость хитов ${classData.hit_die}`, asList(classData.saves).length ? 'спасброски: ' + asList(classData.saves).map(k => ABIL[k] || k).join(', ') : ''].filter(Boolean).join(' · ');
+    const bgSkills = asList(bgData.skills).map(skillLabel), bgTools = asList(bgData.tools);
+    const bgFacts = [bgSkills.length ? 'навыки: ' + bgSkills.join(', ') : '', bgTools.length ? '+ инструменты: ' + bgTools.join(', ') : ''].filter(Boolean).join(' · ');
+    const subclassNames = asList(classData.subclasses), subclassListId = 'subclass-options-' + id;
+    const subclassControl = el('span', { class: 'mod-block-field' },
+      el('input', { class: 'mod-block-input', list: subclassNames.length ? subclassListId : null, value: s.subclass || '', placeholder: 'из класса или своё', 'aria-label': 'Подкласс', disabled: dis(), onchange: e => { s.subclass = e.target.value; save(); } }),
+      subclassNames.length ? el('datalist', { id: subclassListId }, ...subclassNames.map(n => el('option', { value: n }))) : null);
+    const blocks = el('div', { class: 'sheet-head-blocks' },
+      headBlock('race', { label: 'Раса', filled: !!s.race, value: s.race, empty: 'перетащите блок',
+        facts: raceFacts, note: raceModule ? `снимок · ${raceModule.source || raceModule.snapshot.source || 'справочник'}` : s.race ? 'старая запись без связи с модулем' : 'подключается блоком из справочника',
+        hint: 'Раса — снимок модуля справочника. Перетащите другой блок расы, чтобы заменить.' }),
+      headBlock('class', { label: 'Класс', filled: !!s.class, control: blockInput('class', 'Класс', 'перетащите или впишите'),
+        facts: classFacts, note: classModule ? `снимок · ${classModule.source || 'справочник'}` : 'перетащите блок класса из справочника',
+        hint: 'Класс — блок справочника: перетащите запись, чтобы зафиксировать источник, или впишите название.' }),
+      headBlock(null, { label: 'Подкласс', filled: !!s.subclass, control: subclassControl,
+        facts: subclassNames.length ? `в классе: ${subclassNames.slice(0, 3).join(', ')}${subclassNames.length > 3 ? '…' : ''}` : '',
+        hint: 'Подкласс появляется на 2–3 уровне класса; свой вариант можно вписать.' }),
+      headBlock('background', { label: 'Предыстория', filled: !!s.background, control: blockInput('background', 'Предыстория', 'перетащите или впишите'),
+        facts: bgFacts, factsTitle: bgFacts, note: bgModule ? `снимок · ${bgModule.source || 'справочник'}` : 'перетащите блок предыстории из справочника',
+        hint: 'Предыстория — блок справочника: даёт навыки, инструменты и снаряжение.' }),
+      headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentSelect, hint: 'Мировоззрение влияет только на отыгрыш.' }));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
       el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number'), readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'small lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲ Повысить')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
-      el('div', { class: 'row' }, raceBlock, el('div', { class: 'dropslot', 'data-cat': 'class' }, el('label', {}, 'Класс ⤓'), inp('class', 'перетащите')), el('div', {}, el('label', {}, 'Подкласс'), inp('subclass', '')), el('div', { class: 'dropslot', 'data-cat': 'background' }, el('label', {}, 'Предыстория ⤓'), inp('background', '')), el('div', {}, el('label', {}, 'Мировоззрение'), alignmentSelect))));
+      blocks));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
@@ -295,16 +337,21 @@
 
     const c2 = el('div');
     const hp = s.hp;
+    /// Вдохновение: заметная плитка вместо галочки — видно состояние и понятно, что делать.
+    const toggleInspiration = () => { if (readonly) return; s.inspiration = !s.inspiration; save(); render(); };
+    const inspirationTile = el('div', { class: 'card stat-insp' + (s.inspiration ? ' on' : ''), role: 'button', tabindex: '0', title: s.inspiration ? 'Вдохновение есть: потратьте его на бросок с преимуществом' : 'Отметьте, когда мастер дал вдохновение', onclick: toggleInspiration,
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInspiration(); } } },
+      el('label', {}, 'Вдохновение'), el('b', {}, s.inspiration ? '✦ есть' : 'нет'), el('small', { class: 'muted' }, s.inspiration ? 'преимущество на бросок' : 'выдаёт мастер'));
     c2.append(el('div', { class: 'stat3' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
-      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
+      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } })),
+      inspirationTile));
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
       el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'), el('button', { class: 'small', onclick: () => roll(hp.hit_dice + fmtMod(abMod('con')), 'кость хитов') }, 'Кость хитов')),
-      el('div', { class: 'row', style: 'margin-top:6px;font-size:12px' }, el('span', {}, 'Спасброски от смерти: ', ...[0, 1, 2].map(i => el('span', { class: 'pip', style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--ok);margin:0 2px;cursor:pointer;background:' + (s.death_saves.success > i ? 'var(--ok)' : 'transparent'), onclick: () => { s.death_saves.success = s.death_saves.success > i ? i : i + 1; save(); render(); } })), ' / ', ...[0, 1, 2].map(i => el('span', { style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--danger);margin:0 2px;cursor:pointer;background:' + (s.death_saves.failure > i ? 'var(--danger)' : 'transparent'), onclick: () => { s.death_saves.failure = s.death_saves.failure > i ? i : i + 1; save(); render(); } }))),
-        el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.inspiration ? '' : null, onchange: e => { s.inspiration = e.target.checked; save(); } }), ' Вдохновение'))));
+      el('div', { class: 'row', style: 'margin-top:6px;font-size:12px' }, el('span', {}, 'Спасброски от смерти: ', ...[0, 1, 2].map(i => el('span', { class: 'pip', style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--ok);margin:0 2px;cursor:pointer;background:' + (s.death_saves.success > i ? 'var(--ok)' : 'transparent'), onclick: () => { s.death_saves.success = s.death_saves.success > i ? i : i + 1; save(); render(); } })), ' / ', ...[0, 1, 2].map(i => el('span', { style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--danger);margin:0 2px;cursor:pointer;background:' + (s.death_saves.failure > i ? 'var(--danger)' : 'transparent'), onclick: () => { s.death_saves.failure = s.death_saves.failure > i ? i : i + 1; save(); render(); } }))))));
 
     // Действия: экипированные предметы с кнопками + подготовленные заклинания с атаками + ручные атаки
     const act = el('div', { class: 'card dropslot', 'data-cat': 'item', style: 'margin-top:8px' }, h3n('Действия ⤓', 'actions'), noteLine('actions'));
@@ -321,7 +368,7 @@
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: false, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
-    c2.append(handPanel(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
+    c2.append(handPanel(), slotsSection(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
     // Кратко: экипировка и настройка
     const wearing = s.inventory.filter(it => it.equipped);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),

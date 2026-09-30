@@ -1,6 +1,6 @@
 [package]
 name = "dnd-table"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2021"
 description = "Amperverser DnD Table — виртуальный стол для D&D"
 license = "MIT"
