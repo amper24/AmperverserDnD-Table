@@ -12,7 +12,7 @@
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
-  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null };
+  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', spellLevel: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null };
 
   // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
   function noteBtn(key, title) {
@@ -44,17 +44,24 @@
     s.proficiency_bonus = num(s.proficiency_bonus, Math.ceil(1 + s.level / 4));
     if (s.classes !== undefined) { const list = Array.isArray(s.classes) ? s.classes.filter(c => c && typeof c === 'object' && String(c.name || '').trim() && Number(c.level) > 0) : []; if (list.length) s.classes = list; else delete s.classes; }
     s.abilities = obj(s.abilities); for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) s.abilities[k] = num(s.abilities[k], 10);
-    s.hp = obj(s.hp); s.hp.max = num(s.hp.max, 10); s.hp.current = num(s.hp.current, s.hp.max); s.hp.temp = num(s.hp.temp, 0); if (typeof s.hp.hit_dice !== 'string' || !s.hp.hit_dice) s.hp.hit_dice = `${s.level}d8`;
+    s.hp = obj(s.hp); s.hp.max = num(s.hp.max, 10); s.hp.current = num(s.hp.current, s.hp.max); s.hp.temp = num(s.hp.temp, 0); if (typeof s.hp.hit_dice !== 'string' || !s.hp.hit_dice) s.hp.hit_dice = `${s.level}d8`; s.hp.hit_dice_used = obj(s.hp.hit_dice_used); for (const k of Object.keys(s.hp.hit_dice_used)) s.hp.hit_dice_used[k] = num(s.hp.hit_dice_used[k], 0);
     for (const k of ['skills', 'expertise', 'saving_throws', 'conditions', 'attacks', 'inventory', 'features']) if (!Array.isArray(s[k])) s[k] = [];
     s.death_saves = obj(s.death_saves); s.death_saves.success = num(s.death_saves.success, 0); s.death_saves.failure = num(s.death_saves.failure ?? s.death_saves.fail, 0); delete s.death_saves.fail;
     s.currency = obj(s.currency); for (const k of ['pp', 'gp', 'ep', 'sp', 'cp']) s.currency[k] = num(s.currency[k], 0);
     s.traits = obj(s.traits); s.notes_by = obj(s.notes_by);
     s.spells = obj(s.spells); if (!Array.isArray(s.spells.known)) s.spells.known = []; s.spells.slots = obj(s.spells.slots); if (typeof s.spells.ability !== 'string' || !s.spells.ability) s.spells.ability = s.spells.ability ? String(s.spells.ability) : 'int';
-    for (const sl of Object.values(s.spells.slots)) { sl.max = num(sl.max, 0); sl.used = num(sl.used, 0); }
+    for (const sl of Object.values(s.spells.slots)) { sl.max = Math.max(0, Math.min(20, Math.floor(num(sl.max, 0)))); sl.used = Math.max(0, Math.min(sl.max, Math.floor(num(sl.used, 0)))); }
+    if (s.spells.pact_slots && typeof s.spells.pact_slots === 'object') { s.spells.pact_slots.max = Math.max(0, Math.min(20, Math.floor(num(s.spells.pact_slots.max, 0)))); s.spells.pact_slots.used = Math.max(0, Math.min(s.spells.pact_slots.max, Math.floor(num(s.spells.pact_slots.used, 0)))); s.spells.pact_slots.level = Math.max(1, Math.min(9, Math.floor(num(s.spells.pact_slots.level, 1)))); }
     s.inventory = s.inventory.filter(it => it && typeof it === 'object'); s.features = s.features.filter(f => f && typeof f === 'object'); s.spells.known = s.spells.known.filter(x => x && typeof x === 'object');
     for (const it of s.inventory) { it.qty = it.qty === null || it.qty === undefined ? undefined : num(it.qty, 1); if (it.uid) M.fillDefaults('item', it); if (it.name === null || it.name === '') it.name = 'Предмет'; }
     for (const f of s.features) if (f.uid) M.fillDefaults('feature', f);
-    for (const x of s.spells.known) if (x.uid) { M.fillDefaults('spell', x); x.level = num(x.level, 0); }
+    for (const x of s.spells.known) {
+      if (x.uid) M.fillDefaults('spell', x);
+      x.level = Math.max(0, Math.min(9, Math.floor(num(x.level, 0))));
+      if (!['slot', 'free', 'uses'].includes(x.cast_cost)) x.cast_cost = null;
+      x.use_cost = Math.max(1, Math.floor(num(x.use_cost, 1)));
+      if (x.uses && typeof x.uses === 'object') { x.uses.max = Math.max(0, Math.floor(num(x.uses.max, 0))); x.uses.cur = Math.max(0, Math.min(x.uses.max, Math.floor(num(x.uses.cur, x.uses.max)))); }
+    }
   }
   function migrate() {
     normalizeSheet();
@@ -65,7 +72,7 @@
   }
   migrate();
 
-  let saveTimer, dirty = false, saving = null, inventoryBusy = false, pendingOperation = null;
+  let saveTimer, dirty = false, saving = null, inventoryBusy = false, pendingOperation = null, restBusy = false;
   const status = el('span', { class: 'muted', style: 'font-size:11px' });
   async function flush() {
     clearTimeout(saveTimer);
@@ -115,9 +122,10 @@
       if(r.effects?.length) toast(r.effects.map(e=>({heal:'Лечение',temp_hp:'Временные хиты',damage:'Урон',grant_item:'Выдано',condition:'Состояние',adjust:'Показатель',manual:'Правило подтверждено'}[e.kind]||e.kind)+(e.amount!==undefined?' · '+e.amount:'')+(e.name?' '+e.name:'')).join(' / '),6500);
       if (r.spent?.length) toast(r.spent.map(x => `${x.name}: −${x.amount} (осталось ${x.remaining})`).join(' · '));
       else toast(['use','program'].includes(operation?.op) ? 'Использовано · без расхода' : 'Инвентарь обновлён');
+      return response;
     } catch (e) {
       if (e.status && e.status < 500) pendingOperation = null;
-      toast(e.message, 6500); status.textContent = e.message;
+      toast(e.message, 6500); status.textContent = e.message; return null;
     } finally { inventoryBusy = false; render(); }
   }
   window.PROGRAM_USE = ref => {
@@ -138,9 +146,10 @@
       const yes=await modal(doc.name+' · '+p.name,el('div',{},targetNeeded?el('label',{},'Цель (нужны права на изменение листа)',targetSel):null,...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расходы и эффекты применятся одной операцией. Сопротивления, иммунитеты, концентрация и дополнительные правила не вычисляются автоматически.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
       if(!yes)return;target=targetSel.value;
     }
-    await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:target,acknowledged:manual.length>0,...opts});
+    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:target,acknowledged:manual.length>0,...opts});
   }
-  const docActions=(doc,kind)=>M.actionButtons(doc,ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
+  const docActions=(doc,kind,context)=>M.actionButtons(doc,context||ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
+  const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
   const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
   function handPanel() {
     return el('div', { class: 'equipment-panel' }, handsSection(), wornSection(), acLine());
@@ -171,21 +180,6 @@
     await flush();
     const ok = await LevelUp.open({ sheet: s, campaignId: ch.campaign_id, onApply: () => { dirty = true; } });
     if (ok) { s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); } else if (dirty) { save(); }
-  }
-  /// Слоты по правилам D&D: что надето и какие правила соблюдены (или нарушены).
-  function slotsSection() {
-    const audit = Equipment.slotsAudit(s);
-    const cell = row => {
-      const names = row.items.map(it => it.name).filter(Boolean);
-      return el('div', { class: 'slot-cell' + (names.length ? ' filled' : ''), title: names.length ? names.join(', ') : 'пусто' },
-        el('small', {}, row.label), el('b', {}, names.length ? names.join(', ') : '—'));
-    };
-    return el('section', { class: 'card slots-panel' },
-      el('div', { class: 'slots-head' },
-        el('h3', {}, 'Слоты по правилам'),
-        el('span', { class: 'slots-mark' + (audit.bad ? ' bad' : '') + (audit.attuned >= 3 ? ' full' : '') }, audit.bad ? `${audit.bad} нарушений` : `настройка ${audit.attuned}/3`)),
-      el('div', { class: 'slots-grid' }, ...audit.rows.map(cell)),
-      el('div', { class: 'slots-checks' }, ...audit.checks.map(c => el('span', { class: 'slot-check' + (c.ok ? ' ok' : ' bad'), title: c.detail }, (c.ok ? '✓ ' : '⚠ ') + c.text))));
   }
   function handsSection() {
     const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
@@ -249,6 +243,74 @@
     if (!readonly) bindDrops(root);
   }
 
+  function hitDiceCounts() {
+    const counts = {}, limit = Math.max(1, Math.min(20, Number(s.level) || 1));
+    let total = 0;
+    for (const match of String(s.hp.hit_dice || '').matchAll(/(\d+)d(\d+)/gi)) {
+      const die = Number(match[2]), count = Math.max(0, Number(match[1]) || 0);
+      if (!Number.isSafeInteger(die) || die < 1 || total >= limit) continue;
+      const accepted = Math.min(count, limit - total);
+      counts[die] = (counts[die] || 0) + accepted; total += accepted;
+    }
+    return counts;
+  }
+  async function shortRest() {
+    if (readonly || inventoryBusy || restBusy) return;
+    restBusy = true;
+    try {
+    const counts = hitDiceCounts(), used = s.hp.hit_dice_used || {}, available = Object.entries(counts).map(([die, max]) => [Number(die), Math.max(0, max - (Number(used[die]) || 0))]).filter(([, n]) => n > 0);
+    let spend = null;
+    if (available.length && s.hp.current < s.hp.max) {
+      const die = el('select', {}, ...available.map(([size, n]) => el('option', { value: size }, `d${size} · доступно ${n}`)));
+      const count = el('input', { type: 'number', min: 1, max: available[0][1], value: 1, style: 'width:80px' });
+      const rolled = el('input', { type: 'number', min: 0, value: '', placeholder: 'итог лечения', style: 'width:100%' });
+      const formula = el('p', { class: 'muted small' });
+      const update = () => { const size = +die.value, max = Math.min(20, available.find(x => x[0] === size)?.[1] || 1); count.max = max; count.value = Math.min(max, Math.max(1, Math.floor(+count.value) || 1)); formula.textContent = `Бросок: ${count.value}d${size}, затем добавьте ${count.value} × мод. Телосложения (${fmtMod(abMod('con'))}).` + (rolled.value ? ` Результат: ${rolled.value}.` : ''); };
+      const rollHitDice = () => {
+        const size = +die.value, availableCount = available.find(x => x[0] === size)?.[1] || 0;
+        const n = Math.min(20, availableCount, Math.max(0, Math.floor(Number(count.value) || 0)));
+        if (!Number.isInteger(size) || size < 1 || size > 100 || n < 1) return toast('Укажите допустимое число доступных костей хитов.', 3000);
+        count.value = String(n);
+        const con = abMod('con'), values = Array.from({ length: n }, () => DiceEngine.evaluate(`1d${size}`).total);
+        const results = values.map((value, index) => { const healing = Math.max(0, value + con); const parts = [{ term: `1d${size}`, sides: size, rolls: [value], kept: [value], kept_indices: [0] }]; if (con) parts.push({ term: con > 0 ? `+${con}` : String(con), value: con }); return { name: `Кость хитов ${index + 1}`, expr: `1d${size}${fmtMod(con)}`, total: healing, kind: 'heal', parts }; });
+        rolled.value = String(results.reduce((sum, item) => sum + item.total, 0));
+        DiceEngine.present({ type: 'multi', kind: 'multi', label: `${ch.name}: короткий отдых`, rolls: results }, { local: true }); update();
+      };
+      die.addEventListener('change', update); count.addEventListener('input', update); update();
+      const picked = await modal('Короткий отдых · кости хитов', el('div', {}, el('p', { class: 'muted small' }, 'Выберите тип и количество костей. Можно бросить их здесь или ввести результат своего броска; кость хитов спишется после подтверждения.'), el('div', { class: 'row' }, el('label', {}, 'Кость', die), el('label', {}, 'Сколько', count), el('button', { class: 'small', type: 'button', onclick: rollHitDice }, 'Бросить')), formula, el('label', { class: 'field' }, 'Итог лечения', rolled)), [{ label: 'Отдохнуть', cls: 'primary', fn: () => ({ die: +die.value, count: +count.value, healing: +rolled.value }) }], { wide: true });
+      if (picked === null) return;
+      const max = available.find(x => x[0] === picked.die)?.[1] || 0, con = abMod('con');
+      const minHeal = picked.count * Math.max(0, 1 + con), maxHeal = picked.count * Math.max(0, picked.die + con);
+      if (!Number.isInteger(picked.count) || picked.count < 1 || picked.count > max || !Number.isInteger(picked.healing) || picked.healing < minHeal || picked.healing > maxHeal) return toast(`Проверьте количество костей и лечение (${minHeal}–${maxHeal}).`, 4000);
+      spend = picked;
+    } else {
+      const yes = await modal('Короткий отдых', el('p', { class: 'muted small' }, 'Восстановятся умения с восстановлением после короткого отдыха и ячейки Магии договора. Обычные ячейки не восстановятся.'), [{ label: 'Завершить отдых', cls: 'primary', fn: () => true }]); if (yes === null) return;
+    }
+    if (spend) {
+      const spentDice = SpellRules.spendHitDice(s.hp.hit_dice_used || {}, counts, spend.die, spend.count);
+      if (!spentDice.ok) return toast(spentDice.reason, 4000);
+      s.hp.hit_dice_used = spentDice.used;
+      s.hp.current = Math.min(s.hp.max, s.hp.current + spend.healing);
+    }
+    const restored = SpellRules.restore(s.spells, s.features, 'short');
+    save(); render();
+    const details = [spend && `${spend.count}d${spend.die}: +${spend.healing} хитов`, restored.pactSlots && 'восстановлены ячейки Договора', restored.features && `восстановлены умения (${restored.features})`, restored.spellUses && `заряды заклинаний (${restored.spellUses})`].filter(Boolean);
+    toast('Короткий отдых завершён' + (details.length ? ': ' + details.join(' · ') : '.'), 4500);
+    } finally { restBusy = false; }
+  }
+  async function longRest() {
+    if (readonly || inventoryBusy || restBusy) return;
+    restBusy = true;
+    try {
+    const yes = await modal('Долгий отдых', el('p', { class: 'muted small' }, 'Восстановятся хиты, все ячейки и умения с восстановлением после короткого или долгого отдыха. Вернётся количество потраченных костей хитов до половины общего запаса (округление вниз, минимум одна).'), [{ label: 'Завершить отдых', cls: 'primary', fn: () => true }]); if (yes === null) return;
+    const restored = SpellRules.restore(s.spells, s.features, 'long');
+    const recoveredDice = SpellRules.recoverHitDice(s.hp.hit_dice_used || {}, hitDiceCounts());
+    s.hp.hit_dice_used = recoveredDice.used; s.hp.current = s.hp.max;
+    s.death_saves = { success: 0, failure: 0 };
+    save(); render();
+    toast(`Долгий отдых завершён: хиты восстановлены${restored.slots || restored.pactSlots ? ', ячейки восстановлены' : ''}${restored.features ? `, умения: ${restored.features}` : ''}${restored.spellUses ? `, заряды заклинаний: ${restored.spellUses}` : ''}.`, 4500);
+    } finally { restBusy = false; }
+  }
   function topBar() {
     const portrait = el('div', { class: 'portrait', title: 'Загрузить портрет' }, icon('user', 40));
     if (ch.portrait_asset_id) assetURL(ch.portrait_asset_id).then(u => { portrait.innerHTML = ''; portrait.append(el('img', { src: u })); });
@@ -343,7 +405,14 @@
 
   // ---------- вкладка Основное ----------
   function mainTab() {
+    const root = el('div', { class: 'sheet-main-view' });
     const cols = el('div', { class: 'cols sheet-main' });
+    const restActions = readonly ? null : el('div', { class: 'rest-actions' },
+      el('button', { class: 'rest-action', type: 'button', title: 'Восстановить умения короткого отдыха и потратить кости хитов', onclick: shortRest }, 'Короткий отдых'),
+      el('button', { class: 'rest-action primary', type: 'button', title: 'Восстановить хиты, ячейки, умения и часть костей хитов', onclick: longRest }, 'Долгий отдых'));
+    root.append(el('section', { class: 'card rest-panel', 'aria-label': 'Отдых персонажа' },
+      el('div', { class: 'rest-panel-copy' }, el('h3', {}, 'Отдых'), el('p', { class: 'muted small' }, 'Короткий: кости хитов и способности. Долгий: хиты, ячейки и восстановление ресурсов.')),
+      restActions));
     const c1 = el('div', { class: 'sheet-proficiencies' });
     const abil = el('div', { class: 'abil' });
     for (const [k, name] of Object.entries(ABIL)) {
@@ -360,24 +429,24 @@
 
     const c2 = el('div');
     const hp = s.hp;
-    /// Вдохновение: широкая заметная полоса вместо галочки — состояние видно сразу, клик переключает.
+    const hitCounts = hitDiceCounts(), hitTotal = Object.values(hitCounts).reduce((sum, value) => sum + value, 0), hitSpent = Object.values(hp.hit_dice_used || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+    /// Вдохновение: компактная квадратная кнопка со звездой; состояние сохраняется в листе.
     const toggleInspiration = () => { if (readonly) return; s.inspiration = !s.inspiration; save(); render(); };
-    const inspirationTile = el('div', { class: 'card insp-banner' + (s.inspiration ? ' on' : ''), role: 'button', tabindex: '0',
-      title: s.inspiration ? 'Вдохновение есть: потратьте его на один бросок d20 с преимуществом' : 'Мастер выдаёт вдохновение за отличную отыгровку — клик, чтобы отметить', 'aria-pressed': String(!!s.inspiration),
-      onclick: toggleInspiration, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInspiration(); } } },
-      el('span', { class: 'insp-star', 'aria-hidden': 'true' }, '✦'),
-      el('span', { class: 'insp-body' }, el('b', {}, 'Вдохновение'),
-        el('small', { class: 'muted' }, s.inspiration ? 'Есть — один бросок d20 с преимуществом' : 'Нет — выдаёт мастер за хорошую отыгровку')),
-      el('span', { class: 'insp-state' }, s.inspiration ? '✓ есть' : 'выдаёт мастер'));
+    const inspirationTile = el('button', { type: 'button', class: 'card insp-square' + (s.inspiration ? ' on' : ''),
+      title: s.inspiration ? 'Потратьте вдохновение на один бросок d20 с преимуществом' : 'Нажмите, чтобы отметить вдохновение, выданное мастером',
+      'aria-label': s.inspiration ? 'Вдохновение есть; нажмите, чтобы снять отметку' : 'Вдохновения нет; нажмите, чтобы отметить',
+      'aria-pressed': String(!!s.inspiration), disabled: readonly ? '' : null, onclick: toggleInspiration },
+      el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'),
+      el('span', { class: 'insp-square-label' }, 'Вдохновение'));
     c2.append(el('div', { class: 'stat3' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
       el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
     c2.append(inspirationTile);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
-      el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', {}, 'Кости хитов'), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
+      el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', { title: `Потрачено ${hitSpent} из ${hitTotal}` }, `Кости хитов ${Math.max(0, hitTotal - hitSpent)}/${hitTotal}`), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
-      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'), el('button', { class: 'small', onclick: () => roll(hp.hit_dice + fmtMod(abMod('con')), 'кость хитов') }, 'Кость хитов')),
+      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение')),
       el('div', { class: 'row', style: 'margin-top:6px;font-size:12px' }, el('span', {}, 'Спасброски от смерти: ', ...[0, 1, 2].map(i => el('span', { class: 'pip', style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--ok);margin:0 2px;cursor:pointer;background:' + (s.death_saves.success > i ? 'var(--ok)' : 'transparent'), onclick: () => { s.death_saves.success = s.death_saves.success > i ? i : i + 1; save(); render(); } })), ' / ', ...[0, 1, 2].map(i => el('span', { style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--danger);margin:0 2px;cursor:pointer;background:' + (s.death_saves.failure > i ? 'var(--danger)' : 'transparent'), onclick: () => { s.death_saves.failure = s.death_saves.failure > i ? i : i + 1; save(); render(); } }))))));
 
     // Действия: экипированные предметы с кнопками + подготовленные заклинания с атаками + ручные атаки
@@ -385,8 +454,8 @@
     const c = ctx();
     const eq = s.inventory.filter(it => it.equipped && (it.actions || []).some(a => a.roll));
     eq.forEach(it => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, M.itemIcon(it)), el('b', { style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, it.name), itemActions(it))));
-    const castable = s.spells.known.filter(sp => (sp.prepared || sp.level === 0) && (sp.actions || []).some(a => a.roll));
-    castable.forEach(sp => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, icon('star', 18)), el('b', {}, sp.name), docActions(sp, 'spell'))));
+    const castable = s.spells.known.filter(sp => (sp.casting_mode === 'known' || sp.prepared || sp.level === 0) && (sp.actions || []).some(a => a.roll));
+    castable.forEach(sp => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, icon('star', 18)), el('b', {}, sp.name), spellActions(sp))));
     if (s.attacks.length) act.append(el('div', { class: 'atk-row muted', style: 'font-size:11px' }, el('span', {}, 'Ручные атаки'), el('span', {}, 'Атака'), el('span', {}, 'Урон'), el('span'), el('span')));
     s.attacks.forEach((a, i) => act.append(el('div', { class: 'atk-row' },
       el('input', { value: a.name, disabled: dis(), onchange: e => { a.name = e.target.value; save(); } }), el('input', { value: a.bonus, disabled: dis(), onchange: e => { a.bonus = e.target.value; save(); } }), el('input', { value: a.damage, disabled: dis(), onchange: e => { a.damage = e.target.value; save(); } }),
@@ -395,17 +464,18 @@
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: false, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
-    c2.append(handPanel(), slotsSection(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
+    c2.append(handPanel(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
     // Кратко: экипировка и настройка
     const wearing = s.inventory.filter(it => it.equipped);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
-      el('div', { class: 'muted small', style: 'margin-top:4px' }, `Настроено: ${s.inventory.filter(i => i.attuned).length}/3 · Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт`)));
+      el('div', { class: 'muted small', style: 'margin-top:4px' }, `Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт`)));
     const favItems = s.inventory.filter(i => i.favorite), favSpells = s.spells.known.filter(x => x.favorite);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, icon('star', 14), ' Избранное'), favItems.length || favSpells.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' },
       ...favItems.map(it => el('span', { class: 'chip', style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.equipped ? ' ✓' : ''))),
       ...favSpells.map(x => el('span', { class: 'chip', style: 'cursor:pointer', title: 'Открыть в заклинаниях', onclick: () => { tab = 'spells'; ui.open.add(x.uid); render(); } }, '✦ ' + x.name))) : el('span', { class: 'muted small' }, 'Отметьте звёздочкой предметы и заклинания — они соберутся здесь.')));
     cols.append(c1, c2);
-    return cols;
+    root.append(cols);
+    return root;
   }
   const totalWeight = () => Math.round(s.inventory.reduce((a, b) => a + (+b.weight || 0) * (b.qty ?? 1), 0) * 10) / 10;
 
@@ -505,29 +575,43 @@
     root.append(el('div', { class: 'inv-bar' },
       el('label', { style: 'flex:0;white-space:nowrap' }, 'Хар-ка ', el('select', { style: 'width:auto;padding:4px', disabled: dis(), onchange: e => { sp.ability = e.target.value; save(); render(); } }, ...['int', 'wis', 'cha'].map(k => el('option', { value: k, selected: spAb === k ? '' : null }, ABIL[k])))),
       el('span', { class: 'chip' }, 'СЛ ', el('b', {}, c.dc)), el('span', { class: 'chip', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(c.spell), 'атака заклинанием', e, 'attack') }, 'Атака ', el('b', {}, fmtMod(c.spell))),
-      el('input', { placeholder: 'Поиск', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
-      el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.onlyPrepared ? '' : null, onchange: e => { ui.onlyPrepared = e.target.checked; draw(); } }), ' только подготовленные'),
+      el('input', { placeholder: 'Поиск по названию и описанию', value: ui.spellQ, oninput: e => { ui.spellQ = e.target.value; draw(); } }),
+      el('select', { class: 'small spell-level-filter', value: ui.spellLevel, title: 'Фильтр по кругу', onchange: e => { ui.spellLevel = e.target.value; draw(); } }, el('option', { value: '' }, 'Все круги'), ...Array.from({ length: 10 }, (_, i) => el('option', { value: String(i), selected: ui.spellLevel === String(i) ? '' : null }, i === 0 ? 'Заговоры' : `${i} круг`))),
+      el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.onlyPrepared ? '' : null, onchange: e => { ui.onlyPrepared = e.target.checked; draw(); } }), ' доступные (подготовленные и известные)'),
       el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.spellFav ? '' : null, onchange: e => { ui.spellFav = e.target.checked; draw(); } }), ' ★ избранные'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const x = await M.editSpell(null,{inventory:s.inventory}); if (x) { sp.known.push(x); save(); render(); } } }, '+ Заклинание'),
       el('button', { class: 'small', onclick: () => toggleComp('spell') }, 'Справочник')));
-    const slots = el('div', { class: 'slots' });
+    const slots = el('div', { class: 'slots spell-slots' });
+    const slotRow = (label, sl, pool, level, extra = null) => {
+      const persist = () => { if (pool === 'pact_slots') sp.pact_slots = sl; else sp.slots[level] = sl; };
+      slots.append(el('div', { class: 'slot' + (sl.max ? '' : ' empty') + (pool === 'pact_slots' ? ' pact-slot' : '') },
+        el('b', { title: pool === 'pact_slots' ? 'Ячейки магии договора: восстанавливаются коротким или долгим отдыхом' : `${label}: восстанавливаются долгим отдыхом` }, label),
+        el('span', { class: 'pips' }, ...Array.from({ length: Math.min(20, sl.max) }, (_, i) => el('span', { class: 'pip' + (i >= sl.used ? ' on' : ''), role: readonly ? null : 'button', tabindex: readonly ? null : '0', title: i >= sl.used ? 'Потратить ячейку' : 'Вернуть ячейку', onclick: readonly ? null : () => { sl.used = i >= sl.used ? i + 1 : i; persist(); save(); render(); }, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } }))),
+        extra,
+        readonly ? null : el('input', { type: 'number', value: sl.max, min: 0, max: 20, title: 'Всего ячеек', 'aria-label': `${label}: всего ячеек`, onchange: e => { sl.max = Math.max(0, Math.min(20, +e.target.value || 0)); sl.used = Math.min(sl.used, sl.max); persist(); save(); render(); } })));
+    };
     for (let l = 1; l <= 9; l++) {
       const sl = sp.slots[l] || { max: 0, used: 0 }; if (!sl.max && readonly) continue;
-      slots.append(el('div', { class: 'slot' + (sl.max ? '' : ' empty') }, el('b', {}, l), el('span', { class: 'pips' }, ...Array.from({ length: sl.max }, (_, i) => el('span', { class: 'pip' + (i >= sl.used ? ' on' : ''), title: 'клик — потратить/вернуть', onclick: () => { sl.used = i >= sl.used ? i + 1 : i; sp.slots[l] = sl; save(); render(); } }))),
-        readonly ? null : el('input', { type: 'number', value: sl.max, min: 0, title: 'Всего ячеек', onchange: e => { sl.max = +e.target.value; sl.used = Math.min(sl.used, sl.max); sp.slots[l] = sl; save(); render(); } })));
+      slotRow(`${l} круг`, sl, 'slots', l);
     }
-    if (!readonly) slots.append(el('button', { class: 'small', title: 'Восстановить все ячейки (длинный отдых)', onclick: () => { for (const k in sp.slots) sp.slots[k].used = 0; save(); render(); } }, 'Долгий отдых'));
+    if (sp.pact_slots || !readonly) {
+      const pact = sp.pact_slots || { level: 1, max: 0, used: 0 };
+      const levelPick = readonly ? null : el('select', { 'aria-label': 'Круг ячейки Договора', title: 'Уровень ячейки Договора', onchange: e => { pact.level = +e.target.value; sp.pact_slots = pact; save(); render(); } }, ...Array.from({ length: 9 }, (_, i) => i + 1).map(l => el('option', { value: l, selected: pact.level === l ? '' : null }, `${l} кр.`)));
+      if (pact.max || !readonly) slotRow('Договор', pact, 'pact_slots', pact.level, levelPick);
+    }
+    slots.append(el('p', { class: 'muted small slot-rest-hint' }, 'Обычные ячейки — долгий отдых · ячейки Договора — короткий или долгий отдых.'));
     root.append(slots);
     const list = el('div');
     root.append(list);
     function draw() {
       list.innerHTML = '';
       const q = ui.spellQ.toLowerCase();
-      const arr = sp.known.filter(x => (!q || x.name.toLowerCase().includes(q) || (x.desc || '').toLowerCase().includes(q)) && (!ui.onlyPrepared || x.prepared || x.level === 0) && (!ui.spellFav || x.favorite));
+      const arr = sp.known.filter(x => (!q || x.name.toLowerCase().includes(q) || (x.desc || '').toLowerCase().includes(q)) && (!ui.spellLevel || String(Number(x.level) || 0) === ui.spellLevel) && (!ui.onlyPrepared || x.prepared || x.casting_mode === 'known' || x.level === 0 || (x.ritual && x.casting_mode === 'book')) && (!ui.spellFav || x.favorite));
       if (!arr.length) list.append(el('p', { class: 'muted small', style: 'padding:12px' }, 'Нет заклинаний. Перетащите из справочника или создайте своё.'));
       for (let l = 0; l <= 9; l++) {
         const lv = arr.filter(x => (x.level || 0) === l); if (!lv.length) continue;
-        list.append(el('h3', { class: 'inv-sec' }, l === 0 ? 'Заговоры' : `${l} круг`, el('span', { class: 'muted small' }, ` ${lv.length}`)));
+        const ready = lv.filter(x => l === 0 || x.casting_mode === 'known' || x.prepared || (x.ritual && x.casting_mode === 'book')).length;
+        list.append(el('h3', { class: 'inv-sec' }, l === 0 ? 'Заговоры' : `${l} круг`, el('span', { class: 'muted small' }, ` ${ready} доступно · ${lv.length} всего`)));
         const grid = el('div', { class: 'cards' });
         lv.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || a.name.localeCompare(b.name)).forEach(x => grid.append(spellCard(x)));
         list.append(grid);
@@ -538,20 +622,23 @@
   }
   function spellCard(x) {
     const c = ctx(), sp = s.spells;
+    const spellCtx = x.spell_ability && ['int', 'wis', 'cha'].includes(x.spell_ability)
+      ? M.ctxFromSheet({ ...s, spells: { ...s.spells, ability: x.spell_ability } }) : c;
     const open = ui.open.has(x.uid);
-    const card = el('div', { class: 'mcard spell' + (x.prepared || x.level === 0 ? ' equipped' : '') + (open ? ' open' : ''), draggable: 'true', style: '--rar:var(--accent)' });
+    const card = el('div', { class: 'mcard spell' + (x.prepared || x.casting_mode === 'known' || x.level === 0 ? ' equipped' : '') + (open ? ' open' : ''), draggable: 'true', style: '--rar:var(--accent)' });
     card.append(el('div', { class: 'mcard-head', onclick: () => { if (open) ui.open.delete(x.uid); else ui.open.add(x.uid); render(); } },
       el('span', { class: 'card-icon big' }, M.docIcon(sp, 'star', 22)),
-      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), noteBtn('spell:' + x.uid, x.name), el('div', { class: 'muted small' }, [x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
+      el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, x.name, x.concentration ? el('span', { class: 'badge', title: 'концентрация' }, 'К') : null, x.ritual ? el('span', { class: 'badge', title: 'ритуал' }, 'Р') : null), noteBtn('spell:' + x.uid, x.name), el('div', { class: 'muted small' }, [x.level === 0 ? 'Заговор · не тратит ячейку' : x.casting_mode === 'known' ? 'Известно · можно сотворить' : x.prepared ? 'Подготовлено' : 'Не подготовлено', x.cast_cost === 'free' && x.level > 0 ? 'без расхода ячейки' : x.cast_cost === 'uses' ? `${x.use_cost || 1} заряд(а) · ${x.uses?.cur ?? 0}/${x.uses?.max ?? 0}` : x.level > 0 && (x.cast_cost || 'slot') === 'slot' ? `${x.level} круг · ячейка ${x.level}+` : null, x.school, x.casting_time, x.range, x.duration].filter(Boolean).join(' · '))),
+      x.cast_cost === 'uses' && x.uses ? el('span', { class: 'spell-use-pips', title: `Заряды: ${x.uses.cur}/${x.uses.max}`, onclick: e => e.stopPropagation() }, readonly ? null : el('button', { class: 'tiny', 'aria-label': 'Убрать один заряд', disabled: x.uses.cur <= 0 ? '' : null, onclick: e => { e.stopPropagation(); x.uses.cur = Math.max(0, x.uses.cur - 1); save(); render(); } }, '−'), el('b', {}, `${x.uses.cur}/${x.uses.max}`), readonly ? null : el('button', { class: 'tiny', 'aria-label': 'Вернуть один заряд', disabled: x.uses.cur >= x.uses.max ? '' : null, onclick: e => { e.stopPropagation(); x.uses.cur = Math.min(x.uses.max, x.uses.cur + 1); save(); render(); } }, '+')) : null,
       readonly ? null : favButton(x),
-      x.level > 0 ? el('button', { class: 'tiny cast', title: 'Сотворить: тратит ячейку и отправляет карточку в чат', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')) : el('button', { class: 'tiny cast', title: 'В чат', onclick: e => { e.stopPropagation(); sendCard(x, 'spell'); } }, icon('chat')),
-      readonly || x.level === 0 ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
-    const acts = docActions(x, 'spell');
+      el('button', { class: 'tiny cast', disabled: readonly || (Number(x.level) > 0 && x.casting_mode !== 'known' && !x.prepared && !(x.ritual && x.casting_mode === 'book')) ? '' : null, title: Number(x.level) === 0 ? 'Сотворить заговор: без траты ячейки' : 'Сотворить: расход ячейки/зарядов применяется сразу', onclick: e => { e.stopPropagation(); cast(x); } }, icon('wand')),
+      readonly || x.level === 0 || x.casting_mode === 'known' ? null : el('button', { class: 'tiny eq' + (x.prepared ? ' on' : ''), title: x.prepared ? 'Подготовлено' : 'Не подготовлено', onclick: e => { e.stopPropagation(); x.prepared = !x.prepared; save(); render(); } }, icon('check', 12))));
+    const acts = spellActions(x, spellCtx);
     if (acts.children.length) card.append(acts);
     if (open) {
-      const body = el('div', { class: 'mcard-body' }, el('div', { class: 'muted small' }, [x.components, x.classes?.length ? 'Классы: ' + x.classes.join(', ') : null, x.source].filter(Boolean).join(' · ')));
+      const body = el('div', { class: 'mcard-body' }, el('div', { class: 'muted small' }, [x.components, x.spell_ability ? 'Характеристика: ' + (ABIL[x.spell_ability] || x.spell_ability) : null, x.classes?.length ? 'Классы: ' + x.classes.join(', ') : null, x.source].filter(Boolean).join(' · ')));
       if (noteLine('spell:' + x.uid)) body.append(noteLine('spell:' + x.uid));
-      if (x.desc) body.append(el('div', { class: 'card-desc' }, M.rich(x.desc, c, { prose:!!x.mechanics, prefix: `${ch.name}: ${x.name}` })));
+      if (x.desc) body.append(el('div', { class: 'card-desc' }, M.rich(x.desc, spellCtx, { prose:!!x.mechanics, prefix: `${ch.name}: ${x.name}` })));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' }, el('button', { class: 'small', onclick: () => sendCard(x, 'spell') }, 'В чат'));
       if (!readonly) menu.append(el('button', { class: 'small', onclick: async () => { const r = await M.editSpell(x,{inventory:s.inventory}); if (r) { Object.assign(x, r); save(); render(); } } }, 'Изменить'),
         el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { sp.known = sp.known.filter(y => y !== x); save(); render(); } }, icon('trash')));
@@ -561,14 +648,44 @@
     return card;
   }
   async function cast(x) {
-    if(x.mechanics){const p=x.mechanics.programs.find(p=>p.trigger==='use');if(p)return runProgram(x,'spell',p);return toast('Нет действия для сотворения. Добавьте его в конструкторе.');}
-    const sp = s.spells;
-    const avail = []; for (let l = x.level; l <= 9; l++) { const sl = sp.slots[l]; if (sl && sl.max - sl.used > 0) avail.push(l); }
-    if (!avail.length) { if (!confirm('Нет свободных ячеек. Всё равно сотворить?')) return; sendCard(x, 'spell'); return; }
-    let lvl = avail[0];
-    if (avail.length > 1) { const sel = el('select', {}, ...avail.map(l => el('option', { value: l }, `${l} круг (${sp.slots[l].max - sp.slots[l].used} свободно)`))); const ok = await modal(`Сотворить «${x.name}»`, el('div', { class: 'field' }, el('label', {}, 'Ячейка'), sel), [{ label: 'Сотворить', cls: 'primary', fn: () => +sel.value }]); if (!ok) return; lvl = ok; }
-    sp.slots[lvl].used++; save(); render();
-    M.sendCard({ ...M.toChatCard(x, 'spell'), owner: ch.name, meta: `${lvl} круг · ` + (M.toChatCard(x, 'spell').meta || '') });
+    if (readonly || inventoryBusy) return;
+    const canRitualFromBook = !!x.ritual && x.casting_mode === 'book';
+    if (Number(x.level) > 0 && x.casting_mode !== 'known' && !x.prepared && !canRitualFromBook) return toast('Это заклинание не подготовлено. Подготовьте его или выберите известное заклинание.', 4000);
+    const cost = SpellRules.castCost(x), sp = s.spells;
+    let choice = {};
+    if (cost === 'slot') {
+      const options = SpellRules.slotPool(sp, x).map(o => ({ ...o, key: `${o.pool}:${o.level}`, label: `${o.pool === 'pact_slots' ? 'Договор · ' : ''}${o.level} круг (${o.remaining} свободно)` }));
+      if (x.ritual) options.push({ pool: 'ritual', level: Number(x.level) || 0, key: 'ritual', label: 'Ритуал · без ячейки (длительное сотворение)' });
+      if (!options.length) return toast('Нет доступной ячейки нужного круга. Обычное заклинание без расхода не сотворяется.', 4500);
+      let selected = options[0];
+      if (options.length > 1) {
+        const pick = el('select', {}, ...options.map(o => el('option', { value: o.key }, o.label)));
+        const result = await modal(`Сотворить «${x.name}»`, el('div', { class: 'field' }, el('label', {}, 'Расход'), pick), [{ label: 'Сотворить', cls: 'primary', fn: () => pick.value }]);
+        if (!result) return;
+        selected = options.find(o => o.key === result); if (!selected) return;
+      }
+      choice = selected.pool === 'ritual' ? { ritual: true } : { pool: selected.pool, level: selected.level };
+    }
+    const copySpell = JSON.parse(JSON.stringify(x));
+    const check = SpellRules.spend(JSON.parse(JSON.stringify(sp)), copySpell, choice);
+    if (!check.ok) return toast(check.reason, 4000);
+    const program = x.mechanics?.programs?.find(p => p.trigger === 'use');
+    if (x.mechanics && !program) return toast('Для этого заклинания не настроено действие сотворения.');
+    if (program) {
+      const result = await runProgram(x, 'spell', program);
+      if (!result) return;
+      const live = s.spells.known.find(spell => spell.uid === x.uid) || x;
+      const paid = SpellRules.spend(s.spells, live, choice);
+      if (!paid.ok) return toast('Действие выполнено, но расход не удалось подтвердить: ' + paid.reason, 5000);
+      save(); render();
+      return;
+    }
+    const paid = SpellRules.spend(sp, x, choice);
+    if (!paid.ok) return toast(paid.reason, 4000);
+    save(); render();
+    const card = M.toChatCard(x, 'spell');
+    const meta = paid.cost === 'slots' ? `${paid.level} круг · ячейка` : paid.cost === 'pact_slots' ? `${paid.level} круг · ячейка Договора` : paid.cost === 'ritual' ? 'Ритуал · без ячейки' : paid.cost === 'uses' ? `−${paid.amount} заряд(а)` : 'Без расхода ячейки';
+    M.sendCard({ ...card, owner: ch.name, meta: `${meta}${card.meta ? ' · ' + card.meta : ''}` });
   }
 
   // ---------- вкладка Умения ----------

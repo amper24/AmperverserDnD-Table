@@ -80,15 +80,27 @@ const BARBARIAN_2024 = 'Выберите А или Б: (А) Секира, 4 ру
 const KNIGHT_CLERIC = '- (a) булава или (b) боевой молот (при владении)\n- (a) лёгкий арбалет и 20 болтов или (b) любое простое оружие\n- (a) щит, (b) священный символ или (c) магический фокус (кристалл)';
 const entryOf = (category, name, data = {}) => ({ id: category + ':' + name, category, name, source: 'Фикстура', pack_id: null, data });
 
-const draft = (over = {}) => Object.assign({
-  name: 'Тест', edition: '2014', abilities: { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 },
-  selected: { class: entryOf('class', 'Воин', { hit_die: 'd10', saves: ['str', 'con'], tools: null, starting_equipment: FIGHTER_2014 }) },
-  picks: {}, skills: [], languages: [], bonuses: {}, spells: [], method: 'standard', rolls: [],
-  equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true },
-  catalog: CATALOG,
-}, over);
+const draft = (over = {}) => {
+  const result = Object.assign({
+    name: 'Тест', edition: '2014', abilities: { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 },
+    selected: { class: entryOf('class', 'Воин', { hit_die: 'd10', saves: ['str', 'con'], tools: null, starting_equipment: FIGHTER_2014 }) },
+    picks: {}, skills: [], languages: [], bonuses: {}, spells: [], method: 'standard', rolls: [],
+    equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true },
+    catalog: CATALOG,
+  }, over);
+  // Test fixtures represent a player who explicitly made every available choice.
+  for (const block of B.equipmentPlan(result)) if (block.kind === 'group' && !result.equipment.choice[block.id]) result.equipment.choice[block.id] = block.options[0]?.id;
+  for (const slot of B.equipmentItems(result).items.filter(item => item.pick)) {
+    const option = (result.catalog || []).find(item => B.PICK_FILTERS[slot.filter]?.test(item));
+    if (option && !result.equipment.picks[slot.key]) result.equipment.picks[slot.key] = option.id;
+  }
+  return result;
+};
 const tokensOf = entry => B.equipmentItems(entry).items;
-const pickAll = entry => { for (const it of tokensOf(entry)) if (it.pick) entry.equipment.picks[it.key] = 'i-Боевой топор'; return entry; };
+const pickAll = entry => { for (const it of tokensOf(entry)) if (it.pick) {
+  const option = entry.catalog.find(item => B.PICK_FILTERS[it.filter]?.test(item));
+  if (option) entry.equipment.picks[it.key] = option.id;
+} return entry; };
 const take = (entry, name) => { const it = tokensOf(entry).find(i => (i.entry ? i.entry.name : i.name) === name); return it; };
 
 test('2014 text turns into fixed items, either/or groups and player choices', () => {
@@ -163,7 +175,23 @@ test('names resolve to compendium entries by stems, not by magic look-alikes', (
   assert.equal(find('Фокусировка друида'), undefined);
 });
 
-test('slot picks are filled from the text hint before the first option', () => {
+test('equipment variants and item slots are never silently defaulted or allowed outside their category', () => {
+  const unchosen = draft();
+  unchosen.equipment.choice = {};
+  unchosen.equipment.picks = {};
+  assert.deepEqual(plain(B.equipmentItems(unchosen).items), [], 'no equipment from an either/or group is projected before choosing a variant');
+
+  const selectedVariant = draft();
+  selectedVariant.equipment.choice['class:1'] = 'opt1';
+  selectedVariant.equipment.picks = {};
+  const slot = B.equipmentItems(selectedVariant).items.find(item => item.pick);
+  assert.ok(slot);
+  assert.equal(slot.name, '', 'a category choice remains empty until explicitly selected');
+  selectedVariant.equipment.picks[slot.key] = 'i-Кристалл';
+  assert.equal(B.equipmentItems(selectedVariant).items.find(item => item.pick).name, '', 'an item from a different category is rejected');
+});
+
+test('slot picks use explicit items from the allowed category', () => {
   const draftSheet = pickAll(draft());
   draftSheet.equipment.choice['class:1'] = 'opt1';  // воинское оружие и щит
   const picked = tokensOf(draftSheet).filter(i => i.pick);
@@ -171,7 +199,10 @@ test('slot picks are filled from the text hint before the first option', () => {
   assert.equal(tokensOf(draftSheet).find(i => (i.entry || {}).name === 'Щит').qty, 1);
   const cleric = draft({ selected: { class: entryOf('class', 'Жрец', { hit_die: 'd8', starting_equipment: KNIGHT_CLERIC }) } });
   cleric.equipment.choice['class:2'] = 'opt3';
-  assert.equal(tokensOf(cleric).find(i => i.pick && i.name).name, 'Кристалл', 'подсказка «(кристалл)» важнее порядка справочника');
+  const focus = tokensOf(cleric).find(i => i.pick);
+  assert.equal(focus.name, '', 'выбор предмета по категориям не подставляется молча');
+  cleric.equipment.picks[focus.key] = 'i-Кристалл';
+  assert.equal(tokensOf(cleric).find(i => i.pick).name, 'Кристалл', 'конкретный выбор из разрешённой категории попадает в инвентарь');
 });
 
 test('starting inventory uses real item templates, stacks, ammo and slots', () => {
@@ -194,6 +225,26 @@ test('starting inventory uses real item templates, stacks, ammo and slots', () =
   assert.ok(sheet.inventory.every(i => i.uid && i.consume), 'каждый предмет получает uid и настройки расхода');
   assert.equal(sheet.ac, 18, 'КД считается от надетого доспеха и щита');
   assert.equal(sheet.auto_armor, true);
+});
+
+test('feat spellcasting ability is preserved when a spell is sent to chat', () => {
+  const spell = { name: 'Щит', level: 1, spell_ability: 'cha', actions: [] };
+  assert.equal(ctx.Modules.toChatCard(spell, 'spell').spell_ability, 'cha');
+  assert.equal(ctx.Modules.toChatCard({ ...spell, spell_ability: undefined }, 'spell').spell_ability, undefined);
+});
+
+test('Unarmored Defense calculates class AC and enforces the monk shield restriction', () => {
+  const base = { abilities: { dex: 14, con: 16, wis: 16 }, inventory: [] };
+  assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'barbarian' }).ac, 15, 'barbarian adds Constitution');
+  assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'monk' }).ac, 15, 'monk adds Wisdom');
+  const shield = { name: 'Щит', type: 'armor', ac: '+2', equipped: true, hand_slot: 'off', qty: 1 };
+  assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'barbarian', inventory: [shield] }).ac, 17, 'barbarian can use a shield with Unarmored Defense');
+  assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'monk', inventory: [shield] }).ac, 14, 'monk loses Unarmored Defense while using a shield');
+  const barbarian = B.build({ name: 'Варвар', edition: '2014', abilities: { str: 10, dex: 14, con: 16, int: 10, wis: 10, cha: 10 },
+    selected: { class: entryOf('class', 'Варвар', { name_en: 'barbarian', hit_die: 'd12', starting_equipment: '' }) }, spells: [], catalog: CATALOG,
+    equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true } });
+  assert.equal(barbarian.ac, 15, 'the creation projection calculates unarmored AC, not just the equipment helper');
+  assert.equal(barbarian.unarmored_defense, 'barbarian');
 });
 
 test('an ammo weapon consumes ammo, and the pack is a single row unless disabled', () => {
@@ -226,8 +277,27 @@ test('a two-handed weapon does not remove a shield from the other hand', () => {
   assert.equal(sword.equipped, false, 'двуручный меч не выбивает щит из второй руки');
 });
 
+test('standard equipment ignores master-only changes until master mode is enabled', () => {
+  const draftSheet = draft();
+  const armor = take(draftSheet, 'Кольчуга');
+  draftSheet.equipment.qty[armor.key] = 4;
+  draftSheet.equipment.gold = 3;
+  draftSheet.equipment.extras.push({ key: 'extra', name: 'Верёвка пеньковая (50 футов)', qty: 2 });
+  let result = B.equipmentItems(draftSheet);
+  assert.equal(result.items.find(i => i.name === 'Кольчуга').qty, 1);
+  assert.equal(result.gold, 0);
+  assert.ok(!result.items.some(i => i.manual), 'ручная добавка не должна попасть в стандартный инвентарь');
+
+  draftSheet.equipment.gmOverrides = true;
+  result = B.equipmentItems(draftSheet);
+  assert.equal(result.items.find(i => i.name === 'Кольчуга').qty, 4);
+  assert.equal(result.gold, 3);
+  assert.ok(result.items.some(i => i.name === 'Верёвка пеньковая (50 футов)'));
+});
+
 test('gold, exclusions and manual extras reach the sheet', () => {
   const draftSheet = draft({ edition: '2024' });
+  draftSheet.equipment.gmOverrides = true;
   draftSheet.selected = { class: entryOf('class', 'Варвар', { hit_die: 'd12', starting_equipment: BARBARIAN_2024 }),
     background: entryOf('background', 'Прислужник', { languages: 2, equipment: 'Выберите A или B: (A) Каллиграфические принадлежности, книга (молитвы), 8 зм; или (B) 50 зм' }) };
   draftSheet.equipment.choice['background:0'] = 'opt2';
@@ -307,7 +377,7 @@ test('real SRD records resolve for every class and background of both editions',
       for (const item of B.equipmentItems(draftSheet).items) {
         if (item.pick) {
           assert.ok(typeof (B.PICK_FILTERS[item.filter] || {}).test === 'function', 'фильтр выбора известен');
-          assert.ok(item.name, 'слот выбора заполнен правилом или первым вариантом');
+          assert.ok(item.name, 'тестовый игрок явно выбрал предмет из разрешённой категории');
           continue;
         }
         // В SRD есть снаряжение без отдельной записи («Ряса», «Мантия»): предмет остаётся в инвентаре
