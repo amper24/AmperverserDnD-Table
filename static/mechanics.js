@@ -217,9 +217,9 @@ window.Mechanics = (() => {
       const atk=blocks.find(b=>b.kind==='attack'), dmg=blocks.find(b=>b.kind==='damage');
       if(atk&&dmg&&window.Modules?.attackRow){
         const row=window.Modules.attackRow(p.name,
-          {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name},
-          {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name},
-          window.SHEET_CTX||{},'',{disabled:options.disabled,note:'Отдельный бросок: без расхода и эффектов'});
+          {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name,index:blocks.indexOf(atk)},
+          {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name,index:blocks.indexOf(dmg)},
+          window.SHEET_CTX||{},'',{disabled:options.disabled,note:options.onUse?'Сотворение заклинания сначала оплачивает расход':'Отдельный бросок: без расхода и эффектов',onUse:options.onUse});
         const pureAttackDamage = blocks.length === 2 && blocks.some(b=>b.kind==='attack') && blocks.some(b=>b.kind==='damage');
         if(pureAttackDamage) root.append(el('div',{class:'actions-row'},row));
         else {

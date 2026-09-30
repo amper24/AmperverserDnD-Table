@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const ctx = { window: {} }; vm.createContext(ctx);
+const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
 for (const f of ['static/class-progression.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -33,6 +33,62 @@ test('план: улучшение характеристик и новый за
   assert.equal(p.asi, true); assert.equal(p.spells.cantrips, 1); assert.equal(p.needSubclass, false); assert.ok(p.subclass);
   const p5 = L.plan(sheet({ level: 4, class: w.name, subclass: 'Школа Воплощения' }), w); assert.deepEqual(plain(p5.pb), { from: 2, to: 3 });
 });
+test('после создания с подклассом 1 уровня повышение не просит выбрать его повторно', () => {
+  const c = cls('2014', 'cleric'), sub = c.data.subclasses.find(x => Object.keys(x.features || {}).includes('1'));
+  assert.ok(sub, 'в справочнике есть подкласс с выбором на 1 уровне');
+  const s = sheet({ level: 1, class: c.name, subclass: sub.name,
+    classes: [{ name: c.name, level: 1, subclass: sub.name, hit_die: c.data.hit_die }] });
+  const p = L.plan(s, c);
+  assert.equal(p.needSubclass, false);
+  assert.equal(p.subclass.name, sub.name);
+});
+test('Круг Земли 2014 добавляет обязательный выбор дополнительного заговора на 2 уровне', () => {
+  const druid = cls('2014', 'druid'), land = druid.data.subclasses.find(sub => /круг земли/i.test(sub.name));
+  assert.equal(L.subclassCantripGain(druid, land, '2014', 2), 1);
+  assert.equal(L.subclassCantripGain(druid, land, '2024', 3), 0);
+});
+test('вариант умения подкласса выбирается один раз и сохраняется для следующих уровней', () => {
+  const druid = cls('2014', 'druid'), land = druid.data.subclasses.find(sub => /круг земли/i.test(sub.name));
+  const options = L.subclassVariantGroups(land, 2).find(group => group.base === 'Круг Земли');
+  assert.equal(options.options.length, 7);
+  const s = sheet({ level: 1, class: druid.name, classes: [{ name: druid.name, level: 1, subclass: '', hit_die: 8 }] }), p = L.plan(s, druid);
+  const chosen = options.options.find(name => /Лес/i.test(name));
+  L.apply(s, p, { hp: { mode: 'avg' }, subclass: land, subclassVariants: { [options.base]: chosen } }, stubs);
+  assert.ok(s.features.some(feature => feature.name === chosen));
+  assert.equal(s.features.some(feature => options.options.some(name => name !== chosen && feature.name === name)), false);
+  assert.equal(s.classes[0].subclass_choices[options.base], chosen);
+});
+test('Коллегия знаний требует три новых навыка при выборе пути на 3 уровне', () => {
+  for (const edition of ['2014', '2024']) {
+    const bard = cls(edition, 'bard'), lore = bard.data.subclasses.find(sub => /знаний|lore/i.test(sub.name));
+    assert.deepEqual(plain(L.subclassSkillChoices(bard, lore, 3)), { count: 3, any: true });
+    assert.equal(L.subclassSkillChoices(bard, lore, 2), null);
+    const s = sheet({ edition, level: 2, class: bard.name, subclass: lore.name, skills: ['acrobatics'],
+      classes: [{ name: bard.name, level: 2, subclass: lore.name, hit_die: 8 }] });
+    const p = L.plan(s, bard, edition);
+    assert.deepEqual(plain(L.subclassSkillChoices(bard, p.subclass, p.to)), { count: 3, any: true });
+    L.apply(s, p, { hp: { mode: 'avg' }, subclassSkills: ['animal', 'arcana', 'athletics'] }, stubs);
+    assert.deepEqual(plain(s.skills), ['acrobatics', 'animal', 'arcana', 'athletics']);
+    L.undo(s); assert.deepEqual(plain(s.skills), ['acrobatics']);
+  }
+});
+test('умения каждого пути подкласса обеих редакций выдаются на указанном уровне и сохраняются', () => {
+  for (const edition of ['2014', '2024']) for (const klass of classes[edition]) for (const sub of klass.data.subclasses || []) {
+    for (const [levelText, names] of Object.entries(sub.features || {})) {
+      const level = Number(levelText);
+      if (level < 2 || level > 20) continue; // уровень 1 выбирается в мастере создания персонажа
+      const before = level - 1, die = Number(String(klass.data.hit_die).replace(/\D/g, '')) || 8;
+      const s = sheet({ edition, level: before, class: klass.name, subclass: sub.name,
+        classes: [{ name: klass.name, level: before, subclass: sub.name, hit_die: die }],
+        hp: { max: Math.max(1, before * 6), current: Math.max(1, before * 6), temp: 0, hit_dice: `${before}d${die}` } });
+      const p = L.plan(s, klass, edition), result = L.apply(s, p, { hp: { mode: 'avg' } }, stubs);
+      const variantNames = new Set(L.subclassVariantGroups(sub, level).flatMap(group => group.options));
+      for (const name of names) if (!variantNames.has(name)) assert.ok(s.features.some(feature => feature.name === name && feature.source === `${sub.name} ${level}`), `${edition} ${klass.name} / ${sub.name} level ${level}: ${name}`);
+      assert.equal(s.level, level, `${edition} ${klass.name} / ${sub.name} advances total level`);
+      assert.equal(result.log.level, level);
+    }
+  }
+});
 test('план: подкласс воина 2024 на 3 уровне, эпический дар на 19', () => {
   const f = cls('2024', 'fighter'); const p = L.plan(sheet({ edition: '2024', level: 2, class: f.name }), f);
   assert.equal(p.needSubclass, true); assert.equal(p.subclassLevel, 3);
@@ -42,13 +98,25 @@ test('план: магия договора колдуна и известные
   const w = cls('2014', 'warlock'), p = L.plan(sheet({ level: 4, class: w.name, subclass: 'Исчадие' }), w);
   assert.deepEqual(plain(p.pactTo), { count: 2, level: 3 }); assert.equal(p.spells.mode, 'known'); assert.equal(p.spells.spells, 1); assert.equal(p.spells.maxLevel, 3);
 });
-test('план: компетентность плута и барда', () => {
-  assert.equal(L.plan(sheet({ level: 5, class: 'Плут' }), cls('2014', 'rogue')).expertise, 2);
+test('план: компетентность во всех классах и редакциях по таблице уровней', () => {
   assert.equal(L.plan(sheet({ level: 2, class: 'Бард' }), cls('2014', 'bard')).expertise, 2);
-  assert.equal(L.plan(sheet({ level: 2, class: 'Бард' }), cls('2014', 'wizard')).expertise, 0);
+  assert.equal(L.plan(sheet({ level: 1, class: 'Бард', edition: '2024' }), cls('2024', 'bard'), '2024').expertise, 2);
+  assert.equal(L.plan(sheet({ level: 0 }), cls('2014', 'rogue')).expertise, 2);
+  assert.equal(L.plan(sheet({ level: 4, class: 'Плут' }), cls('2014', 'rogue')).expertise, 0);
+  assert.equal(L.plan(sheet({ level: 0, edition: '2024' }), cls('2024', 'rogue'), '2024').expertise, 2);
+  assert.equal(L.plan(sheet({ level: 1, class: 'Следопыт', edition: '2024' }), cls('2024', 'ranger'), '2024').expertise, 1);
+  assert.equal(L.plan(sheet({ level: 8, class: 'Следопыт', edition: '2024' }), cls('2024', 'ranger'), '2024').expertise, 2);
+  const wizard = L.plan(sheet({ level: 1, class: 'Волшебник', edition: '2024', skills: ['arcana', 'history', 'nature', 'stealth'] }), cls('2024', 'wizard'), '2024');
+  assert.equal(wizard.expertise, 1);
+  assert.deepEqual(plain(wizard.expertiseFrom), ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'history', 'insight', 'stealth'], expertise: [] }, false, wizard.expertiseFrom)), ['arcana', 'history', 'insight']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['stealth'], expertise: [], proficiencies: 'Воровские инструменты' }, true)), ['stealth', 'thieves_tools']);
 });
 test('хиты: среднее, бросок, минимум 1 и пересчёт задним числом при смене Телосложения', () => {
   assert.equal(L.hpAverage(10), 6); assert.equal(L.hpAverage(6), 4);
+  assert.equal(L.hpChoiceValid(8, { mode: 'roll', roll: 8 }), true);
+  assert.equal(L.hpChoiceValid(8, { mode: 'manual', manual: 9 }), false);
+  assert.equal(L.hpChoiceValid(8, { mode: 'manual', manual: 2.5 }), false);
   assert.equal(L.hpGain(8, { mode: 'roll', roll: 1 }, -2, -2, 3).gain, 1);
   const g = L.hpGain(10, { mode: 'avg' }, 2, 3, 3); assert.equal(g.gain, 9); assert.equal(g.retro, 3); assert.equal(g.total, 12);
 });
@@ -56,6 +124,24 @@ test('улучшение характеристик: +2 или +1/+1, макси
   const ab = { str: 15, dex: 10, con: 10, int: 10, wis: 10, cha: 19 };
   assert.equal(L.asiValid(ab, { str: 2 }), true); assert.equal(L.asiValid(ab, { str: 1, dex: 1 }), true); assert.equal(L.asiValid(ab, { str: 1 }), false);
   assert.equal(L.asiValid(ab, { cha: 2 }), false, '19 + 2 > 20'); assert.equal(L.asiValid(ab, { cha: 1, dex: 1 }), true); assert.equal(L.asiValid({ ...ab, cha: 20 }, { cha: 1 }), false);
+});
+test('черты с бонусом к характеристике требуют выбор, применяют его и откатывают вместе с повышением', () => {
+  const feats = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'feat');
+  for (const feat of feats.filter(e => /увеличьте[^.\n]*характеристик/i.test(e.data?.desc || '')))
+    assert.ok(L.featAbilityRule(feat), `ASI from feat is modeled: ${feat.name}`);
+  const fighter = cls('2024', 'fighter'), grappler = feats.find(e => e.name === 'Борец');
+  const s = sheet({ edition: '2024', level: 3, class: fighter.name, subclass: fighter.data.subclasses[0].name,
+    abilities: { str: 15, dex: 10, con: 14, int: 10, wis: 10, cha: 10 } });
+  L.apply(s, L.plan(s, fighter, '2024'), { hp: { mode: 'avg' }, asi: { mode: 'feat', feat: grappler, ability: 'dex' } }, stubs);
+  assert.equal(s.abilities.dex, 11); assert.equal(s.features.at(-1).mechanics, grappler.data.mechanics);
+  assert.match(s.level_log.at(-1).choices.join(' '), /Ловкость \+1/);
+  L.undo(s); assert.equal(s.abilities.dex, 10); assert.equal(s.features.some(f => f.name === grappler.name), false);
+
+  const epic = feats.find(e => e.name === 'Дар истинного зрения'), high = sheet({ edition: '2024', level: 18, class: fighter.name, subclass: fighter.data.subclasses[0].name,
+    abilities: { str: 10, dex: 10, con: 13, int: 10, wis: 10, cha: 10 } });
+  const plan = L.plan(high, fighter, '2024'); assert.equal(plan.epic, true);
+  L.apply(high, plan, { hp: { mode: 'avg' }, asi: { mode: 'feat', feat: epic, ability: 'con' } }, stubs);
+  assert.equal(high.abilities.con, 14); assert.ok(high.hp.max > 16, 'Constitution increases retroactively affect maximum HP');
 });
 test('применение: воин 3→4 с +2 Силы, умения, хиты и запись в историю', () => {
   const f = cls('2014', 'fighter'), s = sheet({ level: 3, class: f.name, subclass: 'Чемпион', abilities: { str: 15, dex: 10, con: 15, int: 10, wis: 10, cha: 10 }, hp: { max: 28, current: 20, temp: 0, hit_dice: '3d10' } });
@@ -171,9 +257,18 @@ test('мультикласс: ячейки двух заклинателей с�
   assert.deepEqual(plain([1, 2].map(l => s.spells.slots[l].max)), [4, 3]);
   const wl = cls('2014', 'warlock'), s2 = JSON.parse(JSON.stringify(s)), pw = L.plan(s2, wl, '2014', { resolve: byName });
   L.apply(s2, pw, { hp: { mode: 'avg' }, subclass: wl.data.subclasses[0], picks: {}, spells: [], cantrips: [] }, det);
-  assert.equal(s2.spells.slots[1].max, 4 + 1, 'общие ячейки + ячейка договора того же круга');
+  assert.equal(s2.spells.slots[1].max, 4, 'ячейки заклинателя хранятся отдельно от Магии договора');
+  assert.deepEqual(plain(s2.spells.pact_slots), { level: 1, max: 1, used: 0 }, 'ячейка Договора — отдельный восстанавливаемый ресурс');
+  L.undo(s2); assert.equal(s2.spells.pact_slots, undefined); assert.equal(s2.spells.slots[1].max, 4, 'отмена уровня восстанавливает прежнюю структуру ячеек');
   const half = L.castingSummary('2014', [{ name: 'Паладин', level: 5 }, { name: 'Волшебник', level: 4 }], byName);
   assert.equal(half.casterLevel, 6, 'паладин считается половиной уровня, округление вниз'); assert.equal(L.castingSummary('2024', [{ name: 'Паладин', level: 5 }, { name: 'Волшебник', level: 4 }], n => classes['2024'].find(e => e.name === n)).casterLevel, 7);
+});
+test('повышение блокирует 21-й уровень и ручное число хитов выше кости', () => {
+  const fighter = cls('2014', 'fighter'), maxed = sheet({ level: 20, class: fighter.name });
+  assert.throws(() => L.plan(maxed, fighter), /20-го уровня/);
+  const s = sheet({ level: 1, class: fighter.name }), p = L.plan(s, fighter);
+  assert.throws(() => L.apply(s, p, { hp: { mode: 'manual', manual: 11 } }, stubs), /от 1 до 10/);
+  assert.equal(s.level, 1); assert.equal(s.hp.max, 8, 'invalid choice leaves the sheet unchanged');
 });
 test('отмена: повышение откатывается полностью, чужие правки листа остаются', () => {
   const w = cls('2014', 'wizard'), s = sheet({ level: 3, class: w.name, subclass: 'Школа Воплощения', abilities: { str: 10, dex: 10, con: 14, int: 15, wis: 10, cha: 10 }, hp: { max: 20, current: 15, temp: 0, hit_dice: '3d6' },

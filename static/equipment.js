@@ -145,6 +145,15 @@ window.Equipment = (() => {
           base = n + (/лов|dex/.test(text) ? /макс|max/.test(text) ? Math.min(dex, 2) : dex : 0); baseName = name; armored = true; }
       } else if (bonus) bonuses.push([name, n]);
     }
+    // Class feature: apply Unarmored Defense only while its armor/shield conditions are met.
+    // A barbarian may still benefit from a shield; a monk may not.
+    if (!armored && sheet.unarmored_defense === 'barbarian') {
+      base = 10 + dex + Math.floor(((sheet.abilities?.con ?? 10) - 10) / 2);
+      baseName = 'Защита без доспехов (варвар)';
+    } else if (!armored && !shield && sheet.unarmored_defense === 'monk') {
+      base = 10 + dex + Math.floor(((sheet.abilities?.wis ?? 10) - 10) / 2);
+      baseName = 'Защита без доспехов (монах)';
+    }
     const parts = [[baseName, base]]; if (shield > 0) parts.push([shieldName, shield]); parts.push(...bonuses);
     return { ac: base + shield + bonuses.reduce((a, b) => a + b[1], 0), parts, notes, speedPenalty, stealth };
   }

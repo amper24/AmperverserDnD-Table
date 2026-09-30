@@ -37,7 +37,7 @@ window.Modules = (function () {
   function newSpell(o = {}) {
     o = defined(o);
     return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
-      concentration: false, ritual: false, desc: '', prepared: false, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
+      concentration: false, ritual: false, desc: '', prepared: false, cast_cost: null, use_cost: 1, uses: null, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
   }
   /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.
   function newFeature(o = {}) {
@@ -69,7 +69,7 @@ window.Modules = (function () {
   function spellFromCompendium(e) {
     const d = e.data || {};
     return newSpell({ name: e.name, level: d.level ?? 1, school: d.school || '', casting_time: d.casting_time || '', range: d.range || '', components: d.components || '', duration: d.duration || '',
-      mechanics: d.mechanics ? JSON.parse(JSON.stringify(d.mechanics)) : undefined, classes: d.classes || [], concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, effect_size: d.effect_size || 1, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
+      mechanics: d.mechanics ? JSON.parse(JSON.stringify(d.mechanics)) : undefined, classes: d.classes || [], concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', cast_cost: d.cast_cost || null, use_cost: Math.max(1, Number(d.use_cost) || 1), uses: d.uses ? JSON.parse(JSON.stringify(d.uses)) : null, asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, effect_size: d.effect_size || 1, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
   }
   function autoSpellActions(d) {
     const acts = [];
@@ -267,13 +267,20 @@ window.Modules = (function () {
   }
   function toChatCard(doc, kind) {
     return { mechanics:doc.mechanics, name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? 'star' : (doc.icon || itemIconName(doc)), asset_id: doc.asset_id || null,
+      ...(kind === 'spell' && doc.spell_ability ? { spell_ability: doc.spell_ability } : {}),
       meta: kind === 'spell' ? [doc.level === 0 ? 'Заговор' : `${doc.level} круг`, doc.school, doc.casting_time, doc.range, doc.duration].filter(Boolean).join(' · ') : [ITEM_TYPES[doc.type], doc.rarity].filter(Boolean).join(' · ') };
   }
+  function spellContext(ctx, ability) {
+    if (!ability || typeof ctx?.[ability] !== 'number') return ctx || {};
+    const mod = ctx[ability], prof = Number(ctx.prof) || 0, dc = 8 + prof + mod;
+    return { ...ctx, spell_mod: mod, spell: mod + prof, dc, spell_dc: dc };
+  }
   function renderChatCard(card, ctx) {
+    const cardCtx = card.kind === 'spell' ? spellContext(ctx, card.spell_ability) : ctx;
     return el('div', { class: 'chat-card' },
       el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, card.asset_id ? docIcon(card, 'box') : card.icon && ICONS_KNOWN(card.icon) ? icon(card.icon, 18) : card.icon ? el('span', { class: 'txt-ico' }, String(card.icon).slice(0, 2)) : icon('box', 18)), el('div', { class: 'grow' }, el('b', {}, card.name), el('div', { class: 'muted small' }, card.meta || ''))),
-      card.desc ? el('div', { class: 'card-desc' }, rich(card.desc, ctx, { prefix: card.name })) : null,
-      card.item_ref ? el('a', { class: 'btn small', href: '/sheet/' + encodeURIComponent(card.item_ref.character_id), target: '_blank' }, 'Открыть лист · использовать с расходом') : actionButtons(card, ctx, card.name));
+      card.desc ? el('div', { class: 'card-desc' }, rich(card.desc, cardCtx, { prefix: card.name })) : null,
+      card.item_ref ? el('a', { class: 'btn small', href: '/sheet/' + encodeURIComponent(card.item_ref.character_id), target: '_blank' }, 'Открыть лист · использовать с расходом') : actionButtons(card, cardCtx, card.name));
   }
 
   // ---------- выбор изображения (инвентарь) и токена (карта) для модуля ----------
@@ -333,16 +340,32 @@ window.Modules = (function () {
   function editSpell(spell, opts = {}) {
     const sp = JSON.parse(JSON.stringify(spell || newSpell()));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
+    const cost = el('select', {}, ...[['slot', 'Ячейка заклинания по уровню'], ['free', 'Без расхода'], ['uses', 'Заряды заклинания']].map(([value, label]) => el('option', { value, selected: (sp.cast_cost || (Number(sp.level) === 0 ? 'free' : 'slot')) === value ? '' : null }, label)));
+    const usesMax = el('input', { type: 'number', min: 1, max: 999, value: sp.uses?.max ?? '', placeholder: 'например, 1' });
+    const usesCur = el('input', { type: 'number', min: 0, max: 999, value: sp.uses?.cur ?? sp.uses?.max ?? '', placeholder: 'текущий запас' });
+    const useCost = el('input', { type: 'number', min: 1, max: 999, value: sp.use_cost || 1 });
+    const recharge = el('select', {}, ...[['', 'не восстанавливается'], ['short', 'короткий отдых'], ['long', 'долгий отдых'], ['dawn', 'на рассвете']].map(([value, label]) => el('option', { value, selected: (sp.uses?.recharge || '') === value ? '' : null }, label)));
+    const level = el('select', { onchange: e => { const old = Number(sp.level), next = +e.target.value; sp.level = next; if (next === 0 && cost.value === 'slot') cost.value = 'free'; else if (old === 0 && next > 0 && cost.value === 'free') cost.value = 'slot'; } }, ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => el('option', { value: l, selected: sp.level === l ? '' : null }, l === 0 ? 'Заговор' : l)));
     const form = el('div', { class: 'editor-form' },
-      el('div', { class: 'row' }, f('Название', el('input', { value: sp.name, oninput: e => sp.name = e.target.value })), f('Круг', el('select', { onchange: e => sp.level = +e.target.value }, ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => el('option', { value: l, selected: sp.level === l ? '' : null }, l === 0 ? 'Заговор' : l)))),
+      el('div', { class: 'row' }, f('Название', el('input', { value: sp.name, oninput: e => sp.name = e.target.value })), f('Круг', level),
         f('Школа', el('select', { onchange: e => sp.school = e.target.value }, ...SCHOOLS.map(s => el('option', { value: s, selected: sp.school === s ? '' : null }, s))))),
       el('div', { class: 'row' }, f('Время', el('input', { value: sp.casting_time, oninput: e => sp.casting_time = e.target.value })), f('Дистанция', el('input', { value: sp.range, oninput: e => sp.range = e.target.value })), f('Компоненты', el('input', { value: sp.components, oninput: e => sp.components = e.target.value })), f('Длительность', el('input', { value: sp.duration, oninput: e => sp.duration = e.target.value }))),
+      el('div', { class: 'row' }, f('Расход при сотворении', cost), f('Расход зарядов', useCost), f('Заряды макс.', usesMax), f('Текущие заряды', usesCur), f('Восстановление', recharge)),
+      el('p', { class: 'muted small' }, 'Обычное заклинание тратит одну ячейку не ниже своего круга; заговоры не тратят ячейки. Заряды — для собственных исключений или особых ресурсов.'),
       el('div', { class: 'row' }, el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.concentration ? '' : null, onchange: e => sp.concentration = e.target.checked }), ' Концентрация'), el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.ritual ? '' : null, onchange: e => sp.ritual = e.target.checked }), ' Ритуал'),
         f('Классы', el('input', { value: (sp.classes || []).join(', '), oninput: e => sp.classes = e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))),
       el('div', { class: 'row' }, visualsRow(sp, { icon: 'star', tokenLabel: 'Токен эффекта на карте (область, призыв)' }), f('Размер эффекта (клеток)', el('input', { type: 'number', min: 1, max: 20, step: 1, value: sp.effect_size || 1, style: 'width:90px', oninput: e => sp.effect_size = Math.max(1, +e.target.value || 1) }))),
       f('Описание', descEditor(sp)),
       Mechanics.editor(sp, {category:'spell',inventory:opts.inventory}));
-    return modal(opts.title || (spell ? 'Редактировать заклинание' : 'Новое заклинание'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => { const error=Mechanics.validate(sp.mechanics); if(error){toast(error);return false;} return sp; } }], { wide: true });
+    return modal(opts.title || (spell ? 'Редактировать заклинание' : 'Новое заклинание'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => {
+      const error = Mechanics.validate(sp.mechanics); if (error) { toast(error); return false; }
+      const max = Number(usesMax.value), current = usesCur.value.trim() === '' ? max : Number(usesCur.value), amount = Number(useCost.value) || 1;
+      if (cost.value === 'uses' && (!Number.isInteger(max) || max < 1 || !Number.isInteger(current) || current < 0 || current > max || !Number.isInteger(amount) || amount < 1 || amount > max)) { toast('Для расхода заряда укажите корректные текущие и максимальные значения, а также стоимость применения.'); return false; }
+      sp.cast_cost = cost.value; sp.use_cost = Math.max(1, amount);
+      sp.uses = max > 0 ? { max, cur: Math.min(current || 0, max), recharge: recharge.value } : null;
+      if (Number(sp.level) === 0 && sp.cast_cost === 'slot') sp.cast_cost = 'free';
+      return sp;
+    } }], { wide: true });
   }
   /// Редактор умения/черты (модуль: картинка, заряды, описание с кнопками, действия).
   function editFeature(feature, opts = {}) {
