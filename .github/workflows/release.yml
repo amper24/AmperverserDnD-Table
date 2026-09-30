@@ -6,12 +6,12 @@ name: Release
 # ассетов в матрице ниже — часть публичного контракта: меняя их, поправьте
 # install.bat (URL), install.sh (ASSET) и run.bat/README.
 #
-#   git tag v0.4.4 && git push origin v0.4.4
+#   git tag v0.4.7 && git push origin v0.4.7
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (must match Cargo.toml, e.g. v0.4.4)'
+        description: 'Release tag (must match Cargo.toml, e.g. v0.4.7)'
         required: true
         type: string
   push:
