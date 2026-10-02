@@ -1,3 +1,10 @@
+// ---------------------------------------------------------------------------
+// levelup.js — повышение уровня: чистая логика (план, расчёт, применение
+// к листу, отмена) плюс мастер в стиле D&D Beyond.
+// Даёт: window.LevelUp.
+// Зависимости: common.js; лениво: CLASS_PROGRESSION (таблицы развития),
+// Mechanics, Modules, DiceEngine. Загружается только в sheet.html (слой 5).
+// ---------------------------------------------------------------------------
 // Повышение уровня: чистая логика (план, расчёт, применение к листу, отмена) + мастер в стиле D&D Beyond.
 // Данные берутся из записи класса справочника (features по уровням, subclasses, hit_die, spellcasting)
 // и из таблиц развития static/class-progression.js (бонус мастерства, заговоры, заклинания, ячейки, столбцы классов).
@@ -35,6 +42,7 @@ window.LevelUp = (() => {
   const STYLE_FEATS_EN = ['archery', 'defense', 'great weapon fighting', 'two weapon fighting', 'two-weapon fighting', 'dueling', 'protection'];
   const isStyleFeat = e => STYLE_FEATS_EN.includes(String(e?.data?.name_en || '').toLowerCase()) || /fighting|боев(ой|ые) стил/i.test(String(e?.data?.category || ''));
 
+  // ---------- Чистая логика: классы, подклассы, таблицы развития ----------
   function slugOf(entry) {
     const en = String(entry?.data?.name_en || entry?.name_en || '').toLowerCase();
     return SLUGS.includes(en) ? en : SLUG_RU[entry?.name] || '';
@@ -153,6 +161,7 @@ window.LevelUp = (() => {
 
   /// Варианты умений, которые нужно выбрать (боевой стиль, метамагия, воззвания, договор, избранный враг…).
   /// В записях класса все варианты перечислены среди умений уровня — на лист должны попасть только выбранные.
+  // ---------- Чистая логика: план повышения (умения, выборы, ячейки) ----------
   function optionGroups(entry, edition, from, to, sheet, prog) {
     const d = entry?.data || {}, slug = slugOf(entry), groups = [], hidden = new Set();
     const names = classFeaturesAt(entry, to).map(f => f.name), textOf = n => d.feature_texts?.[n] || '';
@@ -267,6 +276,7 @@ window.LevelUp = (() => {
 
   /// Применить повышение к листу. choices: { hp, subclass, asi:{mode,plus,feat}, expertise:[], cantrips:[], spells:[], drop:[uid],
   /// picks:{группа:[имена]}, feats:{группа:запись черты}, texts:{группа:строка}, swap:{группа:uid умения}, secrets:[записи заклинаний], skills:[ключи] }.
+  // ---------- Чистая логика: применение плана к листу и отмена повышения ----------
   function apply(sheet, p, choices = {}, deps = {}) {
     if (p.total.from >= MAX_LEVEL || p.total.to > MAX_LEVEL || p.to > MAX_LEVEL) throw new RangeError('Нельзя повысить персонажа или класс выше 20-го уровня.');
     if (!hpChoiceValid(p.hitDie, choices.hp || { mode: 'avg' })) throw new RangeError(`Значение хитов должно быть целым числом от 1 до ${p.hitDie}.`);
@@ -482,6 +492,7 @@ window.LevelUp = (() => {
   }
 
   /// Простое оформление текста записей справочника: абзацы, маркированные списки и таблицы.
+  // ---------- Мастер повышения: тексты, шаги и панели ----------
   function rich(text) {
     const lines = String(text || '').split('\n').map(x => x.trim()).filter(Boolean), out = [];
     const isRow = l => l.startsWith('|'), isLi = l => /^[-•*]\s+/.test(l);
@@ -541,6 +552,7 @@ window.LevelUp = (() => {
   }
 
   /// Открыть мастер повышения уровня. Меняет переданный лист на месте и возвращает true, если уровень повышен.
+  // ---------- Мастер повышения: открытие и сохранение ----------
   async function open({ sheet, campaignId, onApply }) {
     if ((sheet.level || 1) >= 20) { toast('Достигнут максимальный уровень — 20.'); return false; }
     return new Promise(resolve => {

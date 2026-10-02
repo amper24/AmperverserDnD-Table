@@ -1,3 +1,11 @@
+// ---------------------------------------------------------------------------
+// compendium.js — справочник: поиск по SRD, записям наборов и homebrew
+// кампании; редактор записи (включая карточку данных); перетаскивание записей
+// в лист персонажа и на стол.
+// Даёт: window.Compendium.
+// Зависимости: common.js, modules.js; лениво: Mechanics, Packs,
+// CharacterBuilder (подписи типов выбора). Загружается в обеих страницах (слой 3).
+// ---------------------------------------------------------------------------
 // Справочник: SRD + homebrew кампании + наборы (packs). Записи перетаскиваются в лист персонажа / на стол.
 // Кубики и [[формулы]]{подписи} в текстах становятся кнопками бросков (Modules.rich).
 window.Compendium = (function () {
@@ -5,6 +13,7 @@ window.Compendium = (function () {
   let packsCache = null;
   async function myPacks(force) { if (!packsCache || force) { try { packsCache = await API.get('/api/packs?scope=mine'); } catch { packsCache = []; } } return packsCache; }
 
+  // ---------- Карточка записи: отрисовка данных ----------
   function renderData(e, opts = {}) {
     const d = e.data || {}, rows = [];
     const add = (k, v) => { if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) rows.push([k, Array.isArray(v) ? v.join(', ') : v === true ? 'Да' : v === false ? 'Нет' : v]); };
@@ -92,6 +101,7 @@ window.Compendium = (function () {
   }
 
   /// Перевод записи: название и описание на другом языке. Хранится в data.i18n[lang] и накладывается на основные данные при просмотре.
+  // ---------- Редактирование, перевод и копирование записей ----------
   async function editTranslation(e, o = {}) {
     const raw = await API.rawEntry(e);
     const base = raw.base_locale || 'ru', target = base === 'en' ? 'ru' : 'en';
@@ -160,6 +170,7 @@ window.Compendium = (function () {
 
   // Полноэкранная мастерская справочника: фильтры/рубрики | список | карточка.
   // Повторяет рабочее пространство наборов, сохраняя компактный виджет для стола и листа.
+  // ---------- Рабочая область: SRD, наборы и homebrew кампании ----------
   function workspaceWidget(opts = {}) {
     const root = el('div', { class: 'comp comp-workspace' });
     const side = el('aside', { class: 'comp-side' });
@@ -689,6 +700,7 @@ window.Compendium = (function () {
   }
 
   // ---- Управление наборами (лобби) ----
+  // ---------- Панели наборов ----------
   function packsPanel() {
     const root = el('div');
     const scope = el('select', {}, el('option', { value: 'mine' }, 'Мои наборы'), el('option', { value: 'public' }, 'Публичные'), el('option', { value: 'all' }, 'Все доступные'));

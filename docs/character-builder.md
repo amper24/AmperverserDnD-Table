@@ -1,8 +1,12 @@
 # Мастер создания персонажа
 
-`static/character-builder.js` подключён после `modules.js` и `compendium.js`
-(страница приложения и страница листа персонажа — модель создания нужна редактору
-справочника там же). Все три точки создания (личные персонажи, меню стола,
+Правила создания живут в `static/character-builder.js` (модуль
+`CharacterBuilder`: проекции записей справочника, выборы «либо/либо», разбор
+стартового снаряжения, сборка листа), а окно мастера из восьми шагов —
+в `static/builder-dialog.js` (`newCharacterDialog`). Оба файла подключены после
+`modules.js` и `compendium.js` (страница приложения и страница листа персонажа —
+модуль нужен редактору справочника там же; само окно используется только
+в `index.html`). Все три точки создания (личные персонажи, меню стола,
 боковая панель) используют
 `newCharacterDialog({ campaignId?, name? }) → Promise<{ name, sheet } | null>`.
 Сохранение использует существующий `POST /api/characters`, миграция БД не нужна.
@@ -201,10 +205,17 @@
 ```sh
 node --test tests/character-builder.test.cjs
 node --test tests/character-builder-equipment.test.cjs
+node --test tests/character-builder-dialog.test.cjs
 node --test tests/mechanics.test.cjs
 node --check static/character-builder.js
+node --check static/builder-dialog.js
 node --check static/mechanics.js
 ```
+
+`character-builder-dialog.test.cjs` открывает мастер в песочнице с настоящим
+справочником SRD 2014 и проходит все восемь шагов до готового листа: модули,
+подкласс и инструменты дварфа, покупка очков, навыки с взаимозаменой, языки,
+варианты снаряжения и выбор священного символа.
 
 Тесты покрывают броски 4d6 и 6d20, повторную сборку без накопления бонусов, смену расы, редакции,
 подрасы, независимые снимки, расширение реестра, стартовые шаблоны блоков,

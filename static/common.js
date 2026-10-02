@@ -1,3 +1,12 @@
+// ---------------------------------------------------------------------------
+// common.js — фундамент приложения: безопасное хранилище (согласие на cookie),
+// API-клиент, язык содержимого, DOM-помощники (el, modal, floatWindow, toast,
+// icon), изображения-ассеты, словари (SKILLS, ABIL, EDITIONS, CAT_NAMES), тема.
+// Даёт: window.LS, window.Consent, window.API, window.Lang, window.el/modal/
+//       prompt2/floatWindow/toast/icon/Theme, window.SKILLS/ABIL/EDITIONS/
+//       CAT_NAMES, window.defaultEdition, window.withTok/go/reloadPage.
+// Зависимости: нет. Загружается первым в index.html и sheet.html (слой 1).
+// ---------------------------------------------------------------------------
 // Безопасное хранилище: localStorage может быть недоступен (фрейм на чужом домене, приватный режим) — тогда sessionStorage или память.
 // Учитывает согласие на cookie: без согласия на «функциональные» ключи (тема, вкладки, панели) они живут только в памяти.
 window.LS = (() => {

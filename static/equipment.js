@@ -1,3 +1,9 @@
+// ---------------------------------------------------------------------------
+// equipment.js — правила инвентаря: слоты (руки/надето), экипировка, стопки,
+// нормализация предметов. Зеркалит серверные правила из src/inventory.rs.
+// Даёт: window.Equipment.
+// Зависимости: common.js. Загружается в обеих страницах (слой 2).
+// ---------------------------------------------------------------------------
 // Inventory rules shared by the sheet, item templates and editors. Server enforces mutations.
 window.Equipment = (() => {
   // Слоты: в руки (main/off/both) или на тело (armor, head, neck, cloak, gloves, belt, feet, ring1, ring2). Остальное экипировать нельзя.
