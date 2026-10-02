@@ -1,3 +1,10 @@
+// ---------------------------------------------------------------------------
+// table.js — виртуальный стол в духе Owlbear Rodeo: сцены, слои, токены,
+// туман войны, линейка, рисование, лут, синхронизация через WebSocket.
+// Даёт: window.Table.
+// Зависимости: common.js; лениво: DiceEngine, Modules, Compendium.
+// Загружается только в index.html (слой 5).
+// ---------------------------------------------------------------------------
 // Виртуальный стол в духе Owlbear Rodeo: сцены, слои, токены, туман, линейка, рисование, реалтайм.
 window.Table = (function () {
   const LAYER_ORDER = ['map', 'prop', 'mount', 'character', 'attachment', 'drawing', 'text', 'note'];
@@ -5,6 +12,7 @@ window.Table = (function () {
 
   let S; // состояние стола
 
+  // ---------- Состояние, сцены, камера ----------
   function init(ctx) {
     // ctx: {campaign, user, isGM, scene, ws, onSelect, container}
     S = {
@@ -46,6 +54,7 @@ window.Table = (function () {
   const toScreen = (wx, wy) => ({ x: wx * S.cam.k + S.cam.x, y: wy * S.cam.k + S.cam.y });
   const grid = () => S.scene.grid?.size || 70;
   // --- гекс-сетка (pointy-top): size = ширина гекса ---
+  // ---------- Сетка: квадраты и гексы, привязка позиций ----------
   function hexMetrics() { const w = grid(); const r = w / Math.sqrt(3); return { w, r, hstep: w, vstep: r * 1.5 }; }
   function hexCenter(q, rr) { const { w, r } = hexMetrics(); return { x: w * (q + rr / 2), y: r * 1.5 * rr }; }
   function hexAt(x, y) {
@@ -72,6 +81,7 @@ window.Table = (function () {
     const k = Math.min(S.w / (W + 100), S.h / (H + 100), 1.5);
     S.cam.k = k; S.cam.x = (S.w - W * k) / 2 - (m ? m.data.x * k : 0); S.cam.y = (S.h - H * k) / 2 - (m ? m.data.y * k : 0);
   }
+  // ---------- Объекты стола: границы, видимость, права ----------
   function itemBounds(it) {
     const d = it.data;
     if (d.type === 'drawing') {
@@ -102,6 +112,7 @@ window.Table = (function () {
   function canEdit(it) { return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id) || !!it.data.loot; }
 
   // ---------- рендер ----------
+  // ---------- Отрисовка: цикл, сетка, объекты, туман войны ----------
   function loop() { draw(); requestAnimationFrame(loop); }
   function draw() {
     const c = S.ctx2d; c.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -237,6 +248,7 @@ window.Table = (function () {
   const CONDICON = { blinded: 'ОС', charmed: 'ОЧ', deafened: 'ГЛ', frightened: 'ИС', grappled: 'СХ', incapacitated: 'НД', invisible: 'НВ', paralyzed: 'ПР', petrified: 'ОК', poisoned: 'ОТ', prone: 'СБ', restrained: 'ОП', stunned: 'ОШ', unconscious: 'БС', exhaustion: 'ИТ', concentration: 'КЦ' };
 
   // ---------- инструменты ----------
+  // ---------- Инструменты и события мыши/касаний ----------
   function buildTools(wrap) {
     const tools = [['select', icon('select'), 'Выбор (V)'], ['pan', icon('hand'), 'Панорама (H)'], ['ruler', icon('ruler'), 'Линейка (R)'], ['draw', icon('pen'), 'Рисование (D)'], ['text', icon('text'), 'Текст'], ['pointer', icon('pin'), 'Указка (P)']];
     if (S.isGM) tools.push(['fog', icon('fog'), 'Туман войны (F)']);
@@ -423,6 +435,7 @@ window.Table = (function () {
     });
   }
   // Предмет, брошенный на стол: создаём «лут»-токен; если он пришёл с листа персонажа — убираем его оттуда
+  // ---------- Лут и размещение ассетов ----------
   async function dropLoot(p, w, silent) {
     const g = grid(); const pos = snapPos(w.x, w.y, g * 0.7, g * 0.7);
     if (p.from_character_id) {
@@ -466,6 +479,7 @@ window.Table = (function () {
     if (t.kind === 'draw') { if (t.points.length < 2) return; upsert({ layer: 'drawing', z: 0, data: { type: 'drawing', shape: t.shape, points: t.points.map(p => [Math.round(p[0]), Math.round(p[1])]), color: t.color, width: t.width, fill: t.shape !== 'path' && t.shape !== 'line' ? !!S.drawFill : false, owner_id: S.user.id } }); }
     if (t.kind === 'fog') { const shapes = [...(S.scene.fog?.shapes || []), { shape: t.shape, mode: t.mode, points: t.points }]; S.scene.fog = { enabled: true, shapes }; sendScene({ fog: S.scene.fog }); }
   }
+  // ---------- Реалтайм: отправка изменений и приём сообщений ----------
   let _lastSend = 0;
   function throttleSend(m) { const n = Date.now(); if (n - _lastSend > 60) { _lastSend = n; S.ws.send(m); } }
 
@@ -492,6 +506,7 @@ window.Table = (function () {
   }
 
   // ---------- контекстное меню (ПКМ по элементу) ----------
+  // ---------- Контекстное меню и панель свойств ----------
   function contextMenu(it, x, y) {
     document.querySelectorAll('.ctxmenu').forEach(m => m.remove());
     const d = it.data, editable = canEdit(it);
@@ -587,6 +602,7 @@ window.Table = (function () {
     }
     box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)'));
   }
+  // ---------- Публичный API (window.Table) ----------
   const LAYER_NAMES = { map: 'Карта', prop: 'Объекты', mount: 'Ездовые', character: 'Персонажи', attachment: 'Прикреплённые', drawing: 'Рисунки', text: 'Текст', note: 'Заметки' };
   const CONDNAMES = { blinded: 'Ослеплён', charmed: 'Очарован', deafened: 'Оглох', frightened: 'Испуган', grappled: 'Схвачен', incapacitated: 'Недееспособен', invisible: 'Невидим', paralyzed: 'Парализован', petrified: 'Окаменел', poisoned: 'Отравлен', prone: 'Сбит с ног', restrained: 'Опутан', stunned: 'Ошеломлён', unconscious: 'Без сознания', exhaustion: 'Истощение', concentration: 'Концентрация' };
 

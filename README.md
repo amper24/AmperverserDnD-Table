@@ -252,7 +252,11 @@ src/
   realtime.rs           # WebSocket-хаб: стол, чат, броски, права игрок/мастер
   images.rs             # ресайз → JPEG/PNG → zlib → base64
   seed.rs               # справочник и встроенные ассеты из data_seed/ (вшиты в бинарник)
-static/                 # index.html, app.js (лобби+кампания), table.js (canvas-стол), sheet.js, compendium.js
+static/                 # фронтенд без бандлера: слои и карта файлов — в docs/frontend.md
+                        #   index.html (лобби+стол), sheet.html (лист персонажа)
+                        #   app.js (лобби+кампания), table.js (canvas-стол), sheet.js (лист),
+                        #   character-builder.js (правила создания) + builder-dialog.js (мастер-окно),
+                        #   compendium.js (справочник), см. также уровень-файлы в docs/frontend.md
 data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), builtin/ (30 ассетов)
 scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)
 deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh · install.bat

@@ -9,17 +9,25 @@
 </head>
 <body>
 <div id="app"></div>
+<!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, словари (SKILLS, ABIL), тема. -->
 <script src="/static/common.js"></script>
+<!-- Слой 2 — движки правил: кубики, слоты экипировки, механики умений. -->
 <script src="/static/dice.js"></script>
 <script src="/static/equipment.js"></script>
 <script src="/static/mechanics.js"></script>
+<!-- Слой 3 — данные справочника: модели записей и их редактор. -->
 <script src="/static/modules.js"></script>
 <script src="/static/compendium.js"></script>
+<!-- Слой 4 — создание персонажа: правила (CharacterBuilder) и мастер-окно (newCharacterDialog). -->
 <script src="/static/character-builder.js"></script>
+<script src="/static/builder-dialog.js"></script>
+<!-- Таблицы развития классов: сгенерированные данные (см. tools/srd), не править вручную. -->
 <script src="/static/class-progression.js"></script>
+<!-- Слой 5 — возможности стола: наборы, импорт из Long Story Short, canvas-стол. -->
 <script src="/static/packs.js"></script>
 <script src="/static/lss.js"></script>
 <script src="/static/table.js"></script>
+<!-- Страница: лобби и кампания/стол. -->
 <script src="/static/app.js"></script>
 </body>
 </html>

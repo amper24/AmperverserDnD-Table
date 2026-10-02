@@ -1,3 +1,10 @@
+// ---------------------------------------------------------------------------
+// sheet.js — страница листа персонажа (/sheet/:id): вкладки, блоки модулей,
+// инвентарь и слоты, заклинания и ячейки, умения с механиками, заметки.
+// Работает и отдельной страницей/окном, и встраиванием в стол (embed=1).
+// Даёт: страницу; наружу ничего не экспортирует (только контекст листа).
+// Зависимости: вся цепочка sheet.html (common → … → spell-rules).
+// ---------------------------------------------------------------------------
 // Лист персонажа. Работает и в iframe поверх стола (embed=1), и как отдельная страница/окно.
 // Предметы и заклинания — модули (Modules.*): их можно перетаскивать между окнами, на стол и другим игрокам.
 (async function () {
@@ -36,6 +43,7 @@
 
   // ---- миграция старых данных в модули ----
   /// Приводит лист к ожидаемым типам: старые записи и импорт могут содержать null вместо чисел, строк и списков.
+  // ---------- Данные листа: нормализация, миграция, автосохранение ----------
   function normalizeSheet() {
     const num = (v, d) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d;
     const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
@@ -107,6 +115,7 @@
     try { const fresh = await API.get('/api/characters/' + id); if (inventoryBusy || saving || (dirty && !force) || fresh.revision < (s._revision || 0)) return; clearTimeout(saveTimer); ch = fresh; s = fresh.sheet; dirty = false; migrate(); render(); } catch { }
   }
   window.addEventListener('message', e => { if (e.origin === location.origin && e.data?.type === 'character_update' && (!e.data.id || e.data.id === id) && (!e.data.revision || e.data.revision > (s._revision || 0))) reload(); });
+  // ---------- Операции инвентаря и механики умений ----------
   async function inventoryOp(operation, retry = false) {
     if (readonly || inventoryBusy) return;
     if (pendingOperation && !retry) return toast('Сначала повторите незавершённую операцию тем же запросом.');
@@ -151,6 +160,7 @@
   const docActions=(doc,kind,context)=>M.actionButtons(doc,context||ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
   const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
   const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
+  // ---------- Экипировка: руки и надетые слоты ----------
   function handPanel() {
     return el('div', { class: 'equipment-panel' }, handsSection(), wornSection(), acLine());
   }
@@ -480,6 +490,7 @@
   const totalWeight = () => Math.round(s.inventory.reduce((a, b) => a + (+b.weight || 0) * (b.qty ?? 1), 0) * 10) / 10;
 
   // ---------- вкладка Инвентарь ----------
+  // ---------- Вкладка «Инвентарь» ----------
   function invTab() {
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'item' }, handPanel());
     const bar = el('div', { class: 'inv-bar' },
@@ -568,6 +579,7 @@
   }
 
   // ---------- вкладка Заклинания ----------
+  // ---------- Вкладка «Заклинания» ----------
   function spellsTab() {
     const sp = s.spells, c = ctx();
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'spell' });
@@ -689,6 +701,7 @@
   }
 
   // ---------- вкладка Умения ----------
+  // ---------- Вкладка «Умения» ----------
   function featsTab() {
     const c = ctx();
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'feat' });
@@ -727,6 +740,7 @@
 
 
   // ---------- вкладка Заметки ----------
+  // ---------- Вкладка «Заметки» ----------
   function notesTab() {
     const root = el('div', { class: 'cols2' });
     const pers = el('div', { class: 'card sheet-personality-notes' }, el('h3', {}, 'Личность и анкета'));
@@ -744,6 +758,7 @@
   }
 
   // ---- drag&drop: из справочника и между листами ----
+  // ---------- Перетаскивание записей из справочника ----------
   function bindDrops(root) {
     root.querySelectorAll('.dropslot').forEach(slot => {
       slot.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell')) { e.preventDefault(); slot.classList.add('dragover'); } });
