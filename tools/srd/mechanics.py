@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Conservative, deterministic SRD -> blocks migration. Does not execute extracted prose dice.
 Re-running is idempotent. Existing non-generated mechanics are never overwritten.
+
+Схема ориентирована на владельца листа: урон, спасброски и лечение других персонажей —
+это бросок и правило, результат применяет ДМ (см. normalise()). После пересборки русской
+механики инструмент пересчитывает и английский слой data.i18n.en.mechanics — он хранится
+как разница по id программ и блоков.
 """
 import json
 import re
@@ -23,7 +28,9 @@ STR = {
         'spell_default': 'Правила применения уточняет мастер.', 'ref_formula': 'Справочная формула (не автоматический эффект): ',
         'higher': 'Большие круги: ', 'cast': 'Сотворить (базовый круг)', 'cond_add': 'Наложить состояние', 'cond_remove': 'Снять состояние',
         'roll_only_name': 'Отдельный бросок: ', 'dice': 'Кубики',
-        'roll_only': 'Только отдельный бросок кубиков: не тратит ячейку/действие и не изменяет цель. Сверьте момент, количество и условия урона с полным описанием; поздний и альтернативный урон не бросаются вместе.',
+        'roll_only': 'Только отдельный бросок кубиков: не тратит ячейку, заряд или действие и ничего не применяет к цели — результат применяет ДМ. Сверьте момент, количество и условия урона с полным описанием; поздний и альтернативный урон не бросаются вместе.',
+        'heal_roll': 'Лечение',
+        'heal_rule': 'Бросок показывает, сколько хитов восстановит заклинание. Допустимую цель выбирает игрок по правилам заклинания, а хиты применяет ДМ: себе — прибавьте результат к текущим хитам на листе.',
         'rules': 'Правила применения', 'no_mech': 'Нет активной автоматической механики. Параметры предмета приведены в карточке.',
     },
     'en': {
@@ -35,7 +42,9 @@ STR = {
         'spell_default': 'The GM clarifies how the rules apply.', 'ref_formula': 'Reference formula (not an automatic effect): ',
         'higher': 'Higher levels: ', 'cast': 'Cast (base level)', 'cond_add': 'Apply condition', 'cond_remove': 'Remove condition',
         'roll_only_name': 'Separate roll: ', 'dice': 'Dice',
-        'roll_only': 'A separate dice roll only: it spends no slot/action and does not change the target. Check the timing, count and damage conditions against the full description; delayed and alternative damage are not rolled together.',
+        'roll_only': 'A separate dice roll only: it spends no slot, charge or action and applies nothing to anyone — the GM applies the result. Check the timing, count and damage conditions against the full description; delayed and alternative damage are not rolled together.',
+        'heal_roll': 'Healing',
+        'heal_rule': 'The roll shows how many hit points the spell restores. The player chooses a legal target, and the GM applies the result: add it to your own current hit points if you healed yourself.',
         'rules': 'Rules', 'no_mech': 'No active automatic mechanics. The item parameters are shown on the card.',
     },
 }
@@ -71,7 +80,33 @@ def cost(**kw):
     return block('consume', resource='quantity', source='self', amount=1, trigger='use', **kw)
 
 
+# Эффекты по чужой цели в системе не применяются: урон, спасброски и лечение других —
+# это бросок и правило, результат применяет ДМ. Эффекты владельцу остаются.
+TARGETED = ('attack', 'damage', 'roll', 'save')
+SELF_ONLY = ('heal', 'temp_hp', 'condition', 'adjust', 'grant_item')
+
+
+def normalise(programs):
+    """Никаких чужих целей: эффекты — владельцу листа, ветвление без атаки безусловно.
+    Зеркалит Mechanics.normalize (static/mechanics.js) и mechanics::normalize (src/mechanics.rs)."""
+    for p in programs:
+        gate = False
+        for b in p['blocks']:
+            kind = b.get('kind')
+            if kind in TARGETED:
+                b.pop('target', None)
+                b.pop('apply', None)
+            if kind in SELF_ONLY:
+                b['target'] = 'self'
+            if b.get('when') in ('hit', 'miss') and not gate:
+                b['when'] = 'always'
+            if kind == 'attack':
+                gate = True
+    return programs
+
+
 def finalise(programs):
+    programs = normalise(programs)
     for i, p in enumerate(programs):
         p['id'] = f'p{i+1}'
         for j, b in enumerate(p['blocks']):
@@ -110,11 +145,11 @@ def convert_entry(e, edition):
         finesse = bool(re.search(r'фехтовальное|finesse', props, re.I))
         ab = 'dex' if ranged else 'best' if finesse else 'str'
         atk = 'atk' if ab=='best' else 'atk_'+ab
-        actions = [block('attack', dice=dice('1d20+@'+atk), target='target', apply=False)]
+        actions = [block('attack', dice=dice('1d20+@'+atk))]
         versatile = re.search(r'(?:универсальное|versatile).*?\((\d+[кd]\d+)\)', props, re.I)
-        actions.append(block('damage', dice=dice(str(d['damage'])+'+@'+ab), damage_type=d.get('damage_type',''), target='target', apply=False, grip='one' if versatile else ''))
+        actions.append(block('damage', dice=dice(str(d['damage'])+'+@'+ab), damage_type=d.get('damage_type',''), grip='one' if versatile else ''))
         if versatile:
-            actions.append(block('damage', dice=dice(versatile[1]+'+@'+ab), damage_type=d.get('damage_type',''), target='target', apply=False, grip='two'))
+            actions.append(block('damage', dice=dice(versatile[1]+'+@'+ab), damage_type=d.get('damage_type',''), grip='two'))
         if re.search(r'боеприпас|ammunition', props, re.I):
             tag = 'bolt' if 'crossbow' in name.lower() else 'bullet' if 'sling' in name.lower() else 'needle' if 'blowgun' in name.lower() else 'firearm_bullet' if name.lower() in ('musket','pistol') else 'arrow'
             actions.insert(0, block('consume', resource='quantity', source='tag', tag=tag, amount=1, trigger='attack'))
@@ -137,7 +172,9 @@ def convert_entry(e, edition):
         if name in ('Cure Wounds','Healing Word'):
             sides=8 if name=='Cure Wounds' else 4
             blocks.append(manual(_('spell_check')))
-            blocks.append(block('heal',dice=dice(f'{2 if edition=="2024" else 1}d{sides}+@spell_mod'),target='target',apply=True))
+            # Лечение другого существа — отдельный бросок с правилом: хиты цели применяет ДМ.
+            blocks.append(block('roll',name=_('heal_roll'),dice=dice(f'{2 if edition=="2024" else 1}d{sides}+@spell_mod')))
+            blocks.append(manual(_('heal_rule')))
         else:
             blocks.append(manual(d.get('desc','') or _('spell_default')))
             # Existing explicitly authored spell roll buttons are preserved as MANUAL choices,
@@ -149,8 +186,8 @@ def convert_entry(e, edition):
             blocks.append(manual(_('higher')+str(d['higher_level'])))
         programs.append(program(_('cast'),blocks))
     elif category == 'condition':
-        programs.append(program(_('cond_add'), [block('condition',target='target',operation='add',condition=e['name']), manual(d.get('desc',''))]))
-        programs.append(program(_('cond_remove'), [block('condition',target='target',operation='remove',condition=e['name'])]))
+        programs.append(program(_('cond_add'), [block('condition',target='self',operation='add',condition=e['name']), manual(d.get('desc',''))]))
+        programs.append(program(_('cond_remove'), [block('condition',target='self',operation='remove',condition=e['name'])]))
     # Preserve explicit legacy roll controls as separate, opt-in dice blocks. They are
     # NOT appended to a casting/action chain: the old extractor included delayed and
     # conditional damage in the same list. The GM chooses which isolated roll is due.
@@ -170,7 +207,7 @@ def convert_entry(e, edition):
             expr=re.sub(r'@spell\b','@spell_mod',expr)
         programs.append(program(_('roll_only_name')+action.get('name',_('dice')),[
             manual(_('roll_only')),
-            block(kind,dice=dice(expr),target='target',apply=False,damage_type=action.get('dtype',''))
+            block(kind,dice=dice(expr),damage_type=action.get('dtype',''))
         ],roll_only=True))
     if not programs:
         programs.append(program(_('rules'), [manual(d.get('desc','') or _('no_mech'))]))
@@ -191,13 +228,43 @@ def convert(entries, edition, lang='ru'):
         LANG = 'ru'
 
 
+def refresh_en(entries, edition):
+    """Пересобирает английский слой механик (data.i18n.en.mechanics) после изменений генератора.
+
+    Слой хранится как разница по id программ и блоков, поэтому при изменении состава
+    блоков его надо пересчитать: собираем английский вид записи (слияние русских данных
+    с существующим слоем) и заново берём diff от русской механики. Остальной перевод
+    записи не трогается — он собран tools/srd/localize.py по параллельному корпусу.
+    """
+    import localize as LZ
+    pairs = []
+    for e in entries:
+        ov = e.get('data', {}).get('i18n', {}).get('en')
+        if not isinstance(ov, dict):
+            continue
+        base = {k: v for k, v in e['data'].items() if k != 'i18n'}
+        pairs.append((e, {'category': e['category'], 'slug': e['slug'], 'name': e['name'], 'data': LZ.merge(base, ov)}))
+    if not pairs:
+        return 0
+    convert([en for _, en in pairs], edition, lang='en')
+    for e, en in pairs:
+        ov = e['data']['i18n']['en']
+        mp = LZ.diff(e['data']['mechanics'], en['data']['mechanics'])
+        ov.pop('mechanics', None)
+        if mp:
+            ov['mechanics'] = mp
+    return len(pairs)
+
+
 if __name__=='__main__':
     root=Path(__file__).resolve().parents[2]
     report={}
     for edition in ('2014','2024'):
         path=root/'data_seed'/f'srd_{edition}.json'
         data=convert(json.loads(path.read_text()),edition)
+        refreshed=refresh_en(data,edition)
         path.write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
+        print(edition,'английский слой механик пересчитан:',refreshed)
         kinds=Counter(b['kind'] for e in data for p in e['data']['mechanics']['programs'] for b in p['blocks'])
         report[edition]={'records':len(data),'categories':dict(Counter(e['category'] for e in data)),'blocks':dict(kinds)}
     (root/'docs'/'mechanics-migration.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

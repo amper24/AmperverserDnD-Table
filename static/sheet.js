@@ -144,22 +144,22 @@
     if(!p)return toast('Действие больше недоступно.');return runProgram(doc,ref.source_kind,p,{mode:ref.mode,gm_only:ref.gm_only});
   };
   window.ITEM_USE = ref => ref.character_id === id ? inventoryOp({ op: 'use', item_uid: ref.item_uid, actions: ref.actions, mode: ref.mode, gm_only: ref.gm_only }) : toast('Используйте предмет на листе его владельца.');
+  /// Действие из блоков: эффекты применяются владельцу листа, цель не выбирается —
+  /// урон и состояния по другим персонажам применяет ДМ (на столе, через меню токена).
   async function runProgram(doc, kind, p, opts={}) {
     if(readonly||inventoryBusy) return;
     const manual=p.blocks.filter(b=>b.enabled!==false&&b.kind==='manual');
-    const targetNeeded=p.blocks.some(b=>b.enabled!==false&&b.target==='target'&&(b.apply||['heal','temp_hp','save','condition','adjust','grant_item'].includes(b.kind)));
-    let target=id;
-    if(manual.length||targetNeeded){
-      const targetSel=el('select',{},el('option',{value:id},ch.name+' (владелец)'));
-      if(targetNeeded&&ch.campaign_id){try{const chars=await API.get('/api/characters?campaign_id='+encodeURIComponent(ch.campaign_id));chars.filter(c=>c.id!==id).forEach(c=>targetSel.append(el('option',{value:c.id},c.name)));}catch(e){return toast(e.message);}}
-      const yes=await modal(doc.name+' · '+p.name,el('div',{},targetNeeded?el('label',{},'Цель (нужны права на изменение листа)',targetSel):null,...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расходы и эффекты применятся одной операцией. Сопротивления, иммунитеты, концентрация и дополнительные правила не вычисляются автоматически.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
-      if(!yes)return;target=targetSel.value;
+    if(manual.length){
+      const yes=await modal(doc.name+' · '+p.name,el('div',{},...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расход и эффекты применятся владельцу листа одной операцией. Урон, состояния и спасброски по другим персонажам не считаются автоматически — их применяет ДМ: действие даёт бросок и правило.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
+      if(!yes)return;
     }
-    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:target,acknowledged:manual.length>0,...opts});
+    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0,...opts});
   }
   const docActions=(doc,kind,context)=>M.actionButtons(doc,context||ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
   const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
-  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
+  // У предмета на блоках старый op:'use' не работает (сервер его отклоняет): кнопки
+  // «Попадание» и «Урон» просто бросают кубы, а расход и эффекты идут через действие целиком.
+  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
   // ---------- Экипировка: руки и надетые слоты ----------
   function handPanel() {
     return el('div', { class: 'equipment-panel' }, handsSection(), wornSection(), acLine());
@@ -440,19 +440,19 @@
     const c2 = el('div');
     const hp = s.hp;
     const hitCounts = hitDiceCounts(), hitTotal = Object.values(hitCounts).reduce((sum, value) => sum + value, 0), hitSpent = Object.values(hp.hit_dice_used || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
-    /// Вдохновение: компактная квадратная кнопка со звездой; состояние сохраняется в листе.
+    /// Вдохновение: плитка в одном ряду с КД, инициативой и скоростью; состояние сохраняется в листе.
     const toggleInspiration = () => { if (readonly) return; s.inspiration = !s.inspiration; save(); render(); };
     const inspirationTile = el('button', { type: 'button', class: 'card insp-square' + (s.inspiration ? ' on' : ''),
       title: s.inspiration ? 'Потратьте вдохновение на один бросок d20 с преимуществом' : 'Нажмите, чтобы отметить вдохновение, выданное мастером',
       'aria-label': s.inspiration ? 'Вдохновение есть; нажмите, чтобы снять отметку' : 'Вдохновения нет; нажмите, чтобы отметить',
       'aria-pressed': String(!!s.inspiration), disabled: readonly ? '' : null, onclick: toggleInspiration },
-      el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'),
-      el('span', { class: 'insp-square-label' }, 'Вдохновение'));
-    c2.append(el('div', { class: 'stat3' },
+      el('label', {}, 'Вдохновение'),
+      el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'));
+    c2.append(el('div', { class: 'stat3 has-insp' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
-      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
-    c2.append(inspirationTile);
+      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } })),
+      inspirationTile));
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', { title: `Потрачено ${hitSpent} из ${hitTotal}` }, `Кости хитов ${Math.max(0, hitTotal - hitSpent)}/${hitTotal}`), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),

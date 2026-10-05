@@ -73,6 +73,7 @@ const sandbox = {
 };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
+sandbox.confirm = () => true; // диалог подтверждения: по умолчанию «да», тест переопределяет
 vm.createContext(sandbox);
 for (const f of ['common.js', 'dice.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'character-builder.js', 'builder-dialog.js'])
   vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), sandbox, { filename: f });
@@ -191,4 +192,92 @@ test('полный проход мастера завершается готов
   assert.ok(sheet.skills.includes('history') && sheet.skills.includes('insight'), 'навыки класса и предыстории на месте');
   assert.ok(sheet.inventory.length > 0, 'стартовое снаряжение попало в инвентарь');
   assert.ok(sheet.inventory.some(it => /Амулет|Эмблема|Реликварий/.test(it.name)), 'выбранный священный символ в инвентаре');
+});
+
+/// Проход «ничего не заполняя»: ни один шаг не блокирует переход, и мастер всё
+/// равно доводит до создания персонажа (имя подставляется по умолчанию).
+async function skipWizard() {
+  documentStub.body = makeNode('body');
+  const rejections = [];
+  const dialog = sandbox.newCharacterDialog({});
+  dialog.catch(e => rejections.push(e));
+  await sleep(50);
+  // шаг «Концепция» без имени: переход раньше был закрыт, теперь доступен
+  assert.ok(findButton(documentStub.body, 'Пропустить шаг'), 'незаполненный шаг предлагает пропуск');
+  for (let i = 0; i < 7; i++) {
+    const next = findButton(documentStub.body, 'Далее');
+    assert.ok(next, `шаг ${i + 1}: кнопка «Далее» на месте`);
+    click(next); await sleep(30);
+  }
+  assert.equal(rejections.length, 0, `диалог создания не должен падать: ${rejections[0]?.stack}`);
+  const submit = buttons(documentStub.body).find(b => text(b).includes('Создать персонажа'));
+  assert.ok(submit, 'после семи переходов открылся шаг «Проверка» с кнопкой создания');
+  click(submit); await sleep(20);
+  const result = await Promise.race([dialog, sleep(500).then(() => null)]);
+  assert.equal(rejections.length, 0, rejections[0]?.stack);
+  return result;
+}
+
+test('незаполненные шаги не блокируют переход, лист всё равно создаётся', async () => {
+  const result = await skipWizard();
+  assert.ok(result && result.sheet, 'диалог вернул лист персонажа');
+  assert.equal(result.name, 'Новый персонаж', 'без имени персонаж получает имя по умолчанию');
+  const s = result.sheet;
+  assert.equal(s.race, '');
+  assert.equal(s.class, '');
+  assert.equal(s.background, '');
+  assert.equal(s.modules.length, 0, 'модули не подключены');
+  assert.equal(s.inventory.length, 0, 'снаряжение не выдано');
+  assert.equal(s.level, 1);
+  assert.ok(Number(s.hp.max) >= 1, 'хиты посчитаны без выбранных модулей');
+});
+
+test('«Заполнить самостоятельно» пропускает мастер и даёт пустой лист', async () => {
+  documentStub.body = makeNode('body');
+  const rejections = [];
+  const dialog = sandbox.newCharacterDialog({});
+  dialog.catch(e => rejections.push(e));
+  await sleep(50);
+  let nameInput; walk(documentStub.body, n => { if (n.tag === 'input' && n.attributes.placeholder === 'Как вас будут помнить?') nameInput = n; });
+  fireInput(nameInput, 'Чистый лист'); await sleep(20);
+  const manual = findButton(documentStub.body, 'Заполнить самостоятельно');
+  assert.ok(manual, 'кнопка «Заполнить самостоятельно» доступна с первого шага');
+  click(manual); await sleep(20);
+  const result = await Promise.race([dialog, sleep(500).then(() => null)]);
+  assert.equal(rejections.length, 0, rejections[0]?.stack);
+  assert.ok(result && result.sheet, 'диалог вернул лист персонажа');
+  assert.equal(result.name, 'Чистый лист', 'введённое имя сохраняется');
+  const s = result.sheet;
+  assert.equal(s.race, '');
+  assert.equal(s.class, '');
+  assert.equal(s.background, '');
+  assert.equal(s.modules.length, 0, 'модули не подключены');
+  assert.equal(s.inventory.length, 0, 'снаряжение не выдано');
+  assert.equal(s.skills.length, 0);
+  assert.equal(s.creation.manual, true, 'лист помечен как заполняемый вручную');
+  for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) assert.equal(s.abilities[k], 10, `характеристика ${k} —нейтральное значение 10`);
+});
+
+test('«Заполнить самостоятельно» спрашивает подтверждение, если выборы уже сделаны', async () => {
+  documentStub.body = makeNode('body');
+  const rejections = [];
+  const dialog = sandbox.newCharacterDialog({});
+  dialog.catch(e => rejections.push(e));
+  await sleep(50);
+  click(findButton(documentStub.body, 'Далее')); await sleep(40);
+  const raceSelect = findSelect(documentStub.body, 'Расы');
+  assert.ok(raceSelect, 'выбор расы отрисован');
+  fireChange(raceSelect, 'srd14-hill-dwarf'); await sleep(30);
+  sandbox.confirm = () => false; // игрок передумал: мастер остаётся открытым
+  click(findButton(documentStub.body, 'Заполнить самостоятельно')); await sleep(20);
+  assert.ok(buttons(documentStub.body).some(b => text(b).includes('Заполнить самостоятельно')),
+    'без подтверждения мастер не закрывается');
+  sandbox.confirm = () => true;
+  click(findButton(documentStub.body, 'Заполнить самостоятельно')); await sleep(20);
+  const result = await Promise.race([dialog, sleep(500).then(() => null)]);
+  assert.equal(rejections.length, 0, rejections[0]?.stack);
+  assert.ok(result && result.sheet, 'после подтверждения диалог вернул лист');
+  assert.equal(result.sheet.race, '', 'выбранная раса в пустой лист не попала');
+  assert.equal(result.sheet.modules.length, 0, 'модули в пустой лист не попали');
+  sandbox.confirm = () => true;
 });

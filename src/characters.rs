@@ -233,7 +233,6 @@ struct InventoryOp {
     #[serde(default)] source_kind: String,
     #[serde(default)] source_uid: String,
     #[serde(default)] program_id: String,
-    #[serde(default)] target_id: String,
     #[serde(default)] acknowledged: bool,
     #[serde(default)] item_uid: String,
     #[serde(default)] slot: String,
@@ -258,11 +257,6 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
         let row = sqlx::query("SELECT campaign_id FROM scenes WHERE id = ?").bind(&body.scene_id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Сцена не найдена"))?;
         if Some(row.get::<String, _>("campaign_id")).as_deref() != cid { return Err(AppError::forbidden("Сцена и персонаж должны быть в одной кампании")); }
     }
-    let target = if body.op=="program" && !body.target_id.is_empty() && body.target_id!=id {
-        let t=load_checked(&st,&body.target_id,&user,true).await?;
-        if cid.is_none() || t["campaign_id"].as_str()!=cid {return Err(AppError::forbidden("Цель должна быть в той же кампании и доступна для изменения"));} Some(t)
-    } else {None};
-    let mut target_sheet=target.as_ref().map(|t|t["sheet"].clone());
     let mut tx = st.db.begin().await?;
     if let Some(r) = sqlx::query("SELECT result FROM character_operations WHERE character_id = ? AND request_id = ?").bind(&id).bind(&body.request_id).fetch_optional(&mut *tx).await? {
         let result = util::json_value(&util::text(&r, "result")); tx.rollback().await?;
@@ -272,9 +266,8 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
     let mut result = json!({ "op": body.op }); let mut scene_event = None;
     match body.op.as_str() {
         "program" => {
-            result=crate::mechanics::execute(&mut sheet,target_sheet.as_mut(),&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged,body.target_id==id)?;
+            result=crate::mechanics::execute(&mut sheet,&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged)?;
             result["request_id"]=json!(body.request_id);result["gm_only"]=json!(body.gm_only);
-            result["target_id"]=json!(body.target_id);
             result["program_use"]=json!({"character_id":id,"source_kind":body.source_kind,"source_uid":body.source_uid,"program_id":body.program_id,"mode":body.mode,"gm_only":body.gm_only});
         }
         "equip" => crate::inventory::equip(&mut sheet, &body.item_uid, &body.slot)?,
@@ -309,7 +302,6 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
     }
     crate::inventory::normalize(&mut sheet)?;
     cas_sheet(&mut tx, &id, c["revision"].as_i64().unwrap(), &sheet).await?;
-    if let (Some(t),Some(ts))=(&target,&target_sheet) {cas_sheet(&mut tx,&body.target_id,t["revision"].as_i64().unwrap(),ts).await?;}
     let mut message = None;
     if body.op == "use" || body.op == "program" {
         if let Some(cid) = cid {
@@ -325,7 +317,6 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
     sqlx::query("INSERT INTO character_operations (character_id, request_id, result) VALUES (?, ?, ?)").bind(&id).bind(&body.request_id).bind(result.to_string()).execute(&mut *tx).await?;
     tx.commit().await?;
     let character = char_json(&load_row(&st, &id).await?);
-    if let Some(t)=&target { if let Some(cid)=t["campaign_id"].as_str() {let updated=char_json(&load_row(&st,&body.target_id).await?);st.hub.broadcast(cid,&json!({"type":"character_update","character":updated}),None).await;} }
 
     if let Some(cid) = cid {
         st.hub.broadcast(cid, &json!({ "type": "character_update", "character": character }), None).await;

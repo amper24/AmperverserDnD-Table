@@ -212,7 +212,31 @@ window.newCharacterDialog = async function (defaults = {}) {
     for (let i = 0; i < steps.length; i++) { const problem = stepProblem(i); if (problem) map.set(i, problem); }
     return map;
   }
-  function valid() { return stepProblem(step); }
+  /// Подсказка шага: всё в мастере необязательно, поэтому она ничего не запрещает,
+  /// а только говорит, что осталось незаполненным (шаг можно пропустить).
+  function skipNote(problem) { return problem ? problem + ' — можно пропустить' : ''; }
+  /// Готовый лист из текущего черновика: пустые места остаются пустыми.
+  function finishDraft() {
+    LS.setItem('et-edition', draft.edition);
+    return { name: draft.name.trim() || 'Новый персонаж', sheet: B.build(draft) };
+  }
+  /// Есть ли в черновике выборы, которые пропадут при переходе на пустой лист
+  /// (одно введённое имя не считается — оно переносится в лист).
+  function draftFilled() {
+    return Object.keys(draft.selected).length > 0 || (draft.skills || []).length > 0 || (draft.freeSkills || []).length > 0
+      || (draft.spells || []).length > 0 || (draft.languages || []).length > 0 || (draft.rolls || []).length > 0
+      || draft.method !== 'standard' || (draft.equipment?.extras || []).length > 0;
+  }
+  /// «Заполню сам»: пустой лист без модулей, снаряжения и выборов — игрок заполняет
+  /// расу, класс, характеристики и остальное уже на странице листа.
+  function manualSheet(name) {
+    const blank = JSON.parse(JSON.stringify(emptyDraft));
+    blank.name = name; blank.edition = draft.edition; blank.method = 'manual';
+    blank.abilities = Object.fromEntries(B.keys.map(k => [k, 10]));
+    const sheet = B.build(blank);
+    sheet.creation = { ...sheet.creation, manual: true };
+    return sheet;
+  }
   // ---------- Каталог: загрузка рас, классов, предысторий, черт, заклинаний и предметов ----------
   async function load() {
     const version = ++request; loading = true; error = ''; render();
@@ -814,16 +838,13 @@ window.newCharacterDialog = async function (defaults = {}) {
     return body;
   }
   const uidSafe = () => 'ex' + Math.random().toString(36).slice(2, 9);
-  /// Переход между шагами: вперёд пускает только заполненный текущий шаг.
+  /// Переход между шагами. Всё в мастере необязательно: вперёд пускаем всегда,
+  /// незаполненное остаётся отмеченным подсказкой в навигации и на шаге «Проверка».
   // ---------- Навигация и перерисовка ----------
   function goTo(target) {
-    if (target === step) return;
-    if (target < step) { step = target; render(); return; }
-    for (let i = step; i < target; i++) {
-      const problem = stepProblem(i);
-      if (problem) { step = i; status.textContent = problem; render(); return; }
-    }
-    step = target; render();
+    const next = Math.max(0, Math.min(last, Number(target) || 0));
+    if (next === step) return;
+    step = next; render();
   }
   function render() {
     // Rebuilding the wizard after every choice used to replace the scrolling body with a
@@ -851,7 +872,7 @@ window.newCharacterDialog = async function (defaults = {}) {
       const done = i < step, problem = issues.get(i) && i !== step;
       return el('button', {
         type: 'button', class: `builder-step${i === step ? ' current' : done ? ' done' : ''}${problem ? ' flag' : ''}`,
-        'aria-current': i === step ? 'step' : null, title: issues.get(i) || stepTips[i],
+        'aria-current': i === step ? 'step' : null, title: issues.get(i) ? skipNote(issues.get(i)) : stepTips[i],
         onclick: () => goTo(i)
       }, el('span', { class: 'builder-step-n' }, done ? '✓' : String(i + 1)),
         el('span', { class: 'builder-step-t' }, el('b', {}, name), el('small', {}, i === last ? 'Готовый лист' : stepTips[i])));
@@ -861,7 +882,7 @@ window.newCharacterDialog = async function (defaults = {}) {
       el('div', { class: 'builder-progress' }, el('span', { style: `width:${((step + 1) / steps.length) * 100}%` })),
       el('div', { class: 'builder-context-row' },
         el('b', {}, `Шаг ${step + 1} из ${steps.length} · ${steps[step]}`),
-        el('span', { class: problem ? 'builder-flag' : 'muted small' }, problem ? '! ' + problem : stepTips[step]))));
+        el('span', { class: problem ? 'builder-flag' : 'muted small' }, problem ? '! ' + skipNote(problem) : stepTips[step]))));
     const body = el('div', { class: 'builder-body' });
     body.dataset.step = String(step);
     const add = (...nodes) => nodes.filter(Boolean).forEach(node => body.append(node));
@@ -870,7 +891,8 @@ window.newCharacterDialog = async function (defaults = {}) {
       add(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Восемь понятных шагов — от концепции до готового листа. Расы, классы и предыстории подключаются как блоки из справочника, а навыки и снаряжение собираются по правилам.')),
         field('Имя персонажа', el('input', { value: draft.name, maxlength: 128, placeholder: 'Как вас будут помнить?', oninput: e => draft.name = e.target.value })),
         field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.preparedSpells = []; draft.skills = []; draft.freeSkills = []; draft.languages = []; draft.bonuses = {}; draft.ruleChoices = {}; draft.equipment = emptyEquipment(); load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
-        el('p', { class: 'muted small' }, '2014: бонусы характеристик от расы. 2024: от предыстории. Пользовательские модули доступны из ваших наборов и наборов кампании.'));
+        el('p', { class: 'muted small' }, '2014: бонусы характеристик от расы. 2024: от предыстории. Пользовательские модули доступны из ваших наборов и наборов кампании.'),
+        el('p', { class: 'muted small' }, 'Все шаги необязательны: незаполненное можно пропустить и дополнить позже на листе персонажа. Нужен чистый лист без подсказок мастера — нажмите «Заполнить самостоятельно» внизу окна.'));
     }
     if (step === 1 || step === 4) {
       if (loading) add(el('p', { role: 'status' }, 'Загружаем модули…'));
@@ -1046,7 +1068,9 @@ window.newCharacterDialog = async function (defaults = {}) {
     const nav = el('div', { class: 'builder-nav' },
       el('button', { class: 'builder-back', disabled: step === 0 ? '' : null, onclick: () => goTo(step - 1) }, '← Назад'),
       el('span', { class: 'builder-nav-info' }, el('b', {}, `${step + 1} / ${steps.length}`), el('small', {}, steps[step])),
-      step < last ? el('button', { class: 'primary', onclick: () => goTo(step + 1) }, 'Далее →')
+      step < last ? el('span', { class: 'builder-nav-actions' },
+        problem ? el('button', { class: 'small builder-skip', title: skipNote(problem), onclick: () => goTo(step + 1) }, 'Пропустить шаг') : null,
+        el('button', { class: 'primary', onclick: () => goTo(step + 1) }, 'Далее →'))
         : el('span', { class: 'builder-nav-hint' }, 'Осталось нажать «Создать персонажа»'));
     root.append(status, nav, el('datalist', { id: 'builder-item-names' }, ...equipmentCatalog().map(e => el('option', { value: e.name }))));
     if (keepPosition) {
@@ -1064,12 +1088,16 @@ window.newCharacterDialog = async function (defaults = {}) {
   }
   // ---------- Открытие: первичная отрисовка, загрузка каталога, модальное окно ----------
   render(); load();
-  const result = await modal('Создание персонажа', root, [{ label: 'Создать персонажа', cls: 'primary builder-submit', fn: () => {
-    if (step !== last) { status.textContent = 'Пройдите шаги и проверьте готовый лист.'; return false; }
-    const msg = valid(); if (msg) { status.textContent = msg; return false; }
-    LS.setItem('et-edition', draft.edition);
-    return { name: draft.name.trim(), sheet: B.build(draft) };
-  } }], { wide: true });
+  const result = await modal('Создание персонажа', root, [
+    { label: 'Заполнить самостоятельно', title: 'Пропустить мастер и получить пустой лист: расу, класс, характеристики и снаряжение вы заполните сами',
+      fn: () => {
+        if (draftFilled() && !confirm('Пропустить мастер? Уже выбранные раса, класс, навыки и снаряжение не попадут в лист — он будет пустым.')) return false;
+        const name = draft.name.trim() || 'Новый персонаж';
+        LS.setItem('et-edition', draft.edition);
+        return { name, sheet: manualSheet(name) };
+      } },
+    { label: 'Создать персонажа', cls: 'primary builder-submit', fn: finishDraft }
+  ], { wide: true });
   request++; // Ignore late fetches after cancellation.
   return result;
 };

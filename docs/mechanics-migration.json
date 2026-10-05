@@ -13,11 +13,11 @@
     },
     "blocks": {
       "consume": 339,
-      "manual": 4086,
+      "manual": 4088,
       "attack": 585,
       "damage": 725,
-      "roll": 100,
-      "heal": 6,
+      "roll": 102,
+      "heal": 4,
       "grant_item": 4,
       "passive": 109,
       "condition": 30
@@ -37,10 +37,11 @@
     },
     "blocks": {
       "consume": 339,
-      "manual": 3664,
+      "manual": 3666,
       "attack": 499,
       "damage": 811,
-      "heal": 3,
+      "roll": 2,
+      "heal": 1,
       "grant_item": 1,
       "passive": 90,
       "condition": 30

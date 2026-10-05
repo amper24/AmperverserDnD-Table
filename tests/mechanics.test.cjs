@@ -19,7 +19,10 @@ test('validation rejects fractional spending, ungated branches, duplicate IDs an
 test('advanced dice formulas are validated at save time, including stat variables',()=>{const b=M.block('damage');b.dice.advanced='2d6+@str';const m={version:1,programs:[{id:'p',name:'Damage',trigger:'use',blocks:[b]}]};assert.equal(M.validate(m),'');b.dice.advanced='2d6++4';assert.match(M.validate(m),/формула кубов/i);});
 test('passives project new values without mutating source or accumulating bonuses',()=>{const e={data:{speed:30,asi:{dex:2},mechanics:{version:1,programs:[{trigger:'passive',blocks:[{kind:'passive',field:'speed',value:40},{kind:'passive',field:'asi.dex',value:1}]}]}}};const next=M.passiveData(e);assert.equal(next.data.speed,40);assert.equal(next.data.asi.dex,1);assert.equal(e.data.speed,30);assert.equal(M.passiveData(next).data.asi.dex,1);});
 test('all 2499 standard resources have valid block schemas and unique IDs',()=>{let count=0;for(const ed of ['2014','2024'])for(const e of JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`))){assert.equal(M.validate(e.data.mechanics),'',e.slug);count++;}assert.equal(count,2499);});
-test('curated healing uses edition-correct dice; potions consume then heal then give vial',()=>{for(const ed of ['2014','2024']){const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));const spell=data.find(e=>e.category==='spell'&&e.data.name_en==='Cure Wounds');const blocks=spell.data.mechanics.programs[0].blocks;assert.equal(blocks[0].resource,'slot');const heal=blocks.find(b=>b.kind==='heal');assert.equal(heal.dice.count,ed==='2014'?1:2);assert.equal(heal.dice.stat,'spell_mod');const potion=data.find(e=>e.category==='item'&&e.data.mechanics.programs.some(p=>p.blocks.some(b=>b.kind==='grant_item')));assert.deepEqual(potion.data.mechanics.programs[0].blocks.map(b=>b.kind),['consume','heal','grant_item']);}});
+test('curated healing: potions heal the owner, Cure Wounds is a roll the GM applies',()=>{for(const ed of ['2014','2024']){const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));const spell=data.find(e=>e.category==='spell'&&e.data.name_en==='Cure Wounds');const blocks=spell.data.mechanics.programs[0].blocks;assert.equal(blocks[0].resource,'slot');// Лечение другого существа не списывается автоматически: бросок и правило для ДМ.
+assert.ok(!blocks.some(b=>b.kind==='heal'));const roll=blocks.find(b=>b.kind==='roll');assert.equal(roll.name,'Лечение');assert.equal(roll.dice.count,ed==='2014'?1:2);assert.equal(roll.dice.sides,8);assert.equal(roll.dice.stat,'spell_mod');assert.ok(blocks.some(b=>b.kind==='manual'&&/применяет ДМ/.test(b.text||'')));
+const potion=data.find(e=>e.category==='item'&&e.data.mechanics.programs.some(p=>p.blocks.some(b=>b.kind==='grant_item')));assert.deepEqual(potion.data.mechanics.programs[0].blocks.map(b=>b.kind),['consume','heal','grant_item']);assert.equal(potion.data.mechanics.programs[0].blocks[1].target,'self');}});
+test('no standard entry targets another character: weapons and conditions are owner-side',()=>{for(const ed of ['2014','2024']){for(const e of JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`))){for(const p of e.data.mechanics.programs)for(const b of p.blocks){assert.ok(b.target!=='target',`${e.slug}: цель «${b.target}»`);if(['heal','temp_hp','condition','adjust','grant_item'].includes(b.kind))assert.equal(b.target,'self',`${e.slug}/${b.kind}`);if(['attack','damage','roll'].includes(b.kind))assert.equal(b.apply,undefined,`${e.slug}/${b.kind}`);}}}});
 test('monster extracted conditional dice never become one automatically executed attack',()=>{const data=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));const m=data.find(e=>e.category==='monster'&&e.data.name_en==='Aboleth').data.mechanics;assert.ok(m.programs.every(p=>p.blocks.filter(b=>b.dice).length<=1));assert.ok(m.programs.flatMap(p=>p.blocks).every(b=>b.apply!==true));});
 test('standard ammo defaults conserve package weight and distinguish firearm resources',()=>{for(const ed of ['2014','2024']){const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));for(const e of data){const d=e.data.mechanics.item_defaults;if(!d)continue;assert.ok(Number.isInteger(d.qty)&&d.qty>1);assert.ok(Math.abs(d.qty*d.unit_weight-e.data.weight)<1e-9,e.slug);if(e.data.name_en==='Bullets, Firearm')assert.equal(d.ammo_tag,'firearm_bullet');}}});
 test('named feature projection preserves mechanics without sharing mutable blocks',()=>{const m={version:1,programs:[{id:'rage',name:'Ярость',feature_name:'Ярость',trigger:'use',blocks:[{id:'b',kind:'manual',text:'Правило'}]},{id:'profile',name:'Параметры',trigger:'passive',blocks:[]}]};const f=M.forFeature(m,'Ярость');assert.equal(f.programs.length,1);f.programs[0].blocks[0].text='Изменено';assert.equal(m.programs[0].blocks[0].text,'Правило');assert.equal(M.forFeature(m,'Иное'),undefined);});
@@ -53,5 +56,27 @@ test('template library builds valid programs and keeps creation templates apart'
   }
   assert.ok(!ids('item').some(id=>ids('race').includes(id)),'creation templates are separate');
   for(const id of ['asi','skills','saves','hit_die','spellcasting','languages','feature'])assert.ok(ids('race').includes(id),id);
-  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('save_damage'));
+  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('area_damage'));
+  // Блок «спасбросок цели» убран: в палитре его нет, а урон по площади — своё действие.
+  assert.ok(!ids('item').includes('save_damage'));
+  for(const cat of ['item','spell','feature','monster']) assert.ok(!M.templates(cat).some(t=>(t.chain||[]).includes('save')),cat);
+});
+test('blocks never target another character: damage and saves are custom actions',()=>{
+  const b=M.block('damage'), a=M.block('attack'), h=M.block('heal');
+  assert.equal(b.target,undefined); assert.equal(b.apply,undefined);
+  assert.equal(a.target,undefined); assert.equal(a.apply,undefined);
+  assert.equal(h.target,'self'); assert.equal(h.apply,true);
+  // Старый блок спасброска цели превращается в своё действие с правилом для ДМ.
+  const legacy={version:1,programs:[{id:'p',name:'Пламя',trigger:'use',blocks:[{id:'s',kind:'save',when:'always',ability:'dex',dc:15},{id:'d',kind:'damage',when:'hit',target:'target',apply:true,dice:M.dice('8d6')}]}]};
+  const m=M.normalize(legacy);
+  assert.equal(m.programs[0].blocks[0].kind,'roll');
+  assert.match(m.programs[0].blocks[0].text,/Спасбросок|СЛ 15/);
+  assert.equal(m.programs[0].blocks[1].when,'always','ветвление без атаки больше не держится на спасбросоке');
+  assert.equal(m.programs[0].blocks[1].target,undefined);
+  assert.equal(M.validate(m),'');
+  // Эффекты всегда идут владельцу листа, даже если в старых данных указана цель.
+  const heal={version:1,programs:[{id:'p',name:'Лечение',trigger:'use',blocks:[{id:'h',kind:'heal',target:'target',dice:M.dice('1d8')},{id:'c',kind:'condition',target:'target',condition:'Отравленный',operation:'add'}]}]};
+  const n=M.normalize(heal);
+  assert.deepEqual(n.programs[0].blocks.map(b=>b.target),['self','self']);
+  assert.equal(M.validate(n),'');
 });

@@ -9,7 +9,11 @@
 // Versioned, declarative mechanics. No eval, scripts, loops or automatic execution of prose.
 window.Mechanics = (() => {
   const VERSION = 1, clone = x => JSON.parse(JSON.stringify(x)), uid = () => crypto.randomUUID();
-  const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Проверка / бросок','roll'], save: ['Спасбросок цели','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
+  // Блоки не работают по чужой цели: эффекты применяются к владельцу листа, а урон и
+  // бывший «спасбросок цели» — это своё действие (бросок и правило), результат которого применяет ДМ.
+  const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
+  // Виды блоков, которых больше нет в палитре: старые записи с ними читаются и превращаются в свои действия.
+  const LEGACY_KINDS = ['save'];
   const STATS = {'':'Без модификатора',str:'Сила',dex:'Ловкость',con:'Телосложение',int:'Интеллект',wis:'Мудрость',cha:'Харизма',best:'Лучшая Сила / Ловкость',prof:'Мастерство',atk:'Оружейная атака',atk_str:'Атака Силой',atk_dex:'Атака Ловкостью',spell:'Атака заклинанием',spell_mod:'Модификатор заклинателя',level:'Уровень',dc:'СЛ заклинаний'};
   const FIELDS = {speed:'Скорость',initiative_bonus:'Бонус инициативы','currency.gp':'Золотые','currency.sp':'Серебряные','hp.max':'Максимум хитов',...Object.fromEntries(Object.entries(window.ABIL || {}).map(([k,n])=>['abilities.'+k,n]))};
   const PASSIVE = {speed:'Скорость',hit_die:'Кость хитов класса',spellcasting:'Характеристика заклинателя',saves:'Владение спасбросками',skills:'Навыки',languages:'Языки',armor:'Владение доспехами',weapons:'Владение оружием',...Object.fromEntries(Object.entries(window.ABIL || {}).map(([k,n])=>['asi.'+k,'Бонус: '+n]))};
@@ -22,8 +26,7 @@ window.Mechanics = (() => {
   function expression(d) { if(d?.advanced) return d.advanced; return (d?.count ? `${d.count}d${d.sides}` : '0') + (Number(d?.bonus)>=0?'+':'') + (Number(d?.bonus)||0) + (d?.stat?'+@'+d.stat:''); }
   function block(kind) {
     const b={id:uid(),kind,enabled:true,when:'always'};
-    if(['attack','damage','heal','temp_hp','roll','save'].includes(kind)) Object.assign(b,{dice:dice(kind==='attack'?'1d20+@atk':kind==='save'?'1d20':'1d6'),target:['heal','temp_hp'].includes(kind)?'self':'target',apply:['heal','temp_hp'].includes(kind)});
-    if(kind==='save') Object.assign(b,{ability:'dex',dc:13});
+    if(['attack','damage','heal','temp_hp','roll'].includes(kind)) Object.assign(b,{dice:dice(kind==='attack'?'1d20+@atk':'1d6'),...(['heal','temp_hp'].includes(kind)?{target:'self',apply:true}:{})});
     if(kind==='consume') Object.assign(b,{resource:'quantity',source:'self',amount:1,trigger:'use'});
     if(kind==='grant_item') Object.assign(b,{target:'self',amount:1,item:{name:'Пустой флакон',type:'gear',qty:1,weight:0.1,stackable:true,handedness:'none',actions:[]}});
     if(kind==='condition') Object.assign(b,{target:'self',condition:'Отравленный',operation:'add'});
@@ -62,8 +65,8 @@ window.Mechanics = (() => {
       build:()=>({name:'Атака',blocks:[block('attack'),block('damage')]}) },
     { id:'spell_attack', group:'Бой', name:'Атака заклинанием → урон', hint:'Бонус атаки заклинанием, урон, сравнение с КД цели', chain:['attack','damage'],
       build:()=>({name:'Атака заклинанием',blocks:[{...block('attack'),dice:dice('1d20+@spell')},{...block('damage'),dice:dice('1d10+@spell_mod')}]}) },
-    { id:'save_damage', group:'Бой', name:'Спасбросок цели → урон', hint:'Цель спасается; при провале получает урон', chain:['save','damage'],
-      build:()=>({name:'Урон по площади',blocks:[block('save'),{...block('damage'),when:'hit'}]}) },
+    { id:'area_damage', group:'Бой', name:'Своё действие: урон', hint:'Правило области, спасбросок и условия описываете вы — блок только бросает урон, применяет результат ДМ', chain:['manual','damage'],
+      build:()=>({name:'Урон по площади',blocks:[{...block('manual'),text:'Опишите область, условия и спасбросок цели: что именно и в каком порядке применяет ДМ.'},block('damage')]}) },
     { id:'ammo_attack', group:'Бой', name:'Патрон → атака → урон', hint:'Расход боеприпаса перед каждой атакой', chain:['consume','attack','damage'],
       build:()=>({name:'Выстрел',blocks:[{...block('consume'),source:'tag',tag:'стрела',trigger:'attack'},block('attack'),block('damage')]}) },
     { id:'double_attack', group:'Бой', name:'Две атаки', hint:'Два удара: урон каждого бросается отдельно', chain:['attack','damage','attack','damage'],
@@ -71,7 +74,7 @@ window.Mechanics = (() => {
     { id:'potion', group:'Лечение', name:'Зелье → хиты → флакон', hint:'Расход предмета, лечение, выдача пустого флакона', chain:['consume','heal','grant_item'],
       build:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}) },
     { id:'spell', group:'Лечение', name:'Ячейка → лечение', hint:'Расход ячейки и лечение цели', chain:['consume','heal'],
-      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}]}) },
+      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod')}]}) },
     { id:'temp_hp', group:'Лечение', name:'Временные хиты', hint:'Берутся максимумом, не суммируются', chain:['temp_hp'],
       build:()=>({name:'Временные хиты',blocks:[{...block('temp_hp'),dice:dice('1d6+2')}]}) },
     { id:'heal_temp', group:'Лечение', name:'Лечение + временные хиты', hint:'Сначала лечение, затем запас сверху', chain:['heal','temp_hp'],
@@ -123,15 +126,15 @@ window.Mechanics = (() => {
   ];
   /// Быстрые шаблоны по категории: самые ходовые цепочки — одним нажатием.
   const QUICK = {
-    item: ['potion','weapon','save_damage','manual'],
-    spell: ['spell','spell_attack','save_damage','temp_hp'],
+    item: ['potion','weapon','area_damage','manual'],
+    spell: ['spell','spell_attack','area_damage','temp_hp'],
     feature: ['uses_effect','condition_on','buff','manual'],
-    monster: ['weapon','save_damage','condition_on','manual'],
+    monster: ['weapon','area_damage','condition_on','manual'],
     race: ['asi','skills','feature','proficiency'],
     class: ['hit_die','skills','feature','proficiency'],
     background: ['asi','skills','feature','proficiency'],
   };
-  QUICK.default = ['weapon','potion','save_damage','manual'];
+  QUICK.default = ['weapon','potion','area_damage','manual'];
   const templates = (category) => TEMPLATES.filter(t => ['race','class','background'].includes(category) ? !!t.creation : !t.creation);
   /// Галерея шаблонов: группы, описание и цепочка блоков — вместо плоского списка кнопок.
   function templatePicker(category = 'item') {
@@ -155,8 +158,36 @@ window.Mechanics = (() => {
     const body = el('div', { class: 'template-picker' }, query, grid);
     return modal('Шаблоны блоков', body, [{ label: 'Добавить шаблон', cls: 'primary template-add', fn: () => chosen || false }], { wide: true });
   }
+  /// Блоки не работают по чужой цели: эффекты применяются владельцу листа, а урон и бывший
+  /// «спасбросок цели» — это своё действие (бросок и правило), результат которого применяет ДМ.
+  /// Старые записи приводятся к новому виду при открытии в редакторе; сохранение закрепляет результат.
+  function normalize(m) {
+    if (!m || !Array.isArray(m.programs)) return m;
+    for (const p of m.programs) {
+      if (!Array.isArray(p.blocks)) continue;
+      let gate = false;
+      for (let i = 0; i < p.blocks.length; i++) {
+        let b = p.blocks[i];
+        if (!b || typeof b !== 'object') continue;
+        // Спасбросок цели → своё действие: бросок d20 и правило, которое сравнивает ДМ.
+        if (b.kind === 'save') {
+          const ability = (window.ABIL || {})[b.ability] || b.ability || '';
+          const dc = Number(b.dc) || 0;
+          b = p.blocks[i] = { id: b.id || uid(), kind: 'roll', enabled: b.enabled !== false, when: 'always', name: b.name || 'Спасбросок',
+            dice: dice('1d20'), text: `Спасбросок${ability ? ' ' + ability : ''}${dc ? ' · СЛ ' + dc : ''}. Результат сравнивает ДМ.` };
+        }
+        if (['attack', 'damage', 'roll'].includes(b.kind)) { delete b.target; delete b.apply; }
+        if (['heal', 'temp_hp', 'condition', 'adjust', 'grant_item'].includes(b.kind)) b.target = 'self';
+        if (['hit', 'miss'].includes(b.when) && !gate) b.when = 'always'; // ветвление держалось на спасбросоке цели
+        if (b.kind === 'attack') gate = true;
+      }
+    }
+    return m;
+  }
+  /// Программы для показа: чужих целей нет, старые блоки спасброска показаны своим действием.
+  const programsOf = m => m?.programs ? normalize(clone({ programs: m.programs })).programs : [];
   function migrate(doc, category='item') {
-    if(doc.mechanics) return doc.mechanics;
+    if(doc.mechanics) return normalize(doc.mechanics);
     const blocks=[], extra=[];
     if(['race','class','background'].includes(category)) {
       const fields=['speed','hit_die','spellcasting','saves','skills','languages','armor','weapons'];
@@ -172,10 +203,11 @@ window.Mechanics = (() => {
     if(category==='item' && doc.consume) {
       const c=doc.consume; blocks.push({...block('consume'),enabled:c.enabled!==false,resource:c.resource||'quantity',source:c.target_uid==='self'?'self':c.target_uid?'item':'tag',item_uid:c.target_uid==='self'?'':c.target_uid||'',tag:c.ammo_tag||'',amount:c.amount||1,trigger:c.trigger||'use'});
     }
-    for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||'',apply:a.kind==='heal',target:a.kind==='heal'?'self':'target'});
+    // Старые действия: урон и атака — только броски, лечение применяется владельцу.
+    for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push(Object.assign({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||''},a.kind==='heal'?{apply:true}:null));
     if(!blocks.some(b=>b.kind==='manual') && (doc.desc || doc.text)) blocks.push({...block('manual'),text:doc.desc||doc.text});
     doc.mechanics={version:VERSION,origin:'legacy',programs:blocks.length?[...extra,{id:'use',name:category==='spell'?'Сотворить':category==='item'?'Использовать':'Применить',trigger:'use',blocks}]:extra};
-    return doc.mechanics;
+    return normalize(doc.mechanics);
   }
   function validate(m) {
     if(!m || m.version!==VERSION || !Array.isArray(m.programs) || m.programs.length>256) return 'Неподдерживаемая схема механик.';
@@ -185,7 +217,7 @@ window.Mechanics = (() => {
       if(!['use','passive'].includes(p.trigger)||!Array.isArray(p.blocks)||p.blocks.length>32) return 'Действие: до 32 блоков, триггер использования или параметров.';
       const bids=new Set(); let gate=false;
       for(const b of p.blocks) {
-        if(!b.id||bids.has(b.id)||!TYPES[b.kind]) return 'Неизвестный блок или повторяющийся ID.'; bids.add(b.id);
+        if(!b.id||bids.has(b.id)||!(TYPES[b.kind]||LEGACY_KINDS.includes(b.kind))) return 'Неизвестный блок или повторяющийся ID.'; bids.add(b.id);
         if(b.enabled===false) continue;
         if(p.trigger==='passive'&&!['passive','manual'].includes(b.kind)||b.kind==='passive'&&p.trigger!=='passive')return 'Пассивные параметры помещаются в программу «Параметры при создании», отдельно от активных эффектов.';
         if(b.kind==='consume'&&b.trigger==='attack'&&!p.blocks.slice(p.blocks.indexOf(b)+1).some(x=>x.kind==='attack'&&x.enabled!==false))return 'Расход за атаку должен стоять перед атакой.';
@@ -213,11 +245,11 @@ window.Mechanics = (() => {
   function programSummary(p) { return p.blocks.filter(b=>b.enabled!==false).map(b=>TYPES[b.kind]?.[0]||b.kind).join(' → '); }
   function preview(m, ctx) {
     if(!m) return null;
-    return el('div',{class:'mechanics-preview'},...m.programs.map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+expression(b.dice):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа',onclick:()=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other'})},'Бросить отдельно · без эффектов'):null)) )));
+    return el('div',{class:'mechanics-preview'},...programsOf(m).map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+expression(b.dice):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа',onclick:()=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other'})},'Бросить отдельно · без эффектов'):null)) )));
   }
   function buttons(doc, options={}) {
     const root=el('div',{class:'action-buttons mechanics-buttons'});
-    for(const p of doc.mechanics?.programs || []) {
+    for(const p of programsOf(doc.mechanics)) {
       if(p.trigger!=='use') continue;
       const blocks=(p.blocks||[]).filter(b=>b.enabled!==false);
       const program=el('button',{class:'act-btn',disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},el('span',{},p.name),el('small',{},` ${blocks.length} блоков`));
@@ -244,7 +276,8 @@ window.Mechanics = (() => {
     const field=(n,c)=>el('label',{class:'block-field'},el('span',{},n),c);
     const input=(obj,key,type='text',extra={})=>el('input',{type,value:obj[key]??'',...extra,oninput:e=>obj[key]=type==='number'?Number(e.target.value):e.target.value});
     const select=(pairs,value,fn)=>el('select',{onchange:e=>{fn(e.target.value);render();}},...pairs.map(([k,n])=>el('option',{value:k,selected:String(value??'')===k?'':null},n)));
-    const targets=b=>field('Получатель',select([['self','Владелец'],['target','Выбранный персонаж']],b.target,v=>b.target=v));
+    // Получателя больше нет: эффекты идут владельцу листа, остальное применяет ДМ.
+    const note=text=>el('p',{class:'muted small'},text);
     const makeProgram=()=>({id:uid(),name:'Новое действие',trigger:'use',blocks:[]});
     function render() {
       root.replaceChildren(); selected=Math.max(0,Math.min(selected,m.programs.length-1)); const p=m.programs[selected];
@@ -268,17 +301,18 @@ window.Mechanics = (() => {
         card.addEventListener('dragover',e=>{if([...e.dataTransfer.types].includes('application/x-mechanics-block'))e.preventDefault();});card.addEventListener('drop',e=>{try{const d=JSON.parse(e.dataTransfer.getData('application/x-mechanics-block'));if(d.instance===instance){e.preventDefault();e.stopPropagation();move(d.index,i);}}catch{}});
         card.append(el('header',{},handle,el('span',{class:'block-index'},String(i+1).padStart(2,'0')),el('b',{},TYPES[b.kind]?.[0]||b.kind),el('label',{class:'block-switch'},el('input',{type:'checkbox',checked:b.enabled!==false?'':null,'aria-label':b.kind==='consume'?'Автоматически расходовать ресурс':'Включить блок',onchange:e=>{b.enabled=e.target.checked;render();}}),' Вкл.'),el('button',{class:'small','aria-label':'Блок выше',disabled:i===0?'':null,onclick:()=>move(i,i-1)},'↑'),el('button',{class:'small','aria-label':'Блок ниже',disabled:i===p.blocks.length-1?'':null,onclick:()=>move(i,i+1)},'↓'),el('button',{class:'small','aria-label':'Копировать блок',onclick:()=>{if(p.blocks.length>=32)return;const copy=clone(b);copy.id=uid();p.blocks.splice(i+1,0,copy);render();}},'⧉'),el('button',{class:'small danger','aria-label':'Удалить блок',onclick:()=>{p.blocks.splice(i,1);render();}},'×')));
         const body=el('div',{class:'block-controls'});
-        if(b.kind!=='passive') body.append(field('Условие',select([['always','Всегда'],['hit','Если попадание / провал спасброска'],['miss','Если промах / успешный спасбросок']],b.when||'always',v=>b.when=v)));
-        if(b.dice&&b.kind!=='save'){
+        if(b.kind!=='passive') body.append(field('Условие',select([['always','Всегда'],['hit','Если попадание'],['miss','Если промах']],b.when||'always',v=>b.when=v)));
+        if(b.dice){
           const d=b.dice;
           body.append(field('Кубиков',input(d,'count','number',{min:0,max:100,step:1})),field('Грани',select([...new Set([4,6,8,10,12,20,100,d.sides])].sort((a,b)=>a-b).map(n=>[String(n),'d'+n]),String(d.sides),v=>d.sides=Number(v))),field('Бонус',input(d,'bonus','number',{step:1})),field('Модификатор',select(Object.entries(STATS),d.stat,v=>d.stat=v)));
           const adv=el('details',{class:'block-advanced'},el('summary',{},'Своя формула (необязательно)'),field('Формула заменяет поля кубиков',input(d,'advanced')));body.append(adv);
         }
-        if(['heal','damage','temp_hp','condition','grant_item','adjust','save'].includes(b.kind)) body.append(targets(b));
+        if(['heal','temp_hp','condition','grant_item','adjust'].includes(b.kind)) body.append(note('Применяется владельцу листа. Эффекты по другим персонажам — задача ДМ.'));
         if(b.kind==='attack'||b.kind==='damage') body.append(field('Хват',select([['','Любой'],['one','Одной рукой'],['two','Двумя руками']],b.grip,v=>b.grip=v)));
-        if(b.kind==='attack'||b.kind==='damage') body.append(field(b.kind==='attack'?'Сверять с КД цели':'Изменять хиты',select([['false','Только бросок / сообщение'],['true','Применять к выбранной цели']],String(!!b.apply),v=>b.apply=v==='true')));
-        if(b.kind==='damage') body.append(field('Тип урона',select((window.Modules?.DAMAGE_TYPES||['','рубящий','огонь']).map(n=>[n,n||'Не задан']),b.damage_type,v=>b.damage_type=v)));
-        if(b.kind==='save') body.append(field('Характеристика',select(Object.entries(window.ABIL||{}),b.ability,v=>b.ability=v)),field('СЛ',input(b,'dc','number',{min:1,max:40})));
+        if(b.kind==='attack') body.append(field('КД цели (необязательно)',input(b,'dc','number',{min:0,max:40,step:1,placeholder:'0 — решает ДМ'})),
+          note('Попадание решает ДМ. Если указать КД, ветка «при попадании» сработает только при результате не ниже КД; без КД промахом считается одна натуральная 1.'));
+        if(b.kind==='damage') body.append(field('Тип урона',select((window.Modules?.DAMAGE_TYPES||['','рубящий','огонь']).map(n=>[n,n||'Не задан']),b.damage_type,v=>b.damage_type=v)),note('Урон не списывается с цели: бросок показывает результат, хиты меняет ДМ.'));
+        if(b.kind==='roll') body.append(field('Правило действия (необязательно)',el('textarea',{oninput:e=>b.text=e.target.value},b.text||'')),note('Своё действие: бросок кубов и правило, которое применяет ДМ.'));
         if(b.kind==='consume'){
           body.append(field('Ресурс',select([['quantity','Количество предмета'],['charges','Заряды предмета'],['slot','Ячейка заклинания'],['uses','Использования умения']],b.resource,v=>b.resource=v)));
           if(['quantity','charges'].includes(b.resource)){
@@ -327,5 +361,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,templatePicker,migrate,validate,editor,preview,buttons,programSummary,passiveData};
+  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,templatePicker,migrate,normalize,programsOf,validate,editor,preview,buttons,programSummary,passiveData};
 })();

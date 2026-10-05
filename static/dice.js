@@ -68,9 +68,8 @@ window.DiceEngine = (() => {
     });
   }
   const pending = new Map(), history = [], seen = new Set();
-  let current = null, queue = [], animation = 0;
   const validDiceColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#a881e8';
-  const settings = () => { try { const saved = JSON.parse(LS.getItem('dice-settings') || '{}'); return { animate: true, speed: 1, ...saved, color: validDiceColor(saved.color) }; } catch { return { animate: true, speed: 1, color: '#a881e8' }; } };
+  const settings = () => { try { const saved = JSON.parse(LS.getItem('dice-settings') || '{}'); return { animate: true, speed: 1, ...saved, audience: ['all', 'gm', 'self'].includes(saved.audience) ? saved.audience : 'all', color: validDiceColor(saved.color) }; } catch { return { animate: true, speed: 1, audience: 'all', color: '#a881e8' }; } };
   let journalRefresh = null;
   function fail(e) { toast(e.message || String(e), 5000); return null; }
   function host() {
@@ -82,8 +81,14 @@ window.DiceEngine = (() => {
   function submit(message, source) {
     try {
       const msg = { ...message };
+      // Аудитория: явно в сообщении (Shift — мастеру) или общая настройка всех кнопок броска.
+      const explicit = ['gm', 'self'].includes(msg.audience) ? msg.audience : msg.gm_only ? 'gm' : msg.visibility === 'private' ? 'self' : '';
+      const stored = settings().audience === 'gm' || settings().audience === 'self' ? settings().audience : 'all';
+      const audience = explicit || (stored === 'gm' && !window.TABLE_CTX?.isGM ? 'all' : stored);
+      if (audience === 'gm' && !window.TABLE_CTX?.isGM) throw Error('Скрытые броски доступны только мастеру. Бросок не отправлен.');
+      delete msg.audience;
       msg.dice_color = validDiceColor(msg.dice_color || settings().color);
-      msg.visibility = msg.visibility === 'private' ? 'private' : 'campaign';
+      applyAudience(msg, audience);
       if (msg.type === 'multi') {
         if (!Array.isArray(msg.rolls) || !msg.rolls.length || msg.rolls.length > 8) throw Error('Связка: от 1 до 8 бросков.');
         msg.rolls = msg.rolls.map(r => ({ ...r, expr: parse(r.expr).expr }));
@@ -96,7 +101,6 @@ window.DiceEngine = (() => {
         const payload = msg.type === 'multi' ? { ...msg, rolls: evaluateBatch(msg.rolls) } : { ...msg, ...evaluate(msg.expr) };
         present(payload, { local: true }); return payload;
       }
-      if (msg.gm_only && !window.TABLE_CTX.isGM) throw Error('Скрытые броски доступны только мастеру. Бросок не отправлен.');
       if (pending.size >= 32) throw Error('Дождитесь результатов предыдущих бросков.');
       const id = crypto.randomUUID(); msg.request_id = id;
       const timer = setTimeout(() => { pending.delete(id); fail(Error('Ответ на бросок не получен. Проверьте чат и соединение; автоматического переброса нет.')); }, 12000);
@@ -145,7 +149,8 @@ window.DiceEngine = (() => {
   function renderResult(p) {
     const box = el('div', { class: 'dice-result', style: `--dice-color:${validDiceColor(p.dice_color)}` });
     if (p.label) box.append(el('div', { class: 'dice-label' }, p.label));
-    if (p.visibility === 'private') box.append(el('span', { class: 'dice-visibility dice-private-mark' }, 'Только вам'));
+    const mark = audienceLabel(audienceOf(p));
+    if (mark) box.append(el('span', { class: 'dice-visibility ' + (audienceOf(p) === 'gm' ? 'dice-gm-mark' : 'dice-private-mark') }, mark));
     for (const r of p.rolls || [p]) {
       const nat = natural(r), d20 = !['damage', 'heal'].includes(r.kind), critical = d20 && nat.includes(20), fumble = d20 && nat.includes(1);
       const row = el('div', { class: 'dice-result-row' + (critical ? ' critical' : fumble ? ' fumble' : '') },
@@ -159,7 +164,7 @@ window.DiceEngine = (() => {
     if(p.effects?.length)box.append(el('div',{class:'dice-spent'},...p.effects.map(e=>el('span',{},({heal:'Лечение',damage:'Урон',temp_hp:'Временные хиты',grant_item:'Выдан предмет',condition:'Состояние',adjust:'Показатель',manual:'Ручное правило подтверждено'}[e.kind]||e.kind)+(e.amount!==undefined?': '+e.amount:'')+(e.name?' '+e.name:'')+(e.hp?` · ХП ${e.hp.current}/${e.hp.max}`:'')))));
     if(p.program_use)box.append(el('a',{href:'/sheet/'+encodeURIComponent(p.program_use.character_id),target:'_blank',class:'small'},'Лист владельца · выполнить действие'));
     if (p.item_use) box.append(el('a', { class: 'small', href: '/sheet/' + encodeURIComponent(p.item_use.character_id), target: '_blank' }, 'Лист владельца · использовать предмет'));
-    if (p.gm_only) box.append(el('small', { class: 'muted' }, 'Скрытый бросок · только мастер / локальный лист'));
+    if (p.gm_only) box.append(el('small', { class: 'muted' }, 'Скрытый бросок: видят только мастера'));
     return box;
   }
   /// Счётчик на кнопке журнала: сколько бросков уже в истории этой вкладки.
@@ -171,49 +176,112 @@ window.DiceEngine = (() => {
       badge.textContent = String(Math.min(history.length, 50));
     }
   }
+  /// Кому показывать бросок: всем, только мастеру или только себе.
+  const AUDIENCES = [['all', 'Всем'], ['gm', 'Только мастеру'], ['self', 'Только себе']];
+  const audienceOf = p => p?.gm_only ? 'gm' : p?.visibility === 'private' ? 'self' : 'all';
+  function audienceLabel(audience) { return audience === 'gm' ? 'Только мастеру' : audience === 'self' ? 'Только вам' : ''; }
+  /// Выбор аудитории: один и тот же список в доке, журнале и панели; значение запоминается
+  /// и используется всеми кнопками броска (лист, справочник, чат).
+  function audienceSelect(onchange) {
+    const stored = settings().audience, isGM = !!window.TABLE_CTX?.isGM;
+    const value = stored === 'gm' || stored === 'self' ? stored : 'all';
+    const sel = el('select', { class: 'dice-audience', 'aria-label': 'Кому показать бросок', title: 'Кто увидит результат броска',
+      onchange: () => { LS.setItem('dice-settings', JSON.stringify({ ...settings(), audience: sel.value })); onchange?.(sel.value); } },
+      ...AUDIENCES.filter(([k]) => k !== 'gm' || isGM).map(([k, n]) => el('option', { value: k, selected: value === k ? '' : null }, n)));
+    return sel;
+  }
+  /// Применяет аудиторию к сообщению: сервер понимает gm_only + visibility.
+  function applyAudience(msg, audience) {
+    const a = audience === 'gm' || audience === 'self' ? audience : 'all';
+    msg.gm_only = a === 'gm';
+    msg.visibility = a === 'self' ? 'private' : 'campaign';
+    return a;
+  }
   function present(payload, meta = {}) {
     // Retain immutable values for display/history; never use animation as RNG.
     const item = { payload: JSON.parse(JSON.stringify(payload)), meta, at: new Date() };
     history.unshift(item); history.splice(50); updateLogBadge(); journalRefresh?.();
-    queue.push(item);
-    if (queue.length > 6) queue.splice(0, queue.length - 6); // history retains overflow, animation doesn't lag indefinitely
-    if (!current) playNext();
-    else if (current.timer && queue.length) { clearTimeout(current.timer); current.timer = setTimeout(dismiss, 1400); }
+    spawn(item);
   }
-  function dismiss() {
-    if (!current) return;
-    cancelAnimationFrame(animation); clearTimeout(current.timer); current.root.remove(); current = null;
-    playNext();
+  const MAX_CARDS = 5, cards = [];
+  /// Контейнер результатов в правом нижнем углу: броски идут параллельно, карточек видно несколько.
+  function stackBox() {
+    let box = document.querySelector('.dice-stack');
+    if (!box) { box = el('div', { class: 'dice-stack', role: 'status', 'aria-live': 'polite', 'aria-label': 'Результаты бросков' }); document.body.append(box); }
+    return box;
   }
-  /// Результат появляется, показывается и сам уходит: закрывать его не обязательно.
-  function fadeOut(root) {
-    if (!root?.isConnected) return;
-    if (root.dataset.leaving) return;
-    root.dataset.leaving = '1';
-    root.classList.add('leaving');
-    setTimeout(() => { if (current?.root === root) dismiss(); else root.remove(); }, 420);
+  function detach(entry) {
+    const at = cards.indexOf(entry);
+    if (at >= 0) cards.splice(at, 1);
+    clearTimeout(entry.timer); entry.cancel?.();
   }
-  function playNext() {
-    if (!queue.length) return;
-    const item = queue.shift(), localCfg = settings(), cfg = { ...localCfg, color: validDiceColor(item.payload.dice_color || localCfg.color) };
-    const root = el('div', { class: 'dice-overlay' }), canvas = el('canvas', { class: 'dice-canvas', 'aria-hidden': 'true' });
-    const card = el('section', { class: 'dice-toast', role: 'status', 'aria-live': 'polite', style: `--dice-color:${validDiceColor(item.payload.dice_color || cfg.color)}` },
-      el('div', { class: 'dice-toast-head' }, el('span', {}, (item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок') + ' · ' + item.at.toLocaleTimeString()),
-        el('button', { title: 'Закрыть результат', 'aria-label': 'Закрыть результат', onclick: dismiss }, '×')),
-      renderResult(item.payload), el('div', { class: 'dice-toast-actions' }, el('button', { class: 'small', onclick: () => { const p = item.payload; fadeOut(root); repeat(p); } }, 'Бросить ещё'), el('button', { class: 'small', onclick: () => { fadeOut(root); openPanel(false); } }, 'Журнал')));
-    const pause = () => { if (current?.root === root) clearTimeout(current.timer); };
-    const resume = () => { if (current?.root === root) current.timer = setTimeout(() => fadeOut(root), 3200); };
-    card.addEventListener('pointerenter', pause); card.addEventListener('pointerleave', resume);
-    card.addEventListener('focusin', pause); card.addEventListener('focusout', resume);
-    root.append(canvas, el('button', { class: 'dice-skip', title: 'Убрать результат', onclick: () => fadeOut(root) }, '×'), card); document.body.append(root); current = { root, timer: null };
+  function dismissCard(entry) { detach(entry); entry.root.remove(); }
+  function fadeCard(entry) {
+    if (entry.root.dataset.leaving) return;
+    detach(entry);
+    entry.root.dataset.leaving = '1';
+    entry.root.classList.add('leaving');
+    setTimeout(() => entry.root.remove(), 320);
+  }
+  /// Значения кубиков результата — для анимации и решения, нужен ли холст.
+  function diceOf(payload) {
+    const out = [];
+    for (const r of payload.rolls || [payload]) for (const p of r.parts || []) if (p.rolls) p.rolls.forEach((value, i) => {
+      if (out.length >= 24) return;
+      const sides = p.sides || Number(p.term.match(/d(\d+)/)?.[1]) || 6;
+      out.push({ value, sides, dropped: !keptIndices(p).includes(i) });
+    });
+    return out;
+  }
+  /// Компактные строки результата: итог, название и кубики броска.
+  function microRows(p) {
+    const rolls = (p.rolls || [p]).slice(0, 6);
+    return rolls.map(r => {
+      const nat = natural(r), d20 = !['damage', 'heal'].includes(r.kind), critical = d20 && nat.includes(20), fumble = d20 && nat.includes(1);
+      return el('div', { class: 'dice-micro-row' + (critical ? ' critical' : fumble ? ' fumble' : '') },
+        el('b', { class: 'dice-micro-total' }, r.total),
+        el('span', { class: 'dice-micro-name' }, r.name || r.expr),
+        critical ? el('span', { class: 'dice-badge' }, r.kind === 'attack' ? 'КРИТ' : '20') : fumble ? el('span', { class: 'dice-badge' }, '1') : null,
+        r.doubled ? el('span', { class: 'dice-badge' }, '×2') : null,
+        el('span', { class: 'dice-micro-chips' }, ...(r.parts || []).flatMap(part => part.rolls
+          ? part.rolls.map((v, i) => el('span', { class: 'dice-chip' + (keptIndices(part).includes(i) ? '' : ' dropped'), title: 'd' + (part.sides || '?') }, v))
+          : [el('span', { class: 'dice-constant' }, part.term)])));
+    });
+  }
+  /// Мини-результат: кубики летят из угла на «пол» экрана, карточка живёт своей жизнью.
+  function spawn(item) {
+    const cfg = settings(), payload = item.payload, color = validDiceColor(payload.dice_color || cfg.color);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const finish = () => { if (!current || current.root !== root) return; card.classList.add('revealed'); current.timer = setTimeout(() => fadeOut(root), queue.length ? 1200 : 3800); };
-    if (cfg.animate && !reduced && !document.hidden) { try { animate(canvas, item.payload, cfg, finish); } catch { canvas.remove(); finish(); } } else { canvas.remove(); finish(); }
+    const root = el('div', { class: 'dice-micro', style: `--dice-color:${color}`, title: 'Открыть журнал бросков' });
+    const canvas = cfg.animate && !reduced && diceOf(payload).length && !document.hidden
+      ? el('canvas', { class: 'dice-micro-canvas', 'aria-hidden': 'true' }) : null;
+    const entry = { root, timer: null, cancel: null };
+    const arm = () => { clearTimeout(entry.timer); entry.timer = setTimeout(() => fadeCard(entry), cards.length > 2 ? 3400 : 5600); };
+    const mark = audienceLabel(audienceOf(payload));
+    root.append(canvas ? el('div', { class: 'dice-micro-stage' }, canvas) : null,
+      el('div', { class: 'dice-micro-body' },
+        el('div', { class: 'dice-micro-head' },
+          el('span', {}, item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок'),
+          payload.label ? el('span', { class: 'dice-micro-label' }, payload.label) : null,
+          mark ? el('span', { class: 'dice-visibility' }, mark) : null,
+          el('button', { class: 'dice-micro-close', title: 'Убрать результат', 'aria-label': 'Убрать результат', onclick: e => { e.stopPropagation(); fadeCard(entry); } }, '×')),
+        ...microRows(payload),
+        payload.spent?.length ? el('div', { class: 'dice-micro-note' }, 'Расход: ' + payload.spent.map(x => `${x.name} −${x.amount}`).join(' · ')) : null,
+        payload.effects?.length ? el('div', { class: 'dice-micro-note' }, payload.effects.map(e => ({ heal: 'Лечение', damage: 'Урон', temp_hp: 'Временные хиты', grant_item: 'Выдано', condition: 'Состояние', adjust: 'Показатель', manual: 'Правило подтверждено' }[e.kind] || e.kind) + (e.amount !== undefined ? ' · ' + e.amount : '') + (e.name ? ' ' + e.name : '')).join(' · ')) : null));
+    root.addEventListener('pointerenter', () => clearTimeout(entry.timer));
+    root.addEventListener('pointerleave', arm);
+    root.addEventListener('click', () => { fadeCard(entry); openPanel(false); });
+    stackBox().append(root);
+    cards.push(entry);
+    while (cards.length > MAX_CARDS) dismissCard(cards[0]);
+    arm();
+    if (canvas) entry.cancel = animate(canvas, payload, cfg);
   }
+  function dismiss() { for (const entry of [...cards]) dismissCard(entry); }
   function repeat(p) {
     if(p.program_use)return window.PROGRAM_USE?window.PROGRAM_USE(p.program_use):toast('Повторите действие на листе владельца: вся цепочка будет выполнена заново.');
     if (p.item_use) return window.ITEM_USE ? window.ITEM_USE(p.item_use) : toast('Повторите использование на листе владельца: ресурс будет списан там.');
-    return submit(p.rolls ? { type: 'multi', label: p.label, gm_only: p.gm_only, visibility: p.visibility, rolls: p.rolls.map(r => ({ name: r.name, kind: r.kind, dtype: r.dtype, expr: r.base_expr || (r.doubled ? r.expr.replace(/(\d+)d/g, (_, n) => `${Number(n) / 2}d`) : r.expr) })) } : { type: 'roll', expr: p.expr, label: p.label, kind: p.kind, gm_only: p.gm_only, visibility: p.visibility });
+    return submit(p.rolls ? { type: 'multi', label: p.label, audience: audienceOf(p), gm_only: p.gm_only, visibility: p.visibility, rolls: p.rolls.map(r => ({ name: r.name, kind: r.kind, dtype: r.dtype, expr: r.base_expr || (r.doubled ? r.expr.replace(/(\d+)d/g, (_, n) => `${Number(n) / 2}d`) : r.expr) })) } : { type: 'roll', expr: p.expr, label: p.label, kind: p.kind, audience: audienceOf(p), gm_only: p.gm_only, visibility: p.visibility });
   }
   // Lightweight projected solid meshes, gravity, rebounds, table friction and pairwise collisions.
   // Physics is cosmetic. Face labels are the authoritative result, not a physics-derived random value.
@@ -264,81 +332,128 @@ window.DiceEngine = (() => {
   }
   /// Поворот точки углами Эйлера (X → Y → Z). Чистая функция модели, без DOM.
   const rotate=(p,a)=>{ let [x,y,z]=p; let c=Math.cos(a[0]),s=Math.sin(a[0]); [y,z]=[y*c-z*s,y*s+z*c]; c=Math.cos(a[1]);s=Math.sin(a[1]);[x,z]=[x*c+z*s,-x*s+z*c];c=Math.cos(a[2]);s=Math.sin(a[2]);return [x*c-y*s,x*s+y*c,z]; };
-  function animate(canvas, payload, cfg, done) {
-    const ctx = canvas.getContext('2d'); if (!ctx) { done(); return; }
-    const width = window.innerWidth, height = window.innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
-    canvas.width=width*dpr; canvas.height=height*dpr; ctx.scale(dpr,dpr);
-    const dice=[];
-    for(const r of payload.rolls || [payload]) for(const p of r.parts || []) if(p.rolls) p.rolls.forEach((value,i)=>{
-      if(dice.length>=36) return;
-      const sides=p.sides || Number(p.term.match(/d(\d+)/)?.[1]) || 6, shape=mesh(sides);
-      dice.push({value, sides, dropped:!keptIndices(p).includes(i), ...faceLabels(sides, shape.faces.length, value)});
+  /// Кубики летят из угла на «пол» — поверхность экрана: перспектива, отскоки, качение
+  /// и доворот гранью с выпавшим значением. Физика только визуальная.
+  function animate(canvas, payload, cfg) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const W = canvas.clientWidth || 104, H = canvas.clientHeight || 84, dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr; ctx.scale(dpr, dpr);
+    const dice = [];
+    for (const r of payload.rolls || [payload]) for (const p of r.parts || []) if (p.rolls) p.rolls.forEach((value, i) => {
+      if (dice.length >= 24) return;
+      const sides = p.sides || Number(p.term.match(/d(\d+)/)?.[1]) || 6, shape = mesh(sides);
+      dice.push({ value, sides, dropped: !keptIndices(p).includes(i), ...faceLabels(sides, shape.faces.length, value) });
     });
-    if(!dice.length) { done(); return; }
-    const radius=Math.max(25.5,Math.min(54,width/13*1.5)), floor=Math.max(120,height*.45);
-    dice.forEach((d,i)=>Object.assign(d,{ x:width*.2+Math.random()*width*.6, y:floor-80+Math.random()*100, z:180+Math.random()*240+i*8,
-      vx:(Math.random()-.5)*220, vy:(Math.random()-.5)*150, vz:0, angle:[Math.random()*6,Math.random()*6,Math.random()*6], spin:[Math.random()*5,Math.random()*5,Math.random()*5], settle:false }));
-    let start, previous;
+    if (!dice.length) return null;
+    // Мир: x — влево/вправо (px), t — глубина (0 — дальний край пола, 1 — ближний), z — высота над полом (px).
+    const horizon = H * 0.16, floorH = H - horizon;
+    const depthScale = t => 0.44 + 0.56 * Math.max(0, Math.min(1.2, t));
+    const radius = Math.max(9, Math.min(17, W / (3.9 + dice.length * 0.3)));
+    const color = /^#[0-9a-f]{6}$/i.test(cfg.color) ? cfg.color : '#a881e8';
     const speed = Number(cfg.speed) === 2 ? 2 : 1;
+    // Дорожки: кости летят с двух сторон и раскладываются по «полу» рядом, а не кучей.
+    const laneOf = i => (dice.length > 1 ? (i / (dice.length - 1) - .5) * 1.7 : (Math.random() - .5) * .8);
+    dice.forEach((d, i) => {
+      const side = i % 2 ? 1 : -1, flight = .55 + Math.random() * .3;
+      d.x = side * W * (.55 + Math.random() * .4);          // старт за кадром, из угла
+      d.t = -.2 - Math.random() * .3;                        // из-за дальнего края «пола»
+      d.z = H * (.6 + Math.random() * .55);
+      d.laneX = laneOf(i) * W * .36;                        // куда в итоге лечь
+      d.laneT = .3 + (i % 2) * .3 + Math.random() * .22;
+      d.vx = (d.laneX - d.x) / flight;
+      d.vt = (d.laneT - d.t) / flight;
+      d.vz = -H * (.05 + Math.random() * .25);
+      d.angle = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
+      d.spin = [(Math.random() - .5) * 20, (Math.random() - .5) * 20, (Math.random() - .5) * 20];
+      d.settle = false;
+    });
+    let start, previous, raf = 0, alive = true;
+    const stop = () => { alive = false; cancelAnimationFrame(raf); };
     function frame(now) {
       start ??= now; previous ??= now;
-      const elapsed=(now-start)*speed, dt=Math.min((now-previous)/1000,.035)*speed; previous=now;
-      ctx.clearRect(0,0,width,height);
-      for(const d of dice) {
-        d.vz-=1100*dt; d.z+=d.vz*dt; d.x+=d.vx*dt; d.y+=d.vy*dt;
-        if(d.z<0){d.z=0;d.vz=Math.abs(d.vz)>.9?-d.vz*.43:0;d.vx*=.82;d.vy*=.82;d.spin=d.spin.map(v=>v*.73);}
-        if(d.x<radius||d.x>width-radius){d.vx*=-.7;d.x=Math.max(radius,Math.min(width-radius,d.x));}
-        if(d.y<height*.18||d.y>height*.58){d.vy*=-.7;d.y=Math.max(height*.18,Math.min(height*.58,d.y));}
-        d.angle=d.angle.map((a,i)=>a+d.spin[i]*dt);
-        // Кубик остановился — доворачиваем к зрителю грань с выпавшим значением.
-        if(!d.settle&&(elapsed>1500||(d.z<.5&&Math.abs(d.vz)<30&&Math.abs(d.vx)<40&&Math.abs(d.vy)<40)))d.settle=true;
-        if(d.settle){
-          d.spin=d.spin.map(v=>v*.8);
-          const want=faceAngles(mesh(d.sides).normals[d.target],d.angle[2]);
-          for(let axis=0;axis<2;axis++){
-            let delta=(want[axis]-d.angle[axis])%(Math.PI*2);
-            if(delta>Math.PI)delta-=Math.PI*2; else if(delta<-Math.PI)delta+=Math.PI*2;
-            d.angle[axis]+=delta*Math.min(1,dt*6);
+      const elapsed = (now - start) * speed, dt = Math.min((now - previous) / 1000, .04) * speed; previous = now;
+      ctx.clearRect(0, 0, W, H);
+      const floor = ctx.createLinearGradient(0, horizon, 0, H);
+      floor.addColorStop(0, 'rgba(255,255,255,0.03)'); floor.addColorStop(1, 'rgba(255,255,255,0.085)');
+      ctx.fillStyle = floor; ctx.fillRect(0, horizon, W, floorH);
+      for (const d of dice) {
+        if (!d.settle) {
+          d.vz -= H * 6.5 * dt;                             // притяжение к «полу»
+          d.z += d.vz * dt; d.x += d.vx * dt; d.t += d.vt * dt;
+          if (d.z <= 0) {
+            d.z = 0;
+            if (Math.abs(d.vz) > H * 0.16) { d.vz = -d.vz * (0.3 + Math.random() * 0.12); d.vx *= .72; d.vt *= .72; d.spin = d.spin.map(v => v * .68); }
+            else d.vz = 0;
+          }
+          if (d.z === 0) {                                  // качение по полу: трение гасит ход и вращение
+            const damp = Math.max(0, 1 - 3.2 * dt);
+            d.vx *= damp; d.vt *= damp; d.spin = d.spin.map(v => v * Math.max(0, 1 - 2.4 * dt));
+          }
+          // Края отбивают только «наружу»: кости, летящие в кадр из угла, заходят свободно.
+          if (d.x < -W * 0.42 && d.vx < 0) { d.x = -W * 0.42; d.vx = Math.abs(d.vx) * .55; }
+          if (d.x > W * 0.42 && d.vx > 0) { d.x = W * 0.42; d.vx = -Math.abs(d.vx) * .55; }
+          if (d.t < 0.04 && d.vt < 0) { d.t = 0.04; d.vt = Math.abs(d.vt) * .5; }
+          if (d.t > 0.9 && d.vt > 0) { d.t = 0.9; d.vt = -Math.abs(d.vt) * .5; }
+          d.angle = d.angle.map((a, i) => a + d.spin[i] * dt);
+          const resting = d.z === 0 && Math.abs(d.vx) < W * 0.06 && Math.abs(d.vt) < 0.06;
+          // Не успели остановиться — приземляем принудительно и всё равно показываем результат.
+          if (elapsed > 1600) { d.z = 0; d.vz = 0; d.vx *= .2; d.vt *= .2; d.settle = true; }
+          else if (elapsed > 900 && resting) d.settle = true;
+        }
+        if (d.settle) {                                     // доворачиваем к зрителю грань с результатом
+          d.spin = d.spin.map(v => v * .8);
+          d.x += (d.laneX - d.x) * Math.min(1, dt * 4);     // и аккуратно раскладываем по дорожкам
+          d.t += (d.laneT - d.t) * Math.min(1, dt * 4);
+          const want = faceAngles(mesh(d.sides).normals[d.target], d.angle[2]);
+          for (let axis = 0; axis < 2; axis++) {
+            let delta = (want[axis] - d.angle[axis]) % (Math.PI * 2);
+            if (delta > Math.PI) delta -= Math.PI * 2; else if (delta < -Math.PI) delta += Math.PI * 2;
+            d.angle[axis] += delta * Math.min(1, dt * 7);
           }
         }
       }
-      for(let i=0;i<dice.length;i++) for(let j=i+1;j<dice.length;j++) {
-        const a=dice[i],b=dice[j],dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);
-        if(dist>0&&dist<radius*1.7&&Math.abs(a.z-b.z)<radius) {const push=(radius*1.7-dist)/2,nx=dx/dist,ny=dy/dist;a.x-=nx*push;b.x+=nx*push;a.y-=ny*push;b.y+=ny*push;const impulse=((b.vx-a.vx)*nx+(b.vy-a.vy)*ny)*.6;if(impulse<0){a.vx+=impulse*nx;a.vy+=impulse*ny;b.vx-=impulse*nx;b.vy-=impulse*ny;}}
-      }
-      for(const d of [...dice].sort((a,b)=>(a.y-a.z)-(b.y-b.z))) {
-        ctx.fillStyle=`rgba(0,0,0,${.25/(1+d.z/90)})`;ctx.beginPath();ctx.ellipse(d.x,d.y+radius*.6,radius*(1+d.z/250),radius*.3,0,0,Math.PI*2);ctx.fill();
-        const shape=mesh(d.sides), points=shape.v.map(p=>rotate(p,d.angle)), y=d.y-d.z;
-        const faces=shape.faces.map((ids,i)=>({ids,i,z:ids.reduce((s,j)=>s+points[j][2],0)/ids.length,nz:rotate(shape.normals[i],d.angle)[2]})).sort((a,b)=>a.z-b.z);
-        ctx.globalAlpha=d.dropped&&elapsed>1400?.4:1;
-        const front=faces.reduce((best,f)=>f.nz>best.nz?f:best,faces[0]);
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        for(const f of faces) {
-          const pts=f.ids.map(id=>points[id]);
-          ctx.beginPath();pts.forEach((p,i)=>{ctx[i?'lineTo':'moveTo'](d.x+p[0]*radius,y+p[1]*radius);});ctx.closePath();
-          ctx.fillStyle=/^#[0-9a-f]{6}$/i.test(cfg.color)?cfg.color:'#a881e8';ctx.fill();ctx.fillStyle=`rgba(0,0,0,${Math.max(0,.38-f.z*.4)})`;ctx.fill();ctx.strokeStyle='rgba(255,255,255,.42)';ctx.lineWidth=1;ctx.stroke();
-          // Цифры на гранях: видно только повёрнутые к зрителю; передняя — это результат.
-          if(f.nz>.12){
-            const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length, cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
-            const size=pts.reduce((s,p)=>s+Math.hypot(p[0]-cx,p[1]-cy),0)/pts.length;
-            const isFront=f===front;
-            ctx.font=`700 ${Math.max(7,Math.min(radius*.78,size*1.15))}px system-ui`;
-            ctx.fillStyle=isFront?'#fff':`rgba(255,255,255,${.35+.45*f.nz})`;
-            ctx.shadowColor='#111';ctx.shadowBlur=isFront?5:2;
-            ctx.fillText(String(d.labels[f.i]),d.x+cx*radius,y+cy*radius);
-            ctx.shadowBlur=0;
+      for (const d of [...dice].sort((a, b) => a.t - b.t)) {
+        const k = depthScale(Math.max(0, Math.min(1.1, d.t))), floorT = Math.max(-0.18, Math.min(1, d.t)), r = radius * k;
+        const x = W / 2 + d.x * k, floorY = horizon + r * .6 + (floorH - 1.6 * radius) * floorT, y = floorY - d.z * 0.66 * k;
+        ctx.fillStyle = `rgba(0,0,0,${.34 / (1 + d.z / 22)})`;
+        ctx.beginPath(); ctx.ellipse(x, floorY, r * (1 + d.z / 150), r * .36, 0, 0, Math.PI * 2); ctx.fill();
+        const shape = mesh(d.sides), points = shape.v.map(p => rotate(p, d.angle));
+        const faces = shape.faces.map((ids, i) => ({ ids, i, z: ids.reduce((t, j) => t + points[j][2], 0) / ids.length, nz: rotate(shape.normals[i], d.angle)[2] })).sort((a, b) => a.z - b.z);
+        ctx.globalAlpha = d.dropped && elapsed > 1100 ? .38 : 1;
+        const front = faces.reduce((best, f) => f.nz > best.nz ? f : best, faces[0]);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (const f of faces) {
+          const pts = f.ids.map(id => points[id]);
+          ctx.beginPath(); pts.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](x + p[0] * r, y + p[1] * r)); ctx.closePath();
+          ctx.fillStyle = color; ctx.fill();
+          ctx.fillStyle = `rgba(0,0,0,${Math.max(0, .42 - f.z * .45)})`; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = .8; ctx.stroke();
+          if (f.nz > .12) {
+            const cx = pts.reduce((t, p) => t + p[0], 0) / pts.length, cy = pts.reduce((t, p) => t + p[1], 0) / pts.length;
+            const faceSize = pts.reduce((t, p) => t + Math.hypot(p[0] - cx, p[1] - cy), 0) / pts.length;
+            const label = String(d.labels[f.i]), digits = label.length;
+            // Цифры крупные и считаются по грани: одна цифра занимает грань целиком, две и три ужимаются.
+            const want = r * (digits === 1 ? 1.05 : digits === 2 ? 0.86 : 0.66);
+            const fit = faceSize * r * (digits === 1 ? 1.15 : digits === 2 ? 0.95 : 0.78);
+            ctx.font = `700 ${Math.max(8, Math.min(want, fit))}px system-ui`;
+            ctx.fillStyle = f === front ? '#fff' : `rgba(255,255,255,${.3 + .45 * f.nz})`;
+            ctx.shadowColor = '#111'; ctx.shadowBlur = f === front ? 4 : 1.5;
+            ctx.fillText(label, x + cx * r, y + cy * r);
+            ctx.shadowBlur = 0;
           }
         }
-        ctx.font='10px system-ui';ctx.fillStyle='#eee';ctx.fillText('d'+d.sides,d.x,y+radius+10);ctx.globalAlpha=1;
+        ctx.globalAlpha = 1;
       }
-      if(elapsed<2200) animation=requestAnimationFrame(frame);else done();
+      if (alive && elapsed < 2200) raf = requestAnimationFrame(frame); else alive = false;
     }
-    animation=requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
+    return stop;
   }
   // ---------- постоянный интерфейс: слева — броски, справа — личный журнал ----------
   /// Бросок из дока: формула, модификатор и режим, как в панели стола.
-  function dockRoll(expr, mode = 'normal', gm_only = false, label, visibility = 'campaign') {
-    return submit({ type: 'roll', expr: withMode(expr, mode), gm_only, visibility, label: label || expr });
+  function dockRoll(expr, mode = 'normal', opts = {}) {
+    return submit({ type: 'roll', expr: withMode(expr, mode), gm_only: !!opts.gm_only, audience: opts.audience, label: opts.label || expr });
   }
   /// Нижний левый угол: всегда под рукой. Нижний правый: журнал этой вкладки.
   /// Возвращает false, если док уже установлен на странице.
@@ -347,11 +462,10 @@ window.DiceEngine = (() => {
     const cfg = settings();
     const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', 'aria-label': 'Модификатор', style: 'width:54px' });
     const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', 'aria-label': 'Формула броска', style: 'width:132px' });
-    const hidden = opts.gm ? el('input', { type: 'checkbox', style: 'width:auto', title: 'Скрытый бросок — видит только мастер' }) : null;
-    const visibility = el('select', { class: 'dice-audience', 'aria-label': 'Кому показать бросок', title: 'Выберите, кто увидит результат' }, el('option', { value: 'campaign' }, 'В кампанию'), el('option', { value: 'private' }, 'Только мне'));
+    const audience = audienceSelect();
     let mode = 'normal';
     const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
-    const rollExpr = (expr, label) => dockRoll(expr + modStr(), mode, !!hidden?.checked, (label || expr) + (modStr() ? ' ' + modStr() : ''), visibility.value);
+    const rollExpr = (expr, label) => dockRoll(expr + modStr(), mode, { audience: audience.value, label: (label || expr) + (modStr() ? ' ' + modStr() : '') });
     const die = d => {
       let expr = 'd' + d, label = 'к' + d;
       if (d === 20 && mode === 'adv') { expr = '2d20kh1'; label = 'к20 с преимуществом'; }
@@ -363,14 +477,14 @@ window.DiceEngine = (() => {
     const dieTogether = d => {
       const base = d === 20 && mode === 'adv' ? '2d20kh1' : d === 20 && mode === 'dis' ? '2d20kl1' : 'd' + d;
       const expr = base + modStr();
-      return submit({ type: 'multi', label: `Два броска к${d} одновременно`, gm_only: !!hidden?.checked, visibility: visibility.value,
+      return submit({ type: 'multi', label: `Два броска к${d} одновременно`, audience: audience.value,
         rolls: [1, 2].map(n => ({ name: `к${d} · ${n}`, expr, kind: 'other' })) });
     };
     const quick = el('div', { class: 'dice' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d}. Shift — два броска одновременно`, onclick: e => e.shiftKey ? dieTogether(d) : die(d) }, 'к' + d)));
     const body = el('div', { class: 'dice-dock-body' }, quick,
       el('div', { class: 'row' }, modeBtns, modInp),
       el('div', { class: 'row' }, exprInp, el('button', { class: 'small primary', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) { rollExpr(exprInp.value.trim()); exprInp.value = ''; } } }, 'Бросить')),
-      el('div', { class: 'dice-dock-options' }, visibility, hidden ? el('label', { class: 'muted small' }, hidden, ' Только мастеру') : null));
+      el('div', { class: 'dice-dock-options' }, el('label', { class: 'muted small' }, 'Кому: ', audience)));
     const toggle = el('button', { class: 'dice-dock-toggle', title: 'Кубики: свернуть / развернуть', 'aria-label': 'Кубики', onclick: () => { wrap.classList.toggle('min'); LS.setItem('dicetray_min', wrap.classList.contains('min') ? '1' : ''); } }, icon('dice', 16));
     const wrap = el('div', { class: 'dice-dock' + (LS.getItem('dicetray_min') ? ' min' : '') }, toggle, body);
     const log = el('button', { class: 'dice-log-button', title: 'Личный журнал бросков', onclick: openPanel },
@@ -386,22 +500,23 @@ window.DiceEngine = (() => {
       currentPanel.remove(); journalRefresh = null; return null;
     }
     const cfg = settings();
+    dismiss(); // журнал показывает те же броски подробнее — мини-карточки за ним не нужны
     const expr = el('input', { value: '1d20', placeholder: '2d6+3', 'aria-label': 'Формула броска' });
     const mode = el('select', { 'aria-label': 'Режим броска' }, ...[['normal', 'Обычно'], ['adv', 'Преимущество'], ['dis', 'Помеха']].map(([v, n]) => el('option', { value: v }, n)));
-    const visibility = el('select', { class: 'dice-audience', 'aria-label': 'Кому показать бросок' }, el('option', { value: 'campaign' }, 'В кампанию'), el('option', { value: 'private' }, 'Только мне'));
-    const hidden = el('input', { type: 'checkbox' }), list = el('div', { class: 'dice-history' });
+    const audience = audienceSelect();
+    const list = el('div', { class: 'dice-history' });
     const refresh = () => list.replaceChildren(...(history.length ? history.map(h => {
-      const payload = h.payload, color = validDiceColor(payload.dice_color), visibilityLabel = payload.gm_only ? 'Только мастеру' : payload.visibility === 'private' ? 'Личный' : h.meta.local ? 'Локально' : 'Кампания';
+      const payload = h.payload, color = validDiceColor(payload.dice_color), visibilityLabel = audienceLabel(audienceOf(payload)) || (h.meta.local ? 'Локально' : 'Кампания');
       return el('article', { class: 'dice-history-entry', style: `--dice-color:${color}` },
         el('div', { class: 'dice-history-meta' }, el('small', { class: 'muted' }, h.at.toLocaleTimeString() + ' · ' + (h.meta.local ? 'Локально' : h.meta.author || 'Стол')),
           el('span', { class: 'dice-visibility' }, visibilityLabel)),
         renderResult(payload), el('button', { class: 'small', onclick: () => repeat(payload) }, 'Повторить'));
     }) : [el('p', { class: 'muted dice-empty' }, 'Здесь появятся ваши броски и результаты кампании.') ]));
     journalRefresh = refresh; refresh();
-    const run = () => submit({ type: 'roll', expr: withMode(expr.value, mode.value), gm_only: hidden.checked, visibility: visibility.value });
+    const run = () => submit({ type: 'roll', expr: withMode(expr.value, mode.value), audience: audience.value, label: expr.value });
     expr.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
     const enabled = el('input', { type: 'checkbox', checked: cfg.animate ? '' : null }), fast = el('input', { type: 'checkbox', checked: cfg.speed === 2 ? '' : null }), color = el('input', { type: 'color', value: cfg.color, 'aria-label': 'Цвет кубиков' });
-    const save = () => LS.setItem('dice-settings', JSON.stringify({ animate: enabled.checked, speed: fast.checked ? 2 : 1, color: color.value }));
+    const save = () => LS.setItem('dice-settings', JSON.stringify({ ...settings(), animate: enabled.checked, speed: fast.checked ? 2 : 1, color: color.value }));
     [enabled, fast, color].forEach(e => e.addEventListener('change', save));
     const close = () => { panel.remove(); journalRefresh = null; };
     const panel = el('section', { class: 'dice-journal', role: 'dialog', 'aria-label': 'Журнал бросков' },
@@ -409,7 +524,7 @@ window.DiceEngine = (() => {
       el('div', { class: 'dice-journal-controls' },
         el('div', { class: 'dice-quick' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d}`, onclick: () => { expr.value = '1d' + d; run(); } }, 'к' + d))),
         el('div', { class: 'dice-journal-formula' }, expr, mode, el('button', { class: 'primary', onclick: run }, 'Бросить')),
-        el('div', { class: 'dice-journal-options' }, visibility, window.TABLE_CTX?.isGM ? el('label', { class: 'muted small' }, hidden, ' Только мастеру') : null),
+        el('div', { class: 'dice-journal-options' }, el('label', { class: 'muted small' }, 'Кому: ', audience)),
         el('div', { class: 'dice-preferences' }, el('label', {}, enabled, ' Анимация'), el('label', {}, fast, ' Быстро'), el('label', {}, 'Цвет ', color)),
         el('p', { class: 'muted small dice-help' }, '4d6kh3 — оставить три лучших. При броске в кампанию участники увидят выбранный цвет.')),
       el('div', { class: 'dice-journal-history-head' }, el('b', {}, 'Последние броски')), list);
@@ -421,9 +536,9 @@ window.DiceEngine = (() => {
     if (e.key !== 'Escape') return;
     const journal = document.querySelector('.dice-journal');
     if (journal) { journal.remove(); journalRefresh = null; }
-    if (current) { queue = []; dismiss(); }
+    if (cards.length) dismiss();
   });
-  window.addEventListener?.('pagehide', () => { queue = []; dismiss(); pending.forEach(p => clearTimeout(p.timer)); pending.clear(); });
+  window.addEventListener?.('pagehide', () => { dismiss(); pending.forEach(p => clearTimeout(p.timer)); pending.clear(); });
   function committed(message) { const target = host(); if (target?.DiceEngine) target.DiceEngine.receive(message); if (!target || window.parent === window) receive(message); }
   const button=()=>el('button',{class:'small',title:'Журнал бросков',onclick:openPanel},icon('dice',14),' Кубики');
   // mesh / rotate / faceLabels / faceAngles — чистая модель кубика: ей пользуется анимация и тесты.
