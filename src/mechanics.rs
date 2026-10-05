@@ -75,7 +75,8 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
             if !["","always","hit","miss"].contains(&text(b,"when")) || (["hit","miss"].contains(&text(b,"when"))&&!gate) { return Err(bad("Условному блоку нужна предшествующая атака или спасбросок")); }
             if ["attack","save"].contains(&kind) { gate=true; }
             if !["","self","target"].contains(&text(b,"target")) { return Err(bad("Неизвестная цель")); }
-            if ["attack","damage","heal","temp_hp","roll","save"].contains(&kind) { formula(b)?; }
+            // Старый блок спасброска при выполнении становится броском d20, поэтому кубы в нём необязательны.
+            if ["attack","damage","heal","temp_hp","roll"].contains(&kind) || (kind == "save" && !b["dice"].is_null()) { formula(b)?; }
             match kind {
                 "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",1,9)?; } }
                 "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_depth(&b["item"]["mechanics"],depth+1)?; } }
@@ -120,7 +121,8 @@ fn normalize(m: &Value) -> Value {
             if let Some(o) = b.as_object_mut() {
                 if ["attack", "damage", "roll", "save"].contains(&kind.as_str()) { o.remove("target"); o.remove("apply"); }
                 if ["heal", "temp_hp", "condition", "adjust", "grant_item"].contains(&kind.as_str()) { o.insert("target".into(), json!("self")); }
-                if ["hit", "miss"].contains(&o["when"].as_str().unwrap_or("")) && !gate { o.insert("when".into(), json!("always")); }
+                let when = o.get("when").and_then(Value::as_str).unwrap_or("").to_string();
+                if ["hit", "miss"].contains(&when.as_str()) && !gate { o.insert("when".into(), json!("always")); }
             }
             if kind == "attack" { gate = true; }
         }
