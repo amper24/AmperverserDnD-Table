@@ -500,6 +500,7 @@ window.DiceEngine = (() => {
       currentPanel.remove(); journalRefresh = null; return null;
     }
     const cfg = settings();
+    dismiss(); // журнал показывает те же броски подробнее — мини-карточки за ним не нужны
     const expr = el('input', { value: '1d20', placeholder: '2d6+3', 'aria-label': 'Формула броска' });
     const mode = el('select', { 'aria-label': 'Режим броска' }, ...[['normal', 'Обычно'], ['adv', 'Преимущество'], ['dis', 'Помеха']].map(([v, n]) => el('option', { value: v }, n)));
     const audience = audienceSelect();

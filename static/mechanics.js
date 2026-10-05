@@ -74,7 +74,7 @@ window.Mechanics = (() => {
     { id:'potion', group:'Лечение', name:'Зелье → хиты → флакон', hint:'Расход предмета, лечение, выдача пустого флакона', chain:['consume','heal','grant_item'],
       build:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}) },
     { id:'spell', group:'Лечение', name:'Ячейка → лечение', hint:'Расход ячейки и лечение цели', chain:['consume','heal'],
-      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod'),target:'target'}]}) },
+      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod')}]}) },
     { id:'temp_hp', group:'Лечение', name:'Временные хиты', hint:'Берутся максимумом, не суммируются', chain:['temp_hp'],
       build:()=>({name:'Временные хиты',blocks:[{...block('temp_hp'),dice:dice('1d6+2')}]}) },
     { id:'heal_temp', group:'Лечение', name:'Лечение + временные хиты', hint:'Сначала лечение, затем запас сверху', chain:['heal','temp_hp'],
@@ -203,7 +203,8 @@ window.Mechanics = (() => {
     if(category==='item' && doc.consume) {
       const c=doc.consume; blocks.push({...block('consume'),enabled:c.enabled!==false,resource:c.resource||'quantity',source:c.target_uid==='self'?'self':c.target_uid?'item':'tag',item_uid:c.target_uid==='self'?'':c.target_uid||'',tag:c.ammo_tag||'',amount:c.amount||1,trigger:c.trigger||'use'});
     }
-    for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||'',apply:a.kind==='heal',target:a.kind==='heal'?'self':'target'});
+    // Старые действия: урон и атака — только броски, лечение применяется владельцу.
+    for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push(Object.assign({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||''},a.kind==='heal'?{apply:true}:null));
     if(!blocks.some(b=>b.kind==='manual') && (doc.desc || doc.text)) blocks.push({...block('manual'),text:doc.desc||doc.text});
     doc.mechanics={version:VERSION,origin:'legacy',programs:blocks.length?[...extra,{id:'use',name:category==='spell'?'Сотворить':category==='item'?'Использовать':'Применить',trigger:'use',blocks}]:extra};
     return normalize(doc.mechanics);
