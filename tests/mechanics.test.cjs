@@ -53,5 +53,27 @@ test('template library builds valid programs and keeps creation templates apart'
   }
   assert.ok(!ids('item').some(id=>ids('race').includes(id)),'creation templates are separate');
   for(const id of ['asi','skills','saves','hit_die','spellcasting','languages','feature'])assert.ok(ids('race').includes(id),id);
-  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('save_damage'));
+  assert.ok(ids('item').includes('potion')&&ids('item').includes('weapon')&&ids('item').includes('area_damage'));
+  // Блок «спасбросок цели» убран: в палитре его нет, а урон по площади — своё действие.
+  assert.ok(!ids('item').includes('save_damage'));
+  for(const cat of ['item','spell','feature','monster']) assert.ok(!M.templates(cat).some(t=>(t.chain||[]).includes('save')),cat);
+});
+test('blocks never target another character: damage and saves are custom actions',()=>{
+  const b=M.block('damage'), a=M.block('attack'), h=M.block('heal');
+  assert.equal(b.target,undefined); assert.equal(b.apply,undefined);
+  assert.equal(a.target,undefined); assert.equal(a.apply,undefined);
+  assert.equal(h.target,'self'); assert.equal(h.apply,true);
+  // Старый блок спасброска цели превращается в своё действие с правилом для ДМ.
+  const legacy={version:1,programs:[{id:'p',name:'Пламя',trigger:'use',blocks:[{id:'s',kind:'save',when:'always',ability:'dex',dc:15},{id:'d',kind:'damage',when:'hit',target:'target',apply:true,dice:M.dice('8d6')}]}]};
+  const m=M.normalize(legacy);
+  assert.equal(m.programs[0].blocks[0].kind,'roll');
+  assert.match(m.programs[0].blocks[0].text,/Спасбросок|СЛ 15/);
+  assert.equal(m.programs[0].blocks[1].when,'always','ветвление без атаки больше не держится на спасбросоке');
+  assert.equal(m.programs[0].blocks[1].target,undefined);
+  assert.equal(M.validate(m),'');
+  // Эффекты всегда идут владельцу листа, даже если в старых данных указана цель.
+  const heal={version:1,programs:[{id:'p',name:'Лечение',trigger:'use',blocks:[{id:'h',kind:'heal',target:'target',dice:M.dice('1d8')},{id:'c',kind:'condition',target:'target',condition:'Отравленный',operation:'add'}]}]};
+  const n=M.normalize(heal);
+  assert.deepEqual(n.programs[0].blocks.map(b=>b.target),['self','self']);
+  assert.equal(M.validate(n),'');
 });
