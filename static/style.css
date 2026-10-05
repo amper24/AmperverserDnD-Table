@@ -695,6 +695,8 @@ button.ghost:hover { color: var(--text); }
 .builder-nav-info b, .builder-nav-info small { display: block; }
 .builder-nav-info small { color: var(--muted); }
 .builder-nav-hint { color: var(--muted); font-size: 12.5px; }
+.builder-nav-actions { display: flex; align-items: center; gap: 8px; }
+.builder-skip { color: var(--muted); }
 .builder-error { color: var(--danger); font-size: 12.5px; min-height: 16px; margin: 6px 0 0; }
 .modal:has(.character-builder) > .row .builder-submit { display: none; }
 .modal:has(.builder-paper) > .row .builder-submit { display: block; }

@@ -83,6 +83,6 @@ node --test tests/*.test.cjs
 
 Ключевые наборы: `character-builder.test.cjs` (проекция и сборки),
 `character-builder-equipment.test.cjs` (разбор снаряжения на реальном SRD),
-`character-builder-dialog.test.cjs` (мастер открывается и доходит до готового
-листа), `levelup.test.cjs`, `mechanics.test.cjs`, `equipment.test.cjs`,
+`character-builder-dialog.test.cjs` (мастер открывается, доходит до готового
+листа, пропускает незаполненные шаги и собирает пустой лист), `levelup.test.cjs`, `mechanics.test.cjs`, `equipment.test.cjs`,
 `dice.test.cjs`, `spell-rules.test.cjs`.

@@ -196,7 +196,7 @@ window.modal = function (title, content, buttons = [], opts = {}) {
     const bg = el('div', { class: 'modal-bg' });
     const m = el('div', { class: 'modal' + (opts.wide ? ' wide' : '') }, el('h2', {}, title), content);
     const btns = el('div', { class: 'row', style: 'margin-top:14px;justify-content:flex-end' });
-    for (const b of buttons) btns.append(el('button', { class: b.cls || '', onclick: () => { const r = b.fn ? b.fn() : b.value; if (r !== false) { bg.remove(); resolve(r); } } }, b.label));
+    for (const b of buttons) btns.append(el('button', { class: b.cls || '', title: b.title || null, onclick: () => { const r = b.fn ? b.fn() : b.value; if (r !== false) { bg.remove(); resolve(r); } } }, b.label));
     btns.append(el('button', { onclick: () => { bg.remove(); resolve(null); } }, 'Отмена'));
     m.append(btns); bg.append(m); document.body.append(bg);
     bg.addEventListener('pointerdown', e => { if (e.target === bg && !opts.wide) { bg.remove(); resolve(null); } });
