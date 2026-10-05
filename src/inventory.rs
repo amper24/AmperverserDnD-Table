@@ -253,7 +253,12 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     let mut next = sheet.clone(); normalize(&mut next)?;
     let inv = next["inventory"].as_array().unwrap();
     let item = inv.iter().find(|i| i["uid"] == uid).cloned().ok_or_else(|| AppError::not_found("Предмет не найден"))?;
-    if item.get("mechanics").is_some() { return Err(AppError::bad("Предмет переведён на блоки. Обновите лист и используйте новое действие.")); }
+    // Предмет на блоках: старый op:'use' выполняет его действие целиком, а не падает с ошибкой.
+    if let Some(m) = item.get("mechanics") {
+        let pid = m["programs"].as_array().and_then(|a| a.iter().find(|p| p["trigger"] == "use")).and_then(|p| p["id"].as_str()).unwrap_or("").to_string();
+        if pid.is_empty() { return Err(AppError::bad("У предмета нет исполняемого действия")); }
+        return crate::mechanics::execute(sheet, "item", uid, &pid, mode, false);
+    }
     if item["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
     if handedness(&item) != "none" && item["equipped"] != true { return Err(AppError::bad("Сначала возьмите предмет в руку")); }
     if indices.len() > 8 || indices.iter().collect::<HashSet<_>>().len() != indices.len() { return Err(AppError::bad("Неверный набор действий")); }

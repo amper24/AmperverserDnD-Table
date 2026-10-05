@@ -308,7 +308,8 @@ window.Mechanics = (() => {
         }
         if(['heal','temp_hp','condition','grant_item','adjust'].includes(b.kind)) body.append(note('Применяется владельцу листа. Эффекты по другим персонажам — задача ДМ.'));
         if(b.kind==='attack'||b.kind==='damage') body.append(field('Хват',select([['','Любой'],['one','Одной рукой'],['two','Двумя руками']],b.grip,v=>b.grip=v)));
-        if(b.kind==='attack') body.append(note('Попадание — это бросок: сравнивает его с КД цели ДМ.'));
+        if(b.kind==='attack') body.append(field('КД цели (необязательно)',input(b,'dc','number',{min:0,max:40,step:1,placeholder:'0 — решает ДМ'})),
+          note('Попадание решает ДМ. Если указать КД, ветка «при попадании» сработает только при результате не ниже КД; без КД промахом считается одна натуральная 1.'));
         if(b.kind==='damage') body.append(field('Тип урона',select((window.Modules?.DAMAGE_TYPES||['','рубящий','огонь']).map(n=>[n,n||'Не задан']),b.damage_type,v=>b.damage_type=v)),note('Урон не списывается с цели: бросок показывает результат, хиты меняет ДМ.'));
         if(b.kind==='roll') body.append(field('Правило действия (необязательно)',el('textarea',{oninput:e=>b.text=e.target.value},b.text||'')),note('Своё действие: бросок кубов и правило, которое применяет ДМ.'));
         if(b.kind==='consume'){

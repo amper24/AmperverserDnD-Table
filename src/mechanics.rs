@@ -2,6 +2,7 @@
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
+// `save` остаётся в схеме только для старых записей: при выполнении он превращается в своё действие.
 const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","save","grant_item","condition","adjust","require","manual","passive"];
 fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
@@ -80,6 +81,7 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
                 "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_depth(&b["item"]["mechanics"],depth+1)?; } }
                 "adjust" => { if !field_ok(text(b,"field")) { return Err(bad("Недоступный показатель")); } bounded(b,"amount",-10000,10000)?; }
                 "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
+                "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
                 "condition" => { if text(b,"condition").trim().is_empty()||text(b,"condition").len()>200||!["add","remove"].contains(&text(b,"operation")) { return Err(bad("Неверное состояние")); } }
                 "save" => { bounded(b,"dc",1,40)?; if !["str","dex","con","int","wis","cha"].contains(&text(b,"ability")) { return Err(bad("Неверный спасбросок")); } }
                 "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
@@ -89,6 +91,41 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
         }
     }
     Ok(())
+}
+/// Приводит старую схему к текущей: спасбросок цели становится своим действием (бросок + правило,
+/// которое сравнивает ДМ), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся
+/// на спасброске, становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
+fn normalize(m: &Value) -> Value {
+    let mut out = m.clone();
+    let Some(programs) = out["programs"].as_array_mut() else { return out };
+    for p in programs {
+        let Some(blocks) = p["blocks"].as_array_mut() else { continue };
+        let mut gate = false;
+        for b in blocks {
+            if b["kind"] == "save" {
+                let ability = text(b, "ability").to_string(); let dc = num(b, "dc");
+                let name = if text(b, "name").is_empty() { "Спасбросок".to_string() } else { text(b, "name").to_string() };
+                if let Some(o) = b.as_object_mut() {
+                    o.insert("kind".into(), json!("roll"));
+                    o.insert("name".into(), json!(name));
+                    o.insert("when".into(), json!("always"));
+                    o.insert("dice".into(), json!({ "count": 1, "sides": 20, "bonus": 0, "stat": "" }));
+                    o.insert("text".into(), json!(format!("Спасбросок{}{}. Результат сравнивает ДМ.",
+                        if ability.is_empty() { String::new() } else { format!(" {ability}") },
+                        if dc > 0 { format!(" · СЛ {dc}") } else { String::new() })));
+                    o.remove("target"); o.remove("apply");
+                }
+            }
+            let kind = b["kind"].as_str().unwrap_or("").to_string();
+            if let Some(o) = b.as_object_mut() {
+                if ["attack", "damage", "roll", "save"].contains(&kind.as_str()) { o.remove("target"); o.remove("apply"); }
+                if ["heal", "temp_hp", "condition", "adjust", "grant_item"].contains(&kind.as_str()) { o.insert("target".into(), json!("self")); }
+                if ["hit", "miss"].contains(&o["when"].as_str().unwrap_or("")) && !gate { o.insert("when".into(), json!("always")); }
+            }
+            if kind == "attack" { gate = true; }
+        }
+    }
+    out
 }
 fn formula(b: &Value) -> ApiResult<String> {
     let d=&b["dice"];
@@ -128,12 +165,13 @@ fn grant(s: &mut Value, b: &Value) -> ApiResult<()> {
     }
     if inv.len()>=2000 {return Err(bad("Инвентарь получателя заполнен"));}inv.push(it);Ok(())
 }
-/// The target sheet must already be permission checked. Both sheets stay untouched on ANY error.
-pub fn execute(sheet: &mut Value, mut target: Option<&mut Value>, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool, target_is_self: bool) -> ApiResult<Value> {
-    let mut s=sheet.clone();inventory::normalize(&mut s)?;let mut t=target.as_deref().cloned();if let Some(t)=t.as_mut(){inventory::normalize(t)?;}
+/// Эффекты применяются только владельцу листа: урон, состояния и спасброски по другим персонажам —
+/// задача ДМ, действие даёт бросок и правило. Лист не меняется ни на йоту при ЛЮБОЙ ошибке цепочки.
+pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool) -> ApiResult<Value> {
+    let mut s=sheet.clone();inventory::normalize(&mut s)?;
     let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(bad("Неизвестный источник механики"))};
     let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||bad("Источник не найден"))?;
-    let m=&doc["mechanics"];validate(m)?;
+    let m=normalize(&doc["mechanics"]);validate(&m)?;
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
     if category=="item"&&(num(&doc,"qty")<1||(inventory::handedness(&doc)!="none"&&doc["equipped"]!=true)) {return Err(bad("Предмет закончился или не экипирован"));}
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();
@@ -142,49 +180,74 @@ pub fn execute(sheet: &mut Value, mut target: Option<&mut Value>, category: &str
     let mut spent=Vec::new();let mut rolls=Vec::new();let mut effects=Vec::new();let mut hit=None;let mut crit=false;
     for b in blocks {
         let kind=text(b,"kind");let when=text(b,"when");
-        if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||bad("Для ветвления включите сравнение атаки с КД цели"))?;if h!=(when=="hit"){continue;} }
+        if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||bad("Ветвление доступно только после блока атаки"))?;if h!=(when=="hit"){continue;} }
         if kind=="consume" {if b["trigger"]=="attack"{attack_costs.push(b);}else{spend(&mut s,&doc,category,b,1,&mut spent)?;}continue;}
         if kind=="attack"{for cost in &attack_costs{spend(&mut s,&doc,category,cost,1,&mut spent)?;}}
         if kind=="require" {if s.pointer(&pointer(text(b,"field"))).and_then(Value::as_i64).unwrap_or(0)<num(b,"minimum"){return Err(bad("Условие действия не выполнено"));}continue;}
         if kind=="manual" {effects.push(json!({"kind":"manual","text":b["text"]}));continue;}
         if kind=="passive" {return Err(bad("Пассивный блок нельзя выполнить повторно"));}
-        let needs_target=!target_is_self&&b["target"]=="target"&&(b["apply"]==true||["heal","temp_hp","grant_item","condition","adjust","save"].contains(&kind));
-        if needs_target&&t.is_none() {return Err(bad("Выберите разрешённую цель (или владельца)"));}
-        let context=if kind=="save" {if needs_target{t.as_ref().unwrap()}else{&s}}else{&s};
         let mut total=0;
-        if ["attack","damage","heal","temp_hp","roll","save"].contains(&kind) {
-            let raw=if kind=="save"{format!("1d20+@save_{}",text(b,"ability"))}else{formula(b)?};let mut expr=inventory::resolve(&raw,context)?;
-            if ["attack","roll","save"].contains(&kind)&&["adv","dis"].contains(&mode){expr=regex::Regex::new(r"(^|[+\-])1?d20($|[+\-])").unwrap().replace(&expr,|c:&regex::Captures|format!("{}2d20k{}1{}",&c[1],if mode=="adv"{"h"}else{"l"},&c[2])).to_string();}
+        if ["attack","damage","heal","temp_hp","roll"].contains(&kind) {
+            let raw=formula(b)?;let mut expr=inventory::resolve(&raw,&s)?;
+            if ["attack","roll"].contains(&kind)&&["adv","dis"].contains(&mode){expr=regex::Regex::new(r"(^|[+\-])1?d20($|[+\-])").unwrap().replace(&expr,|c:&regex::Captures|format!("{}2d20k{}1{}",&c[1],if mode=="adv"{"h"}else{"l"},&c[2])).to_string();}
             let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::realtime::double_dice(&expr);}
             let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
-            if kind=="attack" {crit=n20;hit=if b["apply"]==true{Some(n20||(!n1&&total>=num(if needs_target{t.as_ref().unwrap()}else{&s},"ac")))}else{None};}
-            if kind=="save" {hit=Some(total<num(b,"dc"));crit=false;}
+            // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.
+            if kind=="attack" {crit=n20;let dc=num(b,"dc");hit=Some(n20||(!n1&&(dc<=0||total>=dc)));}
             r["name"]=json!(if text(b,"name").is_empty(){text(p,"name")}else{text(b,"name")});r["kind"]=json!(kind);r["dtype"]=b["damage_type"].clone();r["doubled"]=json!(doubled);r["base_expr"]=json!(base);r["crit"]=json!(n20&&kind=="attack");r["fumble"]=json!(n1&&kind=="attack");rolls.push(r);
         }
-        let recipient=if needs_target{t.as_mut().unwrap()}else{&mut s};
+        let recipient=&mut s;
         match kind {
-            "heal"|"temp_hp"|"damage" if kind!="damage"||b["apply"]==true => {
+            "heal"|"temp_hp" => {
                 let hp=recipient["hp"].as_object_mut().ok_or_else(||bad("У цели не настроены хиты"))?;
                 let cur=hp.get("current").and_then(Value::as_i64).unwrap_or(0);let max=hp.get("max").and_then(Value::as_i64).unwrap_or(0);let tmp=hp.get("temp").and_then(Value::as_i64).unwrap_or(0);let n=total.max(0);
                 if kind=="heal" {hp.insert("current".into(),json!(cur.saturating_add(n).min(max).max(0)));}else if kind=="temp_hp"{hp.insert("temp".into(),json!(tmp.max(n)));}else{hp.insert("temp".into(),json!((tmp-n).max(0)));hp.insert("current".into(),json!((cur-(n-tmp).max(0)).max(0)));}
-                effects.push(json!({"kind":kind,"amount":n,"target":b["target"],"hp":recipient["hp"]}));
+                effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
             }
-            "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":b["target"]}));}
+            "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":"self"}));}
             "condition"=>{if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}let a=recipient["conditions"].as_array_mut().ok_or_else(||bad("Неверный список состояний"))?;if b["operation"]=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}effects.push(b.clone());}
             "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
             _=>{}
         }
     }
-    inventory::normalize(&mut s)?;if let Some(t)=t.as_mut(){inventory::normalize(t)?;}
-    *sheet=s;if let (Some(dst),Some(value))=(target.as_mut(),t){**dst=value;}
+    inventory::normalize(&mut s)?;
+    *sheet=s;
     Ok(json!({"label":format!("{} · {}",text(&doc,"name"),text(p,"name")),"rolls":rolls,"spent":spent,"effects":effects,"program_id":program,"source_uid":uid,"source_kind":category}))
 }
 
 #[cfg(test)] mod tests {
     use super::*;
     fn fixture() -> Value {json!({"hp":{"max":20,"current":1,"temp":0},"inventory":[{"uid":"p","name":"Potion","qty":2,"type":"consumable","mechanics":{"version":1,"programs":[{"id":"use","name":"Drink","trigger":"use","blocks":[{"id":"c","kind":"consume","resource":"quantity","source":"self","amount":1,"trigger":"use"},{"id":"h","kind":"heal","target":"self","dice":{"count":0,"sides":6,"bonus":7,"stat":""}},{"id":"g","kind":"grant_item","target":"self","amount":1,"item":{"name":"Vial","type":"gear"}}]}]}}]})}
-    #[test] fn potion_is_atomic_and_stacks_identical_rewards(){let mut s=fixture();execute(&mut s,None,"item","p","use","",false,false).unwrap();assert_eq!(s["hp"]["current"],8);assert_eq!(s["inventory"][0]["qty"],1);execute(&mut s,None,"item","p","use","",false,false).unwrap();assert_eq!(s["inventory"].as_array().unwrap().len(),2);assert_eq!(s["inventory"][1]["qty"],2);let before=s.clone();assert!(execute(&mut s,None,"item","p","use","",false,false).is_err());assert_eq!(s,before);}
-    #[test] fn late_failure_rolls_back_everything(){let mut s=fixture();s["inventory"][0]["mechanics"]["programs"][0]["blocks"][2]["target"]=json!("target");let before=s.clone();assert!(execute(&mut s,None,"item","p","use","",false,false).is_err());assert_eq!(s,before);}
+    #[test] fn potion_is_atomic_and_stacks_identical_rewards(){let mut s=fixture();execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["hp"]["current"],8);assert_eq!(s["inventory"][0]["qty"],1);execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["inventory"].as_array().unwrap().len(),2);assert_eq!(s["inventory"][1]["qty"],2);let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
+    #[test] fn late_failure_rolls_back_everything(){let mut s=fixture();s["inventory"][0]["mechanics"]["programs"][0]["blocks"].as_array_mut().unwrap().push(json!({"id":"x","kind":"adjust","field":"currency.gp","amount":5}));let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
+    /// Чужих целей нет: урон никому не списывается, спасбросок цели стал своим действием с броском d20.
+    #[test] fn damage_and_saves_are_custom_actions(){
+        let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Burst","trigger":"use","blocks":[
+            {"id":"s","kind":"save","ability":"dex","dc":15},
+            {"id":"d","kind":"damage","target":"target","apply":true,"when":"hit","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}]}]}}]});
+        let r=execute(&mut s,"item","w","use","",false).unwrap();
+        assert_eq!(s["hp"]["current"],20);
+        assert_eq!(s["hp"]["temp"],0);
+        let rolls=r["rolls"].as_array().unwrap();
+        assert_eq!(rolls.len(),2);
+        assert_eq!(rolls[0]["kind"],"roll");
+        assert_eq!(rolls[1]["kind"],"damage");
+        assert!(r["effects"].as_array().unwrap().is_empty());
+    }
+    /// Ветка попадания считается только по броску и КД: чужой лист (тут AC 99) не участвует.
+    #[test] fn hit_branch_uses_only_the_roll(){
+        let mk=|dc:i64| json!({"hp":{"max":20,"current":10,"temp":0},"ac":99,"inventory":[{"uid":"w","name":"W","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Hit","trigger":"use","blocks":[
+            {"id":"a","kind":"attack","dc":dc,"dice":{"count":0,"sides":20,"bonus":5,"stat":""}},
+            {"id":"h","kind":"heal","when":"hit","dice":{"count":0,"sides":6,"bonus":7,"stat":""}}]}]}}]});
+        let mut hit=mk(3); // результат 5 достигает КД 3 — срабатывает ветка попадания
+        let r=execute(&mut hit,"item","w","use","",false).unwrap();
+        assert_eq!(r["rolls"].as_array().unwrap().len(),2);
+        assert_eq!(hit["hp"]["current"],17);
+        let mut miss=mk(10); // результат 5 ниже КД 10 — лечения нет
+        let r=execute(&mut miss,"item","w","use","",false).unwrap();
+        assert_eq!(r["rolls"].as_array().unwrap().len(),1);
+        assert_eq!(miss["hp"]["current"],10);
+    }
     #[test] fn creation_choices_are_bounded(){
         let one=json!([{"id":"g","name":"Бонус","type":"ability","count":1,"options":[{"id":"o","name":"+2 Сила","value":{"str":2}}]}]);
         validate_choices(&one).unwrap();

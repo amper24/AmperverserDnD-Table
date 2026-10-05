@@ -150,7 +150,7 @@
     if(readonly||inventoryBusy) return;
     const manual=p.blocks.filter(b=>b.enabled!==false&&b.kind==='manual');
     if(manual.length){
-      const yes=await modal(doc.name+' · '+p.name,el('div',{},...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расход и эффекты применятся владельцу листа одной операцией. Сопротивления, иммунитеты, концентрация и урон по другим персонажам не считаются автоматически — их применяет ДМ.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
+      const yes=await modal(doc.name+' · '+p.name,el('div',{},...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расход и эффекты применятся владельцу листа одной операцией. Урон, состояния и спасброски по другим персонажам не считаются автоматически — их применяет ДМ: действие даёт бросок и правило.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
       if(!yes)return;
     }
     return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0,...opts});
