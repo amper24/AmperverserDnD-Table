@@ -1041,17 +1041,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   background: transparent no-repeat right 1px center / 8px url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238b919c'/%3E%3C/svg%3E"); }
 .mod-block.dragover { border-color: var(--accent); background: var(--accent-soft); }
 
-/* Вдохновение: широкая полоса под КД/инициативой/скоростью — состояние видно сразу. */
-.insp-square { display: flex; width: 74px; height: 74px; margin-top: 8px; padding: 6px; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
-.insp-square-star { color: var(--muted); font-size: 34px; line-height: 1; transition: color .15s ease, transform .15s ease, text-shadow .15s ease; }
-.insp-square-label { color: var(--muted); font-size: 9px; font-weight: 650; line-height: 1.15; text-align: center; }
+/* Вдохновение: четвёртая плитка в ряду КД / инициатива / скорость — состояние видно сразу. */
+.stat3.has-insp { grid-template-columns: repeat(4, 1fr); }
+.insp-square { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.insp-square label { margin-bottom: 0; }
+.insp-square-star { color: var(--muted); font-size: 26px; line-height: 1; transition: color .15s ease, transform .15s ease, text-shadow .15s ease; }
 .insp-square:hover:not(:disabled) { border-color: var(--accent-line); transform: translateY(-1px); }
 .insp-square:hover:not(:disabled) .insp-square-star { color: var(--text); }
 .insp-square:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .insp-square:disabled { cursor: default; opacity: .72; }
 .insp-square.on { border-color: var(--accent-line); background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
 .insp-square.on .insp-square-star { color: var(--accent); text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); transform: scale(1.06); }
-.insp-square.on .insp-square-label { color: var(--accent); }
+.insp-square.on label { color: var(--accent); }
+@media (max-width: 560px) { .stat3.has-insp { grid-template-columns: repeat(2, 1fr); } }
 
 .race-module-facts { color: var(--text); font-size: 10px; }
 .race-module-block { align-items: flex-start; }

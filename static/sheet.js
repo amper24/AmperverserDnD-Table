@@ -440,19 +440,19 @@
     const c2 = el('div');
     const hp = s.hp;
     const hitCounts = hitDiceCounts(), hitTotal = Object.values(hitCounts).reduce((sum, value) => sum + value, 0), hitSpent = Object.values(hp.hit_dice_used || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
-    /// Вдохновение: компактная квадратная кнопка со звездой; состояние сохраняется в листе.
+    /// Вдохновение: плитка в одном ряду с КД, инициативой и скоростью; состояние сохраняется в листе.
     const toggleInspiration = () => { if (readonly) return; s.inspiration = !s.inspiration; save(); render(); };
     const inspirationTile = el('button', { type: 'button', class: 'card insp-square' + (s.inspiration ? ' on' : ''),
       title: s.inspiration ? 'Потратьте вдохновение на один бросок d20 с преимуществом' : 'Нажмите, чтобы отметить вдохновение, выданное мастером',
       'aria-label': s.inspiration ? 'Вдохновение есть; нажмите, чтобы снять отметку' : 'Вдохновения нет; нажмите, чтобы отметить',
       'aria-pressed': String(!!s.inspiration), disabled: readonly ? '' : null, onclick: toggleInspiration },
-      el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'),
-      el('span', { class: 'insp-square-label' }, 'Вдохновение'));
-    c2.append(el('div', { class: 'stat3' },
+      el('label', {}, 'Вдохновение'),
+      el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'));
+    c2.append(el('div', { class: 'stat3 has-insp' },
       el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
-      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } }))));
-    c2.append(inspirationTile);
+      el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } })),
+      inspirationTile));
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', { title: `Потрачено ${hitSpent} из ${hitTotal}` }, `Кости хитов ${Math.max(0, hitTotal - hitSpent)}/${hitTotal}`), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
