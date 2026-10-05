@@ -13,7 +13,8 @@
 //     редактор для конструктора справочника;
 //   • разбор текста стартового снаряжения и план выдачи (тексты 2014 и 2024);
 //   • навыки, языки, подклассы, лимиты заклинаний;
-//   • сборка итогового листа — build(draft).
+//   • сборка итогового листа — build(draft) и пустой лист для ручного
+//     заполнения — blankSheet(name, edition) (мастер можно пропустить).
 //
 // UI мастера создания персонажа живёт отдельно — в builder-dialog.js.
 // Зависимости: common.js, dice.js, mechanics.js, modules.js.
@@ -26,6 +27,8 @@ window.CharacterBuilder = (() => {
   const LANGUAGES = ['Общий', 'Общий жестовый язык', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Абиссальный', 'Небесный', 'Драконий', 'Глубинная речь', 'Инфернальный', 'Первичный', 'Сильван', 'Подземный общий'];
   const LANGUAGES_2024_STANDARD = ['Общий жестовый язык', 'Драконий', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий'];
   const modifier = n => Math.floor((n - 10) / 2);
+  /// Поля «личность» листа: один список и для черновика мастера, и для пустого листа.
+  const TRAIT_KEYS = ['player_name', 'faith', 'age', 'height', 'weight', 'eyes', 'skin', 'hair', 'personality', 'ideals', 'bonds', 'flaws', 'appearance', 'backstory'];
   const POINT_BUY_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
   const pointBuyTotal = abilities => Object.values(abilities || {}).reduce((sum, n) => sum + (POINT_BUY_COST[Number(n)] ?? 999), 0);
   const pointBuyValid = abilities => keys.every(key => Object.hasOwn(POINT_BUY_COST, Number(abilities?.[key]))) && pointBuyTotal(abilities) === 27;
@@ -595,7 +598,7 @@ window.CharacterBuilder = (() => {
       hp: { max: 0, current: 0, temp: 0, hit_dice: '1d8' }, speed: 30, features: [], ac: 10, auto_armor: true, unarmored_defense: '',
       spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [],
       inventory: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
-      traits: Object.fromEntries(['player_name', 'faith', 'age', 'height', 'weight', 'eyes', 'skin', 'hair', 'personality', 'ideals', 'bonds', 'flaws', 'appearance', 'backstory'].map(k => [k, String(draft.traits?.[k] || '')])) };
+      traits: Object.fromEntries(TRAIT_KEYS.map(k => [k, String(draft.traits?.[k] || '')])) };
     const picks = draft.picks || {}, chosen = [];
     const entries = ['race', 'class', 'subclass', 'background', 'feat'].map(k => draft.selected[k]).filter(Boolean).concat(draft.spells || []);
     const race = draft.selected.race;
@@ -873,6 +876,26 @@ window.CharacterBuilder = (() => {
     render();
     return el('div', { class: 'field' }, el('span', {}, 'Варианты выбора при создании персонажа'), root);
   }
+  /// Пустой лист для тех, кто пропускает мастер и заполняет персонажа сам на листе.
+  /// Отличается от build(пустой черновик) тем, что не подставляет ничего «за игрока»:
+  /// характеристики 10, хиты 10, без модулей, снаряжения и владений.
+  function blankSheet(name = '', edition = '2014') {
+    const fallback = String(name || '').trim() || 'Новый персонаж';
+    return {
+      name: fallback, edition: String(edition || '2014'), level: 1, xp: 0,
+      race: '', class: '', subclass: '', background: '', alignment: '',
+      abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      proficiency_bonus: 2, saving_throws: [], skills: [], expertise: [], classes: [],
+      hp: { max: 10, current: 10, temp: 0, hit_dice: '1d8', hit_dice_used: {} },
+      ac: 10, auto_armor: true, speed: 30, initiative_bonus: 0, inspiration: false,
+      attacks: [], inventory: [], conditions: [], death_saves: { success: 0, failure: 0 },
+      spells: { ability: '', slots: {}, known: [] },
+      features: [], proficiencies: '', notes: '', notes_by: {}, modules: [],
+      currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
+      traits: Object.fromEntries(TRAIT_KEYS.map(k => [k, ''])),
+      creation: { version: 1, method: 'manual', manual: true, choices: [], rule_choices: {}, equipment: { gold: 0, items: 0 } },
+    };
+  }
   function rollStats(random) {
     const results = keys.map(() => DiceEngine.evaluate('4d6kh3', random));
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 4d6, три лучших', rolls: results.map((r, i) => ({ ...r, name: `Набор ${i + 1}` })) }, { local: true });
@@ -883,7 +906,7 @@ window.CharacterBuilder = (() => {
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 6 × 1d20 (вариант стола)', rolls: results.map((r, i) => ({ ...r, name: `${ABIL[keys[i]] || keys[i]}` })) }, { local: true });
     return results.map(r => ({ dice: r.parts[0].rolls, dropped: -1, total: r.total }));
   }
-  return { register, build, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
+  return { register, build, blankSheet, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
     parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, startingInventory, packContents, skillsState, passiveSkills, itemKind, PICK_FILTERS, SKILL_SOURCES, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
     normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, CLASS_SLUGS_RU, POINT_BUY_COST };
 })();

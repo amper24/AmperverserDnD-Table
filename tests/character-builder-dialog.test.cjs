@@ -21,6 +21,7 @@ function makeNode(tag) {
     remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(c => c !== this); this.parentElement = null; },
     addEventListener(ev, fn) { (this._listeners[ev] ||= []).push(fn); },
     removeEventListener() {},
+    click() { for (const fn of (this._listeners.click || []).slice()) fn({ target: this, stopPropagation() {}, preventDefault() {} }); },
     contains(other) { let n = other; while (n) { if (n === this) return true; n = n.parentElement; } return false; },
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelector(sel) { return findFirst(this, sel); },
@@ -178,6 +179,54 @@ test('мастер создания персонажа открывается и
   const stepButtons = buttons(documentStub.body).filter(b => String(b.className).includes('builder-step'));
   assert.equal(stepButtons.length, 8, 'навигация показывает восемь шагов');
   assert.ok(findButton(documentStub.body, 'Далее'), 'кнопка «Далее» на месте');
+});
+
+test('мастер позволяет пропускать шаги и создать персонажа с незаполненными полями', async () => {
+  documentStub.body = makeNode('body');
+  const rejections = [];
+  const dialog = sandbox.newCharacterDialog({});
+  dialog.catch(e => rejections.push(e));
+  await sleep(50);
+
+  // Ничего не заполняем: семь раз «Далее» должны дойти до шага «Проверка».
+  for (let i = 0; i < 7; i++) { click(findButton(documentStub.body, 'Далее')); await sleep(15); }
+  assert.equal(rejections.length, 0, `пропуск шагов не должен падать: ${rejections[0]?.stack}`);
+  assert.ok(findButton(documentStub.body, 'Создать персонажа'), 'кнопка создания доступна на последнем шаге');
+
+  click(buttons(documentStub.body).find(b => text(b).includes('Создать персонажа')));
+  const result = await Promise.race([dialog, sleep(500).then(() => null)]);
+  assert.equal(rejections.length, 0, rejections[0]?.stack);
+  assert.ok(result && result.sheet, 'персонаж создаётся и без обязательных полей');
+  assert.equal(result.name, 'Новый персонаж', 'без имени создаётся заготовка');
+  assert.equal(result.sheet.name, 'Новый персонаж');
+  assert.equal(result.sheet.race, '');
+  assert.equal(result.sheet.class, '');
+  assert.ok(result.sheet.hp.max >= 1, 'хиты остаются в разумных пределах');
+});
+
+test('«Заполнить самостоятельно» закрывает мастер и отдаёт пустой лист', async () => {
+  documentStub.body = makeNode('body');
+  const rejections = [];
+  const dialog = sandbox.newCharacterDialog({ name: 'Самоделкин' });
+  dialog.catch(e => rejections.push(e));
+  await sleep(50);
+
+  const skip = findButton(documentStub.body, 'Заполнить самостоятельно');
+  assert.ok(skip, 'кнопка «Заполнить самостоятельно» видна в мастере');
+  click(skip);
+  const result = await Promise.race([dialog, sleep(500).then(() => null)]);
+  assert.equal(rejections.length, 0, rejections[0]?.stack);
+  assert.ok(result && result.sheet, 'мастер вернул лист');
+  assert.equal(result.name, 'Самоделкин', 'введённое имя не теряется');
+  const sheet = result.sheet;
+  assert.equal(sheet.race, '');
+  assert.equal(sheet.class, '');
+  assert.equal(sheet.level, 1);
+  // Объект создан внутри vm-песочницы: сравниваем по значению, без прототипа.
+  assert.deepEqual(JSON.parse(JSON.stringify(sheet.abilities)), { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+  assert.equal(sheet.inventory.length, 0);
+  assert.equal(sheet.modules.length, 0);
+  assert.equal(sheet.creation.manual, true);
 });
 
 test('полный проход мастера завершается готовым листом персонажа', async () => {

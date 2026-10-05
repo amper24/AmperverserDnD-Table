@@ -497,6 +497,9 @@ button.ghost:hover { color: var(--text); }
 .builder-step.done .builder-step-n { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
 .builder-step.flag .builder-step-t b::after { content: '•'; margin-left: 6px; color: var(--danger); }
 .builder-step.flag .builder-step-t small { color: var(--danger); }
+/* шаг с незаполненными, но необязательными полями: метка, а не ошибка */
+.builder-step.todo .builder-step-t b::after { content: '•'; margin-left: 6px; color: var(--accent); }
+.builder-step.todo .builder-step-t small { color: var(--muted); }
 
 /* --- контекст шага --- */
 .builder-step-context { display: grid; gap: 6px; margin-bottom: 12px; }
@@ -505,6 +508,8 @@ button.ghost:hover { color: var(--text); }
 .builder-context-row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .builder-context-row b { font-size: 13px; }
 .builder-flag { color: var(--danger); font-size: 12.5px; }
+.builder-todo { color: var(--accent); font-size: 12.5px; }
+.builder-todo small { color: var(--muted); }
 
 /* --- прокручиваемое тело --- */
 .builder-body { flex: 1; min-height: 0; overflow: auto; padding-right: 6px; scrollbar-gutter: stable; }
@@ -695,7 +700,12 @@ button.ghost:hover { color: var(--text); }
 .builder-nav-info b, .builder-nav-info small { display: block; }
 .builder-nav-info small { color: var(--muted); }
 .builder-nav-hint { color: var(--muted); font-size: 12.5px; }
+.builder-nav-extra { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: none; }
 .builder-error { color: var(--danger); font-size: 12.5px; min-height: 16px; margin: 6px 0 0; }
+/* список «осталось заполнить» на шаге «Проверка» */
+.builder-review-todo-list { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.builder-review-todo-list li { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; color: var(--muted); }
+.builder-review-todo-list button { flex: none; }
 .modal:has(.character-builder) > .row .builder-submit { display: none; }
 .modal:has(.builder-paper) > .row .builder-submit { display: block; }
 button:disabled { opacity: .45; cursor: not-allowed; }

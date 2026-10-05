@@ -12,6 +12,11 @@
 // Её используют «Новый персонаж» в лобби, меню «Создать» на столе и боковая
 // панель кампании (static/app.js).
 //
+// Ни один шаг не обязателен: stepProblem(i) — это подсказка «осталось заполнить»,
+// она не мешает идти дальше; stepBlocker(i) ловит только испорченный ввод.
+// Кнопка «Заполнить самостоятельно» закрывает мастер и отдаёт пустой лист
+// CharacterBuilder.blankSheet — персонаж заполняется вручную уже на листе.
+//
 // Зависимости: character-builder.js, common.js (el, modal, API), dice.js,
 // compendium.js (карточки записей). Загружается после character-builder.js.
 // =============================================================================
@@ -103,10 +108,11 @@ window.newCharacterDialog = async function (defaults = {}) {
     const rogueLanguage = draft.edition === '2024' && classSlug === 'rogue' ? 1 : 0;
     return originLanguages + (Number.isInteger(backgroundLanguages) && backgroundLanguages > 0 ? backgroundLanguages : 0) + raceLanguageChoice() + rogueLanguage;
   }
-  /// Что мешает пройти шаг — для подсказок в навигации и сообщений.
-  // ---------- Проверка шагов: что мешает пройти каждый из восьми шагов ----------
+  /// Что на шаге осталось незаполненным. Всё это необязательно: подсказка нужна,
+  /// чтобы игрок видел, что можно дополнить, но идти дальше она не мешает.
+  // ---------- Проверка шагов: что осталось заполнить на каждом из восьми шагов ----------
   function stepProblem(index) {
-    if (index === 0) return draft.name.trim() ? '' : 'Дайте персонажу имя.';
+    if (index === 0) return draft.name.trim() ? '' : 'Имя не указано — создадим как «Новый персонаж», имя меняется на листе.';
     if (index === 1) {
       if (['race', 'class', 'background'].some(k => !draft.selected[k])) return 'Выберите расу, класс и предысторию.';
       if (draft.edition === '2024' && !String(draft.selected.background?.data?.feat || '').trim()) return 'В редакции 2024 предыстория должна давать черту происхождения; проверьте запись справочника.';
@@ -150,8 +156,6 @@ window.newCharacterDialog = async function (defaults = {}) {
       return pending.length ? 'Сделайте выбор в модулях: ' + pending.map(x => x.group.name || 'вариант').join(', ') + '.' : '';
     }
     if (index === 2) {
-      const minBase = ['manual', 'd20'].includes(draft.method) ? 1 : 3;
-      if (B.keys.some(key => !Number.isInteger(draft.abilities[key]) || draft.abilities[key] < minBase || draft.abilities[key] > 20)) return `Базовые характеристики: целые числа от ${minBase} до 20.`;
       if (draft.method === 'pointbuy' && !B.pointBuyValid(draft.abilities)) return 'Покупка характеристик: значения 8–15, потратьте ровно 27 очков.';
       const opts = draft.selected.background?.data?.asi_options || [];
       if (draft.edition === '2024') {
@@ -212,7 +216,17 @@ window.newCharacterDialog = async function (defaults = {}) {
     for (let i = 0; i < steps.length; i++) { const problem = stepProblem(i); if (problem) map.set(i, problem); }
     return map;
   }
-  function valid() { return stepProblem(step); }
+  /// Единственное, что мастер не пропускает: испорченный ввод, из-за которого лист
+  /// станет нечитаемым. Обычно недостижимо — значения характеристик ограничивает само поле.
+  function stepBlocker(index) {
+    if (index === 2) {
+      const minBase = ['manual', 'd20'].includes(draft.method) ? 1 : 3;
+      if (B.keys.some(key => !Number.isInteger(draft.abilities[key]) || draft.abilities[key] < minBase || draft.abilities[key] > 20))
+        return `Базовые характеристики: целые числа от ${minBase} до 20.`;
+    }
+    return '';
+  }
+  function valid() { return stepBlocker(step); }
   // ---------- Каталог: загрузка рас, классов, предысторий, черт, заклинаний и предметов ----------
   async function load() {
     const version = ++request; loading = true; error = ''; render();
@@ -770,7 +784,7 @@ window.newCharacterDialog = async function (defaults = {}) {
           el('b', {}, block.label),
           el('small', { class: 'muted' }, block.sourceName)),
         el('div', { class: 'builder-eq-options' }, ...block.options.map(o => equipmentOptionCard(block, o))),
-        !option ? el('p', { class: 'builder-error small' }, 'Выберите вариант выше.') : null,
+        !option ? el('p', { class: 'builder-todo small' }, 'Вариант не выбран — можно пропустить: предметы этой группы не попадут в инвентарь, их добавите на листе.') : null,
         picks.length ? el('div', { class: 'builder-eq-picks' }, ...picks.map(equipmentPickRow)) : null,
         rows.length ? el('div', { class: 'builder-eq-rows' }, ...rows.map(equipmentItemRow)) : null));
     }
@@ -814,16 +828,25 @@ window.newCharacterDialog = async function (defaults = {}) {
     return body;
   }
   const uidSafe = () => 'ex' + Math.random().toString(36).slice(2, 9);
-  /// Переход между шагами: вперёд пускает только заполненный текущий шаг.
+  /// Переход между шагами: вперёд пускает всегда — всё в мастере необязательно.
+  /// Останавливает только испорченный ввод (см. stepBlocker).
   // ---------- Навигация и перерисовка ----------
   function goTo(target) {
     if (target === step) return;
     if (target < step) { step = target; render(); return; }
     for (let i = step; i < target; i++) {
-      const problem = stepProblem(i);
-      if (problem) { step = i; status.textContent = problem; render(); return; }
+      const blocker = stepBlocker(i);
+      // render() чистит строку состояния, поэтому сообщение пишем после перерисовки.
+      if (blocker) { step = i; render(); status.textContent = blocker; return; }
     }
     step = target; render();
+  }
+  /// «Заполнить самостоятельно»: закрываем мастер и отдаём пустой лист — расу, класс,
+  /// характеристики и снаряжение игрок впишет сам на листе персонажа.
+  function finishManually() {
+    const box = root.parentElement;
+    const button = box && box.querySelector ? box.querySelector('.builder-manual') : null;
+    if (button) button.click();
   }
   function render() {
     // Rebuilding the wizard after every choice used to replace the scrolling body with a
@@ -848,26 +871,29 @@ window.newCharacterDialog = async function (defaults = {}) {
     root.replaceChildren(); status.textContent = ''; previewCache = null;
     const issues = stepIssues();
     root.append(el('nav', { class: 'builder-steps', 'aria-label': 'Шаги создания персонажа' }, ...steps.map((name, i) => {
-      const done = i < step, problem = issues.get(i) && i !== step;
+      const done = i < step, todo = issues.get(i) && i !== step;
       return el('button', {
-        type: 'button', class: `builder-step${i === step ? ' current' : done ? ' done' : ''}${problem ? ' flag' : ''}`,
-        'aria-current': i === step ? 'step' : null, title: issues.get(i) || stepTips[i],
+        type: 'button', class: `builder-step${i === step ? ' current' : done ? ' done' : ''}${todo ? ' todo' : ''}`,
+        'aria-current': i === step ? 'step' : null, title: (issues.get(i) || stepTips[i]) + (issues.get(i) ? ' — можно пропустить' : ''),
         onclick: () => goTo(i)
       }, el('span', { class: 'builder-step-n' }, done ? '✓' : String(i + 1)),
         el('span', { class: 'builder-step-t' }, el('b', {}, name), el('small', {}, i === last ? 'Готовый лист' : stepTips[i])));
     })));
-    const problem = issues.get(step);
+    const todo = issues.get(step), blocker = stepBlocker(step);
     root.append(el('div', { class: 'builder-step-context' },
       el('div', { class: 'builder-progress' }, el('span', { style: `width:${((step + 1) / steps.length) * 100}%` })),
       el('div', { class: 'builder-context-row' },
         el('b', {}, `Шаг ${step + 1} из ${steps.length} · ${steps[step]}`),
-        el('span', { class: problem ? 'builder-flag' : 'muted small' }, problem ? '! ' + problem : stepTips[step]))));
+        blocker ? el('span', { class: 'builder-flag' }, '! ' + blocker)
+          : todo ? el('span', { class: 'builder-todo' }, el('span', {}, todo), el('small', {}, ' · можно пропустить'))
+            : el('span', { class: 'muted small' }, stepTips[step]))));
     const body = el('div', { class: 'builder-body' });
     body.dataset.step = String(step);
     const add = (...nodes) => nodes.filter(Boolean).forEach(node => body.append(node));
     root.append(body);
     if (step === 0) {
-      add(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Восемь понятных шагов — от концепции до готового листа. Расы, классы и предыстории подключаются как блоки из справочника, а навыки и снаряжение собираются по правилам.')),
+      add(el('div', { class: 'builder-intro' }, el('span', { class: 'builder-eyebrow' }, 'DUNGEONS & DRAGONS · УРОВЕНЬ 1'), el('h2', {}, 'Каждая история начинается с героя'), el('p', { class: 'muted' }, 'Восемь понятных шагов — от концепции до готового листа. Расы, классы и предыстории подключаются как блоки из справочника, а навыки и снаряжение собираются по правилам. '),
+        el('p', { class: 'builder-todo' }, 'Все шаги необязательны: любой можно пропустить кнопкой «Далее» и дописать потом на листе персонажа. Не хотите проходить мастер — нажмите «Заполнить самостоятельно» внизу.')),
         field('Имя персонажа', el('input', { value: draft.name, maxlength: 128, placeholder: 'Как вас будут помнить?', oninput: e => draft.name = e.target.value })),
         field('Редакция правил', el('select', { onchange: e => { draft.edition = e.target.value; draft.selected = {}; draft.spells = []; draft.preparedSpells = []; draft.skills = []; draft.freeSkills = []; draft.languages = []; draft.bonuses = {}; draft.ruleChoices = {}; draft.equipment = emptyEquipment(); load(); } }, ...Object.entries(EDITIONS).map(([k, n]) => el('option', { value: k, selected: draft.edition === k ? '' : null }, n)))),
         el('p', { class: 'muted small' }, '2014: бонусы характеристик от расы. 2024: от предыстории. Пользовательские модули доступны из ваших наборов и наборов кампании.'));
@@ -962,7 +988,7 @@ window.newCharacterDialog = async function (defaults = {}) {
                   disabled: POINT_BUY_COST[value] > remaining && draft.abilities[k] !== value ? '' : null }, `${value} · ${POINT_BUY_COST[value]} оч.`);
               }))
           : draft.method === 'manual'
-            ? el('input', { type: 'number', min: 1, max: 20, step: 1, value: draft.abilities[k], 'aria-label': ABIL[k], onchange: e => { draft.abilities[k] = Number(e.target.value); render(); } })
+            ? el('input', { type: 'number', min: 1, max: 20, step: 1, value: draft.abilities[k], 'aria-label': ABIL[k], onchange: e => { draft.abilities[k] = Math.max(1, Math.min(20, Math.round(Number(e.target.value) || 10))); render(); } })
             : el('select', { 'aria-label': ABIL[k], onchange: e => { const other = e.target.value; [draft.abilities[k], draft.abilities[other]] = [draft.abilities[other], draft.abilities[k]]; render(); } },
               ...B.keys.map(other => el('option', { value: other, selected: other === k ? '' : null }, draft.abilities[other] + (other === k ? '' : ' ↔ ' + ABIL[other]))));
         return el('div', { class: 'builder-ability' }, el('label', {}, ABIL[k]), el('strong', {}, signed(Math.floor((sheet.abilities[k] - 10) / 2))), input,
@@ -1016,12 +1042,19 @@ window.newCharacterDialog = async function (defaults = {}) {
       const s = preview();
       const skillNames = s.skills.map(key => SKILLS.find(([k]) => k === key)?.[1] || key);
       const saves = s.saving_throws.map(key => ABIL[key] || key);
+      const leftovers = [...issues].filter(([i]) => i !== last);
+      if (leftovers.length) add(el('section', { class: 'builder-panel builder-review-todo' },
+        el('div', { class: 'builder-panel-head' },
+          el('div', {}, el('b', {}, 'Осталось заполнить'), el('small', { class: 'muted' }, 'Необязательно: персонаж создаётся как есть, пустые места дополняются на листе.')),
+          el('span', { class: 'builder-counter' }, String(leftovers.length))),
+        el('ul', { class: 'builder-review-todo-list' }, ...leftovers.map(([i, text]) => el('li', {},
+          el('button', { class: 'small', onclick: () => goTo(i) }, steps[i]), el('span', {}, text))))));
       const capacity = (s.abilities.str || 10) * 15, carry = Math.round(s.inventory.reduce((a, it) => a + weight(it), 0) * 10) / 10;
       const narrative = [['Игрок', s.traits.player_name], ['Божество или вера', s.traits.faith], ['Возраст', s.traits.age], ['Рост', s.traits.height], ['Вес', s.traits.weight], ['Глаза', s.traits.eyes], ['Кожа', s.traits.skin], ['Волосы', s.traits.hair], ['Черты характера', s.traits.personality], ['Идеалы', s.traits.ideals], ['Привязанности', s.traits.bonds], ['Слабости', s.traits.flaws], ['Дополнительные приметы', s.traits.appearance], ['Предыстория героя', s.traits.backstory]].filter(([, value]) => value);
       add(el('div', { class: 'builder-paper' },
         el('span', { class: 'builder-eyebrow' }, 'ЛИСТ ПЕРСОНАЖА · ' + EDITIONS[s.edition]),
         el('h2', {}, s.name),
-        el('p', { class: 'builder-review-subtitle' }, [s.race, `${s.class}${s.subclass ? ` · ${s.subclass}` : ''} · 1 уровень`, s.background].join(' / ')),
+        el('p', { class: 'builder-review-subtitle' }, [s.race, `${s.class}${s.subclass ? ` · ${s.subclass}` : ''} · 1 уровень`, s.background].filter(Boolean).join(' / ') || 'Пока ничего не выбрано — лист заполняется вручную'),
         el('div', { class: 'builder-review-alignment' }, el('span', { class: 'muted small' }, 'Мировоззрение'), el('strong', {}, s.alignment || 'Не выбрано')),
         el('div', { class: 'builder-abilities' }, ...B.keys.map(k => el('div', { class: 'builder-ability' }, el('label', {}, ABIL[k]), el('strong', {}, signed(Math.floor((s.abilities[k] - 10) / 2))), el('span', {}, s.abilities[k])))),
         el('div', { class: 'builder-summary' }, ...[['Хиты', `${s.hp.max} · ${s.hp.hit_dice}`], ['КД', s.ac], ['Скорость, фт.', s.speed], ['Бонус мастерства', '+2']].map(([n, v]) => el('div', {}, el('strong', {}, v), el('small', {}, n)))),
@@ -1039,7 +1072,8 @@ window.newCharacterDialog = async function (defaults = {}) {
           el('section', {}, el('h3', {}, 'Личность'),
             ...(narrative.length ? narrative.map(([label, value]) => el('p', { class: 'builder-review-text' }, el('b', {}, label + ': '), value)) : [el('p', { class: 'muted small' }, 'Личность можно дополнить на вкладке «Заметки».')]))),
         el('h3', {}, 'Подключённые блоки'),
-        el('p', { class: 'builder-review-text' }, s.modules.map(m => m.snapshot.name).join(' · ')),
+        el('p', { class: 'builder-review-text' }, s.modules.map(m => m.snapshot.name).join(' · ')
+          || 'Блоки справочника не подключены — перетащите запись на лист персонажа или впишите значения вручную.'),
         s.creation.choices.length ? el('p', { class: 'muted small' }, 'Выбор в модулях: ' + s.creation.choices.map(c => `${c.group} — ${c.name}`).join(' · ')) : null,
         el('p', { class: 'muted small' }, 'Снаряжение уже в инвентаре: останется проверить слоты рук и надетых предметов на листе персонажа.')));
     }
@@ -1048,7 +1082,11 @@ window.newCharacterDialog = async function (defaults = {}) {
       el('span', { class: 'builder-nav-info' }, el('b', {}, `${step + 1} / ${steps.length}`), el('small', {}, steps[step])),
       step < last ? el('button', { class: 'primary', onclick: () => goTo(step + 1) }, 'Далее →')
         : el('span', { class: 'builder-nav-hint' }, 'Осталось нажать «Создать персонажа»'));
-    root.append(status, nav, el('datalist', { id: 'builder-item-names' }, ...equipmentCatalog().map(e => el('option', { value: e.name }))));
+    // «Заполнить самостоятельно» — выход из мастера: пустой лист, который игрок заполнит сам.
+    const skipRow = el('div', { class: 'builder-nav-extra' },
+      el('span', { class: 'builder-nav-hint' }, 'Заполнять по шагам не обязательно:'),
+      el('button', { class: 'small', onclick: finishManually }, 'Заполнить самостоятельно →'));
+    root.append(status, nav, skipRow, el('datalist', { id: 'builder-item-names' }, ...equipmentCatalog().map(e => el('option', { value: e.name }))));
     if (keepPosition) {
       body.scrollTop = scrollTop;
       let target = body;
@@ -1065,10 +1103,16 @@ window.newCharacterDialog = async function (defaults = {}) {
   // ---------- Открытие: первичная отрисовка, загрузка каталога, модальное окно ----------
   render(); load();
   const result = await modal('Создание персонажа', root, [{ label: 'Создать персонажа', cls: 'primary builder-submit', fn: () => {
-    if (step !== last) { status.textContent = 'Пройдите шаги и проверьте готовый лист.'; return false; }
     const msg = valid(); if (msg) { status.textContent = msg; return false; }
     LS.setItem('et-edition', draft.edition);
-    return { name: draft.name.trim(), sheet: B.build(draft) };
+    const name = draft.name.trim() || 'Новый персонаж', sheet = B.build(draft);
+    sheet.name = name;
+    return { name, sheet };
+  } }, { label: 'Заполнить самостоятельно', cls: 'builder-manual', fn: () => {
+    // Пустой лист вместо мастера: всё заполняется вручную уже на листе персонажа.
+    const name = draft.name.trim() || 'Новый персонаж';
+    LS.setItem('et-edition', draft.edition);
+    return { name, sheet: B.blankSheet(name, draft.edition) };
   } }], { wide: true });
   request++; // Ignore late fetches after cancellation.
   return result;
