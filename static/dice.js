@@ -5,7 +5,8 @@
 // Даёт: window.DiceEngine, window.rollDice.
 // Зависимости: common.js. Загружается в обеих страницах (слой 2).
 // ---------------------------------------------------------------------------
-// One roll API, one result format, one renderer. Network rolls are NEVER rerolled locally.
+// One roll API and result schema; the global screen and journal use the same authoritative values.
+// Network rolls are NEVER rerolled locally.
 window.DiceEngine = (() => {
   'use strict';
   const LIMIT = 100, MAX_TERMS = 32;
@@ -203,27 +204,36 @@ window.DiceEngine = (() => {
     history.unshift(item); history.splice(50); updateLogBadge(); journalRefresh?.();
     spawn(item);
   }
-  const MAX_CARDS = 5, cards = [];
-  /// Контейнер результатов в правом нижнем углу: броски идут параллельно, карточек видно несколько.
-  function stackBox() {
-    let box = document.querySelector('.dice-stack');
-    if (!box) { box = el('div', { class: 'dice-stack', role: 'status', 'aria-live': 'polite', 'aria-label': 'Результаты бросков' }); document.body.append(box); }
+  const MAX_BURSTS = 10, bursts = [];
+  /// Полноэкранный слой: каждая новая связка бросков получает своё место и свою анимацию.
+  function stageBox() {
+    let box = document.querySelector('.dice-global-stage');
+    if (!box) {
+      box = el('div', { class: 'dice-global-stage', role: 'status', 'aria-live': 'polite', 'aria-label': 'Броски кубиков на экране' });
+      document.body.append(box);
+    }
     return box;
   }
   function detach(entry) {
-    const at = cards.indexOf(entry);
-    if (at >= 0) cards.splice(at, 1);
+    const at = bursts.indexOf(entry);
+    if (at >= 0) bursts.splice(at, 1);
     clearTimeout(entry.timer); entry.cancel?.();
+    layoutBursts();
   }
-  function dismissCard(entry) { detach(entry); entry.root.remove(); }
-  function fadeCard(entry) {
+  function dismissBurst(entry) { detach(entry); entry.root.remove(); }
+  function fadeBurst(entry) {
     if (entry.root.dataset.leaving) return;
     detach(entry);
     entry.root.dataset.leaving = '1';
     entry.root.classList.add('leaving');
-    setTimeout(() => entry.root.remove(), 320);
+    setTimeout(() => entry.root.remove(), 420);
   }
-  /// Значения кубиков результата — для анимации и решения, нужен ли холст.
+  function layoutBursts() {
+    const height = window.innerHeight || 800;
+    const step = Math.max(58, Math.min(82, height * 0.08));
+    bursts.forEach((entry, index) => { entry.summary.style.top = `${Math.round(height * 0.04 + index * step)}px`; });
+  }
+  /// Значения костей для полноэкранной анимации; источник результата остаётся авторитетным.
   function diceOf(payload) {
     const out = [];
     for (const r of payload.rolls || [payload]) for (const p of r.parts || []) if (p.rolls) p.rolls.forEach((value, i) => {
@@ -233,57 +243,50 @@ window.DiceEngine = (() => {
     });
     return out;
   }
-  /// Компактные строки результата: итог, название и кубики броска.
-  function microRows(p) {
-    const rolls = (p.rolls || [p]).slice(0, 6);
-    return rolls.map(r => {
+  /// Крупный итог броска поверх всего экрана; подробности остаются в журнале.
+  function screenSummary(item, payload) {
+    const mark = audienceLabel(audienceOf(payload));
+    const heading = item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок';
+    const rows = (payload.rolls || [payload]).slice(0, 8).map(r => {
       const nat = natural(r), d20 = !['damage', 'heal'].includes(r.kind), critical = d20 && nat.includes(20), fumble = d20 && nat.includes(1);
-      return el('div', { class: 'dice-micro-row' + (critical ? ' critical' : fumble ? ' fumble' : '') },
-        el('b', { class: 'dice-micro-total' }, r.total),
-        el('span', { class: 'dice-micro-name' }, r.name || r.expr),
-        critical ? el('span', { class: 'dice-badge' }, r.kind === 'attack' ? 'КРИТ' : '20') : fumble ? el('span', { class: 'dice-badge' }, '1') : null,
-        r.doubled ? el('span', { class: 'dice-badge' }, '×2') : null,
-        el('span', { class: 'dice-micro-chips' }, ...(r.parts || []).flatMap(part => part.rolls
-          ? part.rolls.map((v, i) => el('span', { class: 'dice-chip' + (keptIndices(part).includes(i) ? '' : ' dropped'), title: 'd' + (part.sides || '?') }, v))
-          : [el('span', { class: 'dice-constant' }, part.term)])));
+      return el('div', { class: 'dice-global-roll' + (critical ? ' critical' : fumble ? ' fumble' : ''), title: `${r.name || r.expr}: ${r.expr} = ${r.total}` },
+        el('strong', { class: 'dice-global-total' }, r.total),
+        el('span', { class: 'dice-global-name' }, r.name || r.expr),
+        r.name ? el('small', { class: 'dice-global-formula' }, r.expr) : null,
+        critical ? el('span', { class: 'dice-badge' }, r.kind === 'attack' ? 'КРИТ' : 'НАТ. 20') : fumble ? el('span', { class: 'dice-badge' }, 'НАТ. 1') : null,
+        r.doubled ? el('span', { class: 'dice-badge' }, '×2 кости') : null);
     });
+    return el('div', { class: 'dice-global-summary' },
+      el('div', { class: 'dice-global-heading' },
+        el('span', {}, heading),
+        payload.label ? el('b', {}, payload.label) : null,
+        mark ? el('span', { class: 'dice-visibility' }, mark) : null),
+      el('div', { class: 'dice-global-results' }, ...rows));
   }
-  /// Мини-результат: кубики летят из угла на «пол» экрана, карточка живёт своей жизнью.
+  /// Каждый принятый бросок появляется крупно на общем экране; новые броски не заменяют предыдущие.
   function spawn(item) {
     const cfg = settings(), payload = item.payload, color = validDiceColor(payload.dice_color || cfg.color);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const root = el('div', { class: 'dice-micro', style: `--dice-color:${color}`, title: 'Открыть журнал бросков' });
-    const canvas = cfg.animate && !reduced && diceOf(payload).length && !document.hidden
-      ? el('canvas', { class: 'dice-micro-canvas', 'aria-hidden': 'true' }) : null;
-    const entry = { root, timer: null, cancel: null };
-    const arm = () => { clearTimeout(entry.timer); entry.timer = setTimeout(() => fadeCard(entry), cards.length > 2 ? 3400 : 5600); };
-    const mark = audienceLabel(audienceOf(payload));
-    root.append(canvas ? el('div', { class: 'dice-micro-stage' }, canvas) : null,
-      el('div', { class: 'dice-micro-body' },
-        el('div', { class: 'dice-micro-head' },
-          el('span', {}, item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок'),
-          payload.label ? el('span', { class: 'dice-micro-label' }, payload.label) : null,
-          mark ? el('span', { class: 'dice-visibility' }, mark) : null,
-          el('button', { class: 'dice-micro-close', title: 'Убрать результат', 'aria-label': 'Убрать результат', onclick: e => { e.stopPropagation(); fadeCard(entry); } }, '×')),
-        ...microRows(payload),
-        payload.spent?.length ? el('div', { class: 'dice-micro-note' }, 'Расход: ' + payload.spent.map(x => `${x.name} −${x.amount}`).join(' · ')) : null,
-        payload.effects?.length ? el('div', { class: 'dice-micro-note' }, payload.effects.map(e => ({ heal: 'Лечение', damage: 'Урон', temp_hp: 'Временные хиты', grant_item: 'Выдано', condition: 'Состояние', adjust: 'Показатель', manual: 'Правило подтверждено' }[e.kind] || e.kind) + (e.amount !== undefined ? ' · ' + e.amount : '') + (e.name ? ' ' + e.name : '')).join(' · ')) : null));
-    root.addEventListener('pointerenter', () => clearTimeout(entry.timer));
-    root.addEventListener('pointerleave', arm);
-    root.addEventListener('click', () => { fadeCard(entry); openPanel(false); });
-    stackBox().append(root);
-    cards.push(entry);
-    while (cards.length > MAX_CARDS) dismissCard(cards[0]);
-    arm();
-    if (canvas) entry.cancel = animate(canvas, payload, cfg);
+    const dice = diceOf(payload);
+    const canvas = cfg.animate && !reduced && dice.length && !document.hidden
+      ? el('canvas', { class: 'dice-global-canvas', 'aria-hidden': 'true' }) : null;
+    const summary = screenSummary(item, payload);
+    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas, summary);
+    const entry = { root, summary, timer: null, cancel: null };
+    stageBox().append(root);
+    bursts.push(entry);
+    while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);
+    layoutBursts();
+    entry.timer = setTimeout(() => fadeBurst(entry), 5400);
+    if (canvas) entry.cancel = animate(canvas, payload, cfg, bursts.indexOf(entry));
   }
-  function dismiss() { for (const entry of [...cards]) dismissCard(entry); }
+  function dismiss() { for (const entry of [...bursts]) dismissBurst(entry); }
   function repeat(p) {
     if(p.program_use)return window.PROGRAM_USE?window.PROGRAM_USE(p.program_use):toast('Повторите действие на листе владельца: вся цепочка будет выполнена заново.');
     if (p.item_use) return window.ITEM_USE ? window.ITEM_USE(p.item_use) : toast('Повторите использование на листе владельца: ресурс будет списан там.');
     return submit(p.rolls ? { type: 'multi', label: p.label, audience: audienceOf(p), gm_only: p.gm_only, visibility: p.visibility, rolls: p.rolls.map(r => ({ name: r.name, kind: r.kind, dtype: r.dtype, expr: r.base_expr || (r.doubled ? r.expr.replace(/(\d+)d/g, (_, n) => `${Number(n) / 2}d`) : r.expr) })) } : { type: 'roll', expr: p.expr, label: p.label, kind: p.kind, audience: audienceOf(p), gm_only: p.gm_only, visibility: p.visibility });
   }
-  // Lightweight projected solid meshes, gravity, rebounds, table friction and pairwise collisions.
+  // Lightweight projected solid meshes, gravity, rebounds and table friction.
   // Physics is cosmetic. Face labels are the authoritative result, not a physics-derived random value.
   const meshes = new Map();
   function mesh(sides) {
@@ -334,7 +337,7 @@ window.DiceEngine = (() => {
   const rotate=(p,a)=>{ let [x,y,z]=p; let c=Math.cos(a[0]),s=Math.sin(a[0]); [y,z]=[y*c-z*s,y*s+z*c]; c=Math.cos(a[1]);s=Math.sin(a[1]);[x,z]=[x*c+z*s,-x*s+z*c];c=Math.cos(a[2]);s=Math.sin(a[2]);return [x*c-y*s,x*s+y*c,z]; };
   /// Кубики летят из угла на «пол» — поверхность экрана: перспектива, отскоки, качение
   /// и доворот гранью с выпавшим значением. Физика только визуальная.
-  function animate(canvas, payload, cfg) {
+  function animate(canvas, payload, cfg, burstIndex = 0) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     const W = canvas.clientWidth || 104, H = canvas.clientHeight || 84, dpr = Math.min(devicePixelRatio || 1, 2);
@@ -349,18 +352,26 @@ window.DiceEngine = (() => {
     // Мир: x — влево/вправо (px), t — глубина (0 — дальний край пола, 1 — ближний), z — высота над полом (px).
     const horizon = H * 0.16, floorH = H - horizon;
     const depthScale = t => 0.44 + 0.56 * Math.max(0, Math.min(1.2, t));
-    const radius = Math.max(9, Math.min(17, W / (3.9 + dice.length * 0.3)));
+    // Кубики теперь занимают поверхность всего экрана: одиночный бросок крупный,
+    // а большие связки автоматически уменьшаются, чтобы кости не слипались.
+    const radius = Math.max(12, Math.min(68, H * 0.09, W * 0.24 / Math.max(1, dice.length - 1)));
     const color = /^#[0-9a-f]{6}$/i.test(cfg.color) ? cfg.color : '#a881e8';
     const speed = Number(cfg.speed) === 2 ? 2 : 1;
     // Дорожки: кости летят с двух сторон и раскладываются по «полу» рядом, а не кучей.
-    const laneOf = i => (dice.length > 1 ? (i / (dice.length - 1) - .5) * 1.7 : (Math.random() - .5) * .8);
+    const laneOf = i => {
+      if (dice.length > 1) return (i / (dice.length - 1) - .5) * 1.7;
+      // Повторные броски садятся в разные части большого экрана, а не один на другой.
+      const singleLanes = [[-.48, .42], [.48, .34], [-.18, .68], [.2, .3], [0, .55]];
+      return singleLanes[burstIndex % singleLanes.length][0] + (Math.random() - .5) * .12;
+    };
     dice.forEach((d, i) => {
       const side = i % 2 ? 1 : -1, flight = .55 + Math.random() * .3;
       d.x = side * W * (.55 + Math.random() * .4);          // старт за кадром, из угла
       d.t = -.2 - Math.random() * .3;                        // из-за дальнего края «пола»
       d.z = H * (.6 + Math.random() * .55);
       d.laneX = laneOf(i) * W * .36;                        // куда в итоге лечь
-      d.laneT = .3 + (i % 2) * .3 + Math.random() * .22;
+      const singleLanes = [[-.48, .42], [.48, .34], [-.18, .68], [.2, .3], [0, .55]];
+      d.laneT = dice.length === 1 ? singleLanes[burstIndex % singleLanes.length][1] : .3 + (i % 2) * .3 + Math.random() * .22;
       d.vx = (d.laneX - d.x) / flight;
       d.vt = (d.laneT - d.t) / flight;
       d.vz = -H * (.05 + Math.random() * .25);
@@ -500,7 +511,7 @@ window.DiceEngine = (() => {
       currentPanel.remove(); journalRefresh = null; return null;
     }
     const cfg = settings();
-    dismiss(); // журнал показывает те же броски подробнее — мини-карточки за ним не нужны
+    dismiss(); // журнал показывает те же броски подробнее — полноэкранная анимация за ним не нужна
     const expr = el('input', { value: '1d20', placeholder: '2d6+3', 'aria-label': 'Формула броска' });
     const mode = el('select', { 'aria-label': 'Режим броска' }, ...[['normal', 'Обычно'], ['adv', 'Преимущество'], ['dis', 'Помеха']].map(([v, n]) => el('option', { value: v }, n)));
     const audience = audienceSelect();
@@ -536,7 +547,7 @@ window.DiceEngine = (() => {
     if (e.key !== 'Escape') return;
     const journal = document.querySelector('.dice-journal');
     if (journal) { journal.remove(); journalRefresh = null; }
-    if (cards.length) dismiss();
+    if (bursts.length) dismiss();
   });
   window.addEventListener?.('pagehide', () => { dismiss(); pending.forEach(p => clearTimeout(p.timer)); pending.clear(); });
   function committed(message) { const target = host(); if (target?.DiceEngine) target.DiceEngine.receive(message); if (!target || window.parent === window) receive(message); }

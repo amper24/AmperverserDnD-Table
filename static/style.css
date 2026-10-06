@@ -757,30 +757,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .sheet .card, .sheet .ab { break-inside: avoid; }
 }
 
-/* Результаты бросков: стопка мини-карточек справа, несколько параллельно, стол не перекрывают. */
-.dice-stack { position: fixed; right: 14px; bottom: 62px; z-index: 10040; display: flex; flex-direction: column; gap: 8px;
-  align-items: flex-end; width: min(320px, calc(100vw - 28px)); pointer-events: none; }
-.dice-micro { pointer-events: auto; display: flex; gap: 9px; width: 100%; padding: 8px 10px; cursor: pointer;
-  background: var(--panel); border: 1px solid var(--accent-line); border-left: 3px solid var(--dice-color, #a881e8);
-  border-radius: 10px; box-shadow: 0 10px 32px #0007; animation: diceMicroIn .2s ease-out; }
-.dice-micro:hover { border-color: var(--dice-color, var(--accent)); }
-.dice-micro.leaving { opacity: 0; transform: translateX(14px); transition: opacity .3s ease-in, transform .3s ease-in; }
-.dice-micro-stage { flex: none; width: 100px; height: 78px; border-radius: 8px; overflow: hidden; background: linear-gradient(180deg, #ffffff08, #00000030); }
-.dice-micro-canvas { display: block; width: 100px; height: 78px; }
-.dice-micro-body { min-width: 0; flex: 1; }
-.dice-micro-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--muted); font-size: 10.5px; }
-.dice-micro-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dice-micro-label { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dice-micro-close { margin-left: auto; flex: none; padding: 0 5px; font-size: 15px; line-height: 1; background: transparent; border: 0; color: var(--muted); }
-.dice-micro-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
-.dice-micro-total { flex: none; min-width: 30px; font: 700 21px/1.05 Georgia, serif; color: var(--dice-color, var(--accent)); }
-.dice-micro-row.critical .dice-micro-total { color: var(--ok); }
-.dice-micro-row.fumble .dice-micro-total { color: var(--danger); }
-.dice-micro-name { min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dice-micro-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-left: auto; }
-.dice-micro-chips .dice-chip { min-width: 17px; height: 17px; font-size: 10px; border-radius: 4px; }
-.dice-micro-note { margin-top: 3px; color: var(--muted); font-size: 10.5px; }
-@keyframes diceMicroIn { from { opacity: 0; transform: translateX(16px) scale(.97); } to { opacity: 1; transform: none; } }
+/* Глобальная сцена броска: крупные кости летят по всему экрану, интерфейс под ними остаётся доступен. */
+.dice-global-stage { position: fixed; inset: 0; z-index: 10040; overflow: hidden; pointer-events: none; }
+.dice-global-burst { position: absolute; inset: 0; opacity: 1; pointer-events: none; transition: opacity .42s ease; }
+.dice-global-burst.leaving { opacity: 0; }
+.dice-global-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+.dice-global-summary { position: absolute; z-index: 1; top: 4vh; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 2px; width: min(96vw, 1400px); transform: translateX(-50%); color: #fff; text-align: center; text-shadow: 0 2px 6px #000, 0 0 22px #000; filter: drop-shadow(0 4px 12px #000); }
+.dice-global-heading { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 11px; color: #f3f0fb; font-size: clamp(12px, 1.25vw, 16px); font-weight: 550; line-height: 1.2; }
+.dice-global-heading b { color: #fff; font-size: clamp(14px, 1.6vw, 20px); }
+.dice-global-results { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 2px clamp(12px, 2vw, 28px); }
+.dice-global-roll { display: inline-flex; align-items: baseline; gap: 7px; min-height: 38px; color: #fff; white-space: nowrap; }
+.dice-global-total { color: var(--dice-color, #a881e8); font-family: Georgia, serif; font-size: clamp(34px, 5vh, 56px); font-weight: 700; line-height: 1; }
+.dice-global-roll.critical .dice-global-total { color: var(--ok); }
+.dice-global-roll.fumble .dice-global-total { color: var(--danger); }
+.dice-global-name { font-size: clamp(12px, 1.5vw, 19px); font-weight: 650; }
+.dice-global-formula { color: #e3deea; font-size: 11px; }
+.dice-global-roll .dice-badge { align-self: center; background: #111b; }
 .dice-label { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
 .dice-result-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .dice-result-row > .grow { min-width: 100px; flex: 1; }
@@ -804,13 +796,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dice-history { max-height: 40vh; overflow-y: auto; margin-top: 10px; }
 .dice-history-entry { border: 1px solid var(--border); padding: 12px; margin-bottom: 8px; border-radius: 8px; }
 @media (max-width: 600px) {
-  .dice-stack { right: 10px; left: 10px; bottom: 56px; width: auto; }
-  .dice-micro-stage, .dice-micro-canvas { width: 74px; height: 62px; }
+  .dice-global-heading { gap: 4px 7px; font-size: 11px; }
+  .dice-global-heading b { font-size: 13px; }
+  .dice-global-results { gap: 1px 12px; }
+  .dice-global-roll { gap: 5px; min-height: 31px; }
+  .dice-global-total { font-size: clamp(30px, 5vh, 44px); }
+  .dice-global-name { font-size: 12px; }
+  .dice-global-formula { font-size: 10px; }
   .dice-panel > .row { flex-wrap: wrap; }
   .dice-panel > .row input { flex-basis: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .dice-micro { animation: none; } }
-@media print { .dice-stack { display: none; } }
+@media (prefers-reduced-motion: reduce) { .dice-global-burst { transition: none; } }
+@media print { .dice-global-stage { display: none; } }
 
 /* Постоянный интерфейс кубиков: слева — бросок, справа — личный журнал. */
 .dice-dock { position: fixed; left: 14px; bottom: 14px; z-index: 9000; display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; box-shadow: var(--shadow); max-width: calc(100vw - 28px); }
@@ -827,7 +824,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .dice-dock { left: 10px; bottom: 10px; right: auto; max-width: calc(100vw - 120px); }
   .dice-log-button { right: 10px; bottom: 10px; padding: 9px 12px; }
   .dice-log-button span:not(.dice-log-count) { display: none; }
-  .dice-stack { bottom: 58px; }
 }
 
 /* Hands reference inventory items; a two-handed grip is one item, not two copies. */
@@ -888,7 +884,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dice-result { --dice-color: var(--accent); }
 .dice-result .dice-total { color: var(--dice-color, var(--accent)); }
 .dice-result .dice-chip { background: color-mix(in srgb, var(--dice-color, var(--accent)) 16%, var(--panel)); border-color: color-mix(in srgb, var(--dice-color, var(--accent)) 48%, var(--border)); }
-.dice-micro { border-left-color: var(--dice-color, #a881e8); }
 .dice-dock-options, .dice-journal-options { display: flex; align-items: center; gap: 10px; }
 .dice-audience { width: auto; min-width: 128px; padding: 5px 28px 5px 9px; font-size: 11px; border-radius: 9px; }
 .dice-dock-options > label, .dice-journal-options > label { display: flex; align-items: center; gap: 5px; }

@@ -68,3 +68,58 @@ test('dice model: every face carries a number and the rolled face turns to the v
     }
   }
 });
+
+test('presentation uses a global screen layer and preserves consecutive rolls', () => {
+  const makeElement = (tag, attrs = {}, ...children) => {
+    const node = {
+      tag, attrs, className: attrs.class || '', children: [], dataset: {},
+      style: { setProperty() {}, top: '' },
+      classList: { add() {} },
+      append(...items) { this.children.push(...items.filter(Boolean)); },
+      remove() { this.removed = true; },
+      addEventListener() {},
+    };
+    node.append(...children);
+    return node;
+  };
+  const document = {
+    hidden: false,
+    body: { children: [], append(node) { this.children.push(node); } },
+    querySelector(selector) {
+      return selector === '.dice-global-stage'
+        ? this.body.children.find(node => node.className === 'dice-global-stage' && !node.removed) || null
+        : null;
+    },
+    querySelectorAll() { return []; },
+  };
+  const window = { innerHeight: 800, matchMedia: () => ({ matches: false }), addEventListener() {} };
+  const browser = {
+    window, document, el: makeElement,
+    LS: { getItem: () => '{"animate":false}', setItem() {} },
+    toast() {}, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout,
+  };
+  vm.createContext(browser);
+  vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), browser);
+  const engine = browser.window.DiceEngine;
+
+  engine.present({ ...engine.evaluate('d20+5'), label: 'Проверка' }, { local: true });
+  engine.present({ ...engine.evaluate('d6'), label: 'Повторный бросок' }, { local: true });
+  const stage = document.querySelector('.dice-global-stage');
+  assert.ok(stage, 'result layer exists on the global screen');
+  assert.equal(stage.children.length, 2, 'a later roll does not replace the previous one');
+  assert.ok(stage.children.every(node => node.className === 'dice-global-burst'));
+  const summaries = stage.children.map(node => node.children.find(child => child.className === 'dice-global-summary'));
+  assert.ok(summaries.every(Boolean));
+  assert.equal(summaries[0].children[1].children[0].children[0].className, 'dice-global-total');
+  assert.ok(Number.parseFloat(summaries[1].style.top) > Number.parseFloat(summaries[0].style.top));
+
+  for (let i = 3; i <= 10; i++) engine.present({ ...engine.evaluate('d6'), label: `Сцена ${i}` }, { local: true });
+  assert.equal(stage.children.filter(node => !node.removed).length, 10, 'ten scenes can remain visible together');
+  const oldest = stage.children.find(node => !node.removed);
+  engine.present({ ...engine.evaluate('d6'), label: 'Одиннадцатая сцена' }, { local: true });
+  assert.equal(stage.children.filter(node => !node.removed).length, 10, 'the eleventh scene evicts only the oldest');
+  assert.equal(oldest.removed, true);
+
+  engine.dismiss();
+  assert.ok(stage.children.every(node => node.removed), 'Escape/dismiss removes every active result scene');
+});
