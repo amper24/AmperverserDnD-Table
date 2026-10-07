@@ -1193,8 +1193,8 @@ button.fav-filter.on svg { fill: currentColor; }
 
 /* ---------- Повышение уровня (мастер в духе D&D Beyond) ---------- */
 .level-cell { display: flex; flex-direction: column; align-items: stretch; }
-.lvlup-btn { align-self: flex-start; margin-top: 6px; background: transparent; color: var(--accent); border: 1px solid var(--accent-line); font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
-.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.lvlup-btn { align-self: flex-start; margin-top: 4px; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); border-radius: var(--radius); padding: 6px 12px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; font-size: 13px; }
+.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .level-log-row { padding: 4px 0; border-top: 1px solid var(--border); }
 body.lu-open { overflow: hidden; }
 .lu-overlay { --lu-acc: var(--accent); --lu-acc-rgb: 143, 168, 208; --lu-gold: #e0b95a; --lu-ok: #46b06a; --lu-bad: #e0645a; position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 22px;
