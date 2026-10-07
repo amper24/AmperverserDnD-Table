@@ -24,6 +24,8 @@ const assert = require('node:assert/strict');
       const rolls = [4, 6, 8, 10, 12, 20, 100].map(sides => ({ ...DiceEngine.evaluate('d' + sides), name: 'd' + sides }));
       DiceEngine.present({ label: 'Все грани приключения', rolls }, { local: true });
     });
+    assert.equal(await page.locator('.dice-journal').count(), 1, 'the first roll still auto-opens the journal');
+    assert.equal(await page.locator('.dice-global-burst').count(), 1, 'auto-opening the journal must not dismiss the first roll scene');
     await page.waitForSelector('.dice-global-canvas');
     await page.waitForTimeout(800);
     const pixels = await page.evaluate(() => { const c = document.querySelector('.dice-global-canvas'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); });
@@ -47,7 +49,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('.dice-global-burst').count(), 10);
     await page.evaluate(() => DiceEngine.present({ ...DiceEngine.evaluate('d6'), label: 'Одиннадцатая сцена' }, { local: true }));
     assert.equal(await page.locator('.dice-global-burst').count(), 10);
-    assert.equal(await page.getByText('Все грани приключения', { exact: true }).count(), 0, 'the eleventh scene removes only the oldest');
+    assert.equal(await page.locator('.dice-global-stage').getByText('Все грани приключения', { exact: true }).count(), 0, 'the eleventh scene removes only the oldest from the active scene layer');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.dice-global-burst').count(), 0);
 
@@ -92,23 +94,23 @@ const assert = require('node:assert/strict');
     // Offline critical bundles use the same shape and doubling semantics as server bundles.
     await page.evaluate(() => { delete window.TABLE_CTX; DiceEngine.present({ label: 'Атака + урон', rolls: DiceEngine.evaluateBatch([{ kind: 'attack', expr: 'd20+5' }, { kind: 'damage', expr: 'd8+3' }], () => .999) }, { local: true }); });
     assert.deepEqual(await page.locator('.dice-global-total').allTextContents(), ['25', '19']);
-    await page.evaluate(() => DiceEngine.openPanel()); // журнал открывается отдельно, а сцена не является окном
+    await page.evaluate(() => DiceEngine.openPanel(false)); // повторно запрашиваем панель, уже открытую вместе со сценой
     await page.waitForSelector('.dice-journal');
     await page.getByRole('button', { name: 'Повторить', exact: true }).first().click();
     await page.waitForTimeout(400); // серверный/локальный результат не должен зависеть от анимации
     // Check reroll original damage is not doubled twice (critical state is recomputed).
-    assert.equal(await page.locator('.dice-global-roll').count(), 2);
+    assert.equal(await page.locator('.dice-global-burst').last().locator('.dice-global-roll').count(), 2);
     await page.keyboard.press('Escape');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => { DiceEngine.openPanel(); });
     assert.equal(await page.locator('.dice-journal').count(), 1);
     assert.equal(await page.locator('.modal-bg').count(), 0);
-    await page.getByLabel('Формула броска').fill('2d6++4');
-    await page.getByRole('button', { name: 'Бросить', exact: true }).click();
+    await page.locator('.dice-journal').getByLabel('Формула броска').fill('2d6++4');
+    await page.locator('.dice-journal').getByRole('button', { name: 'Бросить', exact: true }).click();
     assert.equal(await page.locator('.dice-global-burst').count(), 0);
-    await page.getByLabel('Формула броска').fill('2d6+4');
-    await page.getByRole('button', { name: 'Бросить', exact: true }).click();
+    await page.locator('.dice-journal').getByLabel('Формула броска').fill('2d6+4');
+    await page.locator('.dice-journal').getByRole('button', { name: 'Бросить', exact: true }).click();
     const box = await page.locator('.dice-global-burst').boundingBox(); assert.equal(box.x, 0); assert.equal(box.width, 390);
     assert.ok(await page.locator('.dice-global-total').textContent(), 'the exact local total remains visible without animation');
     await page.keyboard.press('Escape');

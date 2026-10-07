@@ -55,10 +55,10 @@ window.DiceEngine = (() => {
   function withMode(expr, mode) {
     if (!['adv', 'dis'].includes(mode)) return expr;
     const normalized = normalize(expr);
-    // Заменяем любой dN на 2dN с соответствующим keep для преимущества/помехи
-    return normalized.replace(/([+-])?(\d*)d(\d+)(?!\d|k)/g, (_, sign, n, sides) => {
-      const count = n || '1';
-      return `${sign || ''}${count === '1' ? '2' : count * 2}d${sides}k${mode === 'adv' ? 'h' : 'l'}1`;
+    // Преимущество/помеха меняют только к20: остальные кости формулы остаются нетронутыми.
+    return normalized.replace(/([+-])?(\d*)d20(?!\d|k)/g, (_, sign, n) => {
+      const count = Number(n || 1) * 2;
+      return `${sign || ''}${count}d20k${mode === 'adv' ? 'h' : 'l'}1`;
     });
   }
   const doubleDice = expr => normalize(expr).replace(/(\d*)d(\d+)(?:k([hl])(\d+))?/g, (_, n, sides, mode, keep) => `${Number(n || 1) * 2}d${sides}${mode ? `k${mode}${Number(keep) * 2}` : ''}`);
@@ -237,7 +237,11 @@ window.DiceEngine = (() => {
   function layoutBursts() {
     const height = window.innerHeight || 800;
     const step = Math.max(58, Math.min(82, height * 0.08));
-    bursts.forEach((entry, index) => { if (entry.canvas) entry.canvas.style.top = `${Math.round(height * 0.04 + index * step)}px`; });
+    bursts.forEach((entry, index) => {
+      const top = `${Math.round(height * 0.04 + index * step)}px`;
+      if (entry.canvas) entry.canvas.style.top = top;
+      if (entry.summary) entry.summary.style.top = top;
+    });
   }
   /// Значения костей для полноэкранной анимации; источник результата остаётся авторитетным.
   function diceOf(payload) {
@@ -276,8 +280,9 @@ window.DiceEngine = (() => {
     const dice = diceOf(payload);
     const canvas = cfg.animate && !reduced && dice.length && !document.hidden
       ? el('canvas', { class: 'dice-global-canvas', 'aria-hidden': 'true' }) : null;
-    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas);
-    const entry = { root, timer: null, cancel: null };
+    const summary = screenSummary(item, payload);
+    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas, summary);
+    const entry = { root, canvas, summary, timer: null, cancel: null };
     stageBox().append(root);
     bursts.push(entry);
     while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);
@@ -475,7 +480,8 @@ window.DiceEngine = (() => {
   // ---------- Журнал: автооткрытие при броске ----------
   let journalAutoCloseTimer = null;
   function openJournalForRoll() {
-    const journal = openPanel(false);
+    // First roll opens the journal too, but must keep the scene spawned just above it.
+    const journal = openPanel(false, { dismissScenes: false });
     if (journal) {
       // Обновляем журнал, если он уже открыт
       if (journalRefresh) journalRefresh();
@@ -533,14 +539,14 @@ window.DiceEngine = (() => {
     return true;
   }
   /// Компактный журнал последних бросков кампании, личных результатов, повтора и настроек.
-  function openPanel(toggle = true) {
+  function openPanel(toggle = true, { dismissScenes = true } = {}) {
     const currentPanel = document.querySelector('.dice-journal');
     if (currentPanel) {
       if (!toggle) return currentPanel;
       currentPanel.remove(); journalRefresh = null; return null;
     }
     const cfg = settings();
-    dismiss(); // журнал показывает те же броски подробнее — полноэкранная анимация за ним не нужна
+    if (dismissScenes) dismiss(); // ручное открытие журнала убирает уже идущие сцены; автооткрытие их сохраняет
     const expr = el('input', { value: '1d20', placeholder: '2d6+3', 'aria-label': 'Формула броска' });
     const mode = el('select', { 'aria-label': 'Режим броска' }, ...[['normal', 'Обычно'], ['adv', 'Преимущество'], ['dis', 'Помеха']].map(([v, n]) => el('option', { value: v }, n)));
     const audience = audienceSelect();
