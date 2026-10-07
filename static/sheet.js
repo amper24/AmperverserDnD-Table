@@ -159,7 +159,7 @@
   const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
   // У предмета на блоках старый op:'use' не работает (сервер его отклоняет): кнопки
   // «Попадание» и «Урон» просто бросают кубы, а расход и эффекты идут через действие целиком.
-  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
+  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || !Equipment.canUse(it), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
   // ---------- Экипировка: руки и доспех ----------
   function handPanel() {
     return el('div', { class: 'equipment-panel' }, handsSection(), acLine());

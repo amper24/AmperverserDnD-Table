@@ -66,6 +66,10 @@ window.Equipment = (() => {
   }
   const choices = it => handednessOf(it) === 'two' ? ['both'] : handednessOf(it) === 'versatile' ? ['main', 'off', 'both'] : handednessOf(it) === 'one' ? ['main', 'off'] : wornSlots(wearKind(it));
   const canEquip = it => choices(it).length > 0;
+  // Активное свойство недоступно, пока предмет требует экипировки/настройки, но они не выполнены.
+  const canUse = it => (it.qty ?? 1) > 0 &&
+    (handednessOf(it) === 'none' && !wearKind(it) || it.equipped === true) &&
+    (it.attunement !== true || it.attuned === true);
   function normalize(it) {
     it.qty ??= 1;
     if (it.type === 'ammo' && !it.ammo_tag && /футляр|колчан|case|quiver/i.test(it.name || '')) it.type = 'gear';
@@ -74,7 +78,7 @@ window.Equipment = (() => {
     if (it.slots_v !== SLOTS_V && it.handedness === 'none') delete it.handedness;
     it.handedness = handednessOf(it); it.wear = wearKind(it); it.slots_v = SLOTS_V; it.favorite = it.favorite === true;
     // Настройка (attunement) есть только у предметов, которые её требуют: иначе флажок — мусор из старых данных.
-    if (it.attuned && it.attunement !== true) it.attuned = false;
+    if (it.attuned && (it.attunement !== true || it.qty !== 1)) it.attuned = false;
     if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = /болт|bolt/.test(text) ? 'bolt' : /стрел|arrow/.test(text) ? 'arrow' : /пул|bullet/.test(text) ? 'bullet' : '';
     if (it.consume === undefined) {
       if (it.type === 'consumable') it.consume = { enabled: true, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
@@ -295,5 +299,5 @@ window.Equipment = (() => {
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
 })();

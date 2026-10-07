@@ -175,7 +175,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||bad("Источник не найден"))?;
     let m=normalize(&doc["mechanics"]);validate(&m)?;
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
-    if category=="item"&&(num(&doc,"qty")<1||(inventory::handedness(&doc)!="none"&&doc["equipped"]!=true)) {return Err(bad("Предмет закончился или не экипирован"));}
+    if category=="item" { inventory::validate_use(&doc)?; }
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();
     if blocks.iter().any(|b|b["kind"]=="manual")&&!acknowledged {return Err(bad("Подтвердите ручные правила"));}
     let mut attack_costs: Vec<&Value>=Vec::new();
@@ -222,6 +222,15 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     fn fixture() -> Value {json!({"hp":{"max":20,"current":1,"temp":0},"inventory":[{"uid":"p","name":"Potion","qty":2,"type":"consumable","mechanics":{"version":1,"programs":[{"id":"use","name":"Drink","trigger":"use","blocks":[{"id":"c","kind":"consume","resource":"quantity","source":"self","amount":1,"trigger":"use"},{"id":"h","kind":"heal","target":"self","dice":{"count":0,"sides":6,"bonus":7,"stat":""}},{"id":"g","kind":"grant_item","target":"self","amount":1,"item":{"name":"Vial","type":"gear"}}]}]}}]})}
     #[test] fn potion_is_atomic_and_stacks_identical_rewards(){let mut s=fixture();execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["hp"]["current"],8);assert_eq!(s["inventory"][0]["qty"],1);execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["inventory"].as_array().unwrap().len(),2);assert_eq!(s["inventory"][1]["qty"],2);let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
     #[test] fn late_failure_rolls_back_everything(){let mut s=fixture();s["inventory"][0]["mechanics"]["programs"][0]["blocks"].as_array_mut().unwrap().push(json!({"id":"x","kind":"adjust","field":"currency.gp","amount":5}));let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
+    #[test] fn item_program_requires_attunement_and_equipping_before_use() {
+        let mk = |attuned: bool, equipped: bool| json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"ring","name":"Ring of Protection","type":"magic","qty":1,"attunement":true,"attuned":attuned,"equipped":equipped,"worn_slot":if equipped {json!("ring1")} else {Value::Null},"mechanics":{"version":1,"programs":[{"id":"use","name":"Activate","trigger":"use","blocks":[{"id":"m","kind":"manual","text":"Rule"}]}]}}]});
+        let mut un_attuned = mk(false, true); let before = un_attuned.clone();
+        assert!(execute(&mut un_attuned,"item","ring","use","",true).is_err()); assert_eq!(un_attuned,before);
+        let mut not_worn = mk(true, false); let before = not_worn.clone();
+        assert!(execute(&mut not_worn,"item","ring","use","",true).is_err()); assert_eq!(not_worn,before);
+        let mut ready = mk(true, true);
+        assert!(execute(&mut ready,"item","ring","use","",true).is_ok());
+    }
     /// Чужих целей нет: урон никому не списывается, спасбросок цели стал своим действием с броском d20.
     #[test] fn damage_and_saves_are_custom_actions(){
         let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Burst","trigger":"use","blocks":[
