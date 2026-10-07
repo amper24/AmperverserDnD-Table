@@ -385,9 +385,6 @@ window.DiceEngine = (() => {
       start ??= now; previous ??= now;
       const elapsed = (now - start) * speed, dt = Math.min((now - previous) / 1000, .04) * speed; previous = now;
       ctx.clearRect(0, 0, W, H);
-      const floor = ctx.createLinearGradient(0, horizon, 0, H);
-      floor.addColorStop(0, 'rgba(255,255,255,0.03)'); floor.addColorStop(1, 'rgba(255,255,255,0.085)');
-      ctx.fillStyle = floor; ctx.fillRect(0, horizon, W, floorH);
       for (const d of dice) {
         if (!d.settle) {
           d.vz -= H * 6.5 * dt;                             // притяжение к «полу»
@@ -414,13 +411,13 @@ window.DiceEngine = (() => {
         }
         if (d.settle) {                                     // доворачиваем к зрителю грань с результатом
           d.spin = d.spin.map(v => v * .8);
-          d.x += (d.laneX - d.x) * Math.min(1, dt * 4);     // и аккуратно раскладываем по дорожкам
-          d.t += (d.laneT - d.t) * Math.min(1, dt * 4);
+          d.x += (d.laneX - d.x) * Math.min(1, dt * 2);
+          d.t += (d.laneT - d.t) * Math.min(1, dt * 2);
           const want = faceAngles(mesh(d.sides).normals[d.target], d.angle[2]);
           for (let axis = 0; axis < 2; axis++) {
             let delta = (want[axis] - d.angle[axis]) % (Math.PI * 2);
             if (delta > Math.PI) delta -= Math.PI * 2; else if (delta < -Math.PI) delta += Math.PI * 2;
-            d.angle[axis] += delta * Math.min(1, dt * 7);
+            d.angle[axis] += delta * Math.min(1, dt * 3.5);
           }
         }
       }
@@ -501,6 +498,10 @@ window.DiceEngine = (() => {
     const log = el('button', { class: 'dice-log-button', title: 'Личный журнал бросков', onclick: openPanel },
       icon('book', 15), el('span', {}, 'Журнал'), history.length ? el('span', { class: 'dice-log-count' }, String(Math.min(history.length, 50))) : null);
     document.body.append(wrap, log);
+    // Автоматически открываем журнал в свернутом виде
+    if (!document.querySelector('.dice-journal')) {
+      openPanel(false);
+    }
     return true;
   }
   /// Компактный журнал последних бросков кампании, личных результатов, повтора и настроек.

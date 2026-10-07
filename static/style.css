@@ -57,7 +57,7 @@ h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 14px; color: var
 #table.no-side { grid-template-columns: 1fr 0; }
 .tbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .tbar .sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
-#canvasWrap { position: relative; overflow: hidden; background: var(--canvas-bg); }
+#canvasWrap { position: relative; overflow: hidden; background: transparent; }
 #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #canvas.tool-select { cursor: default; }
 #canvas.tool-draw, #canvas.tool-fog, #canvas.tool-ruler, #canvas.tool-pointer { cursor: crosshair; }
