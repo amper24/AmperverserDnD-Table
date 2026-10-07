@@ -382,7 +382,14 @@ window.DiceEngine = (() => {
       d.vx = (d.laneX - d.x) / flight;
       d.vt = (d.laneT - d.t) / flight;
       d.vz = -H * (.03 + Math.random() * .15);
-      d.angle = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
+      // Начинаем с позиции, близкой к нужной грани, плюс небольшое случайное вращение для анимации
+      const meshData = mesh(d.sides);
+      const want = faceAngles(meshData.normals[d.target], 0);
+      d.angle = [
+        want[0] + (Math.random() - .5) * 0.3,
+        want[1] + (Math.random() - .5) * 0.3,
+        want[2] + (Math.random() - .5) * 0.3
+      ];
       d.spin = [(Math.random() - .5) * 15, (Math.random() - .5) * 15, (Math.random() - .5) * 15];
       d.settle = false;
     });
@@ -470,6 +477,8 @@ window.DiceEngine = (() => {
   function openJournalForRoll() {
     const journal = openPanel(false);
     if (journal) {
+      // Обновляем журнал, если он уже открыт
+      if (journalRefresh) journalRefresh();
       // Закрываем журнал через 8 секунд, если мышка не на нём
       if (journalAutoCloseTimer) clearTimeout(journalAutoCloseTimer);
       journalAutoCloseTimer = setTimeout(() => {
