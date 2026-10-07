@@ -21,11 +21,15 @@ test('deterministic keep highest and lowest including tied faces', () => {
 test('old saved records drop the right number of duplicate dice', () => {
   assert.deepEqual(plain(D.keptIndices({ rolls: [3,3,3,3], kept: [3,3,3] })), [0,1,2]);
 });
-test('advantage/disadvantage alter only the first plain d20', () => {
+test('advantage/disadvantage affect one d20 check, preserve other dice, and can switch modes', () => {
   assert.equal(D.withMode('d20+5','adv'), '2d20kh1+5');
   assert.equal(D.withMode('1d20-2','dis'), '2d20kl1-2');
+  assert.equal(D.withMode('d6+1d20+2d20','adv'), 'd6+2d20kh1+2d20');
   assert.equal(D.withMode('2d20kh1+3','adv'), '2d20kh1+3');
-  assert.equal(D.withMode('d6+1d20','adv'), 'd6+2d20kh1');
+  assert.equal(D.withMode('2d20kh1+3','dis'), '2d20kl1+3');
+  assert.equal(D.withMode('2d20kl1-2','adv'), '2d20kh1-2');
+  assert.equal(D.withMode('d20kh1+5','dis'), '2d20kl1+5');
+  assert.equal(D.withMode('4d20kh3+3','adv'), '4d20kh3+3', 'custom keep pools are not rewritten');
   assert.equal(D.withMode('d200','adv'), 'd200');
 });
 test('negative terms and constants are computed exactly', () => {
@@ -118,10 +122,7 @@ test('presentation uses a global screen layer and preserves consecutive rolls', 
   assert.ok(stage, 'result layer exists on the global screen');
   assert.equal(stage.children.length, 2, 'a later roll does not replace the previous one');
   assert.ok(stage.children.every(node => node.className === 'dice-global-burst'));
-  const summaries = stage.children.map(node => node.children.find(child => child.className === 'dice-global-summary'));
-  assert.ok(summaries.every(Boolean));
-  assert.equal(summaries[0].children[1].children[0].children[0].className, 'dice-global-total');
-  assert.ok(Number.parseFloat(summaries[1].style.top) > Number.parseFloat(summaries[0].style.top));
+  assert.ok(stage.children.every(node => node.children.length === 0), 'result totals stay in the journal, not in a centered screen overlay');
 
   for (let i = 3; i <= 10; i++) engine.present({ ...engine.evaluate('d6'), label: `Сцена ${i}` }, { local: true });
   assert.equal(stage.children.filter(node => !node.removed).length, 10, 'ten scenes can remain visible together');

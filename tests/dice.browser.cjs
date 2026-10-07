@@ -26,21 +26,23 @@ const assert = require('node:assert/strict');
     });
     assert.equal(await page.locator('.dice-journal').count(), 1, 'the first roll still auto-opens the journal');
     assert.equal(await page.locator('.dice-global-burst').count(), 1, 'auto-opening the journal must not dismiss the first roll scene');
+    assert.equal(await page.locator('.dice-global-summary, .dice-global-total').count(), 0, 'the animated screen layer never displays the roll total');
     await page.waitForSelector('.dice-global-canvas');
     await page.waitForTimeout(800);
     const pixels = await page.evaluate(() => { const c = document.querySelector('.dice-global-canvas'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); });
     assert.ok(pixels, 'animation must draw actual mesh pixels');
     if (process.env.DICE_SCREENSHOT) await page.screenshot({ path: process.env.DICE_SCREENSHOT });
     await page.locator('#underlay').click(); // полноэкранная анимация прозрачна для кликов по столу
-    assert.equal(await page.locator('.dice-global-total').count(), 7); // значения всех костей вынесены на общий экран
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-total').count(), 7, 'the journal retains every roll total');
+    assert.equal(await page.locator('.dice-global-summary, .dice-global-total').count(), 0);
     const fullScreen = await page.locator('.dice-global-canvas').boundingBox();
     assert.equal(fullScreen.width, 1280); assert.equal(fullScreen.height, 800);
     assert.equal(await page.locator('.dice-global-stage').evaluate(e => getComputedStyle(e).pointerEvents), 'none');
     // Новый бросок добавляется поверх общего экрана и не заменяет первый.
     await page.evaluate(() => DiceEngine.present(DiceEngine.evaluate('d20'), { local: true }));
     assert.equal(await page.locator('.dice-global-burst').count(), 2);
-    const boxes = await page.locator('.dice-global-summary').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().top));
-    assert.ok(boxes[0] < boxes[1], 'concurrent roll summaries stay separate on the global screen');
+    const canvasTops = await page.locator('.dice-global-canvas').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().top));
+    assert.ok(canvasTops[0] < canvasTops[1], 'concurrent dice animations remain separately staggered without summary overlays');
     // The stage keeps ten rolls. Disable animation for the additional scenes to keep this stress test light.
     await page.evaluate(() => {
       LS.setItem('dice-settings', JSON.stringify({ animate: false, speed: 1, color: '#a881e8' }));
@@ -56,7 +58,7 @@ const assert = require('node:assert/strict');
     // Reduced motion: show exact, duplicate-aware result without a canvas.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(() => DiceEngine.present(DiceEngine.evaluate('4d1kh3+2'), { local: true }));
-    assert.equal(await page.locator('.dice-global-total').textContent(), '5');
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-total').textContent(), '5');
     assert.equal(await page.locator('.dice-global-canvas').count(), 0);
     await page.keyboard.press('Escape');
 
@@ -65,7 +67,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('.dice-global-burst').count(), 0);
     const msg = { type: 'chat', kind: 'roll', id: 42, at: '2026-09-29T12:00:00Z', user_id: 'one', name: 'Мастер', payload: { expr: 'd20+5', label: 'Серверная проверка', visibility: 'campaign', dice_color: '#e35b82', request_id: id, total: 25, parts: [{ term: 'd20', rolls: [20], kept: [20], kept_indices: [0], sides: 20 }, { term: '+5', value: 5 }] } };
     await page.evaluate(m => { DiceEngine.receive(m); DiceEngine.receive(m); }, msg);
-    assert.equal(await page.locator('.dice-global-total').textContent(), '25');
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-total').textContent(), '25');
     assert.equal(await page.evaluate(() => sent.length), 1);
     assert.equal(await page.evaluate(() => sent[0].dice_color), '#e35b82');
     assert.equal(await page.evaluate(() => sent[0].visibility), 'campaign');
@@ -75,7 +77,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(() => sent[1].visibility), 'private');
     const privateMsg = { ...msg, id: 43, payload: { ...msg.payload, expr: 'd20', label: 'Личный бросок', visibility: 'private', request_id: privateId, total: 12, parts: [{ term: 'd20', rolls: [12], kept: [12], kept_indices: [0], sides: 20 }] } };
     await page.evaluate(m => DiceEngine.receive(m), privateMsg);
-    assert.equal(await page.locator('.dice-global-heading .dice-visibility').textContent(), 'Только вам');
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-result .dice-visibility').textContent(), 'Только вам');
     await page.keyboard.press('Escape');
     // Общая настройка аудитории: выбрали «только мастеру» — следующие броски уходят скрытыми.
     await page.evaluate(() => { DiceEngine.dock(); document.querySelectorAll('.dice-audience').forEach(s => { s.value = 'gm'; s.dispatchEvent(new Event('change')); }); });
@@ -83,7 +85,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(() => sent.at(-1).gm_only), true);
     const gmMsg = { ...msg, id: 44, payload: { ...msg.payload, label: 'скрытый', gm_only: true, request_id: gmId, total: 7, parts: [{ term: 'd20', rolls: [7], kept: [7], kept_indices: [0], sides: 20 }] } };
     await page.evaluate(m => DiceEngine.receive(m), gmMsg);
-    assert.equal(await page.locator('.dice-global-heading .dice-visibility').textContent(), 'Только мастеру');
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-result .dice-visibility').textContent(), 'Только мастеру');
     await page.evaluate(() => document.querySelectorAll('.dice-audience').forEach(s => { s.value = 'all'; s.dispatchEvent(new Event('change')); }));
     await page.keyboard.press('Escape');
     const rejected = await page.evaluate(() => { TABLE_CTX.isGM = false; return DiceEngine.submit({ type: 'roll', expr: 'd20', audience: 'gm' }); });
@@ -93,13 +95,13 @@ const assert = require('node:assert/strict');
 
     // Offline critical bundles use the same shape and doubling semantics as server bundles.
     await page.evaluate(() => { delete window.TABLE_CTX; DiceEngine.present({ label: 'Атака + урон', rolls: DiceEngine.evaluateBatch([{ kind: 'attack', expr: 'd20+5' }, { kind: 'damage', expr: 'd8+3' }], () => .999) }, { local: true }); });
-    assert.deepEqual(await page.locator('.dice-global-total').allTextContents(), ['25', '19']);
+    assert.deepEqual(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-total').allTextContents(), ['25', '19']);
     await page.evaluate(() => DiceEngine.openPanel(false)); // повторно запрашиваем панель, уже открытую вместе со сценой
     await page.waitForSelector('.dice-journal');
     await page.getByRole('button', { name: 'Повторить', exact: true }).first().click();
     await page.waitForTimeout(400); // серверный/локальный результат не должен зависеть от анимации
     // Check reroll original damage is not doubled twice (critical state is recomputed).
-    assert.equal(await page.locator('.dice-global-burst').last().locator('.dice-global-roll').count(), 2);
+    assert.equal(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-result-row').count(), 2);
     await page.keyboard.press('Escape');
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -112,13 +114,20 @@ const assert = require('node:assert/strict');
     await page.locator('.dice-journal').getByLabel('Формула броска').fill('2d6+4');
     await page.locator('.dice-journal').getByRole('button', { name: 'Бросить', exact: true }).click();
     const box = await page.locator('.dice-global-burst').boundingBox(); assert.equal(box.x, 0); assert.equal(box.width, 390);
-    assert.ok(await page.locator('.dice-global-total').textContent(), 'the exact local total remains visible without animation');
+    assert.ok(await page.locator('.dice-journal .dice-history-entry').first().locator('.dice-total').textContent(), 'the exact local total remains in the journal without an animation overlay');
     await page.keyboard.press('Escape');
     await page.evaluate(() => { window.parallelSent = []; TABLE_CTX = { isGM: true, ws: { send: m => { parallelSent.push(m); return true; } } }; DiceEngine.dock({ gm: true }); });
     await page.locator('.dice-dock .dice button').filter({ hasText: 'к6' }).click({ modifiers: ['Shift'] });
     assert.equal(await page.evaluate(() => parallelSent[0].type), 'multi');
     assert.equal(await page.evaluate(() => parallelSent[0].rolls.length), 2);
+    const formula = page.locator('.dice-dock input[aria-label="Формула броска"]');
+    await page.locator('.dice-dock .seg').getByRole('button', { name: 'Преим.' }).click();
+    await formula.fill('d20+5'); await formula.press('Enter');
+    assert.equal(await page.evaluate(() => parallelSent.at(-1).expr), '2d20kh1+5');
+    await page.locator('.dice-dock .seg').getByRole('button', { name: 'Помеха' }).click();
+    await formula.fill('2d20kh1+5'); await formula.press('Enter');
+    assert.equal(await page.evaluate(() => parallelSent.at(-1).expr), '2d20kl1+5', 'disadvantage replaces an existing advantage keep rule');
     assert.deepEqual(errors, []);
-    console.log('PASS: full-screen concurrent dice scenes, large animated meshes, click-through, reduced motion, authoritative network results, deduplication, audience, offline, critical reroll, validation, mobile UI');
+    console.log('PASS: dice-only animations, journal totals, concurrent scenes, reduced motion, network results, advantage/disadvantage formulas, validation, mobile UI');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

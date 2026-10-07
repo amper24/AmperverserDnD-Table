@@ -54,11 +54,17 @@ window.DiceEngine = (() => {
   const natural = r => { const p = r.parts.find(p => p.sides === 20 || /d20(?!\d)/.test(p.term)); return p ? keptIndices(p).map(i => p.rolls[i]) : []; };
   function withMode(expr, mode) {
     if (!['adv', 'dis'].includes(mode)) return expr;
-    const normalized = normalize(expr);
-    // Преимущество/помеха меняют только к20: остальные кости формулы остаются нетронутыми.
-    return normalized.replace(/([+-])?(\d*)d20(?!\d|k)/g, (_, sign, n) => {
-      const count = Number(n || 1) * 2;
-      return `${sign || ''}${count}d20k${mode === 'adv' ? 'h' : 'l'}1`;
+    const normalized = normalize(expr), keep = mode === 'adv' ? 'h' : 'l';
+    // Один режим относится к первой проверке к20. Уже заданный бросок 2d20kh1/kl1
+    // переключаем между режимами, а прочие кости и независимые проверки не трогаем.
+    return normalized.replace(/(^|[+-])(\d*)d20(?:k([hl])(\d+))?($|[+-])/, (whole, sign, n, priorMode, priorKeep, tail) => {
+      const count = Number(n || 1), kept = Number(priorKeep || count);
+      const canonicalMode = count === 2 && kept === 1;
+      const plainPool = !priorMode || kept === count;
+      if (priorMode && !canonicalMode && !plainPool) return whole;
+      const dice = canonicalMode ? 2 : count * 2;
+      const keepCount = canonicalMode ? 1 : count;
+      return `${sign}${dice}d20k${keep}${keepCount}${tail}`;
     });
   }
   const doubleDice = expr => normalize(expr).replace(/(\d*)d(\d+)(?:k([hl])(\d+))?/g, (_, n, sides, mode, keep) => `${Number(n || 1) * 2}d${sides}${mode ? `k${mode}${Number(keep) * 2}` : ''}`);
@@ -238,9 +244,7 @@ window.DiceEngine = (() => {
     const height = window.innerHeight || 800;
     const step = Math.max(58, Math.min(82, height * 0.08));
     bursts.forEach((entry, index) => {
-      const top = `${Math.round(height * 0.04 + index * step)}px`;
-      if (entry.canvas) entry.canvas.style.top = top;
-      if (entry.summary) entry.summary.style.top = top;
+      if (entry.canvas) entry.canvas.style.top = `${Math.round(height * 0.04 + index * step)}px`;
     });
   }
   /// Значения костей для полноэкранной анимации; источник результата остаётся авторитетным.
@@ -253,36 +257,15 @@ window.DiceEngine = (() => {
     });
     return out;
   }
-  /// Крупный итог броска поверх всего экрана; подробности остаются в журнале.
-  function screenSummary(item, payload) {
-    const mark = audienceLabel(audienceOf(payload));
-    const heading = item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок';
-    const rows = (payload.rolls || [payload]).slice(0, 8).map(r => {
-      const nat = natural(r), d20 = !['damage', 'heal'].includes(r.kind), critical = d20 && nat.includes(20), fumble = d20 && nat.includes(1);
-      return el('div', { class: 'dice-global-roll' + (critical ? ' critical' : fumble ? ' fumble' : ''), title: `${r.name || r.expr}: ${r.expr} = ${r.total}` },
-        el('strong', { class: 'dice-global-total' }, r.total),
-        el('span', { class: 'dice-global-name' }, r.name || r.expr),
-        r.name ? el('small', { class: 'dice-global-formula' }, r.expr) : null,
-        critical ? el('span', { class: 'dice-badge' }, r.kind === 'attack' ? 'КРИТ' : 'НАТ. 20') : fumble ? el('span', { class: 'dice-badge' }, 'НАТ. 1') : null,
-        r.doubled ? el('span', { class: 'dice-badge' }, '×2 кости') : null);
-    });
-    return el('div', { class: 'dice-global-summary' },
-      el('div', { class: 'dice-global-heading' },
-        el('span', {}, heading),
-        payload.label ? el('b', {}, payload.label) : null,
-        mark ? el('span', { class: 'dice-visibility' }, mark) : null),
-      el('div', { class: 'dice-global-results' }, ...rows));
-  }
-  /// Каждый принятый бросок появляется крупно на общем экране; новые броски не заменяют предыдущие.
+  /// Каждый принятый бросок анимируется на общем экране; значения и подробности остаются в журнале.
   function spawn(item) {
     const cfg = settings(), payload = item.payload, color = validDiceColor(payload.dice_color || cfg.color);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const dice = diceOf(payload);
     const canvas = cfg.animate && !reduced && dice.length && !document.hidden
       ? el('canvas', { class: 'dice-global-canvas', 'aria-hidden': 'true' }) : null;
-    const summary = screenSummary(item, payload);
-    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas, summary);
-    const entry = { root, canvas, summary, timer: null, cancel: null };
+    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas);
+    const entry = { root, canvas, timer: null, cancel: null };
     stageBox().append(root);
     bursts.push(entry);
     while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);

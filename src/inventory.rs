@@ -294,10 +294,7 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     for a in selected {
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
-        if !["damage", "heal"].contains(&kind) && ["adv", "dis"].contains(&mode) {
-            let re = regex::Regex::new(r"(^|[+\-])(1?)[dк]20($|[+\-])").unwrap();
-            expr = re.replace(&expr, |c: &regex::Captures| format!("{}2d20k{}1{}", &c[1], if mode == "adv" { "h" } else { "l" }, &c[3])).to_string();
-        }
+        if !["damage", "heal"].contains(&kind) { expr = crate::realtime::with_d20_mode(&expr, mode); }
         let base = expr.clone(); let doubled = crit && kind == "damage";
         if doubled { expr = crate::realtime::double_dice(&expr); }
         let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
@@ -337,7 +334,9 @@ mod tests {
     #[test] fn one_arrow_per_attack_not_per_damage_roll() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap();
         let r=use_item(&mut s,"bow",&[0,1],"adv").unwrap(); assert_eq!(s["inventory"][3]["qty"],1); assert_eq!(r["spent"][0]["amount"],1);
-        assert!(r["rolls"][0]["expr"].as_str().unwrap().starts_with("2d20kh1"));
+        assert_eq!(r["rolls"][0]["expr"],"2d20kh1+5");
+        let mut dis=fixture(); equip(&mut dis,"bow","both").unwrap();
+        let r=use_item(&mut dis,"bow",&[0],"dis").unwrap(); assert_eq!(r["rolls"][0]["expr"],"2d20kl1+5");
         use_item(&mut s,"bow",&[1],"").unwrap(); assert_eq!(s["inventory"][3]["qty"],1);
         use_item(&mut s,"bow",&[0],"").unwrap(); let before=s.clone();
         assert!(use_item(&mut s,"bow",&[0],"").is_err()); assert_eq!(s,before);

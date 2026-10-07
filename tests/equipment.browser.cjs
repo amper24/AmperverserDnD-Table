@@ -36,6 +36,7 @@ const assert = require('node:assert/strict');
     await page.goto('https://equipment.test/sheet/hero'); await page.evaluate(() => Consent.set(false));
     const levelInput = page.locator('.level-value-row input');
     const levelButton = page.getByRole('button', { name: 'Повысить уровень' });
+    await page.waitForSelector('.level-value-row .lvlup-btn');
     assert.equal(await levelButton.count(), 1);
     const levelBox = await levelInput.boundingBox(), levelActionBox = await levelButton.boundingBox();
     assert.ok(Math.abs(levelBox.y - levelActionBox.y) < 2, 'level-up action sits beside the level value, not on a detached row');

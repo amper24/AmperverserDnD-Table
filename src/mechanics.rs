@@ -191,7 +191,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut total=0;
         if ["attack","damage","heal","temp_hp","roll"].contains(&kind) {
             let raw=formula(b)?;let mut expr=inventory::resolve(&raw,&s)?;
-            if ["attack","roll"].contains(&kind)&&["adv","dis"].contains(&mode){expr=regex::Regex::new(r"(^|[+\-])1?d20($|[+\-])").unwrap().replace(&expr,|c:&regex::Captures|format!("{}2d20k{}1{}",&c[1],if mode=="adv"{"h"}else{"l"},&c[2])).to_string();}
+            if ["attack","roll"].contains(&kind){expr=crate::realtime::with_d20_mode(&expr,mode);}
             let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::realtime::double_dice(&expr);}
             let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
             // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.
@@ -263,4 +263,11 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         assert!(validate_choices(&json!({})).is_err());
     }
     #[test] fn healing_does_not_include_proficiency(){let s=json!({"abilities":{"wis":16},"proficiency_bonus":4,"spells":{"ability":"wis"}});assert_eq!(inventory::resolve("1d8+@spell_mod",&s).unwrap(),"1d8+3");}
+    #[test] fn program_attack_modes_use_the_shared_d20_formula(){
+        let fixture=||json!({"features":[{"uid":"f","name":"Проверка","mechanics":{"version":1,"programs":[{"id":"p","name":"Бросок","trigger":"use","blocks":[{"id":"b","kind":"attack","dice":{"count":1,"sides":20,"bonus":5,"stat":"","advanced":"d20+5"}}]}]}}]});
+        for (mode,expected) in [("adv","2d20kh1+5"),("dis","2d20kl1+5")] {
+            let mut sheet=fixture();let result=execute(&mut sheet,"feature","f","p",mode,false).unwrap();
+            assert_eq!(result["rolls"][0]["expr"],expected);
+        }
+    }
 }
