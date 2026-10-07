@@ -160,27 +160,30 @@
   // У предмета на блоках старый op:'use' не работает (сервер его отклоняет): кнопки
   // «Попадание» и «Урон» просто бросают кубы, а расход и эффекты идут через действие целиком.
   const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
-  // ---------- Экипировка: руки и надетые слоты ----------
+  // ---------- Экипировка: руки и доспех ----------
   function handPanel() {
-    return el('div', { class: 'equipment-panel' }, handsSection(), wornSection(), acLine());
+    return el('div', { class: 'equipment-panel' }, handsSection(), armorSection(), acLine());
   }
-  // Слоты одежды: доспех, голова, шея, плащ, перчатки, пояс, обувь, два кольца. Каждый предмет подходит только к своему слоту.
-  function wornSection() {
+  // Слот доспеха
+  function armorSection() {
     const occupied = key => s.inventory.find(i => i.equipped && i.worn_slot === key);
-    return el('section', { class: 'equipment-worn' }, ...Equipment.WORN_SLOTS.map(key => {
-      const current = occupied(key);
-      const choices = s.inventory.filter(it => it.qty === 1 && Equipment.wornSlots(it.wear).includes(key));
-      return el('div', { class: 'hand-slot worn-slot' + (current ? ' filled' : '') }, el('label', {}, Equipment.slots[key]),
+    const current = occupied('armor');
+    const choices = s.inventory.filter(it => it.qty === 1 && Equipment.wornSlots(it.wear).includes('armor'));
+    if (readonly && !current) return null;
+    return el('div', { class: 'equipment-worn' }, 
+      el('div', { class: 'worn-slot armor-slot' + (current ? ' filled' : '') },
+        el('label', {}, Equipment.slots.armor),
         el('strong', {}, current?.name || 'Пусто'),
-        readonly || (!choices.length && !current) ? null : el('select', { 'aria-label': Equipment.slots[key], onchange: e => {
+        choices.length > 0 ? el('select', { 'aria-label': Equipment.slots.armor, onchange: e => {
           if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
-          if (e.target.value) inventoryOp({ op: 'equip', item_uid: e.target.value, slot: key });
-        } }, el('option', { value: '', selected: !current ? '' : null }, '— Пусто —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name))));
-    }));
+          if (e.target.value) inventoryOp({ op: 'equip', item_uid: e.target.value, slot: 'armor' });
+        } }, el('option', { value: '', selected: !current ? '' : null }, '— Пусто —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name)))
+        : null
+      )
+    );
   }
-  // Из чего сложился КД (когда включён автоматический расчёт).
+  // Из чего сложился КД (всегда считается от доспеха).
   function acLine() {
-    if (!s.auto_armor) return el('p', { class: 'muted small ac-line' }, `КД задан вручную: ${s.ac}. Автоматический расчёт включается флажком «КД от доспеха».`);
     const d = Equipment.armorClassParts(s);
     return el('div', { class: 'ac-line-wrap' }, el('p', { class: 'muted small ac-line' }, `КД ${d.ac} = ` + d.parts.map(([n, v], i) => i ? `${n} ${v >= 0 ? '+' : ''}${v}` : `${n} ${v}`).join(' · ')),
       ...d.notes.map(t => el('p', { class: 'small ac-warn' }, '⚠ ' + t)));
@@ -189,7 +192,7 @@
     if (!window.LevelUp) return toast('Мастер повышения уровня не загружен.');
     await flush();
     const ok = await LevelUp.open({ sheet: s, campaignId: ch.campaign_id, onApply: () => { dirty = true; } });
-    if (ok) { s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); } else if (dirty) { save(); }
+    if (ok) { s.ac = Equipment.armorClass(s); save(); render(); } else if (dirty) { save(); }
   }
   function handsSection() {
     const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
@@ -236,7 +239,7 @@
   // ================= РЕНДЕР =================
   function render() {
     Equipment.migrate(s.inventory);
-    if (s.auto_armor) s.ac = Equipment.armorClass(s);
+    s.ac = Equipment.armorClass(s);
     ctx();
     app.innerHTML = '';
     const root = el('div', { class: 'sheet' });
@@ -400,7 +403,8 @@
         hint: bgModule ? `Предыстория — снимок модуля (${bgModule.source || 'справочник'}): даёт навыки, инструменты и снаряжение.` : 'Перетащите блок предыстории из справочника или кликните, чтобы вписать название.' }),
       headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentControl(), hint: 'Мировоззрение влияет только на отыгрыш: кликните и выберите из списка.' }));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
-      el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number'), readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'small lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲ Повысить')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
+      el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
+      readonly || (s.level || 1) >= 20 ? null : el('div', { class: 'level-cell', style: 'margin-top: 4px;' }, el('button', { class: 'lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲')),
       blocks));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
@@ -449,7 +453,7 @@
       el('label', {}, 'Вдохновение'),
       el('span', { class: 'insp-square-star', 'aria-hidden': 'true' }, '★'));
     c2.append(el('div', { class: 'stat3 has-insp' },
-      el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.auto_armor = false; s.ac = +e.target.value; save(); render(); } })),
+      el('div', { class: 'card' }, el('label', {}, 'КД ', noteBtn('ac', 'КД')), noteLine('ac'), el('input', { class: 'inline', type: 'number', value: s.ac, disabled: dis(), onchange: e => { s.ac = +e.target.value; save(); render(); } })),
       el('div', { class: 'card', style: 'cursor:pointer', onclick: e => roll('d20' + fmtMod(abMod('dex') + (s.initiative_bonus || 0)), 'инициатива', e) }, el('label', {}, 'Инициатива'), el('b', {}, fmtMod(abMod('dex') + (s.initiative_bonus || 0)))),
       el('div', { class: 'card' }, el('label', {}, 'Скорость ', noteBtn('speed', 'Скорость')), el('input', { class: 'inline', type: 'number', value: s.speed, disabled: dis(), onchange: e => { s.speed = +e.target.value; save(); } })),
       inspirationTile));
@@ -474,7 +478,7 @@
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: false, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
-    c2.append(handPanel(), el('label', { class: 'small muted' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.auto_armor ? '' : null, disabled: dis(), onchange: e => { s.auto_armor = e.target.checked; save(); render(); } }), ' КД от доспеха, щита и Ловкости · для особых формул отключите'), act);
+    c2.append(handPanel(), act);
     // Кратко: экипировка и настройка
     const wearing = s.inventory.filter(it => it.equipped);
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, el('h3', {}, 'Экипировано'), wearing.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px' }, ...wearing.map(it => el('span', { class: 'chip', style: 'cursor:pointer', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, M.itemIcon(it), ' ' + it.name + (it.attuned ? ' (настроен)' : '')))) : el('span', { class: 'muted small' }, 'ничего'),
@@ -707,7 +711,7 @@
     const root = el('div', { class: 'inv dropslot', 'data-cat': 'feat' });
     if (s.level_log?.length) root.append(el('details', { class: 'card level-log', style: 'margin-bottom:12px' }, el('summary', {}, `История повышений (${s.level_log.length})`),
       ...s.level_log.slice().reverse().map((l, i) => el('div', { class: 'level-log-row' }, el('b', {}, `${l.class} → ${l.level}`), el('span', { class: 'muted small' }, ` · хиты ${l.hp >= 0 ? '+' : ''}${l.hp}${l.total && s.classes?.length > 1 ? ' · всего ' + l.total + ' ур.' : ''}${l.choices?.length ? ' · ' + l.choices.join(' · ') : ''}`),
-        i === 0 && !readonly && window.LevelUp?.canUndo(s) ? el('button', { class: 'small', style: 'margin-left:8px', title: 'Вернуть уровень, хиты, умения и заклинания к состоянию до этого повышения', onclick: async () => { if (!confirm(`Отменить повышение до ${l.level} уровня класса «${l.class}»? Прочие правки листа сохранятся.`)) return; try { LevelUp.undo(s); s.auto_armor && (s.ac = Equipment.armorClass(s)); save(); render(); toast('Повышение отменено.'); } catch (e) { toast(e.message, 4000); } } }, '↶ Отменить') : null))));
+        i === 0 && !readonly && window.LevelUp?.canUndo(s) ? el('button', { class: 'small', style: 'margin-left:8px', title: 'Вернуть уровень, хиты, умения и заклинания к состоянию до этого повышения', onclick: async () => { if (!confirm(`Отменить повышение до ${l.level} уровня класса «${l.class}»? Прочие правки листа сохранятся.`)) return; try { LevelUp.undo(s); s.ac = Equipment.armorClass(s); save(); render(); toast('Повышение отменено.'); } catch (e) { toast(e.message, 4000); } } }, '↶ Отменить') : null))));
     if (s.modules?.length) root.append(el('details', { class: 'card', style: 'margin-bottom:12px' },
       el('summary', {}, `Модули при создании (${s.modules.length})`),
       el('p', { class: 'muted small' }, 'Снимки выбранных модулей на момент создания. Изменения справочника не перезаписывают ваш лист.'),

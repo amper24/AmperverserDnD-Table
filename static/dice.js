@@ -53,7 +53,13 @@ window.DiceEngine = (() => {
   }
   const natural = r => { const p = r.parts.find(p => p.sides === 20 || /d20(?!\d)/.test(p.term)); return p ? keptIndices(p).map(i => p.rolls[i]) : []; };
   function withMode(expr, mode) {
-    return ['adv', 'dis'].includes(mode) ? normalize(expr).replace(/(^|[+-])(?:1)?d20(?!\d|k)/, (_, sign) => `${sign}2d20k${mode === 'adv' ? 'h' : 'l'}1`) : expr;
+    if (!['adv', 'dis'].includes(mode)) return expr;
+    const normalized = normalize(expr);
+    // Заменяем любой dN на 2dN с соответствующим keep для преимущества/помехи
+    return normalized.replace(/([+-])?(\d*)d(\d+)(?!\d|k)/g, (_, sign, n, sides) => {
+      const count = n || '1';
+      return `${sign || ''}${count === '1' ? '2' : count * 2}d${sides}k${mode === 'adv' ? 'h' : 'l'}1`;
+    });
   }
   const doubleDice = expr => normalize(expr).replace(/(\d*)d(\d+)(?:k([hl])(\d+))?/g, (_, n, sides, mode, keep) => `${Number(n || 1) * 2}d${sides}${mode ? `k${mode}${Number(keep) * 2}` : ''}`);
   function evaluateBatch(rolls, random) {
@@ -231,7 +237,7 @@ window.DiceEngine = (() => {
   function layoutBursts() {
     const height = window.innerHeight || 800;
     const step = Math.max(58, Math.min(82, height * 0.08));
-    bursts.forEach((entry, index) => { entry.summary.style.top = `${Math.round(height * 0.04 + index * step)}px`; });
+    bursts.forEach((entry, index) => { if (entry.canvas) entry.canvas.style.top = `${Math.round(height * 0.04 + index * step)}px`; });
   }
   /// Значения костей для полноэкранной анимации; источник результата остаётся авторитетным.
   function diceOf(payload) {
@@ -270,15 +276,16 @@ window.DiceEngine = (() => {
     const dice = diceOf(payload);
     const canvas = cfg.animate && !reduced && dice.length && !document.hidden
       ? el('canvas', { class: 'dice-global-canvas', 'aria-hidden': 'true' }) : null;
-    const summary = screenSummary(item, payload);
-    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas, summary);
-    const entry = { root, summary, timer: null, cancel: null };
+    const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas);
+    const entry = { root, timer: null, cancel: null };
     stageBox().append(root);
     bursts.push(entry);
     while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);
     layoutBursts();
     entry.timer = setTimeout(() => fadeBurst(entry), 5400);
     if (canvas) entry.cancel = animate(canvas, payload, cfg, bursts.indexOf(entry));
+    // Открываем журнал при броске
+    openJournalForRoll();
   }
   function dismiss() { for (const entry of [...bursts]) dismissBurst(entry); }
   function repeat(p) {
@@ -365,18 +372,18 @@ window.DiceEngine = (() => {
       return singleLanes[burstIndex % singleLanes.length][0] + (Math.random() - .5) * .12;
     };
     dice.forEach((d, i) => {
-      const side = i % 2 ? 1 : -1, flight = .55 + Math.random() * .3;
-      d.x = side * W * (.55 + Math.random() * .4);          // старт за кадром, из угла
-      d.t = -.2 - Math.random() * .3;                        // из-за дальнего края «пола»
-      d.z = H * (.6 + Math.random() * .55);
+      const side = i % 2 ? 1 : -1, flight = .7 + Math.random() * .4;
+      d.x = side * W * (.45 + Math.random() * .3);          // старт за кадром, из угла
+      d.t = -.15 - Math.random() * .2;                      // из-за дальнего края «пола»
+      d.z = H * (.5 + Math.random() * .4);
       d.laneX = laneOf(i) * W * .36;                        // куда в итоге лечь
       const singleLanes = [[-.48, .42], [.48, .34], [-.18, .68], [.2, .3], [0, .55]];
       d.laneT = dice.length === 1 ? singleLanes[burstIndex % singleLanes.length][1] : .3 + (i % 2) * .3 + Math.random() * .22;
       d.vx = (d.laneX - d.x) / flight;
       d.vt = (d.laneT - d.t) / flight;
-      d.vz = -H * (.05 + Math.random() * .25);
+      d.vz = -H * (.03 + Math.random() * .15);
       d.angle = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
-      d.spin = [(Math.random() - .5) * 20, (Math.random() - .5) * 20, (Math.random() - .5) * 20];
+      d.spin = [(Math.random() - .5) * 15, (Math.random() - .5) * 15, (Math.random() - .5) * 15];
       d.settle = false;
     });
     let start, previous, raf = 0, alive = true;
@@ -385,42 +392,39 @@ window.DiceEngine = (() => {
       start ??= now; previous ??= now;
       const elapsed = (now - start) * speed, dt = Math.min((now - previous) / 1000, .04) * speed; previous = now;
       ctx.clearRect(0, 0, W, H);
-      const floor = ctx.createLinearGradient(0, horizon, 0, H);
-      floor.addColorStop(0, 'rgba(255,255,255,0.03)'); floor.addColorStop(1, 'rgba(255,255,255,0.085)');
-      ctx.fillStyle = floor; ctx.fillRect(0, horizon, W, floorH);
       for (const d of dice) {
         if (!d.settle) {
-          d.vz -= H * 6.5 * dt;                             // притяжение к «полу»
+          d.vz -= H * 4.8 * dt;                             // притяжение к «полу» (уменьшил с 6.5)
           d.z += d.vz * dt; d.x += d.vx * dt; d.t += d.vt * dt;
           if (d.z <= 0) {
             d.z = 0;
-            if (Math.abs(d.vz) > H * 0.16) { d.vz = -d.vz * (0.3 + Math.random() * 0.12); d.vx *= .72; d.vt *= .72; d.spin = d.spin.map(v => v * .68); }
+            if (Math.abs(d.vz) > H * 0.12) { d.vz = -d.vz * (0.4 + Math.random() * 0.15); d.vx *= .8; d.vt *= .8; d.spin = d.spin.map(v => v * .75); }
             else d.vz = 0;
           }
           if (d.z === 0) {                                  // качение по полу: трение гасит ход и вращение
-            const damp = Math.max(0, 1 - 3.2 * dt);
-            d.vx *= damp; d.vt *= damp; d.spin = d.spin.map(v => v * Math.max(0, 1 - 2.4 * dt));
+            const damp = Math.max(0, 1 - 2.2 * dt);
+            d.vx *= damp; d.vt *= damp; d.spin = d.spin.map(v => v * Math.max(0, 1 - 1.8 * dt));
           }
           // Края отбивают только «наружу»: кости, летящие в кадр из угла, заходят свободно.
-          if (d.x < -W * 0.42 && d.vx < 0) { d.x = -W * 0.42; d.vx = Math.abs(d.vx) * .55; }
-          if (d.x > W * 0.42 && d.vx > 0) { d.x = W * 0.42; d.vx = -Math.abs(d.vx) * .55; }
-          if (d.t < 0.04 && d.vt < 0) { d.t = 0.04; d.vt = Math.abs(d.vt) * .5; }
-          if (d.t > 0.9 && d.vt > 0) { d.t = 0.9; d.vt = -Math.abs(d.vt) * .5; }
+          if (d.x < -W * 0.42 && d.vx < 0) { d.x = -W * 0.42; d.vx = Math.abs(d.vx) * .65; }
+          if (d.x > W * 0.42 && d.vx > 0) { d.x = W * 0.42; d.vx = -Math.abs(d.vx) * .65; }
+          if (d.t < 0.04 && d.vt < 0) { d.t = 0.04; d.vt = Math.abs(d.vt) * .6; }
+          if (d.t > 0.9 && d.vt > 0) { d.t = 0.9; d.vt = -Math.abs(d.vt) * .6; }
           d.angle = d.angle.map((a, i) => a + d.spin[i] * dt);
-          const resting = d.z === 0 && Math.abs(d.vx) < W * 0.06 && Math.abs(d.vt) < 0.06;
+          const resting = d.z === 0 && Math.abs(d.vx) < W * 0.04 && Math.abs(d.vt) < 0.04;
           // Не успели остановиться — приземляем принудительно и всё равно показываем результат.
-          if (elapsed > 1600) { d.z = 0; d.vz = 0; d.vx *= .2; d.vt *= .2; d.settle = true; }
-          else if (elapsed > 900 && resting) d.settle = true;
+          if (elapsed > 1800) { d.z = 0; d.vz = 0; d.vx *= .15; d.vt *= .15; d.settle = true; }
+          else if (elapsed > 1000 && resting) d.settle = true;
         }
         if (d.settle) {                                     // доворачиваем к зрителю грань с результатом
-          d.spin = d.spin.map(v => v * .8);
-          d.x += (d.laneX - d.x) * Math.min(1, dt * 4);     // и аккуратно раскладываем по дорожкам
-          d.t += (d.laneT - d.t) * Math.min(1, dt * 4);
+          d.spin = d.spin.map(v => v * .85);
+          d.x += (d.laneX - d.x) * Math.min(1, dt * 1.5);
+          d.t += (d.laneT - d.t) * Math.min(1, dt * 1.5);
           const want = faceAngles(mesh(d.sides).normals[d.target], d.angle[2]);
           for (let axis = 0; axis < 2; axis++) {
             let delta = (want[axis] - d.angle[axis]) % (Math.PI * 2);
             if (delta > Math.PI) delta -= Math.PI * 2; else if (delta < -Math.PI) delta += Math.PI * 2;
-            d.angle[axis] += delta * Math.min(1, dt * 7);
+            d.angle[axis] += delta * Math.min(1, dt * 2.5);
           }
         }
       }
@@ -460,6 +464,22 @@ window.DiceEngine = (() => {
     }
     raf = requestAnimationFrame(frame);
     return stop;
+  }
+  // ---------- Журнал: автооткрытие при броске ----------
+  let journalAutoCloseTimer = null;
+  function openJournalForRoll() {
+    const journal = openPanel(false);
+    if (journal) {
+      // Закрываем журнал через 8 секунд, если мышка не на нём
+      if (journalAutoCloseTimer) clearTimeout(journalAutoCloseTimer);
+      journalAutoCloseTimer = setTimeout(() => {
+        if (!journal.contains(document.elementFromPoint(document.body.clientWidth/2, document.body.clientHeight/2)) &&
+            !journal.contains(document.activeElement)) {
+          journal.remove();
+          journalRefresh = null;
+        }
+      }, 8000);
+    }
   }
   // ---------- постоянный интерфейс: слева — броски, справа — личный журнал ----------
   /// Бросок из дока: формула, модификатор и режим, как в панели стола.
@@ -529,7 +549,7 @@ window.DiceEngine = (() => {
     const enabled = el('input', { type: 'checkbox', checked: cfg.animate ? '' : null }), fast = el('input', { type: 'checkbox', checked: cfg.speed === 2 ? '' : null }), color = el('input', { type: 'color', value: cfg.color, 'aria-label': 'Цвет кубиков' });
     const save = () => LS.setItem('dice-settings', JSON.stringify({ ...settings(), animate: enabled.checked, speed: fast.checked ? 2 : 1, color: color.value }));
     [enabled, fast, color].forEach(e => e.addEventListener('change', save));
-    const close = () => { panel.remove(); journalRefresh = null; };
+    const close = () => { panel.remove(); journalRefresh = null; if (journalAutoCloseTimer) { clearTimeout(journalAutoCloseTimer); journalAutoCloseTimer = null; } };
     const panel = el('section', { class: 'dice-journal', role: 'dialog', 'aria-label': 'Журнал бросков' },
       el('header', { class: 'dice-journal-head' }, el('div', {}, el('strong', {}, 'Журнал бросков'), el('small', { class: 'muted' }, 'Последние 50 результатов')), el('button', { class: 'dice-journal-close', title: 'Закрыть журнал', 'aria-label': 'Закрыть журнал', onclick: close }, '×')),
       el('div', { class: 'dice-journal-controls' },
@@ -540,6 +560,9 @@ window.DiceEngine = (() => {
         el('p', { class: 'muted small dice-help' }, '4d6kh3 — оставить три лучших. При броске в кампанию участники увидят выбранный цвет.')),
       el('div', { class: 'dice-journal-history-head' }, el('b', {}, 'Последние броски')), list);
     document.body.append(panel);
+    // Отменяем авто-закрытие, если мышка над журналом
+    panel.addEventListener('mouseenter', () => { if (journalAutoCloseTimer) { clearTimeout(journalAutoCloseTimer); journalAutoCloseTimer = null; } });
+    panel.addEventListener('mousemove', () => { if (journalAutoCloseTimer) { clearTimeout(journalAutoCloseTimer); journalAutoCloseTimer = null; } });
     setTimeout(() => expr.focus(), 0);
     return panel;
   }

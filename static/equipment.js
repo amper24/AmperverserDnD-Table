@@ -6,38 +6,24 @@
 // ---------------------------------------------------------------------------
 // Inventory rules shared by the sheet, item templates and editors. Server enforces mutations.
 window.Equipment = (() => {
-  // Слоты: в руки (main/off/both) или на тело (armor, head, neck, cloak, gloves, belt, feet, ring1, ring2). Остальное экипировать нельзя.
+  // Слоты: в руки (main/off/both) или доспех на тело. Остальное экипировать нельзя.
   // Правила зеркалят src/inventory.rs — сервер проверяет всё ещё раз.
-  const slots = { main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', worn: 'Надето', backpack: 'Рюкзак',
-    armor: 'Доспех', head: 'Голова', neck: 'Шея', cloak: 'Плащ', gloves: 'Перчатки', belt: 'Пояс', feet: 'Обувь', ring1: 'Кольцо 1', ring2: 'Кольцо 2' };
+  const slots = { main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', armor: 'Доспех' };
   const kinds = { none: 'Не в руках', one: 'Одноручный', two: 'Двуручный', versatile: 'Универсальный: 1 или 2 руки' };
-  const wearKinds = { '': 'Нельзя экипировать', armor: 'Доспех (тело)', head: 'Голова', neck: 'Шея', cloak: 'Плащ / одеяние', gloves: 'Перчатки / наручи', belt: 'Пояс', feet: 'Обувь', ring: 'Кольцо (до двух)' };
-  const WORN_SLOTS = ['armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2'];
+  const wearKinds = { '': 'Нельзя экипировать', armor: 'Доспех (тело)' };
+  const WORN_SLOTS = ['armor'];
   const SLOTS_V = 2;
-  const wornSlots = kind => kind === 'ring' ? ['ring1', 'ring2'] : kind && wearKinds[kind] ? [kind] : [];
+  const wornSlots = kind => kind && wearKinds[kind] ? [kind] : [];
   const B = '(?:^|[^а-яё])';
   const NOT_EQUIPPABLE = new RegExp(`зель|свиток|свитки|боеприпас|potion|scroll|ammunition|палочк|\\bwands?\\b|конск|horse|barding|упряж|седл|saddle|кошел|pouch|посох|\\bstaff|жезл|\\brods?\\b|${B}щит|\\bshield\\b`);
-  const WEAR_RULES = [
-    ['ring', /кольц|\brings?\b/],
-    ['neck', /амулет|ожерель|медальон|талисман|подвеск|ладанк|брошь|бусы|amulet|necklace|periapt|medallion|pendant|brooch|talisman|scarab|beads/],
-    ['head', new RegExp(`шлем|шляп|колпак|корон|диадем|обруч|${B}маск|${B}очки|${B}глаза|линзы|капюшон|\\bhelm|\\bhat\\b|crown|circlet|headband|goggles|\\bmask|lenses|\\beyes of|\\bhood|\\bcap\\b`)],
-    ['cloak', new RegExp(`плащ|накидк|мантия|одеян|${B}роба(?:$|[^а-яё])|cloak|\\bcape\\b|mantle|\\brobe`)],
-    ['gloves', /перчатк|рукавиц|наручи|браслет|gauntlet|glove|bracer|bracelet/],
-    ['belt', /пояс|\bbelt\b/],
-    ['feet', /сапог|ботин|башмак|туфл|sandal|\bboots?\b|slippers?/],
-    ['armor', new RegExp(`доспех|\\barmor\\b|кольчуг|кирас|${B}латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail`)],
-  ];
-  const JEWELRY = /брошь|brooch|амулет|amulet|ожерель|necklace|кольц|\brings?\b/;
+  const ARMOR_PATTERN = new RegExp(`доспех|\\barmor\\b|кольчуг|кирас|${B}латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail`);
   const SHIELD = new RegExp(`${B}щит|\\bshield\\b`);
   const HAND_MAGIC = /оружие|weapon|посох|\bstaff|жезл|\brods?\b|палочк|\bwands?\b/;
   const itemText = it => [it.name, ...(it.tags || []), ...(it.properties || [])].join(' ').toLowerCase();
-  // Что носят, если не задано: только магия, снаряжение и ценности (плюс доспех-тип armor).
+  // Что носят, если не задано: только доспех.
   function inferWear(it) {
     if (it.type === 'armor') return 'armor';
-    if (!['magic', 'gear', 'treasure'].includes(it.type)) return '';
-    const text = itemText(it);
-    if (NOT_EQUIPPABLE.test(text) && !JEWELRY.test(text)) return '';
-    for (const [kind, re] of WEAR_RULES) if (re.test(text)) return kind;
+    if (ARMOR_PATTERN.test(itemText(it))) return 'armor';
     return '';
   }
   // Хват по умолчанию: оружие, щиты, магические палочки/посохи/жезлы/оружие.
@@ -133,26 +119,64 @@ window.Equipment = (() => {
     return inventory;
   }
   // КД: основа — надетый доспех по его формуле (иначе 10 + Лов), щит в руке добавляет свой бонус, прочие надетые предметы с «+N» суммируются.
+  // Поддержка blocks для кастомизации формулы КД доспеха.
   function armorClassParts(sheet) {
     const dex = Math.floor(((sheet.abilities?.dex ?? 10) - 10) / 2); let base = 10 + dex, baseName = 'Без доспеха', shield = 0, shieldName = '', armored = false;
     const bonuses = [], notes = []; let speedPenalty = 0, stealth = false;
     const str = sheet.abilities?.str ?? 10;
-    for (const it of sheet.inventory || []) {
-      if (!it.equipped || it.qty === 0) continue;
-      // предмет с настройкой без настройки бонусов не даёт
-      if (it.attunement && !it.attuned) { if (/\d/.test(String(it.ac ?? ''))) notes.push(`${it.name || 'Предмет'}: не настроен — бонус к КД не действует`); continue; }
-      const text = String(it.ac ?? '').toLowerCase(), match = text.match(/\d+/); if (!match) continue;
-      const n = Number(match[0]), bonus = text.trimStart().startsWith('+'), name = it.name || 'Предмет';
-      if (handednessOf(it) !== 'none') { if (it.type === 'armor' && n > shield) { shield = n; shieldName = name; } }
-      else if (wearKind(it) === 'armor') {
-        if (!bonus && !armored) {
-          if (it.str_req && str < Number(it.str_req)) { speedPenalty = 10; notes.push(`${name}: нужна Сила ${it.str_req} — скорость −10 фт`); }
-          if (it.stealth_disadvantage) { stealth = true; notes.push(`${name}: помеха на проверки Скрытности`); }
-          base = n + (/лов|dex/.test(text) ? /макс|max/.test(text) ? Math.min(dex, 2) : dex : 0); baseName = name; armored = true; }
-      } else if (bonus) bonuses.push([name, n]);
+    
+    // Сначала проверяем blocks у надетого доспеха
+    const armorItem = sheet.inventory?.find(it => it.equipped && it.worn_slot === 'armor' && it.qty === 1);
+    if (armorItem?.mechanics?.programs) {
+      for (const prog of armorItem.mechanics.programs) {
+        if (prog.trigger !== 'passive') continue;
+        for (const block of prog.blocks || []) {
+          if (block.kind !== 'adjust' || block.field !== 'armor' || block.enabled === false) continue;
+          // Блок может задавать формулу КД напрямую
+          if (block.value) {
+            try {
+              // Пробуем вычислить формулу типа "10 + dex + con"
+              const armorValue = evaluateArmorFormula(block.value, sheet);
+              if (armorValue !== null) {
+                base = armorValue;
+                baseName = armorItem.name || 'Доспех';
+                armored = true;
+                // Проверяем требования к силе
+                if (armorItem.str_req && str < Number(armorItem.str_req)) {
+                  speedPenalty = 10; notes.push(`${baseName}: нужна Сила ${armorItem.str_req} — скорость −10 фт`);
+                }
+                if (armorItem.stealth_disadvantage) {
+                  stealth = true; notes.push(`${baseName}: помеха на проверки Скрытности`);
+                }
+              }
+            } catch (e) { /* ignore */ }
+          }
+        }
+      }
     }
+    
+    // Если blocks не задали КД, используем старую логику
+    if (!armored) {
+      for (const it of sheet.inventory || []) {
+        if (!it.equipped || it.qty === 0) continue;
+        // предмет с настройкой без настройки бонусов не даёт
+        if (it.attunement && !it.attuned) { if (/\d/.test(String(it.ac ?? ''))) notes.push(`${it.name || 'Предмет'}: не настроен — бонус к КД не действует`); continue; }
+        const text = String(it.ac ?? '').toLowerCase(), match = text.match(/\d+/); if (!match) continue;
+        const n = Number(match[0]), bonus = text.trimStart().startsWith('+'), name = it.name || 'Предмет';
+        if (handednessOf(it) !== 'none') {
+          if (it.type === 'armor' && n > shield) { shield = n; shieldName = name; }
+        } else if (wearKind(it) === 'armor') {
+          if (!bonus && !armored) {
+            if (it.str_req && str < Number(it.str_req)) { speedPenalty = 10; notes.push(`${name}: нужна Сила ${it.str_req} — скорость −10 фт`); }
+            if (it.stealth_disadvantage) { stealth = true; notes.push(`${name}: помеха на проверки Скрытности`); }
+            base = n + (/лов|dex/.test(text) ? /макс|max/.test(text) ? Math.min(dex, 2) : dex : 0); baseName = name; armored = true; }
+        } else if (bonus) {
+          bonuses.push([name, n]);
+        }
+      }
+    }
+    
     // Class feature: apply Unarmored Defense only while its armor/shield conditions are met.
-    // A barbarian may still benefit from a shield; a monk may not.
     if (!armored && sheet.unarmored_defense === 'barbarian') {
       base = 10 + dex + Math.floor(((sheet.abilities?.con ?? 10) - 10) / 2);
       baseName = 'Защита без доспехов (варвар)';
@@ -162,6 +186,34 @@ window.Equipment = (() => {
     }
     const parts = [[baseName, base]]; if (shield > 0) parts.push([shieldName, shield]); parts.push(...bonuses);
     return { ac: base + shield + bonuses.reduce((a, b) => a + b[1], 0), parts, notes, speedPenalty, stealth };
+  }
+  
+  // Вычисление формулы КД доспеха (например: "10 + dex + con", "14 + dex max 2")
+  function evaluateArmorFormula(formula, sheet) {
+    const dex = Math.floor(((sheet.abilities?.dex ?? 10) - 10) / 2);
+    const con = Math.floor(((sheet.abilities?.con ?? 10) - 10) / 2);
+    const wis = Math.floor(((sheet.abilities?.wis ?? 10) - 10) / 2);
+    const str = sheet.abilities?.str ?? 10;
+    
+    const normalized = String(formula).toLowerCase().replace(/\s+/g, '');
+    
+    // Простые формулы: 10+dex, 12+dexmax2, 14+dex, и т.д.
+    const match = normalized.match(/^(\d+)(?:\+([a-z]+)(?:max(\d+))?)?$/);
+    if (match) {
+      const base = Number(match[1]);
+      const stat = match[2];
+      const maxVal = match[3] ? Number(match[3]) : null;
+      
+      let statVal = 0;
+      if (stat === 'dex') statVal = dex;
+      else if (stat === 'con') statVal = con;
+      else if (stat === 'wis') statVal = wis;
+      
+      if (maxVal !== null) statVal = Math.min(statVal, maxVal);
+      return base + statVal;
+    }
+    
+    return null;
   }
   const armorClass = sheet => armorClassParts(sheet).ac;
   const activeActions = it => (it.actions || []).map((a, index) => ({ ...a, index })).filter(a => !a.grip || (a.grip === 'two' ? it.hand_slot === 'both' : it.hand_slot !== 'both'));
@@ -200,12 +252,11 @@ window.Equipment = (() => {
     const all = (sheet.inventory || []).filter(it => it && it.equipped && (it.qty ?? 1) === 1);
     const bySlot = {};
     for (const it of all) { const slot = it.hand_slot || it.worn_slot; if (slot) (bySlot[slot] ||= []).push(it); }
-    const rows = ['main', 'off', 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
+    const rows = ['main', 'off', 'both', 'armor']
       .map(key => ({ key, label: slots[key], items: bySlot[key] || [] }));
-    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it)));
+    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)));
     const armor = all.filter(it => it.worn_slot === 'armor' && wearKind(it) === 'armor');
     const twoHanded = bySlot.both || [];
-    const rings = [...(bySlot.ring1 || []), ...(bySlot.ring2 || [])];
     const attunedItems = (sheet.inventory || []).filter(it => it.attuned);
     const check = (ok, text, detail) => ({ ok: !!ok, text, detail: ok ? '' : detail });
     const checks = [

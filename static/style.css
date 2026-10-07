@@ -57,7 +57,7 @@ h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 14px; color: var
 #table.no-side { grid-template-columns: 1fr 0; }
 .tbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .tbar .sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
-#canvasWrap { position: relative; overflow: hidden; background: var(--canvas-bg); }
+#canvasWrap { position: relative; overflow: hidden; background: transparent; }
 #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #canvas.tool-select { cursor: default; }
 #canvas.tool-draw, #canvas.tool-fog, #canvas.tool-ruler, #canvas.tool-pointer { cursor: crosshair; }
@@ -1193,8 +1193,10 @@ button.fav-filter.on svg { fill: currentColor; }
 
 /* ---------- Повышение уровня (мастер в духе D&D Beyond) ---------- */
 .level-cell { display: flex; flex-direction: column; align-items: stretch; }
-.lvlup-btn { align-self: flex-start; margin-top: 6px; background: transparent; color: var(--accent); border: 1px solid var(--accent-line); font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
-.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.lvlup-btn { align-self: center; margin-top: 0; width: 32px; height: 32px; padding: 0; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); border-radius: var(--radius); font-size: 18px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.level-cell { display: flex; flex-direction: column; align-items: stretch; }
+.level-cell .row { align-items: center; gap: 8px; }
 .level-log-row { padding: 4px 0; border-top: 1px solid var(--border); }
 body.lu-open { overflow: hidden; }
 .lu-overlay { --lu-acc: var(--accent); --lu-acc-rgb: 143, 168, 208; --lu-gold: #e0b95a; --lu-ok: #46b06a; --lu-bad: #e0645a; position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 22px;
