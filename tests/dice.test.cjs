@@ -110,7 +110,11 @@ test('local and server results update the journal only, without a screen layer',
   vm.createContext(browser);
   vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), browser);
   const engine = browser.window.DiceEngine;
-  const noScreenLayer = () => ['.dice-global-stage', '.dice-global-burst', '.dice-global-canvas'].every(selector => !document.querySelector(selector));
+  // Единственное, что движок имеет право повесить поверх страницы: журнал, док и кнопка журнала.
+  // Любой другой корневой элемент (сцена, canvas, карточка итога) считается экранным выводом.
+  const ALLOWED_ROOTS = ['.dice-journal', '.dice-dock', '.dice-log-button'];
+  const noScreenLayer = () => document.body.children.every(node => ALLOWED_ROOTS.includes('.' + node.className)) &&
+    ['.dice-global-stage', '.dice-global-burst', '.dice-global-canvas'].every(selector => !document.querySelector(selector));
   const entryCount = () => findAll(document.body.children, '.dice-history-entry').length;
 
   engine.present({ ...engine.evaluate('d20+5'), label: 'Локальная проверка' }, { local: true });
@@ -144,4 +148,23 @@ test('screen-level dice renderer, APIs and styles are removed', () => {
   const css = fs.readFileSync('static/style.css', 'utf8');
   assert.doesNotMatch(js, /dice-global-(?:stage|burst|canvas)|requestAnimationFrame|Math\.random/);
   assert.doesNotMatch(css, /\.dice-global-(?:stage|burst|canvas)/);
+});
+
+// Итог броска живёт только в журнале: центральный вывод вырезан не из одного dice.js,
+// а из всей поставки, поэтому вернуть его не может ни страница стола, ни лист, ни мастер.
+test('no shipped asset can draw a roll result over the screen', () => {
+  const forbidden = /dice-global|dice-stage|dice-scene|dice-burst|dice-canvas|dice-overlay|dice-fullscreen|roll-overlay|roll-banner|roll-stage|roll-scene|result-overlay|result-banner/i;
+  for (const file of fs.readdirSync('static').sort()) {
+    assert.doesNotMatch(fs.readFileSync('static/' + file, 'utf8'), forbidden, `${file} must not carry a screen-level roll layer`);
+  }
+  // Ни одно правило стиля, связанное с бросками, не перекрывает экран и не центрируется поверх интерфейса.
+  const css = fs.readFileSync('static/style.css', 'utf8');
+  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/dice|roll/i.test(selector)) continue;
+    assert.doesNotMatch(body, /inset:\s*0|top:\s*50%|left:\s*50%/, `${selector.trim()} must not cover the screen`);
+  }
+  // Публичный API движка — разбор, бросок и журнал: ни сцены, ни анимации, ни canvas.
+  for (const name of Object.keys(D)) {
+    assert.doesNotMatch(name, /animate|stage|scene|burst|overlay|canvas|dismiss|mesh|rotate|face/i, `${name} must not be a screen renderer`);
+  }
 });

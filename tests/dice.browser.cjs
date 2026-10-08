@@ -32,6 +32,12 @@ const assert = require('node:assert/strict');
     await page.evaluate(() => DiceEngine.present(DiceEngine.evaluate('d20'), { local: true }));
     assert.equal(await page.locator('.dice-journal .dice-history-entry').count(), 2);
     assert.equal(await screenRollLayers.count(), 0, 'consecutive local rolls still only update the journal');
+    // Structural guard: above the table only the journal, the dock and the journal button may exist.
+    const floatingRoots = await page.evaluate(() => [...document.body.children]
+      .filter(node => !['dice-journal', 'dice-dock', 'dice-log-button'].includes(String(node.className).trim()))
+      .filter(node => getComputedStyle(node).position === 'fixed')
+      .map(node => String(node.className)));
+    assert.deepEqual(floatingRoots, [], 'a roll never adds another fixed layer over the screen');
 
     // A network request waits for the server result; the authoritative response updates the journal only.
     const id = await page.evaluate(() => {
