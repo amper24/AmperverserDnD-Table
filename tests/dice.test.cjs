@@ -21,11 +21,15 @@ test('deterministic keep highest and lowest including tied faces', () => {
 test('old saved records drop the right number of duplicate dice', () => {
   assert.deepEqual(plain(D.keptIndices({ rolls: [3,3,3,3], kept: [3,3,3] })), [0,1,2]);
 });
-test('advantage/disadvantage alter only the first plain d20', () => {
+test('advantage/disadvantage affect one d20 check, preserve other dice, and can switch modes', () => {
   assert.equal(D.withMode('d20+5','adv'), '2d20kh1+5');
   assert.equal(D.withMode('1d20-2','dis'), '2d20kl1-2');
+  assert.equal(D.withMode('d6+1d20+2d20','adv'), 'd6+2d20kh1+2d20');
   assert.equal(D.withMode('2d20kh1+3','adv'), '2d20kh1+3');
-  assert.equal(D.withMode('d6+1d20','adv'), 'd6+2d20kh1');
+  assert.equal(D.withMode('2d20kh1+3','dis'), '2d20kl1+3');
+  assert.equal(D.withMode('2d20kl1-2','adv'), '2d20kh1-2');
+  assert.equal(D.withMode('d20kh1+5','dis'), '2d20kl1+5');
+  assert.equal(D.withMode('4d20kh3+3','adv'), '4d20kh3+3', 'custom keep pools are not rewritten');
   assert.equal(D.withMode('d200','adv'), 'd200');
 });
 test('negative terms and constants are computed exactly', () => {
@@ -72,46 +76,53 @@ test('dice model: every face carries a number and the rolled face turns to the v
 test('presentation uses a global screen layer and preserves consecutive rolls', () => {
   const makeElement = (tag, attrs = {}, ...children) => {
     const node = {
-      tag, attrs, className: attrs.class || '', children: [], dataset: {},
+      tag, attrs, className: attrs.class || '', children: [], dataset: {}, parent: null,
+      value: attrs.value ?? '', checked: !!attrs.checked, textContent: '',
       style: { setProperty() {}, top: '' },
       classList: { add() {} },
-      append(...items) { this.children.push(...items.filter(Boolean)); },
-      remove() { this.removed = true; },
-      addEventListener() {},
+      append(...items) { for (const item of items.filter(Boolean)) { item.parent = this; this.children.push(item); } },
+      replaceChildren(...items) { this.children = []; this.append(...items); },
+      remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); },
+      addEventListener() {}, focus() {},
+      contains(target) { return this === target || this.children.some(child => child.contains?.(target)); },
+      querySelector(selector) { return this.children.find(child => '.' + child.className === selector) || null; },
     };
     node.append(...children);
     return node;
   };
+  const find = (nodes, selector) => {
+    for (const node of nodes) {
+      if (!node.removed && '.' + node.className === selector) return node;
+      const nested = find(node.children || [], selector); if (nested) return nested;
+    }
+    return null;
+  };
   const document = {
-    hidden: false,
-    body: { children: [], append(node) { this.children.push(node); } },
-    querySelector(selector) {
-      return selector === '.dice-global-stage'
-        ? this.body.children.find(node => node.className === 'dice-global-stage' && !node.removed) || null
-        : null;
-    },
+    hidden: false, activeElement: null, elementFromPoint() { return null; },
+    body: { children: [], append(...nodes) { this.children.push(...nodes); nodes.forEach(node => { node.parent = this; }); } },
+    querySelector(selector) { return find(this.body.children, selector); },
     querySelectorAll() { return []; },
   };
   const window = { innerHeight: 800, matchMedia: () => ({ matches: false }), addEventListener() {} };
   const browser = {
     window, document, el: makeElement,
     LS: { getItem: () => '{"animate":false}', setItem() {} },
-    toast() {}, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout,
+    toast() {}, crypto: require('node:crypto').webcrypto,
+    setTimeout(fn, delay) { const timer = setTimeout(fn, delay); if (delay >= 8000) timer.unref?.(); return timer; }, clearTimeout,
   };
   vm.createContext(browser);
   vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), browser);
   const engine = browser.window.DiceEngine;
 
   engine.present({ ...engine.evaluate('d20+5'), label: 'Проверка' }, { local: true });
-  engine.present({ ...engine.evaluate('d6'), label: 'Повторный бросок' }, { local: true });
   const stage = document.querySelector('.dice-global-stage');
+  assert.equal(stage.children.filter(node => !node.removed).length, 1, 'the first roll remains visible while its journal auto-opens');
+  assert.ok(document.querySelector('.dice-journal'), 'the first roll also opens the journal');
+  engine.present({ ...engine.evaluate('d6'), label: 'Повторный бросок' }, { local: true });
   assert.ok(stage, 'result layer exists on the global screen');
   assert.equal(stage.children.length, 2, 'a later roll does not replace the previous one');
   assert.ok(stage.children.every(node => node.className === 'dice-global-burst'));
-  const summaries = stage.children.map(node => node.children.find(child => child.className === 'dice-global-summary'));
-  assert.ok(summaries.every(Boolean));
-  assert.equal(summaries[0].children[1].children[0].children[0].className, 'dice-global-total');
-  assert.ok(Number.parseFloat(summaries[1].style.top) > Number.parseFloat(summaries[0].style.top));
+  assert.ok(stage.children.every(node => node.children.length === 0), 'result totals stay in the journal, not in a centered screen overlay');
 
   for (let i = 3; i <= 10; i++) engine.present({ ...engine.evaluate('d6'), label: `Сцена ${i}` }, { local: true });
   assert.equal(stage.children.filter(node => !node.removed).length, 10, 'ten scenes can remain visible together');

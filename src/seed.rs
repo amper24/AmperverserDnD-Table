@@ -68,7 +68,7 @@ enum Upgrade { Keep, AddMechanics, ReplaceLegacy }
 fn classify(current: &serde_json::Value, row_name: &str, new_data: &serde_json::Value, new_name: &str, legacy: Option<&(String, String)>) -> Upgrade {
     let mut baseline = new_data.clone();
     if let Some(o) = baseline.as_object_mut() { o.remove("mechanics"); }
-    if current.get("mechanics").is_none() && *current == baseline && row_name == new_name { return Upgrade::AddMechanics; }
+    if new_data.get("mechanics").is_some() && current.get("mechanics").is_none() && *current == baseline && row_name == new_name { return Upgrade::AddMechanics; }
     if let Some((h_data, h_mech)) = legacy {
         let (cd, cm) = entry_hashes(row_name, current);
         if &cd == h_data && (cm.is_empty() || &cm == h_mech) { return Upgrade::ReplaceLegacy; }
@@ -189,6 +189,12 @@ mod tests {
         assert_eq!(classify(&mech_edit, "Дротик", &new_data, "Дротик", Some(&legacy)), Upgrade::Keep);
         // без записи в таблице хешей ничего не заменяем
         assert_eq!(classify(&legacy_dart(), "Дротик", &new_data, "Дротик", None), Upgrade::Keep);
+    }
+
+    #[test]
+    fn passive_seed_rows_do_not_get_null_mechanics_added() {
+        let passive = json!({ "desc": "Пассивный предмет без отдельной активации" });
+        assert_eq!(classify(&passive, "Рюкзак", &passive, "Рюкзак", None), Upgrade::Keep);
     }
 
     #[test]

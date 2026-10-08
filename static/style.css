@@ -762,17 +762,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dice-global-burst { position: absolute; inset: 0; opacity: 1; pointer-events: none; transition: opacity .42s ease; }
 .dice-global-burst.leaving { opacity: 0; }
 .dice-global-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
-.dice-global-summary { position: absolute; z-index: 1; top: 4vh; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 2px; width: min(96vw, 1400px); transform: translateX(-50%); color: #fff; text-align: center; text-shadow: 0 2px 6px #000, 0 0 22px #000; filter: drop-shadow(0 4px 12px #000); }
-.dice-global-heading { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 11px; color: #f3f0fb; font-size: clamp(12px, 1.25vw, 16px); font-weight: 550; line-height: 1.2; }
-.dice-global-heading b { color: #fff; font-size: clamp(14px, 1.6vw, 20px); }
-.dice-global-results { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 2px clamp(12px, 2vw, 28px); }
-.dice-global-roll { display: inline-flex; align-items: baseline; gap: 7px; min-height: 38px; color: #fff; white-space: nowrap; }
-.dice-global-total { color: var(--dice-color, #a881e8); font-family: Georgia, serif; font-size: clamp(34px, 5vh, 56px); font-weight: 700; line-height: 1; }
-.dice-global-roll.critical .dice-global-total { color: var(--ok); }
-.dice-global-roll.fumble .dice-global-total { color: var(--danger); }
-.dice-global-name { font-size: clamp(12px, 1.5vw, 19px); font-weight: 650; }
-.dice-global-formula { color: #e3deea; font-size: 11px; }
-.dice-global-roll .dice-badge { align-self: center; background: #111b; }
 .dice-label { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
 .dice-result-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .dice-result-row > .grow { min-width: 100px; flex: 1; }
@@ -796,13 +785,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dice-history { max-height: 40vh; overflow-y: auto; margin-top: 10px; }
 .dice-history-entry { border: 1px solid var(--border); padding: 12px; margin-bottom: 8px; border-radius: 8px; }
 @media (max-width: 600px) {
-  .dice-global-heading { gap: 4px 7px; font-size: 11px; }
-  .dice-global-heading b { font-size: 13px; }
-  .dice-global-results { gap: 1px 12px; }
-  .dice-global-roll { gap: 5px; min-height: 31px; }
-  .dice-global-total { font-size: clamp(30px, 5vh, 44px); }
-  .dice-global-name { font-size: 12px; }
-  .dice-global-formula { font-size: 10px; }
   .dice-panel > .row { flex-wrap: wrap; }
   .dice-panel > .row input { flex-basis: 100%; }
 }
@@ -827,12 +809,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 
 /* Hands reference inventory items; a two-handed grip is one item, not two copies. */
-.equipment-hands { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
-.hand-slot { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel2); }
+.equipment-hands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; align-items: stretch; }
+.hand-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel2); }
 .hand-slot.filled { border-color: var(--accent-line); background: var(--panel); }
 .hand-slot > label { text-transform: uppercase; font-size: 10px; letter-spacing: 1.4px; }
-.hand-slot > strong { font-family: Georgia, serif; font-size: 19px; }
-.hand-slot > select { margin-top: 8px; }
+.hand-slot > strong { font-family: Georgia, serif; font-size: 19px; overflow-wrap: anywhere; }
+.hand-slot > .muted { line-height: 1.3; }
+.hand-slot > select { width: 100%; min-width: 0; margin-top: 8px; }
 .item-resource { padding: 6px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .item-resource.empty { color: color-mix(in srgb, var(--danger) 78%, var(--muted)); }
 .item-grip { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
@@ -1175,28 +1158,26 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .comp-compact-detail { margin: 6px; padding: 8px !important; }
 }
 
-/* слоты одежды, избранное */
+/* слоты экипировки, избранное */
 .equipment-panel { margin: 14px 0; }
 .equipment-panel .equipment-hands { margin-bottom: 8px; }
-.equipment-worn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.worn-slot { padding: 10px; gap: 4px; min-width: 0; }
-.worn-slot > strong { font-size: 15px; overflow-wrap: anywhere; }
 .ac-line { margin: 8px 2px 0; }
 button.tiny.fav { background: transparent; }
 button.tiny.fav.on { color: #e0a800; border-color: #e0a800; }
 button.tiny.fav.on svg { fill: currentColor; }
 button.fav-filter.on { color: #e0a800; border-color: #e0a800; }
 button.fav-filter.on svg { fill: currentColor; }
-@media (max-width: 600px) { .equipment-worn { grid-template-columns: repeat(2, 1fr); } }
+
 
 .ac-warn{margin:2px 0 0;color:#e0a458}
 
 /* ---------- Повышение уровня (мастер в духе D&D Beyond) ---------- */
-.level-cell { display: flex; flex-direction: column; align-items: stretch; }
-.lvlup-btn { align-self: center; margin-top: 0; width: 32px; height: 32px; padding: 0; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); border-radius: var(--radius); font-size: 18px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.level-cell { display: flex; flex-direction: column; align-items: stretch; }
-.level-cell .row { align-items: center; gap: 8px; }
+.level-cell { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.level-value-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.level-value-row > input { flex: 1 1 auto; width: 0; min-width: 0; }
+.lvlup-btn { flex: 0 0 38px; width: 38px; height: 34px; margin: 0; padding: 0; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); border-radius: 7px; font-size: 12px; font-weight: 750; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s, border-color .15s, transform .15s; }
+.lvlup-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); transform: translateY(-1px); }
+.lvlup-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .level-log-row { padding: 4px 0; border-top: 1px solid var(--border); }
 body.lu-open { overflow: hidden; }
 .lu-overlay { --lu-acc: var(--accent); --lu-acc-rgb: 143, 168, 208; --lu-gold: #e0b95a; --lu-ok: #46b06a; --lu-bad: #e0645a; position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 22px;

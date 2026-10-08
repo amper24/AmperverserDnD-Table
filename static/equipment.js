@@ -6,25 +6,44 @@
 // ---------------------------------------------------------------------------
 // Inventory rules shared by the sheet, item templates and editors. Server enforces mutations.
 window.Equipment = (() => {
-  // Слоты: в руки (main/off/both) или доспех на тело. Остальное экипировать нельзя.
-  // Правила зеркалят src/inventory.rs — сервер проверяет всё ещё раз.
-  const slots = { main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', armor: 'Доспех' };
+  // Слоты рук и одежды. Эти ключи зеркалят src/inventory.rs; сервер повторно проверяет операции.
+  const slots = {
+    main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', armor: 'Доспех', head: 'Голова',
+    neck: 'Шея', cloak: 'Плащ', gloves: 'Перчатки', belt: 'Пояс', feet: 'Обувь', ring1: 'Кольцо 1', ring2: 'Кольцо 2',
+  };
   const kinds = { none: 'Не в руках', one: 'Одноручный', two: 'Двуручный', versatile: 'Универсальный: 1 или 2 руки' };
-  const wearKinds = { '': 'Нельзя экипировать', armor: 'Доспех (тело)' };
-  const WORN_SLOTS = ['armor'];
+  const wearKinds = {
+    '': 'Нельзя экипировать', armor: 'Доспех (тело)', head: 'Голова', neck: 'Шея', cloak: 'Плащ',
+    gloves: 'Перчатки', belt: 'Пояс', feet: 'Обувь', ring: 'Кольцо',
+  };
+  const WORN_SLOTS = ['armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring'];
   const SLOTS_V = 2;
-  const wornSlots = kind => kind && wearKinds[kind] ? [kind] : [];
+  const wornSlots = kind => ({ armor: ['armor'], head: ['head'], neck: ['neck'], cloak: ['cloak'], gloves: ['gloves'], belt: ['belt'], feet: ['feet'], ring: ['ring1', 'ring2'] }[kind] || []);
   const B = '(?:^|[^а-яё])';
   const NOT_EQUIPPABLE = new RegExp(`зель|свиток|свитки|боеприпас|potion|scroll|ammunition|палочк|\\bwands?\\b|конск|horse|barding|упряж|седл|saddle|кошел|pouch|посох|\\bstaff|жезл|\\brods?\\b|${B}щит|\\bshield\\b`);
   const ARMOR_PATTERN = new RegExp(`доспех|\\barmor\\b|кольчуг|кирас|${B}латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail`);
-  const SHIELD = new RegExp(`${B}щит|\\bshield\\b`);
-  const HAND_MAGIC = /оружие|weapon|посох|\bstaff|жезл|\brods?\b|палочк|\bwands?\b/;
-  const itemText = it => [it.name, ...(it.tags || []), ...(it.properties || [])].join(' ').toLowerCase();
-  // Что носят, если не задано: только доспех.
+  const SHIELD = new RegExp(`${B}щит|\\bshield\\b`, 'i');
+  const JEWELRY = /брошь|brooch|амулет|amulet|ожерель|necklace|кольц|\bring\b/i;
+  const HAND_MAGIC = /оружие|weapon|посох|\bstaff|жезл|\brods?\b|палочк|\bwands?\b/i;
+  const itemWords = value => Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const itemText = it => [it.name || '', ...itemWords(it.tags), ...itemWords(it.properties)].join(' ').toLowerCase();
+  const WEAR_RULES = [
+    ['ring', /кольц|\brings?\b/i],
+    ['neck', /амулет|ожерель|медальон|талисман|подвеск|ладанк|брошь|бусы|amulet|necklace|periapt|medallion|pendant|brooch|talisman|scarab|beads/i],
+    ['head', /шлем|шляп|колпак|корон|диадем|обруч|(?:^|[^а-яё])маск|(?:^|[^а-яё])очки|(?:^|[^а-яё])глаза|линзы|капюшон|\bhelm|\bhat\b|crown|circlet|headband|goggles|\bmask|lenses|\beyes of|\bhood|\bcap\b/i],
+    ['cloak', /плащ|накидк|мантия|одеян|(?:^|[^а-яё])роба(?:$|[^а-яё])|cloak|\bcape\b|mantle|\brobe/i],
+    ['gloves', /перчатк|рукавиц|наручи|браслет|gauntlet|glove|bracer|bracelet/i],
+    ['belt', /пояс|\bbelt\b/i],
+    ['feet', /сапог|ботин|башмак|туфл|sandal|\bboots?\b|slippers?/i],
+    ['armor', ARMOR_PATTERN],
+  ];
+  // Что носят, если хват не задан: сверяемся с категорией и русскими/английскими названиями.
   function inferWear(it) {
     if (it.type === 'armor') return 'armor';
-    if (ARMOR_PATTERN.test(itemText(it))) return 'armor';
-    return '';
+    if (!['magic', 'gear', 'treasure'].includes(it.type)) return '';
+    const text = itemText(it);
+    if (NOT_EQUIPPABLE.test(text) && !JEWELRY.test(text)) return '';
+    return WEAR_RULES.find(([, pattern]) => pattern.test(text))?.[0] || '';
   }
   // Хват по умолчанию: оружие, щиты, магические палочки/посохи/жезлы/оружие.
   // Фокусировки и инструменты держат в руке: священный символ (не амулет), магическая и
@@ -47,6 +66,10 @@ window.Equipment = (() => {
   }
   const choices = it => handednessOf(it) === 'two' ? ['both'] : handednessOf(it) === 'versatile' ? ['main', 'off', 'both'] : handednessOf(it) === 'one' ? ['main', 'off'] : wornSlots(wearKind(it));
   const canEquip = it => choices(it).length > 0;
+  // Активное свойство недоступно, пока предмет требует экипировки/настройки, но они не выполнены.
+  const canUse = it => (it.qty ?? 1) > 0 &&
+    (handednessOf(it) === 'none' && !wearKind(it) || it.equipped === true) &&
+    (it.attunement !== true || it.attuned === true);
   function normalize(it) {
     it.qty ??= 1;
     if (it.type === 'ammo' && !it.ammo_tag && /футляр|колчан|case|quiver/i.test(it.name || '')) it.type = 'gear';
@@ -55,7 +78,7 @@ window.Equipment = (() => {
     if (it.slots_v !== SLOTS_V && it.handedness === 'none') delete it.handedness;
     it.handedness = handednessOf(it); it.wear = wearKind(it); it.slots_v = SLOTS_V; it.favorite = it.favorite === true;
     // Настройка (attunement) есть только у предметов, которые её требуют: иначе флажок — мусор из старых данных.
-    if (it.attuned && it.attunement !== true) it.attuned = false;
+    if (it.attuned && (it.attunement !== true || it.qty !== 1)) it.attuned = false;
     if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = /болт|bolt/.test(text) ? 'bolt' : /стрел|arrow/.test(text) ? 'arrow' : /пул|bullet/.test(text) ? 'bullet' : '';
     if (it.consume === undefined) {
       if (it.type === 'consumable') it.consume = { enabled: true, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
@@ -252,11 +275,12 @@ window.Equipment = (() => {
     const all = (sheet.inventory || []).filter(it => it && it.equipped && (it.qty ?? 1) === 1);
     const bySlot = {};
     for (const it of all) { const slot = it.hand_slot || it.worn_slot; if (slot) (bySlot[slot] ||= []).push(it); }
-    const rows = ['main', 'off', 'both', 'armor']
+    const rows = ['main', 'off', 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
       .map(key => ({ key, label: slots[key], items: bySlot[key] || [] }));
-    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)));
+    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it)));
     const armor = all.filter(it => it.worn_slot === 'armor' && wearKind(it) === 'armor');
     const twoHanded = bySlot.both || [];
+    const rings = all.filter(it => ['ring1', 'ring2'].includes(it.worn_slot));
     const attunedItems = (sheet.inventory || []).filter(it => it.attuned);
     const check = (ok, text, detail) => ({ ok: !!ok, text, detail: ok ? '' : detail });
     const checks = [
@@ -275,5 +299,5 @@ window.Equipment = (() => {
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
 })();

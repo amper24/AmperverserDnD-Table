@@ -159,28 +159,23 @@
   const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
   // У предмета на блоках старый op:'use' не работает (сервер его отклоняет): кнопки
   // «Попадание» и «Урон» просто бросают кубы, а расход и эффекты идут через действие целиком.
-  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || it.qty === 0 || (it.handedness !== 'none' && !it.equipped), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
+  const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || !Equipment.canUse(it), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
   // ---------- Экипировка: руки и доспех ----------
   function handPanel() {
-    return el('div', { class: 'equipment-panel' }, handsSection(), armorSection(), acLine());
+    return el('div', { class: 'equipment-panel' }, handsSection(), acLine());
   }
-  // Слот доспеха
+  // Карточка доспеха использует тот же слот/визуальный компонент, что и руки.
   function armorSection() {
-    const occupied = key => s.inventory.find(i => i.equipped && i.worn_slot === key);
-    const current = occupied('armor');
+    const current = s.inventory.find(i => i.equipped && i.worn_slot === 'armor');
     const choices = s.inventory.filter(it => it.qty === 1 && Equipment.wornSlots(it.wear).includes('armor'));
-    if (readonly && !current) return null;
-    return el('div', { class: 'equipment-worn' }, 
-      el('div', { class: 'worn-slot armor-slot' + (current ? ' filled' : '') },
-        el('label', {}, Equipment.slots.armor),
-        el('strong', {}, current?.name || 'Пусто'),
-        choices.length > 0 ? el('select', { 'aria-label': Equipment.slots.armor, onchange: e => {
-          if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
-          if (e.target.value) inventoryOp({ op: 'equip', item_uid: e.target.value, slot: 'armor' });
-        } }, el('option', { value: '', selected: !current ? '' : null }, '— Пусто —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name)))
-        : null
-      )
-    );
+    return el('div', { class: 'hand-slot armor-slot' + (current ? ' filled' : '') },
+      el('label', {}, Equipment.slots.armor),
+      el('strong', {}, current?.name || 'Пусто'),
+      el('span', { class: 'muted small' }, current ? 'Надет на тело' : 'Защита тела'),
+      !readonly && choices.length ? el('select', { 'aria-label': Equipment.slots.armor, onchange: e => {
+        if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
+        if (e.target.value) inventoryOp({ op: 'equip', item_uid: e.target.value, slot: 'armor' });
+      } }, el('option', { value: '', selected: !current ? '' : null }, '— Пусто —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name))) : null);
   }
   // Из чего сложился КД (всегда считается от доспеха).
   function acLine() {
@@ -196,7 +191,7 @@
   }
   function handsSection() {
     const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
-    return el('section', { class: 'equipment-hands' }, ...['main', 'off'].map(key => {
+    return el('section', { class: 'equipment-hands', 'aria-label': 'Экипировка рук и доспеха' }, ...['main', 'off'].map(key => {
       const current = occupied(key);
       const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none' && Equipment.canEquip(it));
       return el('div', { class: 'hand-slot' + (current ? ' filled' : '') }, el('label', {}, Equipment.slots[key]),
@@ -205,7 +200,7 @@
           if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
           const it = s.inventory.find(i => i.uid === e.target.value); if (it) inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.handedness === 'two' ? 'both' : key });
         } }, el('option', { value: '', selected: !current ? '' : null }, '— Свободна —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name + (it.handedness === 'two' ? ' · 2 руки' : '')))));
-    }));
+    }), armorSection());
   }
 
   const prof = () => s.proficiency_bonus || Math.ceil(1 + (s.level || 1) / 4);
@@ -403,8 +398,12 @@
         hint: bgModule ? `Предыстория — снимок модуля (${bgModule.source || 'справочник'}): даёт навыки, инструменты и снаряжение.` : 'Перетащите блок предыстории из справочника или кликните, чтобы вписать название.' }),
       headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentControl(), hint: 'Мировоззрение влияет только на отыгрыш: кликните и выберите из списка.' }));
     const head = el('div', { class: 'head' }, portrait, el('div', {},
-      el('div', { class: 'row', style: 'margin-bottom:6px' }, el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')), el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), inp('level', '1', 'number')), el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
-      readonly || (s.level || 1) >= 20 ? null : el('div', { class: 'level-cell', style: 'margin-top: 4px;' }, el('button', { class: 'lvlup-btn', type: 'button', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '▲')),
+      el('div', { class: 'row', style: 'margin-bottom:6px' },
+        el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')),
+        el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), el('div', { class: 'level-value-row' },
+          inp('level', '1', 'number'),
+          readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'lvlup-btn', type: 'button', 'aria-label': 'Повысить уровень', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '+1'))),
+        el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       blocks));
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,

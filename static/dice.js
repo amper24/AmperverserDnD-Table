@@ -54,11 +54,17 @@ window.DiceEngine = (() => {
   const natural = r => { const p = r.parts.find(p => p.sides === 20 || /d20(?!\d)/.test(p.term)); return p ? keptIndices(p).map(i => p.rolls[i]) : []; };
   function withMode(expr, mode) {
     if (!['adv', 'dis'].includes(mode)) return expr;
-    const normalized = normalize(expr);
-    // Заменяем любой dN на 2dN с соответствующим keep для преимущества/помехи
-    return normalized.replace(/([+-])?(\d*)d(\d+)(?!\d|k)/g, (_, sign, n, sides) => {
-      const count = n || '1';
-      return `${sign || ''}${count === '1' ? '2' : count * 2}d${sides}k${mode === 'adv' ? 'h' : 'l'}1`;
+    const normalized = normalize(expr), keep = mode === 'adv' ? 'h' : 'l';
+    // Один режим относится к первой проверке к20. Уже заданный бросок 2d20kh1/kl1
+    // переключаем между режимами, а прочие кости и независимые проверки не трогаем.
+    return normalized.replace(/(^|[+-])(\d*)d20(?:k([hl])(\d+))?($|[+-])/, (whole, sign, n, priorMode, priorKeep, tail) => {
+      const count = Number(n || 1), kept = Number(priorKeep || count);
+      const canonicalMode = count === 2 && kept === 1;
+      const plainPool = !priorMode || kept === count;
+      if (priorMode && !canonicalMode && !plainPool) return whole;
+      const dice = canonicalMode ? 2 : count * 2;
+      const keepCount = canonicalMode ? 1 : count;
+      return `${sign}${dice}d20k${keep}${keepCount}${tail}`;
     });
   }
   const doubleDice = expr => normalize(expr).replace(/(\d*)d(\d+)(?:k([hl])(\d+))?/g, (_, n, sides, mode, keep) => `${Number(n || 1) * 2}d${sides}${mode ? `k${mode}${Number(keep) * 2}` : ''}`);
@@ -237,7 +243,9 @@ window.DiceEngine = (() => {
   function layoutBursts() {
     const height = window.innerHeight || 800;
     const step = Math.max(58, Math.min(82, height * 0.08));
-    bursts.forEach((entry, index) => { if (entry.canvas) entry.canvas.style.top = `${Math.round(height * 0.04 + index * step)}px`; });
+    bursts.forEach((entry, index) => {
+      if (entry.canvas) entry.canvas.style.top = `${Math.round(height * 0.04 + index * step)}px`;
+    });
   }
   /// Значения костей для полноэкранной анимации; источник результата остаётся авторитетным.
   function diceOf(payload) {
@@ -249,27 +257,7 @@ window.DiceEngine = (() => {
     });
     return out;
   }
-  /// Крупный итог броска поверх всего экрана; подробности остаются в журнале.
-  function screenSummary(item, payload) {
-    const mark = audienceLabel(audienceOf(payload));
-    const heading = item.meta.local ? 'Локальный бросок' : item.meta.author || 'Бросок';
-    const rows = (payload.rolls || [payload]).slice(0, 8).map(r => {
-      const nat = natural(r), d20 = !['damage', 'heal'].includes(r.kind), critical = d20 && nat.includes(20), fumble = d20 && nat.includes(1);
-      return el('div', { class: 'dice-global-roll' + (critical ? ' critical' : fumble ? ' fumble' : ''), title: `${r.name || r.expr}: ${r.expr} = ${r.total}` },
-        el('strong', { class: 'dice-global-total' }, r.total),
-        el('span', { class: 'dice-global-name' }, r.name || r.expr),
-        r.name ? el('small', { class: 'dice-global-formula' }, r.expr) : null,
-        critical ? el('span', { class: 'dice-badge' }, r.kind === 'attack' ? 'КРИТ' : 'НАТ. 20') : fumble ? el('span', { class: 'dice-badge' }, 'НАТ. 1') : null,
-        r.doubled ? el('span', { class: 'dice-badge' }, '×2 кости') : null);
-    });
-    return el('div', { class: 'dice-global-summary' },
-      el('div', { class: 'dice-global-heading' },
-        el('span', {}, heading),
-        payload.label ? el('b', {}, payload.label) : null,
-        mark ? el('span', { class: 'dice-visibility' }, mark) : null),
-      el('div', { class: 'dice-global-results' }, ...rows));
-  }
-  /// Каждый принятый бросок появляется крупно на общем экране; новые броски не заменяют предыдущие.
+  /// Каждый принятый бросок анимируется на общем экране; значения и подробности остаются в журнале.
   function spawn(item) {
     const cfg = settings(), payload = item.payload, color = validDiceColor(payload.dice_color || cfg.color);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -277,7 +265,7 @@ window.DiceEngine = (() => {
     const canvas = cfg.animate && !reduced && dice.length && !document.hidden
       ? el('canvas', { class: 'dice-global-canvas', 'aria-hidden': 'true' }) : null;
     const root = el('div', { class: 'dice-global-burst', style: `--dice-color:${color}` }, canvas);
-    const entry = { root, timer: null, cancel: null };
+    const entry = { root, canvas, timer: null, cancel: null };
     stageBox().append(root);
     bursts.push(entry);
     while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);
@@ -475,7 +463,8 @@ window.DiceEngine = (() => {
   // ---------- Журнал: автооткрытие при броске ----------
   let journalAutoCloseTimer = null;
   function openJournalForRoll() {
-    const journal = openPanel(false);
+    // First roll opens the journal too, but must keep the scene spawned just above it.
+    const journal = openPanel(false, { dismissScenes: false });
     if (journal) {
       // Обновляем журнал, если он уже открыт
       if (journalRefresh) journalRefresh();
@@ -533,14 +522,14 @@ window.DiceEngine = (() => {
     return true;
   }
   /// Компактный журнал последних бросков кампании, личных результатов, повтора и настроек.
-  function openPanel(toggle = true) {
+  function openPanel(toggle = true, { dismissScenes = true } = {}) {
     const currentPanel = document.querySelector('.dice-journal');
     if (currentPanel) {
       if (!toggle) return currentPanel;
       currentPanel.remove(); journalRefresh = null; return null;
     }
     const cfg = settings();
-    dismiss(); // журнал показывает те же броски подробнее — полноэкранная анимация за ним не нужна
+    if (dismissScenes) dismiss(); // ручное открытие журнала убирает уже идущие сцены; автооткрытие их сохраняет
     const expr = el('input', { value: '1d20', placeholder: '2d6+3', 'aria-label': 'Формула броска' });
     const mode = el('select', { 'aria-label': 'Режим броска' }, ...[['normal', 'Обычно'], ['adv', 'Преимущество'], ['dis', 'Помеха']].map(([v, n]) => el('option', { value: v }, n)));
     const audience = audienceSelect();

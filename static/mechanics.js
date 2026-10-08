@@ -205,7 +205,9 @@ window.Mechanics = (() => {
     }
     // Старые действия: урон и атака — только броски, лечение применяется владельцу.
     for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push(Object.assign({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||''},a.kind==='heal'?{apply:true}:null));
-    if(!blocks.some(b=>b.kind==='manual') && (doc.desc || doc.text)) blocks.push({...block('manual'),text:doc.desc||doc.text});
+    // Описание снаряжения само по себе не доказывает, что предмет активируется.
+    // Для предмета правило добавляется только рядом с явным расходом или броском; пассивный текст остаётся описанием.
+    if(category!=='item' && !blocks.some(b=>b.kind==='manual') && (doc.desc || doc.text)) blocks.push({...block('manual'),text:doc.desc||doc.text});
     doc.mechanics={version:VERSION,origin:'legacy',programs:blocks.length?[...extra,{id:'use',name:category==='spell'?'Сотворить':category==='item'?'Использовать':'Применить',trigger:'use',blocks}]:extra};
     return normalize(doc.mechanics);
   }

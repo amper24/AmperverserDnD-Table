@@ -803,9 +803,16 @@ def process(root, src, ed, report):
     final = []
     for x, rm, em, ov in zip(out, ru_entries, en_entries, overlays):
         data = x['data']
-        data['mechanics'] = rm['data']['mechanics']
-        mp = diff(rm['data']['mechanics'], em['data']['mechanics'])
-        if mp: ov['mechanics'] = mp
+        ru_mechanics = rm['data'].get('mechanics')
+        en_mechanics = em['data'].get('mechanics')
+        ov.pop('mechanics', None)
+        if ru_mechanics is not None:
+            data['mechanics'] = ru_mechanics
+        else:
+            data.pop('mechanics', None)
+        if ru_mechanics is not None and en_mechanics is not None:
+            mp = diff(ru_mechanics, en_mechanics)
+            if mp: ov['mechanics'] = mp
         data['i18n'] = {'en': ov}
         final.append({'category': x['category'], 'slug': x['slug'], 'name': x['name'], 'data': data})
         # контроль: в английском виде не должно быть кириллицы, в русском — латиницы

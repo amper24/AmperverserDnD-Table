@@ -137,6 +137,10 @@ def equipment(ed):
         cats = [c['name'] for c in e.get('equipment_categories', [])] or [e.get('equipment_category', {}).get('name', '')]
         cat = 'Weapon' if any(c in ('Weapon', 'Weapons') for c in cats) else 'Armor' if any(c in ('Armor',) for c in cats) else cats[0]
         d = {'cost': '', 'weight': e.get('weight', 0), 'desc': txt(e.get('desc') or e.get('description'))}
+        if e.get('special'):
+            special = txt(e['special'])
+            if special and special not in d['desc']:
+                d['desc'] = (d['desc'] + '\n' if d['desc'] else '') + special
         if e.get('cost'): d['cost'] = f"{e['cost']['quantity']} " + {'cp': 'мм', 'sp': 'см', 'ep': 'эм', 'gp': 'зм', 'pp': 'пм'}.get(e['cost']['unit'], e['cost']['unit'])
         if cat == 'Weapon':
             d['type'] = 'weapon'
@@ -172,10 +176,14 @@ def equipment(ed):
         out.append(entry('item', e['index'], e['name'], d, R.equipment(e['name']), ed))
     for e in load(ed, 'Magic-Items'):
         rarity = (e.get('rarity') or {}).get('name', '')
+        desc = txt(e.get('desc'))
+        # В 5e-database SRD 5.2 этот один текст ошибочно подменён записью другого зелья.
+        if ed == '2024' and e.get('index') == 'potion-of-gaseous-form':
+            desc = "Potion, rare\nWhen you drink this potion, you gain the effect of the gaseous form spell for 1 hour (no concentration required) or until you end the effect as a Bonus Action. This potion's container seems to hold fog that moves and pours like water."
         d = {'type': 'magic', 'category': e.get('equipment_category', {}).get('name', ''),
              'rarity': {'Common': 'Обычный', 'Uncommon': 'Необычный', 'Rare': 'Редкий', 'Very Rare': 'Очень редкий', 'Legendary': 'Легендарный', 'Artifact': 'Артефакт', 'Varies': 'Разная'}.get(rarity, rarity or 'Необычный'),
-             'desc': txt(e.get('desc'))}
-        if re.search(r'requires attunement', d['desc'], re.I): d['attunement'] = True
+             'desc': desc}
+        if e.get('attunement') or re.search(r'requires attunement', d['desc'], re.I): d['attunement'] = True
         m = re.search(r'has (\d+) charges', d['desc'])
         if m: d['charges'] = int(m[1])
         if e.get('variants'): d['variants'] = [v['name'] for v in e['variants']]

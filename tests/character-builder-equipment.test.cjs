@@ -358,6 +358,22 @@ test('skills state survives an empty draft without modules', () => {
   assert.equal(state.klass, null);
 });
 
+test('compendium import keeps 2024 weapon mastery and action mechanics', () => {
+  const it = ctx.Modules.itemFromCompendium({ name: 'Greatsword', category: 'item', data: {
+    type: 'weapon', category: 'Воинское рукопашное', damage: '2к6', damage_type: 'рубящий',
+    properties: ['Двуручное', 'Тяжёлое'], mastery: 'Graze', edition: '2024',
+  } });
+  assert.equal(it.mastery, 'Graze');
+  assert.deepEqual(plain(it.actions.map(a => a.kind)), ['attack', 'damage']);
+  const magic = ctx.Modules.itemFromCompendium({ name: 'Ring of Protection', category: 'item', data: {
+    type: 'magic', attunement: true, charges: 3,
+    mechanics: { version: 1, programs: [{ id: 'use', name: 'Use', trigger: 'use', blocks: [{ id: 'm', kind: 'manual', text: 'Rule' }] }] },
+  } });
+  assert.equal(magic.attunement, true);
+  assert.deepEqual(plain(magic.charges), { cur: 3, max: 3, recharge: '' });
+  assert.equal(magic.mechanics.programs[0].blocks[0].kind, 'manual');
+});
+
 test('real SRD records resolve for every class and background of both editions', () => {
   for (const [file, edition] of [['data_seed/srd_2014.json', '2014'], ['data_seed/srd_2024.json', '2024']]) {
     const catalog = JSON.parse(fs.readFileSync(file, 'utf8'))

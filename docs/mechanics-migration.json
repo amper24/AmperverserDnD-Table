@@ -11,14 +11,13 @@
       "feat": 1,
       "condition": 15
     },
+    "mechanics_records": 981,
     "blocks": {
-      "consume": 339,
-      "manual": 4088,
-      "attack": 585,
+      "consume": 384,
+      "manual": 3776,
+      "attack": 586,
       "damage": 725,
-      "roll": 102,
-      "heal": 4,
-      "grant_item": 4,
+      "roll": 106,
       "passive": 109,
       "condition": 30
     }
@@ -35,14 +34,13 @@
       "feat": 17,
       "condition": 15
     },
+    "mechanics_records": 986,
     "blocks": {
-      "consume": 339,
-      "manual": 3666,
+      "consume": 373,
+      "manual": 3443,
       "attack": 499,
       "damage": 811,
-      "roll": 2,
-      "heal": 1,
-      "grant_item": 1,
+      "roll": 3,
       "passive": 90,
       "condition": 30
     }

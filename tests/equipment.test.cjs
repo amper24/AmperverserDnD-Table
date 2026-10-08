@@ -97,6 +97,21 @@ test('настройка: без неё предмет не влияет на К
   assert.equal(d.speedPenalty, 10); assert.equal(d.stealth, true); assert.equal(d.notes.length, 3);
   s.inventory[0].attuned = true; s.abilities.str = 13; d = E.armorClassParts(s); assert.equal(d.ac, 17); assert.equal(d.speedPenalty, 0);
 });
+test('активация доступна только при наличии предмета, экипировке и обязательной настройке', () => {
+  const potion = E.normalize({ name: 'Potion of Healing', type: 'consumable', qty: 1 });
+  assert.equal(E.canUse(potion), true);
+  potion.qty = 0; assert.equal(E.canUse(potion), false);
+  const ring = E.normalize({ name: 'Ring of Protection', type: 'magic', qty: 1, attunement: true, attuned: false });
+  assert.equal(E.canUse(ring), false, 'нужна настройка и кольцо не надето');
+  ring.attuned = true; assert.equal(E.canUse(ring), false, 'настроенное кольцо всё ещё нужно надеть');
+  ring.equipped = true; assert.equal(E.canUse(ring), true);
+  const wand = E.normalize({ name: 'Wand of Fireballs', type: 'magic', qty: 1 });
+  assert.equal(E.canUse(wand), false, 'палочку нужно взять в руку');
+  wand.equipped = true; assert.equal(E.canUse(wand), true);
+  const ringStack = E.normalize({ name: 'Ring of Protection', type: 'magic', qty: 2, attunement: true, attuned: true });
+  assert.equal(ringStack.attuned, false, 'стопку нельзя настроить как один предмет');
+  assert.equal(E.canUse(E.normalize({ name: 'Backpack', type: 'gear', qty: 1 })), true, 'обычное снаряжение не нужно экипировать');
+});
 test('настройка по правилам: только предметы с требованием, не больше трёх одновременно', () => {
   const inv = [
     { uid: 'a', name: 'Кольцо защиты', type: 'magic', attunement: true, attuned: true, qty: 1 },

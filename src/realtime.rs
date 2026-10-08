@@ -194,6 +194,26 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
     Some(json!({ "expr": expr, "parts": parts, "total": total }))
 }
 
+/// Applies advantage/disadvantage to the first d20 term, leaving modifiers and other dice intact.
+/// Canonical 2d20kh1/kl1 formulas can switch modes without adding dice a second time.
+pub(crate) fn with_d20_mode(expr: &str, mode: &str) -> String {
+    if !["adv", "dis"].contains(&mode) { return expr.to_string(); }
+    let expr = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>()
+        .to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
+    let keep_mode = if mode == "adv" { "h" } else { "l" };
+    let re = Regex::new(r"(^|[+\-])(\d*)d20(?:k([hl])(\d+))?($|[+\-])").unwrap();
+    re.replace(&expr, |c: &regex::Captures| {
+        let count = c[2].parse::<usize>().unwrap_or(1);
+        let prior_mode = c.get(3);
+        let kept = c.get(4).and_then(|v| v.as_str().parse::<usize>().ok()).unwrap_or(count);
+        let canonical_mode = prior_mode.is_some() && count == 2 && kept == 1;
+        let plain_pool = prior_mode.is_none() || kept == count;
+        if prior_mode.is_some() && !canonical_mode && !plain_pool { return c[0].to_string(); }
+        let (dice, keep) = if canonical_mode { (2, 1) } else { (count.saturating_mul(2), count) };
+        format!("{}{}d20k{}{}{}", &c[1], dice, keep_mode, keep, &c[5])
+    }).into_owned()
+}
+
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
 pub(crate) fn double_dice(expr: &str) -> String {
     let expr = expr.to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
@@ -494,5 +514,15 @@ mod dice_tests {
         assert_eq!(double_dice("4d6kh3+1d8kl1+5"), "8d6kh6+2d8kl2+5");
         assert_eq!(roll_expression("−d6+2").unwrap()["expr"], "-d6+2");
         assert_eq!(nat_d20(&json!({"parts":[{"sides":20,"kept":[20]}]})), (true, false));
+    }
+    #[test]
+    fn advantage_and_disadvantage_transform_only_the_first_d20() {
+        assert_eq!(with_d20_mode("1d20+5+2d6", "adv"), "2d20kh1+5+2d6");
+        assert_eq!(with_d20_mode("d6+1d20-2d20", "dis"), "d6+2d20kl1-2d20");
+        assert_eq!(with_d20_mode("2d20kh1+3", "dis"), "2d20kl1+3");
+        assert_eq!(with_d20_mode("2d20kl1-2", "adv"), "2d20kh1-2");
+        assert_eq!(with_d20_mode("d20kh1+5", "adv"), "2d20kh1+5");
+        assert_eq!(with_d20_mode("d200+3", "adv"), "d200+3");
+        assert_eq!(with_d20_mode("4d20kh3+3", "adv"), "4d20kh3+3");
     }
 }

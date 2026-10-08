@@ -82,6 +82,15 @@ pub fn wear_kind(it: &Value) -> String {
 
 pub fn equippable(it: &Value) -> bool { handedness(it) != "none" || !wear_kind(it).is_empty() }
 
+/// Shared server-side gate for both legacy item rolls and declarative item programs.
+pub fn validate_use(it: &Value) -> ApiResult<()> {
+    if it["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
+    if it["attunement"] == true && it["attuned"] != true { return Err(AppError::bad("Сначала настройтесь на предмет")); }
+    if handedness(it) != "none" && it["equipped"] != true { return Err(AppError::bad("Сначала возьмите предмет в руку")); }
+    if !wear_kind(it).is_empty() && it["equipped"] != true { return Err(AppError::bad("Сначала наденьте предмет")); }
+    Ok(())
+}
+
 pub fn slots(slot: &str) -> &[&str] { match slot { "main" => &["main"], "off" => &["off"], "both" => &["main", "off"], _ => &[] } }
 pub fn unequip(it: &mut Value) { it["equipped"] = json!(false); it["hand_slot"] = Value::Null; it["worn_slot"] = Value::Null; }
 pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
@@ -135,6 +144,12 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
             // такой предмет экипировать нельзя (расходник, снаряжение, боеприпас…) — остаётся в рюкзаке
             unequip(it);
         }
+    }
+    let mut attuned = 0;
+    for it in sheet["inventory"].as_array_mut().unwrap() {
+        if it["attuned"] != true { continue; }
+        if it["attunement"] != true || it["qty"].as_i64() != Some(1) || attuned >= 3 { it["attuned"] = json!(false); }
+        else { attuned += 1; }
     }
     for path in ["/features", "/spells/known"] {
         if let Some(list)=sheet.pointer_mut(path) {
@@ -253,14 +268,13 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     let mut next = sheet.clone(); normalize(&mut next)?;
     let inv = next["inventory"].as_array().unwrap();
     let item = inv.iter().find(|i| i["uid"] == uid).cloned().ok_or_else(|| AppError::not_found("Предмет не найден"))?;
+    validate_use(&item)?;
     // Предмет на блоках: старый op:'use' выполняет его действие целиком, а не падает с ошибкой.
     if let Some(m) = item.get("mechanics") {
         let pid = m["programs"].as_array().and_then(|a| a.iter().find(|p| p["trigger"] == "use")).and_then(|p| p["id"].as_str()).unwrap_or("").to_string();
         if pid.is_empty() { return Err(AppError::bad("У предмета нет исполняемого действия")); }
         return crate::mechanics::execute(sheet, "item", uid, &pid, mode, false);
     }
-    if item["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
-    if handedness(&item) != "none" && item["equipped"] != true { return Err(AppError::bad("Сначала возьмите предмет в руку")); }
     if indices.len() > 8 || indices.iter().collect::<HashSet<_>>().len() != indices.len() { return Err(AppError::bad("Неверный набор действий")); }
     let actions = item["actions"].as_array().cloned().unwrap_or_default(); let mut selected = Vec::new();
     for &idx in indices {
@@ -294,10 +308,7 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     for a in selected {
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
-        if !["damage", "heal"].contains(&kind) && ["adv", "dis"].contains(&mode) {
-            let re = regex::Regex::new(r"(^|[+\-])(1?)[dк]20($|[+\-])").unwrap();
-            expr = re.replace(&expr, |c: &regex::Captures| format!("{}2d20k{}1{}", &c[1], if mode == "adv" { "h" } else { "l" }, &c[3])).to_string();
-        }
+        if !["damage", "heal"].contains(&kind) { expr = crate::realtime::with_d20_mode(&expr, mode); }
         let base = expr.clone(); let doubled = crit && kind == "damage";
         if doubled { expr = crate::realtime::double_dice(&expr); }
         let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
@@ -337,7 +348,9 @@ mod tests {
     #[test] fn one_arrow_per_attack_not_per_damage_roll() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap();
         let r=use_item(&mut s,"bow",&[0,1],"adv").unwrap(); assert_eq!(s["inventory"][3]["qty"],1); assert_eq!(r["spent"][0]["amount"],1);
-        assert!(r["rolls"][0]["expr"].as_str().unwrap().starts_with("2d20kh1"));
+        assert_eq!(r["rolls"][0]["expr"],"2d20kh1+5");
+        let mut dis=fixture(); equip(&mut dis,"bow","both").unwrap();
+        let r=use_item(&mut dis,"bow",&[0],"dis").unwrap(); assert_eq!(r["rolls"][0]["expr"],"2d20kl1+5");
         use_item(&mut s,"bow",&[1],"").unwrap(); assert_eq!(s["inventory"][3]["qty"],1);
         use_item(&mut s,"bow",&[0],"").unwrap(); let before=s.clone();
         assert!(use_item(&mut s,"bow",&[0],"").is_err()); assert_eq!(s,before);
@@ -384,6 +397,33 @@ mod tests {
         let inv = s["inventory"].as_array_mut().unwrap(); inv[8]["equipped"] = json!(true);
         normalize(&mut s).unwrap();
         assert_eq!(s["inventory"][8]["equipped"], false);
+    }
+    #[test] fn active_magic_items_require_attunement_and_their_equipped_slot() {
+        let mut ring = json!({"uid":"ring","name":"Ring of Protection","type":"magic","qty":1,"attunement":true,"attuned":false});
+        assert!(validate_use(&ring).unwrap_err().1.contains("настройтесь"));
+        ring["attuned"] = json!(true);
+        assert!(validate_use(&ring).unwrap_err().1.contains("наденьте"));
+        ring["equipped"] = json!(true); ring["worn_slot"] = json!("ring1");
+        assert!(validate_use(&ring).is_ok());
+        let mut wand = json!({"uid":"wand","name":"Wand of Fire","type":"magic","qty":1});
+        assert!(validate_use(&wand).unwrap_err().1.contains("возьмите предмет в руку"));
+        wand["equipped"] = json!(true); wand["hand_slot"] = json!("main");
+        assert!(validate_use(&wand).is_ok());
+    }
+    #[test] fn server_normalization_limits_attunement_to_three_valid_items() {
+        let mut s = json!({"inventory":[
+            {"uid":"a","name":"Ring A","type":"magic","attunement":true,"attuned":true},
+            {"uid":"b","name":"Ring B","type":"magic","attunement":true,"attuned":true},
+            {"uid":"c","name":"Ring C","type":"magic","attunement":true,"attuned":true},
+            {"uid":"d","name":"Ring D","type":"magic","attunement":true,"attuned":true},
+            {"uid":"e","name":"Rope","type":"gear","attuned":true},
+            {"uid":"f","name":"Ring stack","type":"magic","qty":2,"attunement":true,"attuned":true}
+        ]});
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"].as_array().unwrap().iter().filter(|it| it["attuned"] == true).count(), 3);
+        assert_eq!(s["inventory"][3]["attuned"], false);
+        assert_eq!(s["inventory"][4]["attuned"], false);
+        assert_eq!(s["inventory"][5]["attuned"], false, "стопку нельзя настроить как один предмет");
     }
     #[test] fn wear_is_inferred_for_russian_and_english_names_and_old_items_are_migrated() {
         let mut s = gear(); normalize(&mut s).unwrap();

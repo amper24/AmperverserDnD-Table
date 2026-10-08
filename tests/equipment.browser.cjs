@@ -33,7 +33,24 @@ const assert = require('node:assert/strict');
       }
       return json([]);
     });
-    await page.goto('https://equipment.test/sheet/hero'); await page.evaluate(() => Consent.set(false)); await page.getByRole('button',{name:/Инвентарь/}).click();
+    await page.goto('https://equipment.test/sheet/hero'); await page.evaluate(() => Consent.set(false));
+    const levelInput = page.locator('.level-value-row input');
+    const levelButton = page.getByRole('button', { name: 'Повысить уровень' });
+    await page.waitForSelector('.level-value-row .lvlup-btn');
+    assert.equal(await levelButton.count(), 1);
+    const levelBox = await levelInput.boundingBox(), levelActionBox = await levelButton.boundingBox();
+    assert.ok(Math.abs(levelBox.y - levelActionBox.y) < 2, 'level-up action sits beside the level value, not on a detached row');
+    assert.ok(levelActionBox.x >= levelBox.x + levelBox.width, 'level-up action is aligned after the number input');
+
+    await page.getByRole('button',{name:/Инвентарь/}).click();
+    const equipmentSlots = page.locator('.inv .equipment-hands .hand-slot');
+    assert.equal(await equipmentSlots.count(), 3, 'main hand, off hand, and armor share one slot row');
+    const slotBoxes = await equipmentSlots.evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().toJSON()));
+    assert.ok(slotBoxes.every(box => Math.abs(box.y - slotBoxes[0].y) < 2), 'armor stays on the hand-slot row');
+    assert.ok(slotBoxes[0].x < slotBoxes[1].x && slotBoxes[1].x < slotBoxes[2].x, 'the armor card follows both hand cards');
+    const slotStyles = await equipmentSlots.evaluateAll(nodes => nodes.map(n => { const s = getComputedStyle(n); return [s.padding, s.borderRadius, s.backgroundColor, s.borderColor]; }));
+    assert.deepEqual(slotStyles[2], slotStyles[0], 'armor uses the same card style as hand slots');
+
     await page.getByLabel('Основная рука',{exact:true}).selectOption('bow');
     await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===2&&!document.querySelector('.sheet').inert);
     assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,2);
