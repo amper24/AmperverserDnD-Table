@@ -1,6 +1,8 @@
 // ---------------------------------------------------------------------------
-// dice-visual.js — одна неподвижная площадка для всех кубиков броска.
-// Новая сцена заменяет предыдущую; результат берётся только из готового payload.
+// dice-visual.js — одна прозрачная площадка для всех кубиков броска.
+// Кубы вылетают из центра и падают в случайные точки рядом с ним, катятся чуть-чуть
+// по невидимому столу и останавливаются. Новая сцена заменяет предыдущую; результат
+// берётся только из готового payload.
 // ---------------------------------------------------------------------------
 window.DiceVisualizer = (() => {
   'use strict';
@@ -53,11 +55,44 @@ window.DiceVisualizer = (() => {
     const faces = dice.map(d => `к${d.sides}: ${d.value}`).join(', ');
     return `${description}${faces ? `. Выпало: ${faces}` : ''}`;
   }
-  function roundedRect(ctx, x, y, w, h, radius) {
-    const r = Math.min(radius, w / 2, h / 2);
-    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  // Random but compact layout around the centre. Every die gets the best of a few
+  // random candidates (the one farthest from the other landings), so dice spread
+  // out without overlapping much, and nothing leaves the visible stage.
+  function planLayout(count, width, height) {
+    const areaW = width - 48, areaH = height - 82;
+    const cx = width / 2, cy = 54 + areaH / 2;
+    const size = Math.max(18, Math.min(52, Math.sqrt(areaW * areaH / count) * .36));
+    const halfW = Math.max(0, areaW / 2 - size * 1.4), halfH = Math.max(0, areaH / 2 - size * 1.4);
+    const grow = Math.sqrt(count);
+    const spreadX = Math.min(halfW, size * 1.7 + grow * size * .85);
+    const spreadY = Math.min(halfH, size * .9 + grow * size * .5);
+    const clamp = (v, limit) => Math.max(-limit, Math.min(limit, v));
+    const landed = [], spots = [];
+    for (let i = 0; i < count; i++) {
+      let best = null, bestGap = -1;
+      for (let k = 0; k < 24; k++) {
+        const p = [(random() * 2 - 1) * spreadX, (random() * 2 - 1) * spreadY];
+        const gap = landed.reduce((min, q) => Math.min(min, Math.hypot(p[0] - q[0], p[1] - q[1])), Infinity);
+        if (gap > bestGap) { bestGap = gap; best = p; }
+      }
+      landed.push(best);
+      const angle = random() * Math.PI * 2, distance = size * (.2 + random() * .45);
+      const rest = [clamp(best[0] + Math.cos(angle) * distance, spreadX), clamp(best[1] + Math.sin(angle) * distance, spreadY)];
+      spots.push({ land: best, rest });
+    }
+    return { cx, cy, size, spots, key: `${width}x${height}` };
+  }
+  function applyLayout(list, width, height) {
+    const plan = planLayout(list.length, width, height);
+    list.forEach((die, index) => {
+      const spot = plan.spots[index];
+      DicePhysics.place(die, {
+        x: plan.cx, y: plan.cy, size: plan.size,
+        landX: plan.cx + spot.land[0], landY: plan.cy + spot.land[1],
+        restX: plan.cx + spot.rest[0], restY: plan.cy + spot.rest[1],
+      });
+      die.layoutKey = plan.key;
+    });
   }
   function parseColor(hex) {
     const value = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.slice(1) : 'a881e8';
@@ -120,38 +155,17 @@ window.DiceVisualizer = (() => {
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
     context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
 
-    const ctx = context, pad = 7;
-    const panel = ctx.createLinearGradient(0, pad, 0, height - pad);
-    panel.addColorStop(0, 'rgba(28,31,43,.94)'); panel.addColorStop(1, 'rgba(13,17,27,.93)');
-    roundedRect(ctx, pad, pad, width - pad * 2, height - pad * 2, 19);
-    ctx.fillStyle = panel; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(224,190,126,.68)'; ctx.stroke();
-    const glow = ctx.createRadialGradient(width * .5, height * .67, 2, width * .5, height * .67, Math.min(width, height) * .58);
-    glow.addColorStop(0, 'rgba(191,145,89,.15)'); glow.addColorStop(1, 'rgba(191,145,89,0)');
-    roundedRect(ctx, pad + 1, pad + 1, width - pad * 2 - 2, height - pad * 2 - 2, 18); ctx.fillStyle = glow; ctx.fill();
-
+    const ctx = context;
+    // No frame: the dice float over the page; only the title text is drawn.
     const title = payload?.label || (Array.isArray(payload?.rolls) ? 'Бросок кубиков' : payload?.expr || 'Бросок');
-    ctx.fillStyle = '#f4ead4'; ctx.font = '650 12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(title, 23, 27, Math.max(100, width - 46));
-    ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.beginPath(); ctx.moveTo(22, 44); ctx.lineTo(width - 22, 44); ctx.stroke();
+    ctx.save(); ctx.fillStyle = '#f4ead4'; ctx.font = '650 12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4;
+    ctx.fillText(title, 24, 27, Math.max(100, width - 48)); ctx.restore();
 
     if (!states.length) return { width, height };
-    const columns = Math.min(states.length, 8, Math.ceil(Math.sqrt(states.length * 1.7)));
-    const rows = Math.ceil(states.length / columns), areaX = 24, areaY = 54;
-    const areaW = width - 48, areaH = height - 82, cellW = areaW / columns, cellH = areaH / rows;
-    const size = Math.max(18, Math.min(52, cellW * .39, cellH * .45));
-    states.forEach((die, index) => {
-      const row = Math.floor(index / columns), firstInRow = row * columns, itemsInRow = Math.min(columns, states.length - firstInRow);
-      const col = index - firstInRow, rowW = itemsInRow * cellW;
-      const x = (width - rowW) / 2 + (col + .5) * cellW;
-      const y = areaY + (row + .5) * cellH;
-      // A small fixed slot grid is used for every frame; no roll gets its own
-      // vertically stacked toast and no die is re-laid out while it tumbles.
-      if (die.layoutWidth !== width || die.layoutHeight !== height) {
-        DicePhysics.setAnchor(die, x, y, size);
-        die.layoutWidth = width; die.layoutHeight = height;
-      }
-      drawDie(ctx, die, die.x, die.y, size, payload?.dice_color || '#a881e8');
-    });
+    // Layout is fixed once the dice start moving, so a resize cannot make them jump.
+    if (!states.some(die => die.elapsed > 0) && states[0].layoutKey !== `${width}x${height}`) applyLayout(states, width, height);
+    states.forEach(die => drawDie(ctx, die, die.x, die.y, die.size * die.scale, payload?.dice_color || '#a881e8'));
     if (states.length < totalDice) {
       ctx.fillStyle = 'rgba(244,234,212,.7)'; ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
       ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(`+${totalDice - states.length} в журнале`, width - 22, height - 13);
@@ -187,6 +201,8 @@ window.DiceVisualizer = (() => {
     if (!allDice.length) { root.classList.remove('visible'); return false; }
     payload = rollPayload; totalDice = allDice.length;
     states = allDice.slice(0, MAX_DICE).map(spec => DicePhysics.createDie(spec, random));
+    const stage = canvas.getBoundingClientRect();
+    applyLayout(states, Math.max(300, stage.width || 820), Math.max(190, stage.height || 286));
     lastTime = 0; accumulator = 0; settledAt = 0;
     root.classList.add('visible');
     root.setAttribute('aria-label', labelFor(rollPayload, allDice));
@@ -203,5 +219,5 @@ window.DiceVisualizer = (() => {
     frame = 0; states = []; payload = null; totalDice = 0; settledAt = 0;
     root?.classList.remove('visible');
   }
-  return { show, cancel, collect };
+  return { show, cancel, collect, plan: planLayout };
 })();

@@ -265,6 +265,10 @@ window.DiceEngine = (() => {
   function dockRoll(expr, mode = 'normal', opts = {}) {
     return submit({ type: 'roll', expr: withMode(expr, mode), gm_only: !!opts.gm_only, audience: opts.audience, label: opts.label || expr });
   }
+  /// Сколько кубов одного типа бросать по нажатию кнопки дока (1–20), запоминается.
+  const DICE_COUNT_MAX = 20;
+  const clampCount = value => Math.max(1, Math.min(DICE_COUNT_MAX, Math.trunc(Number(value)) || 1));
+  const diceCount = () => clampCount(LS.getItem('dice-count'));
   /// Нижний левый угол: всегда под рукой. Нижний правый: журнал этой вкладки.
   /// Возвращает false, если док уже установлен на странице.
   function dock(opts = {}) {
@@ -273,13 +277,17 @@ window.DiceEngine = (() => {
     const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', 'aria-label': 'Модификатор', style: 'width:54px' });
     const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', 'aria-label': 'Формула броска', style: 'width:132px' });
     const audience = audienceSelect();
+    const countInp = el('input', { type: 'number', min: '1', max: String(DICE_COUNT_MAX), step: '1', value: String(diceCount()), title: 'Сколько кубов бросить по нажатию кнопки к4–к100', 'aria-label': 'Количество кубов', style: 'width:48px' });
+    countInp.addEventListener('change', () => { const n = clampCount(countInp.value); countInp.value = String(n); LS.setItem('dice-count', String(n)); });
     let mode = 'normal';
     const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
     const rollExpr = (expr, label) => dockRoll(expr + modStr(), mode, { audience: audience.value, label: (label || expr) + (modStr() ? ' ' + modStr() : '') });
+    // Кнопка бросает N кубов одной формулой NdD: сумма и каждый куб видны в журнале.
     const die = d => {
-      const label = d === 20 && mode === 'adv' ? 'к20 с преимуществом'
-        : d === 20 && mode === 'dis' ? 'к20 с помехой' : 'к' + d;
-      rollExpr('d' + d, label);
+      const n = diceCount(), base = n > 1 ? `${n}к${d}` : 'к' + d;
+      const label = d === 20 && mode === 'adv' ? `${base} с преимуществом`
+        : d === 20 && mode === 'dis' ? `${base} с помехой` : base;
+      rollExpr((n > 1 ? n : '') + 'd' + d, label);
     };
     const modeBtns = el('div', { class: 'seg' }, ...[['normal', 'Обычно'], ['adv', 'Преим.'], ['dis', 'Помеха']].map(([k, t]) => el('button', { class: 'small' + (k === 'normal' ? ' active' : ''), onclick: e => { mode = k; modeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.currentTarget)); } }, t)));
     exprInp.addEventListener('keydown', e => { if (e.key === 'Enter' && exprInp.value.trim()) { rollExpr(exprInp.value.trim()); exprInp.value = ''; } });
@@ -292,7 +300,7 @@ window.DiceEngine = (() => {
     const body = el('div', { class: 'dice-dock-body' }, quick,
       el('div', { class: 'row' }, modeBtns, modInp),
       el('div', { class: 'row' }, exprInp, el('button', { class: 'small primary', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) { rollExpr(exprInp.value.trim()); exprInp.value = ''; } } }, 'Бросить')),
-      el('div', { class: 'dice-dock-options' }, el('label', { class: 'muted small' }, 'Кому: ', audience)));
+      el('div', { class: 'dice-dock-options' }, el('label', { class: 'muted small', title: 'Сколько кубов бросить по нажатию кнопки' }, 'Кубов: ', countInp), el('label', { class: 'muted small' }, 'Кому: ', audience)));
     const toggle = el('button', { class: 'dice-dock-toggle', title: 'Кубики: свернуть / развернуть', 'aria-label': 'Кубики', onclick: () => { wrap.classList.toggle('min'); LS.setItem('dicetray_min', wrap.classList.contains('min') ? '1' : ''); } }, icon('dice', 16));
     const wrap = el('div', { class: 'dice-dock' + (LS.getItem('dicetray_min') ? ' min' : '') }, toggle, body);
     const log = el('button', { class: 'dice-log-button', title: 'Личный журнал бросков', onclick: openPanel },

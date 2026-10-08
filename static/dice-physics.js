@@ -150,6 +150,13 @@ window.DicePhysics = (() => {
     ]);
   }
   function randomAxis(rng) { return V.normalize([randomUnit(rng) * 2 - 1, randomUnit(rng) * 2 - 1, randomUnit(rng) * 2 - 1]); }
+  // Timeline in seconds: the die appears at the centre, is tossed to a random
+  // landing spot near it, hops once, rolls a little across the invisible table
+  // and comes to rest. The orientation servo still drives the accepted face to
+  // `target`; the slide only moves the rest point and spins the die while rolling.
+  const TOSS = .56, HOP = .18, ROLL = .4, DURATION = 1.5, SETTLE = .34;
+  const ROLL_END = TOSS + HOP + ROLL;
+  const easeOut = t => 1 - (1 - t) * (1 - t);
   function createDie({ sides, value, kept = true }, rng) {
     const faceCount = Math.max(1, Number(sides) || 6), model = modelFor(faceCount);
     const faceIndex = ((Math.max(1, Math.trunc(Number(value) || 1)) - 1) % model.faces.length);
@@ -162,39 +169,64 @@ window.DicePhysics = (() => {
       sides: faceCount, value: Math.trunc(Number(value) || 1), kept: !!kept,
       model, faceIndex, target, orientation: randomQuaternion(rng), axis: randomAxis(rng),
       angularVelocity: V.scale(randomAxis(rng), 7 + randomUnit(rng) * 10),
-      height: 0, verticalVelocity: 520 + randomUnit(rng) * 150,
-      x: 0, y: 0, anchorX: 0, anchorY: 0, size: 48,
-      elapsed: 0, duration: 1.55, settleFrom: null, settled: false,
+      lift: .9 + randomUnit(rng) * .35, hopLift: .16 + randomUnit(rng) * .08,
+      kicks: 0, height: 0, scale: .55,
+      x: 0, y: 0, anchorX: 0, anchorY: 0, landX: 0, landY: 0, restX: 0, restY: 0,
+      size: 48, elapsed: 0, duration: DURATION, settleFrom: null, settled: false,
     };
   }
 
-  function setAnchor(die, x, y, size) {
+  /// Places a die: origin (throw point, the centre), landing point and rest point
+  /// are absolute canvas coordinates. Defaults keep the die still at the origin.
+  function place(die, { x, y, size, landX = x, landY = y, restX = landX, restY = landY }) {
     die.anchorX = die.x = x; die.anchorY = die.y = y; die.size = size;
+    die.landX = landX; die.landY = landY; die.restX = restX; die.restY = restY;
     return die;
   }
+  function setAnchor(die, x, y, size) { return place(die, { x, y, size }); }
   function step(die, delta) {
     if (die.settled) return die;
     const dt = Math.max(0, Math.min(.035, Number(delta) || 0));
     if (!dt) return die;
     die.elapsed += dt;
+    const t = die.elapsed, size = die.size, lerp = (a, b, k) => a + (b - a) * k;
+    die.scale = .55 + .45 * easeOut(Math.min(1, t / .32));
 
-    // Vertical throw: gravity, damped floor impacts, and no unbounded lateral drift.
-    die.height += die.verticalVelocity * dt;
-    die.verticalVelocity -= 1550 * dt;
-    if (die.height < 0) {
+    // Phase 1: toss from the centre to the landing spot, height is a parabola.
+    if (t < TOSS) {
+      const s = t / TOSS;
+      die.height = size * die.lift * 4 * s * (1 - s);
+      die.x = lerp(die.anchorX, die.landX, easeOut(s)); die.y = lerp(die.anchorY, die.landY, easeOut(s));
+    // Phase 2: one small hop on the invisible table.
+    } else if (t < TOSS + HOP) {
+      const s = (t - TOSS) / HOP;
+      die.height = size * die.hopLift * 4 * s * (1 - s);
+      die.x = die.landX; die.y = die.landY;
+    // Phase 3: slide/roll to the rest point, decelerating, spinning as it goes.
+    } else if (t < ROLL_END) {
+      const u = (t - TOSS - HOP) / ROLL, dx = die.restX - die.landX, dy = die.restY - die.landY, dist = Math.hypot(dx, dy);
       die.height = 0;
-      if (Math.abs(die.verticalVelocity) < 68 || die.elapsed > die.duration * .84) die.verticalVelocity = 0;
-      else die.verticalVelocity = Math.abs(die.verticalVelocity) * .37;
-      die.angularVelocity = V.add(die.angularVelocity, V.scale(die.axis, (randomUnitFromDie(die) - .5) * 1.7));
+      die.x = lerp(die.landX, die.restX, easeOut(u)); die.y = lerp(die.landY, die.restY, easeOut(u));
+      if (dist > EPS) {
+        const speed = dist * 2 * (1 - u) / ROLL, rate = speed / Math.max(1, size * .9);
+        // Rolling on a floor (normal = +y, screen plane = x/z) turns about the axis cross(up, direction).
+        const axis = [dy / dist, 0, -dx / dist];
+        die.orientation = Q.normalize(Q.multiply(Q.axisAngle(axis, rate * dt), die.orientation));
+      }
+    } else {
+      die.height = 0; die.x = die.restX; die.y = die.restY;
     }
+    // Cosmetic impact kicks at the toss landing and at the hop landing.
+    if (t >= TOSS && die.kicks < 1) { die.kicks = 1; die.angularVelocity = V.add(die.angularVelocity, V.scale(die.axis, (randomUnitFromDie(die) - .5) * 1.7)); }
+    if (t >= TOSS + HOP && die.kicks < 2) { die.kicks = 2; die.angularVelocity = V.add(die.angularVelocity, V.scale(die.axis, (randomUnitFromDie(die) - .5) * 1.1)); }
 
     // A damped angular motor guides the visible top face to the server's value.
     // Unlike a post-roll spin, it brakes continuously and ends with zero velocity.
+    const settleStart = die.duration - SETTLE;
     let error = Q.normalize(Q.multiply(die.target, Q.conjugate(die.orientation)));
     if (error[0] < 0) error = error.map(n => -n);
     const sine = Math.hypot(error[1], error[2], error[3]);
-    const settleStart = die.duration - .34;
-    if (sine > EPS && die.elapsed < settleStart) {
+    if (sine > EPS && t < settleStart) {
       const angle = 2 * Math.atan2(sine, Math.max(0, error[0]));
       const axis = [error[1] / sine, error[2] / sine, error[3] / sine];
       const kp = 58, kd = 15.2;
@@ -205,25 +237,19 @@ window.DicePhysics = (() => {
       const spin = V.length(die.angularVelocity);
       if (spin > EPS) die.orientation = Q.normalize(Q.multiply(Q.axisAngle(die.angularVelocity, spin * dt), die.orientation));
     }
-    if (die.elapsed >= settleStart) {
+    if (t >= settleStart) {
       if (!die.settleFrom) die.settleFrom = [...die.orientation];
-      const progress = Math.max(0, Math.min(1, (die.elapsed - settleStart) / (die.duration - settleStart)));
+      const progress = Math.max(0, Math.min(1, (t - settleStart) / (die.duration - settleStart)));
       const eased = progress * progress * (3 - 2 * progress);
       die.orientation = Q.slerp(die.settleFrom, die.target, eased);
       die.angularVelocity = V.scale(die.angularVelocity, 1 - eased);
     }
 
-    // A bounded, spring-damped nudge sells the impact without letting a die
-    // migrate into the neighboring slot or make a column of shifting layouts.
-    const drift = Math.sin(die.elapsed * 13 + die.value) * die.size * .025 * (1 - Math.min(1, die.elapsed / die.duration));
-    die.x = die.anchorX + drift;
-    die.y = die.anchorY - Math.sin(die.elapsed * 17 + die.value * .7) * die.size * .018 * (1 - Math.min(1, die.elapsed / die.duration));
-
-    if (die.elapsed >= die.duration) {
+    if (t >= die.duration) {
       die.orientation = [...die.target];
       die.angularVelocity = [0, 0, 0];
-      die.height = 0; die.verticalVelocity = 0;
-      die.x = die.anchorX; die.y = die.anchorY;
+      die.height = 0;
+      die.x = die.restX; die.y = die.restY;
       die.settled = true;
     }
     return die;
@@ -243,5 +269,5 @@ window.DicePhysics = (() => {
     return { label: best?.id === die.faceIndex ? die.value : best?.label, faceIndex: best?.id, alignment: score };
   }
 
-  return { modelFor, createDie, setAnchor, step, faceUp, rotate: (q, vector) => Q.rotate(q, vector) };
+  return { modelFor, createDie, place, setAnchor, step, faceUp, rotate: (q, vector) => Q.rotate(q, vector) };
 })();
