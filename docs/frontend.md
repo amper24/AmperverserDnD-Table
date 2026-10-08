@@ -10,7 +10,7 @@
 | Слой | Что это | Файлы |
 |---|---|---|
 | 1. Фундамент | хранилище с согласием на cookie, API-клиент, DOM-помощники (`el`, `modal`, `floatWindow`, `toast`, `icon`), словари (`SKILLS`, `ABIL`, `EDITIONS`, `CAT_NAMES`), тема | `common.js` |
-| 2. Движки правил | кубики и журнал бросков; слоты экипировки (зеркало `src/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `dice.js`, `equipment.js`, `mechanics.js`, `spell-rules.js` (только лист) |
+| 2. Движки правил | физика и визуализация принятых бросков, движок кубиков и журнал; слоты экипировки (зеркало `src/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `dice-physics.js`, `dice-visual.js`, `dice.js`, `equipment.js`, `mechanics.js`, `spell-rules.js` (только лист) |
 | 3. Данные | модель записей листа (предмет/заклинание/умение, карточки, чат, редакторы); справочник (поиск, редактор записи, перетаскивание); таблицы развития классов — **сгенерированные данные**, не править вручную | `modules.js`, `compendium.js`, `class-progression.js` |
 | 4. Создание персонажа | правилное ядро (`CharacterBuilder`: проекции модулей, выборы «либо/либо», разбор снаряжения, сборка листа) и мастер-окно из восьми шагов (`newCharacterDialog`) — отдельно правила, отдельно UI | `character-builder.js`, `builder-dialog.js` |
 | 5. Возможности | мастерская наборов; импорт из Long Story Short; canvas-стол; повышение уровня | `packs.js`, `lss.js`, `table.js` (index), `levelup.js` (sheet) |
@@ -26,7 +26,9 @@
 | Файл | Роль | Даёт |
 |---|---|---|
 | `common.js` | фундамент | `LS`, `Consent`, `API`, `Lang`, `el/modal/prompt2/floatWindow/toast/icon`, `Theme`, `SKILLS/ABIL/EDITIONS/CAT_NAMES`, `defaultEdition` |
-| `dice.js` | кубики | `DiceEngine`, `rollDice` |
+| `dice-physics.js` | симуляция костей | `DicePhysics` (без генерации/переброса результата) |
+| `dice-visual.js` | одна центральная площадка с устойчивой сеткой и canvas-рендером | `DiceVisualizer` |
+| `dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
 | `equipment.js` | правила инвентаря | `Equipment` |
 | `mechanics.js` | механики умений | `Mechanics` |
 | `modules.js` | записи листа и редакторы | `Modules` |
@@ -85,4 +87,4 @@ node --test tests/*.test.cjs
 `character-builder-equipment.test.cjs` (разбор снаряжения на реальном SRD),
 `character-builder-dialog.test.cjs` (мастер открывается, доходит до готового
 листа, пропускает незаполненные шаги и собирает пустой лист), `levelup.test.cjs`, `mechanics.test.cjs`, `equipment.test.cjs`,
-`dice.test.cjs`, `spell-rules.test.cjs`.
+`dice.test.cjs`, `dice-physics.test.cjs`, `dice-visual.test.cjs`, `spell-rules.test.cjs`.

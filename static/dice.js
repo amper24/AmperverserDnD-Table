@@ -5,8 +5,8 @@
 // Даёт: window.DiceEngine, window.rollDice.
 // Зависимости: common.js. Загружается в обеих страницах (слой 2).
 // ---------------------------------------------------------------------------
-// One roll API and result schema; accepted results are kept in the journal only.
-// Network rolls are NEVER rerolled locally or displayed in a screen overlay.
+// One roll API/result schema; the journal and visualizer consume accepted results.
+// Network rolls are NEVER rerolled locally, predicted or changed by the animation.
 window.DiceEngine = (() => {
   'use strict';
   const LIMIT = 100, MAX_TERMS = 32;
@@ -229,7 +229,9 @@ window.DiceEngine = (() => {
     return a;
   }
   function present(payload, meta = {}) {
-    // Freeze the received result in history; there is deliberately no screen-level roll display.
+    // Animate only the accepted payload: the server's/local evaluator's values are
+    // authoritative; the visual simulation never generates or changes a result.
+    try { window.DiceVisualizer?.show?.(payload); } catch { /* visuals must never block a committed roll */ }
     history.unshift({ payload: JSON.parse(JSON.stringify(payload)), meta, at: new Date() });
     history.splice(50); updateLogBadge(); journalRefresh?.();
     openJournalForRoll();
