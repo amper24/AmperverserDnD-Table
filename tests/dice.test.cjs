@@ -66,7 +66,7 @@ test('native secure random produces bounded results for every supported die', ()
     assert.ok(r.parts[0].rolls.every(v=>v>=1&&v<=sides)); assert.ok(r.total>=100&&r.total<=100*sides);
   }
 });
-test('local and server results update the journal only, without a screen layer', () => {
+test('accepted local and server results update the journal and trigger the visualizer', () => {
   const makeElement = (tag, attrs = {}, ...children) => {
     const node = {
       tag, attrs, className: attrs.class || '', children: [], dataset: {}, parent: null,
@@ -102,69 +102,84 @@ test('local and server results update the journal only, without a screen layer',
     querySelector(selector) { return find(this.body.children, selector); },
     querySelectorAll() { return []; },
   };
+  const animations = [];
   const browser = {
-    window: { addEventListener() {} }, document, el: makeElement,
+    window: { addEventListener() {}, DiceVisualizer: { show: payload => { animations.push(JSON.parse(JSON.stringify(payload))); return true; } } }, document, el: makeElement,
     LS: { getItem: () => '{}', setItem() {} }, toast() {}, crypto: require('node:crypto').webcrypto,
     setTimeout(fn, delay) { const timer = setTimeout(fn, delay); if (delay >= 8000) timer.unref?.(); return timer; }, clearTimeout,
   };
   vm.createContext(browser);
   vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), browser);
   const engine = browser.window.DiceEngine;
-  // Единственное, что движок имеет право повесить поверх страницы: журнал, док и кнопка журнала.
-  // Любой другой корневой элемент (сцена, canvas, карточка итога) считается экранным выводом.
+  // В этой изолированной проверке визуализатор подменён шпионом: он получает только готовые результаты.
   const ALLOWED_ROOTS = ['.dice-journal', '.dice-dock', '.dice-log-button'];
-  const noScreenLayer = () => document.body.children.every(node => ALLOWED_ROOTS.includes('.' + node.className)) &&
-    ['.dice-global-stage', '.dice-global-burst', '.dice-global-canvas'].every(selector => !document.querySelector(selector));
+  const noUnexpectedRoot = () => document.body.children.every(node => ALLOWED_ROOTS.includes('.' + node.className));
   const entryCount = () => findAll(document.body.children, '.dice-history-entry').length;
 
-  engine.present({ ...engine.evaluate('d20+5'), label: 'Локальная проверка' }, { local: true });
+  const firstResult = { ...engine.evaluate('d20+5'), label: 'Локальная проверка' };
+  engine.present(firstResult, { local: true });
   assert.ok(document.querySelector('.dice-journal'), 'a local result opens the journal');
   assert.equal(entryCount(), 1);
-  assert.ok(noScreenLayer());
+  assert.ok(noUnexpectedRoot());
+  assert.equal(animations.length, 1);
+  assert.deepEqual(plain(animations[0]), plain(firstResult), 'the visualizer receives the exact local result');
   engine.present({ ...engine.evaluate('d6'), label: 'Ещё один локальный бросок' }, { local: true });
   assert.equal(entryCount(), 2, 'the journal refreshes for consecutive results');
-  assert.ok(noScreenLayer());
+  assert.equal(animations.length, 2, 'each accepted result starts/replaces a single visual scene');
+  assert.ok(noUnexpectedRoot());
 
   const message = { kind: 'roll', id: 1, at: '2026-10-08T00:00:00Z', user_id: 'gm', name: 'Мастер', payload: {
     request_id: 'srv-1', expr: 'd8', total: 7, parts: [{ term: 'd8', sides: 8, rolls: [7], kept: [7], kept_indices: [0] }]
   } };
   engine.receive(message); engine.receive(message);
   assert.equal(entryCount(), 3, 'server results are journaled once even when a duplicate arrives');
-  assert.ok(noScreenLayer());
+  assert.deepEqual(plain(animations[2]), plain(message.payload), 'server animation uses the authoritative payload unchanged');
+  assert.ok(noUnexpectedRoot());
 
   const offline = engine.submit({ type: 'roll', expr: '2d6+3', label: 'Локально через submit' });
   assert.ok(offline.total >= 5 && offline.total <= 15);
   assert.equal(entryCount(), 4, 'offline submit also uses the same journal path');
-  assert.ok(noScreenLayer());
+  assert.deepEqual(plain(animations[3]), plain(offline), 'offline animation shows the committed result');
+  assert.ok(noUnexpectedRoot());
 
   for (let i = 0; i < 52; i++) engine.present({ ...engine.evaluate('d4', () => .5), label: `Бросок ${i}` }, { local: true });
   assert.equal(entryCount(), 50, 'the journal still retains only the newest 50 results');
-  assert.ok(noScreenLayer(), 'no number of results can create a central display');
+  assert.equal(animations.length, 56, 'every accepted result is visualized once');
+  assert.ok(noUnexpectedRoot(), 'no number of results adds a stack of scene roots');
 });
 
-test('screen-level dice renderer, APIs and styles are removed', () => {
-  for (const name of ['animate', 'dismiss', 'mesh', 'rotate', 'faceLabels', 'faceAngles']) assert.equal(D[name], undefined, `${name} is no longer exposed`);
+test('visualization is separated from the secure result engine', () => {
+  for (const name of ['animate', 'dismiss', 'mesh', 'rotate', 'faceLabels', 'faceAngles']) assert.equal(D[name], undefined, `${name} is not part of the result API`);
   const js = fs.readFileSync('static/dice.js', 'utf8');
+  const physics = fs.readFileSync('static/dice-physics.js', 'utf8');
+  const visual = fs.readFileSync('static/dice-visual.js', 'utf8');
   const css = fs.readFileSync('static/style.css', 'utf8');
-  assert.doesNotMatch(js, /dice-global-(?:stage|burst|canvas)|requestAnimationFrame|Math\.random/);
-  assert.doesNotMatch(css, /\.dice-global-(?:stage|burst|canvas)/);
+  assert.match(js, /DiceVisualizer\?\.show\?\.\(payload\)/);
+  assert.match(physics, /die\.orientation = \[\.\.\.die\.target\]/, 'the finished face is locked to the accepted result');
+  assert.match(visual, /MAX_DICE = 32/);
+  const rootRule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, selector, body]) => selector.includes('.dice-visual-root') && /inset:\s*0/.test(body));
+  assert.ok(rootRule, 'a single fixed animation stage exists');
+  assert.match(rootRule[2], /pointer-events:\s*none/);
 });
 
-// Итог броска живёт только в журнале: центральный вывод вырезан не из одного dice.js,
-// а из всей поставки, поэтому вернуть его не может ни страница стола, ни лист, ни мастер.
-test('no shipped asset can draw a roll result over the screen', () => {
+// У всех страниц одна разрешённая визуальная поверхность: прозрачная площадка,
+// которая не перехватывает клики и не создаёт отдельную карточку на каждый бросок.
+test('shipped dice visualization is single, transparent and click-through', () => {
   const forbidden = /dice-global|dice-stage|dice-scene|dice-burst|dice-canvas|dice-overlay|dice-fullscreen|roll-overlay|roll-banner|roll-stage|roll-scene|result-overlay|result-banner/i;
   for (const file of fs.readdirSync('static').sort()) {
-    assert.doesNotMatch(fs.readFileSync('static/' + file, 'utf8'), forbidden, `${file} must not carry a screen-level roll layer`);
+    assert.doesNotMatch(fs.readFileSync('static/' + file, 'utf8'), forbidden, `${file} must not ship a blocking result overlay`);
   }
-  // Ни одно правило стиля, связанное с бросками, не перекрывает экран и не центрируется поверх интерфейса.
   const css = fs.readFileSync('static/style.css', 'utf8');
   for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (!/dice|roll/i.test(selector)) continue;
+    if (selector.includes('.dice-visual-root') && /inset:\s*0/.test(body)) {
+      assert.match(body, /position:\s*fixed/);
+      assert.match(body, /pointer-events:\s*none/, 'the visual stage must let table clicks pass through');
+      continue;
+    }
     assert.doesNotMatch(body, /inset:\s*0|top:\s*50%|left:\s*50%/, `${selector.trim()} must not cover the screen`);
   }
-  // Публичный API движка — разбор, бросок и журнал: ни сцены, ни анимации, ни canvas.
   for (const name of Object.keys(D)) {
-    assert.doesNotMatch(name, /animate|stage|scene|burst|overlay|canvas|dismiss|mesh|rotate|face/i, `${name} must not be a screen renderer`);
+    assert.doesNotMatch(name, /animate|stage|scene|burst|overlay|canvas|dismiss|mesh|rotate|face/i, `${name} stays a pure result/journal API`);
   }
 });
