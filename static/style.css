@@ -1513,7 +1513,7 @@ body.lu-open { overflow: hidden; }
    Canvas остаётся в одном центре; кости укладываются в устойчивую сетку. */
 .dice-visual-root { position: fixed; inset: 0; z-index: 12020; display: grid; place-items: center; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .22s ease, visibility 0s linear .25s; }
 .dice-visual-root.visible { opacity: 1; visibility: visible; transition-delay: 0s; }
-.dice-visual-canvas { display: block; width: min(860px, calc(100vw - 20px)); height: min(300px, calc(100dvh - 24px)); max-height: 300px; }
-@media (max-width: 600px) { .dice-visual-canvas { width: calc(100vw - 16px); height: min(270px, calc(100dvh - 24px)); } }
+.dice-visual-canvas { display: block; width: min(1000px, calc(100vw - 20px)); height: min(380px, calc(100dvh - 24px)); max-height: 380px; }
+@media (max-width: 600px) { .dice-visual-canvas { width: calc(100vw - 16px); height: min(330px, calc(100dvh - 24px)); } }
 @media (prefers-reduced-motion: reduce) { .dice-visual-root { transition: none; } }
 @media print { .dice-visual-root { display: none !important; } }

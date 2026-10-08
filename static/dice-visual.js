@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// dice-visual.js — одна прозрачная площадка для всех кубиков броска.
+// dice-visual.js — одна прозрачная площадка для всех кубиков броска (без рамки и подписи).
 // Кубы вылетают из центра и падают в случайные точки рядом с ним, катятся чуть-чуть
 // по невидимому столу и останавливаются. Новая сцена заменяет предыдущую; результат
 // берётся только из готового payload.
 // ---------------------------------------------------------------------------
 window.DiceVisualizer = (() => {
   'use strict';
-  const MAX_DICE = 32, HOLD_MS = 1050, STEP = 1 / 120;
+  const MAX_DICE = 32, HOLD_MS = 1050, STEP = 1 / 120, STAGE_PAD = 24;
   let root = null, canvas = null, context = null, run = 0, frame = 0;
   let states = [], payload = null, totalDice = 0, lastTime = 0, accumulator = 0, settledAt = 0;
   let fallbackRandomState = 0x6d2b79f5;
@@ -59,9 +59,9 @@ window.DiceVisualizer = (() => {
   // random candidates (the one farthest from the other landings), so dice spread
   // out without overlapping much, and nothing leaves the visible stage.
   function planLayout(count, width, height) {
-    const areaW = width - 48, areaH = height - 82;
-    const cx = width / 2, cy = 54 + areaH / 2;
-    const size = Math.max(18, Math.min(52, Math.sqrt(areaW * areaH / count) * .36));
+    const areaW = width - STAGE_PAD * 2, areaH = height - STAGE_PAD * 2;
+    const cx = width / 2, cy = height / 2;
+    const size = Math.max(18, Math.min(58, Math.sqrt(areaW * areaH / count) * .36));
     const halfW = Math.max(0, areaW / 2 - size * 1.4), halfH = Math.max(0, areaH / 2 - size * 1.4);
     const grow = Math.sqrt(count);
     const spreadX = Math.min(halfW, size * 1.7 + grow * size * .85);
@@ -153,15 +153,13 @@ window.DiceVisualizer = (() => {
     const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
-    context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
+    // Clear the whole device-pixel buffer under an identity transform; a single
+    // clearRect after setTransform can leave the previous frame's dice behind.
+    context.save(); context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height); context.restore();
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const ctx = context;
-    // No frame: the dice float over the page; only the title text is drawn.
-    const title = payload?.label || (Array.isArray(payload?.rolls) ? 'Бросок кубиков' : payload?.expr || 'Бросок');
-    ctx.save(); ctx.fillStyle = '#f4ead4'; ctx.font = '650 12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4;
-    ctx.fillText(title, 24, 27, Math.max(100, width - 48)); ctx.restore();
-
+    // No frame and no title: only the dice float over the page.
     if (!states.length) return { width, height };
     // Layout is fixed once the dice start moving, so a resize cannot make them jump.
     if (!states.some(die => die.elapsed > 0) && states[0].layoutKey !== `${width}x${height}`) applyLayout(states, width, height);
