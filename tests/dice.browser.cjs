@@ -127,6 +127,10 @@ const assert = require('node:assert/strict');
     await page.locator('.dice-dock .seg').getByRole('button', { name: 'Помеха' }).click();
     await formula.fill('2d20kh1+5'); await formula.press('Enter');
     assert.equal(await page.evaluate(() => parallelSent.at(-1).expr), '2d20kl1+5', 'disadvantage replaces an existing advantage keep rule');
+    await formula.fill('2d6+3'); await formula.press('Enter');
+    assert.equal(await page.evaluate(() => parallelSent.at(-1).expr), '4d6kl2+3', 'disadvantage applies to non-d20 formulas too');
+    await page.evaluate(() => Modules.roll('d8+2', 'Урон', { kind: 'damage', mode: 'adv' }));
+    assert.equal(await page.evaluate(() => parallelSent.at(-1).expr), '2d8kh1+2', 'action adapters do not restrict the mode to d20 checks');
     assert.deepEqual(errors, []);
     console.log('PASS: dice-only animations, journal totals, concurrent scenes, reduced motion, network results, advantage/disadvantage formulas, validation, mobile UI');
   } finally { await browser.close(); }

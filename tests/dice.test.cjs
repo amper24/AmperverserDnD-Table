@@ -21,16 +21,25 @@ test('deterministic keep highest and lowest including tied faces', () => {
 test('old saved records drop the right number of duplicate dice', () => {
   assert.deepEqual(plain(D.keptIndices({ rolls: [3,3,3,3], kept: [3,3,3] })), [0,1,2]);
 });
-test('advantage/disadvantage affect one d20 check, preserve other dice, and can switch modes', () => {
+test('advantage/disadvantage work with any die size and preserve d20 targeting', () => {
   assert.equal(D.withMode('d20+5','adv'), '2d20kh1+5');
   assert.equal(D.withMode('1d20-2','dis'), '2d20kl1-2');
-  assert.equal(D.withMode('d6+1d20+2d20','adv'), 'd6+2d20kh1+2d20');
+  assert.equal(D.withMode('d6+1d20+2d20','adv'), 'd6+2d20kh1+2d20', 'a d20 check keeps priority when present');
+  assert.equal(D.withMode('d4+3','adv'), '2d4kh1+3');
+  assert.equal(D.withMode('2d6+3','dis'), '4d6kl2+3');
+  assert.equal(D.withMode('-d6+5','adv'), '-2d6kl1+5', 'negative dice invert the keep direction to favor the total');
+  assert.equal(D.withMode('-d6+5','dis'), '-2d6kh1+5');
+  assert.equal(D.withMode('d8+1d6+2','adv'), '2d8kh1+2d6kh1+2', 'without a d20, every dice pool in the formula is modified');
+  assert.equal(D.withMode('d6+1d20+5','dis'), 'd6+2d20kl1+5', 'the d20 remains the target if the formula also has other dice');
+  assert.equal(D.withMode('d100+3','adv'), '2d100kh1+3');
+  assert.equal(D.withMode('d200','dis'), '2d200kl1');
   assert.equal(D.withMode('2d20kh1+3','adv'), '2d20kh1+3');
   assert.equal(D.withMode('2d20kh1+3','dis'), '2d20kl1+3');
   assert.equal(D.withMode('2d20kl1-2','adv'), '2d20kh1-2');
   assert.equal(D.withMode('d20kh1+5','dis'), '2d20kl1+5');
-  assert.equal(D.withMode('4d20kh3+3','adv'), '4d20kh3+3', 'custom keep pools are not rewritten');
-  assert.equal(D.withMode('d200','adv'), 'd200');
+  assert.equal(D.withMode('4d20kh3+3','adv'), '8d20kh3+3', 'custom keep pools double candidates while preserving the output count');
+  assert.equal(D.withMode('4d6kh3+3','dis'), '8d6kl3+3');
+  assert.equal(D.withMode('4d6kh5+3','adv'), '4d6kh5+3', 'an invalid base formula is never repaired by mode application');
 });
 test('negative terms and constants are computed exactly', () => {
   assert.equal(D.evaluate('2d1-3+d1').total, 0);
@@ -71,6 +80,35 @@ test('dice model: every face carries a number and the rolled face turns to the v
       assert.ok(Math.abs(p[2] - 1) < 1e-9 && Math.hypot(p[0], p[1]) < 1e-9, `d${sides}/${value} → ${JSON.stringify(p)}`);
     }
   }
+});
+
+test('the final animation frame shows the authoritative face on every supported die', () => {
+  const frames = [];
+  let currentFrame = null;
+  const ctx = {
+    fillStyle: '', strokeStyle: '', globalAlpha: 1,
+    scale() {}, clearRect() { currentFrame = []; frames.push(currentFrame); },
+    beginPath() {}, ellipse() {}, fill() {}, moveTo() {}, lineTo() {}, closePath() {}, stroke() {},
+    fillText(value) { if (this.fillStyle === '#fff') currentFrame.push(String(value)); },
+  };
+  const callbacks = [];
+  let rafId = 0;
+  context.devicePixelRatio = 1;
+  context.requestAnimationFrame = fn => { callbacks.push([++rafId, fn]); return rafId; };
+  context.cancelAnimationFrame = id => { const i = callbacks.findIndex(([key]) => key === id); if (i >= 0) callbacks.splice(i, 1); };
+  const dice = [4, 6, 8, 10, 12, 20, 100].map(sides => ({ ...D.evaluate('d' + sides, () => .5), name: 'd' + sides }));
+  const expected = dice.map(d => String(d.parts[0].rolls[0]));
+  const canvas = { clientWidth: 1280, clientHeight: 800, getContext: () => ctx };
+  D.animate(canvas, { rolls: dice }, { color: '#a881e8', speed: 1 });
+  let now = 0, frameCount = 0;
+  while (callbacks.length && frameCount < 200) {
+    const [, callback] = callbacks.shift();
+    now += 1000 / 60;
+    callback(now);
+    frameCount++;
+  }
+  assert.ok(frameCount > 100 && frameCount < 150, 'the animation reaches its bounded final frame');
+  assert.deepEqual([...frames.at(-1)].sort((a, b) => Number(a) - Number(b)), [...expected].sort((a, b) => Number(a) - Number(b)), 'each die finishes with its rolled value as its single highlighted face');
 });
 
 test('presentation uses a global screen layer and preserves consecutive rolls', () => {

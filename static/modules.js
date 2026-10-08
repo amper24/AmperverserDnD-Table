@@ -22,8 +22,6 @@ window.Modules = (function () {
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
-  /// Виды бросков, к которым применимы преимущество/помеха (d20).
-  const D20_KINDS = ['attack', 'check', 'save', 'other'];
   const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
@@ -129,7 +127,7 @@ window.Modules = (function () {
   }
 
   // ---------- броски: единый канал ----------
-  /// Преимущество/помеха: первый d20 в выражении → 2d20kh1 / 2d20kl1.
+  /// Преимущество/помеха: первый d20, либо все кости формулы без d20, получают keep high/low.
   const withMode = (expr, mode) => DiceEngine.withMode(expr, mode);
   /// Режим броска по клавишам-модификаторам: Alt — преимущество, Ctrl — помеха, Shift — только мастеру.
   function modeFromEvent(e) { return { mode: e?.altKey && (e?.ctrlKey || e?.metaKey) ? 'normal' : e?.altKey ? 'adv' : e?.ctrlKey || e?.metaKey ? 'dis' : 'normal', gm_only: !!e?.shiftKey }; }
@@ -143,7 +141,7 @@ window.Modules = (function () {
   function rollMulti(actions, label, opts = {}) {
     const ctx = opts.ctx || window.SHEET_CTX || {};
     const rolls = actions.filter(a => a.roll).map(a => ({ name: a.name || ACTION_KINDS[a.kind] || 'Бросок', kind: a.kind || 'other', dtype: a.dtype || null,
-      expr: D20_KINDS.includes(a.kind || 'other') ? withMode(resolve(a.roll, ctx), opts.mode) : resolve(a.roll, ctx) }));
+      expr: withMode(resolve(a.roll, ctx), opts.mode) }));
     if (!rolls.length) return;
     const msg = { type: 'multi', label: label || '', rolls, gm_only: !!opts.gm_only };
     return DiceEngine.submit(msg);
@@ -248,7 +246,7 @@ window.Modules = (function () {
         continue;
       }
       const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
-      row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); if (options.onUse) return options.onUse([a.index], modeFromEvent(e)); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...modeFromEvent(e), mode: ['damage', 'heal'].includes(a.kind) ? 'normal' : modeFromEvent(e).mode }); } },
+      row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); if (options.onUse) return options.onUse([a.index], modeFromEvent(e)); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...modeFromEvent(e) }); } },
         icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
     const rest = rollable.filter((a, i) => !paired.has(i));

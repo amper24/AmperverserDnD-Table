@@ -54,18 +54,36 @@ window.DiceEngine = (() => {
   const natural = r => { const p = r.parts.find(p => p.sides === 20 || /d20(?!\d)/.test(p.term)); return p ? keptIndices(p).map(i => p.rolls[i]) : []; };
   function withMode(expr, mode) {
     if (!['adv', 'dis'].includes(mode)) return expr;
-    const normalized = normalize(expr), keep = mode === 'adv' ? 'h' : 'l';
-    // Один режим относится к первой проверке к20. Уже заданный бросок 2d20kh1/kl1
-    // переключаем между режимами, а прочие кости и независимые проверки не трогаем.
-    return normalized.replace(/(^|[+-])(\d*)d20(?:k([hl])(\d+))?($|[+-])/, (whole, sign, n, priorMode, priorKeep, tail) => {
-      const count = Number(n || 1), kept = Number(priorKeep || count);
-      const canonicalMode = count === 2 && kept === 1;
-      const plainPool = !priorMode || kept === count;
-      if (priorMode && !canonicalMode && !plainPool) return whole;
-      const dice = canonicalMode ? 2 : count * 2;
-      const keepCount = canonicalMode ? 1 : count;
-      return `${sign}${dice}d20k${keep}${keepCount}${tail}`;
+    const normalized = normalize(expr);
+    // Do not let a mode turn an invalid base formula into a valid one.
+    try { parse(normalized); } catch { return normalized; }
+    // Preserve the d20 check when one exists. Otherwise apply the mode to every
+    // dice pool of any size (d4, d6, d8, d10, d12, d100, or custom dN).
+    // A canonical 2dSkh1/kl1 can switch modes without adding dice a second time.
+    const diceTerm = /^([+-]?)(\d*)d(\d+)(?:k([hl])(\d+))?$/;
+    const terms = [...normalized.matchAll(/([+-]?)([^+-]+)/g)].flatMap(m => {
+      const die = m[0].match(diceTerm);
+      return die ? [{ index: m.index, whole: m[0], sign: die[1], count: die[2], sides: die[3], priorMode: die[4], priorKeep: die[5] }] : [];
     });
+    const firstD20 = terms.find(t => Number(t.sides) === 20);
+    const targets = firstD20 ? [firstD20] : terms;
+    if (!targets.length) return normalized;
+    let result = normalized;
+    // A d20 remains the single target when present; without one, each random
+    // pool in the formula receives the same mode. Work right-to-left to retain spans.
+    for (const target of [...targets].sort((a, b) => b.index - a.index)) {
+      const keep = (mode === 'adv') !== (target.sign === '-') ? 'h' : 'l';
+      const count = Number(target.count || 1), kept = Number(target.priorKeep || count);
+      const canonicalMode = !!target.priorMode && count === 2 && kept === 1;
+      const customKeep = !!target.priorMode && kept < count;
+      const diceCount = canonicalMode ? 2 : count * 2;
+      // Preserve an explicit output count in a custom keep pool while doubling
+      // its candidates; ordinary pools keep their original number of dice.
+      const keepCount = canonicalMode ? 1 : customKeep ? kept : count;
+      const replacement = `${target.sign}${diceCount}d${target.sides}k${keep}${keepCount}`;
+      result = result.slice(0, target.index) + replacement + result.slice(target.index + target.whole.length);
+    }
+    return result;
   }
   const doubleDice = expr => normalize(expr).replace(/(\d*)d(\d+)(?:k([hl])(\d+))?/g, (_, n, sides, mode, keep) => `${Number(n || 1) * 2}d${sides}${mode ? `k${mode}${Number(keep) * 2}` : ''}`);
   function evaluateBatch(rolls, random) {
@@ -271,7 +289,7 @@ window.DiceEngine = (() => {
     while (bursts.length > MAX_BURSTS) dismissBurst(bursts[0]);
     layoutBursts();
     entry.timer = setTimeout(() => fadeBurst(entry), 5400);
-    if (canvas) entry.cancel = animate(canvas, payload, cfg, bursts.indexOf(entry));
+    if (canvas) entry.cancel = animate(canvas, payload, { ...cfg, color }, bursts.indexOf(entry));
     // Открываем журнал при броске
     openJournalForRoll();
   }
@@ -386,8 +404,17 @@ window.DiceEngine = (() => {
     function frame(now) {
       start ??= now; previous ??= now;
       const elapsed = (now - start) * speed, dt = Math.min((now - previous) / 1000, .04) * speed; previous = now;
+      const finished = elapsed >= 2200;
       ctx.clearRect(0, 0, W, H);
       for (const d of dice) {
+        if (finished) {
+          // The last frame is deterministic: park the die and align its authoritative
+          // rolled face exactly to the viewer, regardless of a throttled animation frame.
+          d.settle = true; d.z = 0; d.x = d.laneX; d.t = d.laneT;
+          d.vx = d.vt = d.vz = 0; d.spin = [0, 0, 0];
+          d.angle = faceAngles(mesh(d.sides).normals[d.target], d.angle[2]);
+          continue;
+        }
         if (!d.settle) {
           d.vz -= H * 4.8 * dt;                             // притяжение к «полу» (уменьшил с 6.5)
           d.z += d.vz * dt; d.x += d.vx * dt; d.t += d.vt * dt;
@@ -419,7 +446,7 @@ window.DiceEngine = (() => {
           for (let axis = 0; axis < 2; axis++) {
             let delta = (want[axis] - d.angle[axis]) % (Math.PI * 2);
             if (delta > Math.PI) delta -= Math.PI * 2; else if (delta < -Math.PI) delta += Math.PI * 2;
-            d.angle[axis] += delta * Math.min(1, dt * 2.5);
+            d.angle[axis] += delta * (1 - Math.exp(-dt * 6));
           }
         }
       }
@@ -496,16 +523,14 @@ window.DiceEngine = (() => {
     const modStr = () => { const m = modInp.value.trim(); if (!m || m === '+0' || m === '0') return ''; return /^[+-]/.test(m) ? m : '+' + m; };
     const rollExpr = (expr, label) => dockRoll(expr + modStr(), mode, { audience: audience.value, label: (label || expr) + (modStr() ? ' ' + modStr() : '') });
     const die = d => {
-      let expr = 'd' + d, label = 'к' + d;
-      if (d === 20 && mode === 'adv') { expr = '2d20kh1'; label = 'к20 с преимуществом'; }
-      else if (d === 20 && mode === 'dis') { expr = '2d20kl1'; label = 'к20 с помехой'; }
-      rollExpr(expr, label);
+      const label = d === 20 && mode === 'adv' ? 'к20 с преимуществом'
+        : d === 20 && mode === 'dis' ? 'к20 с помехой' : 'к' + d;
+      rollExpr('d' + d, label);
     };
     const modeBtns = el('div', { class: 'seg' }, ...[['normal', 'Обычно'], ['adv', 'Преим.'], ['dis', 'Помеха']].map(([k, t]) => el('button', { class: 'small' + (k === 'normal' ? ' active' : ''), onclick: e => { mode = k; modeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === e.currentTarget)); } }, t)));
     exprInp.addEventListener('keydown', e => { if (e.key === 'Enter' && exprInp.value.trim()) { rollExpr(exprInp.value.trim()); exprInp.value = ''; } });
     const dieTogether = d => {
-      const base = d === 20 && mode === 'adv' ? '2d20kh1' : d === 20 && mode === 'dis' ? '2d20kl1' : 'd' + d;
-      const expr = base + modStr();
+      const expr = withMode('d' + d, mode) + modStr();
       return submit({ type: 'multi', label: `Два броска к${d} одновременно`, audience: audience.value,
         rolls: [1, 2].map(n => ({ name: `к${d} · ${n}`, expr, kind: 'other' })) });
     };
@@ -574,6 +599,6 @@ window.DiceEngine = (() => {
   function committed(message) { const target = host(); if (target?.DiceEngine) target.DiceEngine.receive(message); if (!target || window.parent === window) receive(message); }
   const button=()=>el('button',{class:'small',title:'Журнал бросков',onclick:openPanel},icon('dice',14),' Кубики');
   // mesh / rotate / faceLabels / faceAngles — чистая модель кубика: ей пользуется анимация и тесты.
-  return { parse, evaluate, evaluateBatch, keptIndices, withMode, doubleDice, submit, receive, hydrate, committed, present, renderResult, detail, button, dock, dockRoll, openPanel, dismiss, mesh, rotate, faceLabels, faceAngles };
+  return { parse, evaluate, evaluateBatch, keptIndices, withMode, doubleDice, submit, receive, hydrate, committed, present, renderResult, detail, button, dock, dockRoll, openPanel, dismiss, mesh, rotate, faceLabels, faceAngles, animate };
 })();
 window.rollDice = (...args) => DiceEngine.evaluate(...args);

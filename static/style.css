@@ -125,6 +125,10 @@ iframe.sheetframe { width: 100%; height: 100%; border: none; background: var(--b
 .skills .pip.on { background: var(--accent); border-color: var(--accent); }
 .skills .pip.exp { background: var(--accent2); border-color: var(--accent2); }
 .skills .val { width: 28px; text-align: right; font-weight: 600; }
+.roll-mode-menu { position: fixed; z-index: 10080; display: grid; gap: 4px; width: min(218px, calc(100vw - 16px)); padding: 6px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 11px; box-shadow: 0 14px 44px #0009; backdrop-filter: blur(12px); }
+.roll-mode-menu .roll-mode-option { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: flex-start; padding: 8px 10px; text-align: left; border-radius: 7px; font-size: 13px; }
+.roll-mode-menu .roll-mode-option.normal { background: var(--accent-soft); border-color: var(--accent-line); }
+.roll-mode-menu .roll-mode-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .stat3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat3 .card { text-align: center; padding: 8px; }
 .stat3 .card b { font-size: 20px; display: block; }
@@ -789,7 +793,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .dice-panel > .row input { flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .dice-global-burst { transition: none; } }
-@media print { .dice-global-stage { display: none; } }
+@media print { .dice-global-stage, .roll-mode-menu { display: none; } }
 
 /* Постоянный интерфейс кубиков: слева — бросок, справа — личный журнал. */
 .dice-dock { position: fixed; left: 14px; bottom: 14px; z-index: 9000; display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; box-shadow: var(--shadow); max-width: calc(100vw - 28px); }
