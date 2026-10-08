@@ -308,7 +308,7 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     for a in selected {
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
-        if !["damage", "heal"].contains(&kind) { expr = crate::realtime::with_d20_mode(&expr, mode); }
+        expr = crate::realtime::with_dice_mode(&expr, mode);
         let base = expr.clone(); let doubled = crit && kind == "damage";
         if doubled { expr = crate::realtime::double_dice(&expr); }
         let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
@@ -355,6 +355,16 @@ mod tests {
         use_item(&mut s,"bow",&[0],"").unwrap(); let before=s.clone();
         assert!(use_item(&mut s,"bow",&[0],"").is_err()); assert_eq!(s,before);
         s["inventory"][2]["consume"]["enabled"]=json!(false); use_item(&mut s,"bow",&[0],"").unwrap(); assert_eq!(s["inventory"][3]["qty"],0);
+    }
+    #[test] fn advantage_and_disadvantage_apply_to_non_d20_item_damage() {
+        let mut adv = fixture();
+        equip(&mut adv, "bow", "both").unwrap();
+        let r = use_item(&mut adv, "bow", &[1], "adv").unwrap();
+        assert_eq!(r["rolls"][0]["expr"], "2d6kh1+3");
+        let mut dis = fixture();
+        equip(&mut dis, "bow", "both").unwrap();
+        let r = use_item(&mut dis, "bow", &[1], "dis").unwrap();
+        assert_eq!(r["rolls"][0]["expr"], "2d6kl1+3");
     }
     #[test] fn invalid_roll_does_not_spend_and_grip_is_enforced() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap(); s["inventory"][2]["actions"][0]["roll"]=json!("bad"); let before=s.clone();

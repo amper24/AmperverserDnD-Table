@@ -209,7 +209,53 @@
   const saveVal = (k) => abMod(k) + (s.saving_throws.includes(k) ? prof() : 0);
   const passive = () => 10 + skillVal('perception', 'wis');
   const ctx = () => { const c = M.ctxFromSheet(s); window.SHEET_CTX = c; window.SHEET_EDITION = s.edition || '2014'; return c; };
-  function roll(expr, label, event, kind = 'check') { M.roll(expr, `${ch.name}: ${label}`, { ctx: ctx(), kind, ...M.modeFromEvent(event) }); }
+  function roll(expr, label, event, kind = 'check', modeOverride = null) {
+    const options = { ctx: ctx(), kind, ...M.modeFromEvent(event) };
+    if (modeOverride) options.mode = modeOverride;
+    M.roll(expr, `${ch.name}: ${label}`, options);
+  }
+  let activeRollModeMenu = null, rollModeMenuCleanup = null;
+  function closeRollModeMenu() {
+    rollModeMenuCleanup?.(); rollModeMenuCleanup = null;
+    activeRollModeMenu?.remove(); activeRollModeMenu = null;
+  }
+  function openRollModeMenu(event, expr, label, kind = 'check') {
+    // Keep native text-editing and note-button context menus intact.
+    if (event.target.closest?.('button, input, select, textarea')) return;
+    event.preventDefault(); event.stopPropagation();
+    closeRollModeMenu();
+    const menu = el('div', { class: 'roll-mode-menu', role: 'menu', 'aria-label': `Режим броска: ${label}` });
+    const modes = [['normal', 'Обычный бросок'], ['dis', 'С помехой'], ['adv', 'С преимуществом']];
+    for (const [mode, text] of modes) menu.append(el('button', {
+      type: 'button', class: 'roll-mode-option' + (mode === 'normal' ? ' normal' : ''), role: 'menuitem',
+      onclick: () => { closeRollModeMenu(); roll(expr, label, null, kind, mode); }
+    }, text));
+    document.body.append(menu);
+    activeRollModeMenu = menu;
+    const margin = 8, rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin))}px`;
+    menu.style.top = `${Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin))}px`;
+    const onOutsidePointerDown = e => { if (!menu.contains(e.target)) closeRollModeMenu(); };
+    const onKeyDown = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRollModeMenu(); return; }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+      const buttons = [...menu.querySelectorAll('[role="menuitem"]')], current = buttons.indexOf(document.activeElement);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (current + (e.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+      e.preventDefault(); buttons[next]?.focus();
+    };
+    const cleanup = () => {
+      document.removeEventListener('pointerdown', onOutsidePointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', closeRollModeMenu);
+      window.removeEventListener('scroll', closeRollModeMenu, true);
+    };
+    rollModeMenuCleanup = cleanup;
+    document.addEventListener('pointerdown', onOutsidePointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', closeRollModeMenu);
+    window.addEventListener('scroll', closeRollModeMenu, true);
+    menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  }
   const dis = () => readonly ? '' : null;
 
   // ---- отправка в чат / на карту / другому персонажу ----
@@ -429,13 +475,22 @@
     const c1 = el('div', { class: 'sheet-proficiencies' });
     const abil = el('div', { class: 'abil' });
     for (const [k, name] of Object.entries(ABIL)) {
-      abil.append(el('div', { class: 'ab', title: 'Клик — проверка · Alt — преимущество · Ctrl — помеха · Shift — скрытый бросок GM', onclick: e => { if (e.target.tagName !== 'INPUT') roll('d20' + fmtMod(abMod(k)), 'проверка ' + name, e); } },
+      abil.append(el('div', { class: 'ab', title: 'Клик — проверка · Alt — преимущество · Ctrl — помеха · Shift — скрытый бросок GM · ПКМ — выбрать режим броска',
+        onclick: e => { if (e.target.tagName !== 'INPUT') roll('d20' + fmtMod(abMod(k)), 'проверка ' + name, e); },
+        oncontextmenu: e => openRollModeMenu(e, 'd20' + fmtMod(abMod(k)), 'проверка ' + name) },
         el('small', {}, name, ' ', noteBtn('ab:' + k, name)), el('div', { class: 'mod' }, fmtMod(abMod(k))), el('input', { type: 'number', value: s.abilities[k], disabled: dis(), onchange: ev => { s.abilities[k] = +ev.target.value; save(); render(); }, onclick: ev => ev.stopPropagation() })));
     }
     c1.append(abil);
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Спасброски', 'saves'), noteLine('saves'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name, e); } },
-      el('span', { class: 'pip' + (s.saving_throws.includes(k) ? ' on' : ''), onclick: () => { if (readonly) return; s.saving_throws = s.saving_throws.includes(k) ? s.saving_throws.filter(x => x !== k) : [...s.saving_throws, k]; save(); render(); } }), el('span', { class: 'val' }, fmtMod(saveVal(k))), name)))));
-    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Навыки', 'skills'), noteLine('skills'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', { onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name, e); } },
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Спасброски', 'saves'), noteLine('saves'), el('div', { class: 'skills' }, ...Object.entries(ABIL).map(([k, name]) => el('div', {
+      title: 'Клик — бросок · ПКМ — выбрать режим броска',
+      onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(saveVal(k)), 'спасбросок ' + name, e); },
+      oncontextmenu: e => openRollModeMenu(e, 'd20' + fmtMod(saveVal(k)), 'спасбросок ' + name)
+    }, el('span', { class: 'pip' + (s.saving_throws.includes(k) ? ' on' : ''), onclick: () => { if (readonly) return; s.saving_throws = s.saving_throws.includes(k) ? s.saving_throws.filter(x => x !== k) : [...s.saving_throws, k]; save(); render(); } }), el('span', { class: 'val' }, fmtMod(saveVal(k))), name)))));
+    c1.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Навыки', 'skills'), noteLine('skills'), el('div', { class: 'skills' }, ...SKILLS.map(([k, name, ab]) => el('div', {
+      title: 'Клик — бросок · ПКМ — выбрать режим броска',
+      onclick: e => { if (e.target.classList.contains('pip')) return; roll('d20' + fmtMod(skillVal(k, ab)), name, e); },
+      oncontextmenu: e => openRollModeMenu(e, 'd20' + fmtMod(skillVal(k, ab)), name)
+    },
       el('span', { class: 'pip' + (s.expertise.includes(k) ? ' exp' : s.skills.includes(k) ? ' on' : ''), title: 'клик: нет → владение → компетентность', onclick: () => { if (readonly) return; if (s.expertise.includes(k)) { s.expertise = s.expertise.filter(x => x !== k); s.skills = s.skills.filter(x => x !== k); } else if (s.skills.includes(k)) s.expertise.push(k); else s.skills.push(k); save(); render(); } }),
       el('span', { class: 'val' }, fmtMod(skillVal(k, ab))), name, el('span', { class: 'muted', style: 'font-size:10px' }, ' (' + ABIL[ab].slice(0, 3) + ')'), noteBtn('skill:' + k, name)))),
       el('div', { class: 'muted', style: 'margin-top:6px;font-size:12px' }, 'Пассивное восприятие: ', el('b', {}, passive()), ' · Бонус мастерства: ', el('b', {}, fmtMod(prof())))));

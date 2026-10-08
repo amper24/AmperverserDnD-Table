@@ -194,24 +194,44 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
     Some(json!({ "expr": expr, "parts": parts, "total": total }))
 }
 
-/// Applies advantage/disadvantage to the first d20 term, leaving modifiers and other dice intact.
-/// Canonical 2d20kh1/kl1 formulas can switch modes without adding dice a second time.
-pub(crate) fn with_d20_mode(expr: &str, mode: &str) -> String {
+/// Applies advantage/disadvantage to the first d20 pool, or to every dice pool
+/// when the formula has no d20. Modifiers remain untouched. Canonical
+/// 2dSkh1/kl1 formulas can switch modes without adding dice a second time.
+pub(crate) fn with_dice_mode(expr: &str, mode: &str) -> String {
     if !["adv", "dis"].contains(&mode) { return expr.to_string(); }
     let expr = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>()
         .to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
-    let keep_mode = if mode == "adv" { "h" } else { "l" };
-    let re = Regex::new(r"(^|[+\-])(\d*)d20(?:k([hl])(\d+))?($|[+\-])").unwrap();
-    re.replace(&expr, |c: &regex::Captures| {
-        let count = c[2].parse::<usize>().unwrap_or(1);
-        let prior_mode = c.get(3);
-        let kept = c.get(4).and_then(|v| v.as_str().parse::<usize>().ok()).unwrap_or(count);
+    let terms = Regex::new(r"([+-]?)([^+\-]+)").unwrap();
+    let die = Regex::new(r"^([+-]?)([0-9]*)d([0-9]+)(?:k([hl])([0-9]+))?$").unwrap();
+    let matches: Vec<_> = terms.captures_iter(&expr).filter_map(|c| {
+        let whole = c.get(0).unwrap();
+        let d = die.captures(whole.as_str())?;
+        Some((whole.start(), whole.end(), d[1].to_string(), d[2].to_string(), d[3].to_string(),
+            d.get(4).map(|v| v.as_str().to_string()), d.get(5).map(|v| v.as_str().to_string())))
+    }).collect();
+    let targets: Vec<_> = if let Some(d20) = matches.iter().find(|m| m.4.parse::<u32>().ok() == Some(20)) {
+        vec![d20]
+    } else { matches.iter().collect() };
+    if targets.is_empty() { return expr; }
+    let mut replacements = Vec::with_capacity(targets.len());
+    for target in targets {
+        let (start, end, sign, n, sides, prior_mode, prior_keep) = target;
+        let keep_mode = if (mode == "adv") != (sign.as_str() == "-") { "h" } else { "l" };
+        let count = n.parse::<usize>().unwrap_or(1);
+        let kept = prior_keep.as_deref().and_then(|v| v.parse::<usize>().ok()).unwrap_or(count);
+        // Keep malformed base formulas malformed; mode must not legitimize khK where K > N.
+        if prior_mode.is_some() && kept > count { return expr; }
         let canonical_mode = prior_mode.is_some() && count == 2 && kept == 1;
-        let plain_pool = prior_mode.is_none() || kept == count;
-        if prior_mode.is_some() && !canonical_mode && !plain_pool { return c[0].to_string(); }
-        let (dice, keep) = if canonical_mode { (2, 1) } else { (count.saturating_mul(2), count) };
-        format!("{}{}d20k{}{}{}", &c[1], dice, keep_mode, keep, &c[5])
-    }).into_owned()
+        let custom_keep = prior_mode.is_some() && kept < count;
+        let (dice, keep) = if canonical_mode { (2, 1) } else {
+            (count.saturating_mul(2), if custom_keep { kept } else { count })
+        };
+        replacements.push((*start, *end, format!("{}{}d{}k{}{}", sign, dice, sides, keep_mode, keep)));
+    }
+    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut out = expr;
+    for (start, end, replacement) in replacements { out.replace_range(start..end, &replacement); }
+    out
 }
 
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
@@ -516,13 +536,21 @@ mod dice_tests {
         assert_eq!(nat_d20(&json!({"parts":[{"sides":20,"kept":[20]}]})), (true, false));
     }
     #[test]
-    fn advantage_and_disadvantage_transform_only_the_first_d20() {
-        assert_eq!(with_d20_mode("1d20+5+2d6", "adv"), "2d20kh1+5+2d6");
-        assert_eq!(with_d20_mode("d6+1d20-2d20", "dis"), "d6+2d20kl1-2d20");
-        assert_eq!(with_d20_mode("2d20kh1+3", "dis"), "2d20kl1+3");
-        assert_eq!(with_d20_mode("2d20kl1-2", "adv"), "2d20kh1-2");
-        assert_eq!(with_d20_mode("d20kh1+5", "adv"), "2d20kh1+5");
-        assert_eq!(with_d20_mode("d200+3", "adv"), "d200+3");
-        assert_eq!(with_d20_mode("4d20kh3+3", "adv"), "4d20kh3+3");
+    fn advantage_and_disadvantage_work_with_any_die_and_preserve_d20_priority() {
+        assert_eq!(with_dice_mode("1d20+5+2d6", "adv"), "2d20kh1+5+2d6");
+        assert_eq!(with_dice_mode("d6+1d20-2d20", "dis"), "d6+2d20kl1-2d20");
+        assert_eq!(with_dice_mode("d4+3", "adv"), "2d4kh1+3");
+        assert_eq!(with_dice_mode("2d6+3", "dis"), "4d6kl2+3");
+        assert_eq!(with_dice_mode("-d6+5", "adv"), "-2d6kl1+5");
+        assert_eq!(with_dice_mode("-d6+5", "dis"), "-2d6kh1+5");
+        assert_eq!(with_dice_mode("d8+1d6+2", "adv"), "2d8kh1+2d6kh1+2");
+        assert_eq!(with_dice_mode("d100+3", "adv"), "2d100kh1+3");
+        assert_eq!(with_dice_mode("d200+3", "dis"), "2d200kl1+3");
+        assert_eq!(with_dice_mode("2d20kh1+3", "dis"), "2d20kl1+3");
+        assert_eq!(with_dice_mode("2d20kl1-2", "adv"), "2d20kh1-2");
+        assert_eq!(with_dice_mode("d20kh1+5", "adv"), "2d20kh1+5");
+        assert_eq!(with_dice_mode("4d20kh3+3", "adv"), "8d20kh3+3");
+        assert_eq!(with_dice_mode("4d6kh3+3", "dis"), "8d6kl3+3");
+        assert_eq!(with_dice_mode("4d6kh5+3", "adv"), "4d6kh5+3");
     }
 }
