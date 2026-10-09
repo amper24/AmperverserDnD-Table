@@ -12,59 +12,9 @@
   if (!NodeForm) throw new Error('node-params-form.js должен быть загружен до mechanics-graph.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   const GRAPH_VERSION = 2;
-  const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
-  const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
-  const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-  const NODE_DEFS = {
-    'data.number': { label: 'Число', group: 'Данные', inputs: {}, outputs: { value: 'number' }, defaults: { value: 1 } },
-    'data.dice': { label: 'Кость', group: 'Данные', inputs: {}, outputs: { value: 'dice' }, defaults: { value: { count: 1, sides: 6, bonus: 0, stat: '' } } },
-    'data.ability': { label: 'Характеристика', group: 'Данные', inputs: {}, outputs: { value: 'ability' }, defaults: { value: 'str' } },
-    'data.table': { label: 'Таблица по уровню', group: 'Данные', inputs: {}, outputs: { value: 'table' }, defaults: { value: {} } },
-    'data.choice': { label: 'Выбор', group: 'Данные', inputs: {}, outputs: { value: 'choice' }, defaults: { value: { id: '', count: 1, options: [] } } },
-    'data.text': { label: 'Текст', group: 'Данные', inputs: {}, outputs: { value: 'text' }, defaults: { value: '' } },
-    'condition.edition': { label: 'Если редакция', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { editions: ['2014'] } },
-    'condition.level': { label: 'Если уровень', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { min: 1, max: 20 } },
-    'condition.subclass': { label: 'Если подкласс', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '' } },
-    'condition.choice': { label: 'Если выбран вариант', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '', value: '' } },
-    'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
-    'rule.ability_bonus': { label: 'Бонус характеристики', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { ability: 'str', amount: 1 } },
-    'rule.speed': { label: 'Скорость', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'number' }, outputs: { effect: 'effect' }, defaults: { value: 30 } },
-    'rule.languages': { label: 'Языки', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.proficiencies': { label: 'Владения', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { kind: 'general', value: [] } },
-    'rule.hit_die': { label: 'Кость хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'text' }, outputs: { effect: 'effect' }, defaults: { value: 'd8' } },
-    'rule.saving_throws': { label: 'Спасброски', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.feature': { label: 'Умение', group: 'Правила персонажа', inputs: { enabled: 'bool' }, outputs: { effect: 'effect' }, defaults: { name: 'Новое умение', text: '', feature_name: '' } },
-    'rule.skills': { label: 'Выбор навыков', group: 'Правила персонажа', inputs: { enabled: 'bool', options: 'list', count: 'number' }, outputs: { effect: 'effect' }, defaults: { id: '', count: 1, options: [] } },
-    'rule.spell_list': { label: 'Список заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', spells: 'list' }, outputs: { effect: 'effect' }, defaults: { mode: 'known', ability: 'int', spells: [] } },
-    'rule.spell_slots': { label: 'Ячейки заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.asi': { label: 'Улучшение характеристик', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.class_progression': { label: 'Прогрессия класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.armor_formula': { label: 'Защита без доспехов', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex + @con', name: 'Защита без доспехов', no_shield: false } },
-    'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
-    'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
-    'action.program': { label: 'Действие / программа', group: 'Действия', inputs: {}, outputs: { exec: 'flow' }, defaults: { program_id: '', name: 'Новое действие', trigger: 'use' } },
-    'group.instance': { label: 'Группа', group: 'Группы', inputs: {}, outputs: {}, defaults: { group_id: '' } },
-    'group.input': { label: 'Вход группы', group: 'Группы', inputs: {}, outputs: { value: 'text' }, defaults: { socket_id: '' } },
-    'group.output': { label: 'Выход группы', group: 'Группы', inputs: { value: 'text' }, outputs: {}, defaults: { socket_id: '' } },
-  };
-  for (const kind of ACTION_KINDS) {
-    NODE_DEFS[`action.${kind}`] = {
-      label: Base.TYPES[kind]?.[0] || kind, group: 'Действия',
-      inputs: { exec: 'flow', enabled: 'bool' }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
-    };
-  }
-  function actionDefaults(kind) {
-    const base = { enabled: true, when: 'always' };
-    if (['attack', 'damage', 'heal', 'temp_hp', 'roll'].includes(kind)) base.dice = Base.dice(kind === 'attack' ? '1d20+@atk' : '1d6');
-    if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
-    if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
-    if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
-    if (kind === 'condition') Object.assign(base, { condition: 'Отравленный', operation: 'add' });
-    if (kind === 'adjust') Object.assign(base, { field: 'speed', amount: 5 });
-    if (kind === 'require') Object.assign(base, { field: 'hp.current', minimum: 1 });
-    if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
-    return base;
-  }
+  const NodeRegistry = window.NodeRegistry;
+  if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
+  const { ACTION_KINDS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
   const nodeLabel = type => NODE_DEFS[type]?.label || type;
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
@@ -544,6 +494,35 @@
   }
   function adaptForRead(mechanics) { return mechanics?.version === 1 ? v1ToV2(mechanics) : clone(mechanics); }
 
+  // Чистая проверка связи: петля, цикл и общий validateGraph. Возвращает текст ошибки или ''.
+  function wouldCycle(links, fromNode, toNode) {
+    const next = new Map();
+    for (const link of links) { if (!next.has(link.from.node)) next.set(link.from.node, []); next.get(link.from.node).push(link.to.node); }
+    const seen = new Set([toNode]), stack = [toNode];
+    while (stack.length) {
+      const id = stack.pop();
+      if (id === fromNode) return true;
+      for (const n of next.get(id) || []) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+    }
+    return false;
+  }
+  function connectionError(graph, link) {
+    const nodes = new Map((graph.nodes || []).map(n => [n.id, n])), groups = new Map((graph.groups || []).map(g => [g.id, g]));
+    const from = nodes.get(link?.from?.node), to = nodes.get(link?.to?.node);
+    if (!from || !to) return 'Узел провода не найден.';
+    if (from.id === to.id) return 'Нельзя соединить узел с самим собой.';
+    const outType = socketMap(from, groups).outputs?.[link.from.socket], inType = socketMap(to, groups).inputs?.[link.to.socket];
+    if (!outType || !inType) return 'Сокет не найден.';
+    if (!NodeRegistry.sameType(outType, inType)) return `Типы не совпадают: ${outType} → ${inType}.`;
+    const rest = (graph.links || []).filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+    if (wouldCycle(rest, link.from.node, link.to.node)) return 'Связь создаёт цикл.';
+    // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
+    // отклоняется только ошибка, которую добавила именно эта связь. Полная проверка — при сохранении.
+    const groupsList = graph.groups || [];
+    const before = validateGraph(graph, groupsList), after = validateGraph({ ...graph, links: [...rest, link] }, groupsList);
+    return after && after !== before ? after : '';
+  }
+
   function graphEditor(doc, options = {}) {
     const category = options.category || 'feature';
     const seed = doc.mechanics || Base.migrate(doc, category);
@@ -553,7 +532,7 @@
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
-    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', drag = null;
+    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     const snapshot = () => JSON.stringify(graph);
     function checkpoint() {
@@ -582,18 +561,107 @@
       const group = graph.groups.find(item => item.id === node.params?.group_id), list = direction === 'inputs' ? group?.inputs : group?.outputs;
       return list?.find(item => item.id === socket)?.name || socket;
     }
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const canvasEl = () => root.querySelector?.('.node-canvas');
+    const canvasRect = () => canvasEl()?.getBoundingClientRect?.() || { left: 0, top: 0 };
+    const worldPoint = (clientX, clientY) => { const rect = canvasRect(); return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k }; };
+    function applyView() { const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; }
+    // Слушатели на document на время жеста (перетаскивание, панорама, рамка, провод); снимаются сами.
+    function track(onMove, onUp) {
+      const move = e => onMove(e);
+      const up = e => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up); onUp(e); };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+    }
+    function zoomAt(clientX, clientY, factor) {
+      const rect = canvasRect(), cx = clientX - rect.left, cy = clientY - rect.top;
+      const k = clamp(view.k * factor, 0.3, 2.5), wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
+      view.k = k; view.x = cx - wx * k; view.y = cy - wy * k; applyView();
+    }
+    function startPan(e) {
+      const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      track(m => { view.x = start.vx + m.clientX - start.x; view.y = start.vy + m.clientY - start.y; applyView(); }, () => {});
+    }
+    function refreshWires() { const world = root.querySelector?.('.node-world'); if (!world) return; world.querySelector('.node-wires')?.remove(); drawWires(world); }
+    function startDrag(e, node) {
+      if (e.button !== 0) return;
+      e.preventDefault?.();
+      if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; }
+      const items = [...selected].map(id => nodeById(id)).filter(Boolean).map(n => ({ node: n, left: n.position?.x || 0, top: n.position?.y || 0 }));
+      const start = { x: e.clientX, y: e.clientY }; let moved = false;
+      track(m => {
+        if (!moved && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 3) return;
+        moved = true; suppressClick = true;
+        const dx = (m.clientX - start.x) / view.k, dy = (m.clientY - start.y) / view.k;
+        for (const item of items) {
+          moveNode(item.node, item.left + dx, item.top + dy);
+          const card = root.querySelector?.(`[data-node-id="${item.node.id}"]`);
+          if (card) card.style.cssText = `left:${item.node.position.x}px;top:${item.node.position.y}px`;
+        }
+        refreshWires();
+      }, () => { if (moved) { checkpoint(); render(); } });
+    }
+    // Рамочное выделение по DOM-прямоугольникам карточек; Ctrl/Shift добавляет к выбранным.
+    function startMarquee(e) {
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey, start = { x: e.clientX, y: e.clientY }, base = additive ? [...selected] : [];
+      const rect0 = canvasRect(); let box = null;
+      track(m => {
+        if (!box) { if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 4) return; box = document.createElement('div'); box.className = 'node-marquee'; canvasEl()?.append(box); }
+        box.style.left = `${Math.min(start.x, m.clientX) - rect0.left}px`; box.style.top = `${Math.min(start.y, m.clientY) - rect0.top}px`;
+        box.style.width = `${Math.abs(m.clientX - start.x)}px`; box.style.height = `${Math.abs(m.clientY - start.y)}px`;
+      }, up => {
+        box?.remove();
+        if (!box) { if (!additive) { selected = new Set(); activeNode = ''; render(); } return; }
+        const l = Math.min(start.x, up.clientX), r = Math.max(start.x, up.clientX), t = Math.min(start.y, up.clientY), b = Math.max(start.y, up.clientY);
+        const hit = [...root.querySelectorAll('[data-node-id]')].filter(c => { const q = c.getBoundingClientRect(); return q.right >= l && q.left <= r && q.bottom >= t && q.top <= b; }).map(c => c.dataset.nodeId);
+        selected = new Set([...base, ...hit]); activeNode = hit.at(-1) || activeNode; render();
+      });
+    }
+    // Провод от выхода или входа. Совместимые сокеты подсвечиваются; при ошибке связь откатывается.
+    function startWire(e, node, socket, direction) {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      const type = portType(node, direction, socket), start = { x: e.clientX, y: e.clientY };
+      let moved = false, detached = null;
+      const origin = { node: node.id, socket, direction, type };
+      track(m => {
+        if (!moved) {
+          if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 4) return;
+          moved = true;
+          // Тянем уже подключённый вход: связь снимается на время жеста, при неудаче возвращается.
+          if (direction === 'inputs') { detached = graph.links.find(l => l.to.node === node.id && l.to.socket === socket) || null; if (detached) graph.links = graph.links.filter(l => l !== detached); }
+          wire = origin;
+        }
+        const p = worldPoint(m.clientX, m.clientY); wire = { ...origin, x: p.x, y: p.y };
+        root.querySelectorAll?.('.node-socket').forEach(s => s.classList.toggle('compatible', s.dataset.dir !== direction && NodeRegistry.sameType(s.dataset.type, type) && s.dataset.node !== node.id));
+        refreshWires();
+      }, up => {
+        const w = wire; wire = null;
+        if (!moved) return;
+        const hit = document.elementFromPoint?.(up.clientX, up.clientY)?.closest?.('.node-socket');
+        const restore = () => { if (detached) graph.links.push(detached); };
+        if (hit && hit.dataset.dir !== w.direction) {
+          const other = { node: hit.dataset.node, socket: hit.dataset.socket }, mine = { node: w.node, socket: w.socket };
+          const out = w.direction === 'outputs' ? mine : other, inp = w.direction === 'outputs' ? other : mine;
+          applyLink({ from: { node: out.node, socket: out.socket }, to: { node: inp.node, socket: inp.socket } }, 'Провод соединён.', restore);
+        } else { restore(); status = detached ? 'Провод отменён и возвращён.' : ''; render(); }
+      });
+    }
+    // Связь через клик: сначала выход, затем вход. Проверка и откат — в applyLink.
+    function applyLink(link, ok, rollback = null) {
+      const error = connectionError(graph, link);
+      if (error) { rollback?.(); status = error; render(); return false; }
+      graph.links = graph.links.filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+      graph.links.push(clone(link));
+      checkpoint(); pendingPort = null; status = ok; render(); return true;
+    }
+    function removeLink(link) { graph.links = graph.links.filter(l => l !== link); checkpoint(); status = 'Провод удалён.'; render(); }
     function choosePort(node, direction, socket) {
       if (direction === 'outputs') {
         pendingPort = { node: node.id, socket, type: portType(node, direction, socket) };
         status = `Выход «${socket}» выбран. Теперь нажмите совместимый вход.`; render(); return;
       }
       if (!pendingPort) { status = 'Сначала выберите выходной порт.'; render(); return; }
-      const targetType = portType(node, direction, socket);
-      if (!targetType || targetType !== pendingPort.type) { status = 'Типы сокетов не совпадают.'; render(); return; }
-      if (pendingPort.node === node.id) { status = 'Нельзя соединить узел с самим собой.'; render(); return; }
-      graph.links = graph.links.filter(l => !(l.to.node === node.id && l.to.socket === socket));
-      graph.links.push({ from: { node: pendingPort.node, socket: pendingPort.socket }, to: { node: node.id, socket } });
-      checkpoint(); pendingPort = null; status = ''; render();
+      applyLink({ from: { node: pendingPort.node, socket: pendingPort.socket }, to: { node: node.id, socket } }, '');
     }
     function addFrame() {
       const members = [...selected]; if (!members.length) { status = 'Выберите узел(ы) рамки с Ctrl/⌘ + щелчок.'; render(); return; }
@@ -643,30 +711,67 @@
     }
     function moveNode(node, x, y) { node.position ||= { x: 0, y: 0 }; node.position.x = Math.max(-100000, Math.min(100000, x)); node.position.y = Math.max(-100000, Math.min(100000, y)); }
     function nodeById(id) { return graph.nodes.find(n => n.id === id); }
+    function deleteNodes(ids) {
+      const drop = new Set(ids);
+      graph.nodes = graph.nodes.filter(n => !drop.has(n.id));
+      graph.links = graph.links.filter(l => !drop.has(l.from.node) && !drop.has(l.to.node));
+      graph.frames.forEach(f => f.nodes = f.nodes.filter(n => !drop.has(n)));
+      selected = new Set([...selected].filter(id => !drop.has(id)));
+      if (drop.has(activeNode)) activeNode = '';
+      checkpoint(); render();
+    }
+    let menuHandle = null;
+    function openMenu(clientX, clientY, options) {
+      menuHandle?.close(); menuHandle = null;
+      const container = canvasEl(), rect = canvasRect();
+      if (!container || !window.NodeMenu) return;
+      menuHandle = window.NodeMenu.open({ container, x: clientX - rect.left, y: clientY - rect.top, onClose: () => { menuHandle = null; }, ...options });
+    }
     function nodeCard(node) {
       const pos = node.position || { x: 0, y: 0 }, group = node.type === 'group.instance' ? graph.groups.find(g => g.id === node.params?.group_id) : null;
-      const inputs = socketMap(node, new Map(graph.groups.map(g => [g.id, g]))).inputs;
-      const outputs = socketMap(node, new Map(graph.groups.map(g => [g.id, g]))).outputs;
-      const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => el('button', { class: `node-socket in socket-${type}`, title: `${portLabel(node, 'inputs', name)} · ${type}`, onclick: e => { e.stopPropagation(); choosePort(node, 'inputs', name); } }, el('i'), portLabel(node, 'inputs', name)))),
-        el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => el('button', { class: `node-socket out socket-${type}`, title: `${portLabel(node, 'outputs', name)} · ${type}`, onclick: e => { e.stopPropagation(); choosePort(node, 'outputs', name); } }, portLabel(node, 'outputs', name), el('i')))));
+      const groups = new Map(graph.groups.map(g => [g.id, g]));
+      const inputs = socketMap(node, groups).inputs, outputs = socketMap(node, groups).outputs;
+      const socket = (direction, name, type) => el('button', { class: `node-socket ${direction === 'inputs' ? 'in' : 'out'} socket-${type}`, title: `${portLabel(node, direction, name)} · ${type}`,
+        'data-dir': direction, 'data-node': node.id, 'data-socket': name, 'data-type': type,
+        onpointerdown: e => startWire(e, node, name, direction), onclick: e => { e.stopPropagation(); choosePort(node, direction, name); } },
+        direction === 'inputs' ? [el('i'), portLabel(node, direction, name)] : [portLabel(node, direction, name), el('i')]);
+      const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => socket('inputs', name, type))),
+        el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => socket('outputs', name, type))));
       const card = el('article', { class: 'graph-node' + (selected.has(node.id) ? ' selected' : '') + (node.type.startsWith('action.') ? ' action-node' : node.type.startsWith('rule.') ? ' rule-node' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id,
-        onclick: e => { activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); } },
-        el('header', { class: 'graph-node-head', onpointerdown: e => { if (e.target?.closest?.('button')) return; drag = { id: node.id, x: e.clientX, y: e.clientY, left: pos.x, top: pos.y }; e.preventDefault?.(); } },
-          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); graph.frames.forEach(f => f.nodes = f.nodes.filter(n => n !== node.id)); selected.delete(node.id); if (activeNode === node.id) activeNode = ''; checkpoint(); render(); } }, '×')),
+        onpointerdown: () => { suppressClick = false; },
+        onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
+        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { sections: [{ title: 'Узел', items: [
+          { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }, { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) }, { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] }],
+          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else addFrame(); } }); } },
+        el('header', { class: 'graph-node-head', onpointerdown: e => { if (e.target?.closest?.('button')) return; startDrag(e, node); } },
+          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), sockets);
       return card;
     }
     function drawWires(canvas) {
       if (!document.createElementNS) return;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'node-wires'); svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%'); svg.setAttribute('aria-hidden', 'true');
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'node-wires'); svg.setAttribute('aria-hidden', 'true');
+      // Кривая Безье: отступ пропорционален расстоянию, поэтому провод не «петляет» у близких узлов.
+      const curve = (x1, y1, x2, y2) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`; };
       for (const link of graph.links) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
-        const x1 = (a.position?.x || 0) + 224, y1 = (a.position?.y || 0) + 56;
-        const x2 = (b.position?.x || 0), y2 = (b.position?.y || 0) + 56;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + 80} ${y1}, ${x2 - 80} ${y2}, ${x2} ${y2}`); path.setAttribute('class', 'node-wire');
+        const type = portType(a, 'outputs', link.from.socket) || 'any';
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', curve((a.position?.x || 0) + 224, (a.position?.y || 0) + 56, b.position?.x || 0, (b.position?.y || 0) + 56));
+        path.setAttribute('class', `node-wire socket-${type}`);
+        path.addEventListener('click', e => { e.stopPropagation(); removeLink(link); });
         svg.appendChild(path);
+      }
+      if (wire) {
+        const a = nodeById(wire.node); if (a) {
+          const sx = (a.position?.x || 0) + (wire.direction === 'outputs' ? 224 : 0), sy = (a.position?.y || 0) + 56;
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', wire.direction === 'outputs' ? curve(sx, sy, wire.x, wire.y) : curve(wire.x, wire.y, sx, sy));
+          path.setAttribute('class', `node-wire node-wire-preview socket-${wire.type}`);
+          svg.appendChild(path);
+        }
       }
       canvas.appendChild(svg);
     }
@@ -696,6 +801,8 @@
       return el('details', { class: 'node-preview', open: '' }, el('summary', {}, 'Предпросмотр графа · без сохранения'), el('div', { class: 'row' }, field('Редакция', edition), field('Уровень', level), field('Подкласс ID', subclass)), el('div', { class: 'node-field' }, el('span', {}, 'Выборы по ID'), choices), out);
     }
     function render() {
+      // Редактор переназначает массивы графа (links, nodes); записываем актуальный граф в документ до каждого показа.
+      doc.mechanics.graph = graph;
       root.replaceChildren();
       const searchBox = el('input', { class: 'node-search', value: search, placeholder: 'Найти узел…  Shift+A', 'aria-label': 'Поиск узла', oninput: e => { search = e.target.value; render(); root.querySelector?.('.node-search')?.focus?.(); } });
       const query = search.toLocaleLowerCase();
@@ -703,18 +810,25 @@
       const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...palette.slice(0, 8).map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
-        el('button', { class: 'small', onclick: addFrame }, '＋ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'));
+        el('button', { class: 'small', onclick: addFrame }, '＋ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
-      const canvas = el('div', { class: 'node-canvas', onpointermove: e => {
-        if (!drag) return; const node = nodeById(drag.id); if (!node) return;
-        moveNode(node, drag.left + e.clientX - drag.x, drag.top + e.clientY - drag.y);
-        const card = root.querySelector?.(`[data-node-id="${drag.id}"]`); if (card) card.style = `left:${node.position.x}px;top:${node.position.y}px`;
-      }, onpointerup: () => { if (drag) { checkpoint(); drag = null; render(); } } }, ...graph.frames.map(f => {
+      const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(Boolean); if (!members.length) return null;
         const left = Math.min(...members.map(n => n.position?.x || 0)) - 16, top = Math.min(...members.map(n => n.position?.y || 0)) - 34;
         return el('div', { class: 'node-frame', style: `left:${left}px;top:${top}px;width:${Math.max(230, ...members.map(n => (n.position?.x || 0) - left + 230))}px;height:${Math.max(100, ...members.map(n => (n.position?.y || 0) - top + 120))}px` }, el('b', {}, f.title));
-      }), ...graph.nodes.map(nodeCard));
-      drawWires(canvas);
+      });
+      const world = el('div', { class: 'node-world', style: `transform: translate(${view.x}px, ${view.y}px) scale(${view.k})` }, ...frames, ...graph.nodes.map(nodeCard));
+      const canvas = el('div', { class: 'node-canvas', 'data-zoom': view.k.toFixed(2),
+        onwheel: e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1); },
+        onpointerdown: e => {
+          if (e.button === 1) { e.preventDefault(); startPan(e); return; }
+          if (e.button !== 0 || e.target.closest?.('.graph-node, button, input, select, textarea, .node-menu')) return;
+          startMarquee(e);
+        },
+        onauxclick: e => e.preventDefault(),
+        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
+      drawWires(world);
       const inspector = renderProperties();
       const statusLine = el('div', { class: 'node-status', role: 'status' }, status);
       root.append(toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview());
@@ -722,11 +836,13 @@
       root._statusNode = statusLine;
     }
     root.addEventListener('keydown', e => {
+      const typing = e.target?.closest?.('input, textarea, select');
       if (e.shiftKey && String(e.key).toLowerCase() === 'a') { e.preventDefault(); const input = root.querySelector?.('.node-search'); input?.focus?.(); input?.select?.(); }
       if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'z') { e.preventDefault(); restore(e.shiftKey ? historyIndex + 1 : historyIndex - 1); }
-      if (e.key === 'Escape') { pendingPort = null; status = ''; render(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && selected.size) { e.preventDefault(); deleteNodes([...selected]); }
+      if (e.key === 'Escape') { pendingPort = null; wire = null; status = ''; closeMenuSafe(); render(); }
     });
-    root.addEventListener('pointermove', e => { if (drag) { const node = nodeById(drag.id); if (node) moveNode(node, drag.left + e.clientX - drag.x, drag.top + e.clientY - drag.y); } });
+    function closeMenuSafe() { menuHandle?.close(); menuHandle = null; }
     // Validation and cancel are controlled by the enclosing record modal.
     mechanics = graphEnvelope(graph, Object.fromEntries(Object.entries(mechanics).filter(([k]) => k !== 'version' && k !== 'graph')));
     doc.mechanics = mechanics;
@@ -749,6 +865,8 @@
     toGraph,
     toLegacy: v2ToV1,
     validateGraph,
+    connectionError,
+    wouldCycle,
     graphPreview: previewGraph,
     evaluateGraph,
     applyGraphRules,
