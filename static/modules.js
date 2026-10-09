@@ -422,7 +422,6 @@ window.Modules = (function () {
     if (gopts.folder && !d.folder) d.folder = gopts.folder;
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const state = { name: entry?.name || '' };
-    const json = el('textarea', { style: 'min-height:160px;font-family:monospace;font-size:12px' }, JSON.stringify(d, null, 2));
     // Класс и раса — не объекты на карте: у них только изображение карточки, токена нет.
     const NO_TOKEN = category === 'race' || category === 'class';
     if (!entry && !d.mechanics) { const starter = window.Mechanics?.starter?.(category); if (starter) d.mechanics = starter; }

@@ -6,6 +6,8 @@
 (() => {
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до mechanics-graph.js');
+  const NodeForm = window.NodeForm;
+  if (!NodeForm) throw new Error('node-params-form.js должен быть загружен до mechanics-graph.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   const GRAPH_VERSION = 2;
   const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
@@ -663,15 +665,18 @@
     }
     function renderProperties() {
       const node = nodeById(activeNode); if (!node) return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('p', { class: 'muted small' }, 'Выберите узел на поле.'));
-      const params = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'Параметры выбранного узла', onfocus: () => { params.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
-        try { const next = JSON.parse(params.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
+      const rawParams = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'JSON параметров узла', onfocus: () => { rawParams.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
+        try { const next = JSON.parse(rawParams.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
         catch (e) { status = e.message; if (root._statusNode) root._statusNode.textContent = status; }
       } }, JSON.stringify(node.params || {}, null, 2));
+      const groupOptions = graph.groups.map(item => ({ value: item.id, label: item.name }));
+      const form = NodeForm.nodeParams(node, { groups: groupOptions, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      const raw = el('details', { class: 'node-raw' }, el('summary', {}, 'Для разработчиков · JSON'), rawParams);
       const def = NODE_DEFS[node.type], group = node.type === 'group.instance' ? graph.groups.find(item => item.id === node.params?.group_id) : null;
       const groupDetails = group ? el('div', { class: 'node-group-details' }, field('Имя группы', el('input', { value: group.name, onchange: e => { group.name = String(e.target.value).slice(0, 120) || group.name; checkpoint(); render(); } })),
         el('p', { class: 'muted small' }, `Входы: ${(group.inputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`),
         el('p', { class: 'muted small' }, `Выходы: ${(group.outputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`)) : null;
-      return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('b', {}, def.label), el('p', { class: 'muted small' }, node.type), groupDetails, field('Параметры · JSON', params), el('button', { class: 'small danger', onclick: () => { graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); activeNode = ''; selected.delete(node.id); checkpoint(); render(); } }, 'Удалить узел'));
+      return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('b', {}, def.label), el('p', { class: 'muted small' }, node.type), groupDetails, el('div', { class: 'node-field' }, el('span', {}, 'Параметры'), form), raw, el('button', { class: 'small danger', onclick: () => { graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); activeNode = ''; selected.delete(node.id); checkpoint(); render(); } }, 'Удалить узел'));
     }
     function renderPreview() {
       const out = el('pre', { class: 'node-preview-output' });
@@ -679,12 +684,9 @@
       const edition = el('select', { value: currentEdition, onchange: e => { currentEdition = e.target.value; draw(); } }, ...['2014', '2024'].map(x => el('option', { value: x, selected: x === currentEdition ? '' : null }, `SRD ${x}`)));
       const level = el('input', { type: 'number', min: 1, max: 20, value: currentLevel, onchange: e => { currentLevel = Math.max(1, Math.min(20, Number(e.target.value) || 1)); draw(); } });
       const subclass = el('input', { value: currentSubclass, placeholder: 'ID подкласса', oninput: e => { currentSubclass = e.target.value; draw(); } });
-      const choices = el('textarea', { value: JSON.stringify(currentChoices, null, 2), 'aria-label': 'Выборы для предпросмотра', oninput: e => {
-        try { const next = JSON.parse(e.target.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Выборы должны быть JSON-объектом.'); currentChoices = next; draw(); }
-        catch (error) { out.textContent = error.message; }
-      } });
+      const choices = NodeForm.valueEditor(currentChoices, { ariaLabel: 'Выборы для предпросмотра', onChange: next => { currentChoices = next; draw(); } });
       draw();
-      return el('details', { class: 'node-preview', open: '' }, el('summary', {}, 'Предпросмотр графа · без сохранения'), el('div', { class: 'row' }, field('Редакция', edition), field('Уровень', level), field('Подкласс ID', subclass)), field('Выборы по ID · JSON', choices), out);
+      return el('details', { class: 'node-preview', open: '' }, el('summary', {}, 'Предпросмотр графа · без сохранения'), el('div', { class: 'row' }, field('Редакция', edition), field('Уровень', level), field('Подкласс ID', subclass)), el('div', { class: 'node-field' }, el('span', {}, 'Выборы по ID'), choices), out);
     }
     function render() {
       root.replaceChildren();

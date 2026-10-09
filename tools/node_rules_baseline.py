@@ -88,6 +88,10 @@ def merge(src: Path) -> dict:
 
 
 def check(src: Path, dst: Path) -> bool:
+    if not src.exists():
+        print(f"нет файла {src}: монолит удалён; восстановите его из git (d56a5a2:docs/node-rules-baseline.json) "
+              f"или укажите --src", file=sys.stderr)
+        return False
     original = _load(src)
     rebuilt = merge(dst)
     if original == rebuilt:

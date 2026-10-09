@@ -1532,3 +1532,21 @@ body.lu-open { overflow: hidden; }
 .node-properties{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg);min-width:0}.node-properties h3{margin:0 0 8px;font-size:15px}.node-properties .node-field{display:flex;flex-direction:column;gap:5px}.node-properties textarea{width:100%;min-height:250px;resize:vertical;font:12px/1.45 ui-monospace,SFMono-Regular,monospace;white-space:pre}.node-status{min-height:22px;padding-top:7px;color:var(--muted);font-size:12px}.node-status:not(:empty){color:var(--accent)}.node-preview{margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:10px}.node-preview summary{font-weight:600;cursor:pointer}.node-preview .row{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.node-preview .node-field{display:flex;flex-direction:column;gap:4px;min-width:120px}.node-preview textarea{width:100%;min-height:75px;resize:vertical;font:11px/1.4 ui-monospace,SFMono-Regular,monospace}.node-preview-output{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
 @media(max-width:850px){.node-workspace{grid-template-columns:1fr}.node-properties{min-height:180px}.node-properties textarea{min-height:180px}}
 @media(max-width:600px){.node-editor{padding:9px}.node-canvas{height:60vh;min-height:440px}.node-toolbar .node-field{min-width:100%;flex-basis:100%}.node-add{font-size:11px}}
+
+/* Форма параметров узла и выборов (node-params-form.js): поля вместо ручного JSON */
+.param-form{display:flex;flex-direction:column;gap:8px;min-width:0}
+.param-form .param-row,.param-form .node-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.param-form .param-row.param-check{flex-direction:row;align-items:center;gap:6px}
+.param-form input:not([type=checkbox]),.param-form select,.param-form textarea{width:100%;min-width:0;box-sizing:border-box}
+.param-label{font-size:12px;color:var(--muted)}
+.param-group{border:1px dashed var(--border);border-radius:8px;padding:8px;margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.param-group.in-list{border-style:solid}
+.param-group legend{font-size:12px;color:var(--muted);padding:0 4px}
+.param-checks{display:flex;gap:12px;flex-wrap:wrap}
+.param-list{display:flex;flex-direction:column;gap:8px}
+.param-item{border:1px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.param-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.param-add-key{display:flex;gap:6px;align-items:center}
+.param-add-key input{flex:1;min-width:0}
+.node-raw{margin-top:10px;font-size:12px}
+.node-raw summary{cursor:pointer;color:var(--muted)}
