@@ -85,3 +85,21 @@ test('dropped dice stay visible and are marked as dropped without changing their
   assert.equal(document.body.children[0].getAttribute('data-values'), '2,5,5,1');
   window.DiceVisualizer.cancel();
 });
+
+test('the layout keeps every die near the centre and inside the stage', () => {
+  const { window } = harness();
+  const width = 820, height = 286, centreY = height / 2;
+  for (const count of [1, 2, 3, 4, 6, 8, 12, 20, 32]) {
+    const plan = window.DiceVisualizer.plan(count, width, height);
+    assert.equal(plan.spots.length, count);
+    for (const spot of plan.spots) {
+      const rest = [plan.cx + spot.rest[0], plan.cy + spot.rest[1]];
+      assert.ok(rest[0] - plan.size * 1.2 >= 0 && rest[0] + plan.size * 1.2 <= width, `${count} dice stay horizontally visible`);
+      assert.ok(rest[1] - plan.size * 1.2 >= 24 && rest[1] + plan.size * 1.2 <= height - 24, `${count} dice stay vertically visible`);
+      assert.ok(Math.hypot(rest[0] - width / 2, rest[1] - centreY) < 230, `${count} dice stay close to the centre`);
+    }
+  }
+  assert.equal(window.DiceVisualizer.plan(1, width, height).cy, centreY);
+  assert.equal(window.DiceVisualizer.plan(1, width, height).cx, width / 2);
+});
+

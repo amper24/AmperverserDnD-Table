@@ -221,7 +221,9 @@
   }
   function openRollModeMenu(event, expr, label, kind = 'check') {
     // Keep native text-editing and note-button context menus intact.
-    if (event.target.closest?.('button, input, select, textarea')) return;
+    // Native inputs keep their own menu; a nested button (e.g. a note button) keeps its own too.
+    const inner = event.target.closest?.('button, input, select, textarea');
+    if (inner && inner !== event.currentTarget) return;
     event.preventDefault(); event.stopPropagation();
     closeRollModeMenu();
     const menu = el('div', { class: 'roll-mode-menu', role: 'menu', 'aria-label': `Режим броска: ${label}` });
@@ -307,6 +309,13 @@
       counts[die] = (counts[die] || 0) + accepted; total += accepted;
     }
     return counts;
+  }
+  // Кость хитов для быстрого броска: первая доступная (не потраченная) кость, иначе крупнейшая из листа.
+  function hitDieExpr() {
+    const counts = hitDiceCounts(), used = s.hp.hit_dice_used || {};
+    const open = Object.entries(counts).map(([die, max]) => [Number(die), max - (Number(used[die]) || 0)]).find(([, n]) => n > 0);
+    const die = open ? open[0] : Math.max(0, ...Object.keys(counts).map(Number)) || 8;
+    return `1d${die}${fmtMod(abMod('con'))}`;
   }
   async function shortRest() {
     if (readonly || inventoryBusy || restBusy) return;
@@ -514,7 +523,8 @@
     c2.append(el('div', { class: 'card', style: 'margin-top:8px' }, h3n('Хиты', 'hp'), noteLine('hp'),
       el('div', { class: 'row' }, el('div', {}, el('label', {}, 'Текущие'), el('input', { type: 'number', value: hp.current, disabled: dis(), onchange: e => { hp.current = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Макс'), el('input', { type: 'number', value: hp.max, disabled: dis(), onchange: e => { hp.max = +e.target.value; save(); render(); } })), el('div', {}, el('label', {}, 'Врем.'), el('input', { type: 'number', value: hp.temp, disabled: dis(), onchange: e => { hp.temp = +e.target.value; save(); } })), el('div', {}, el('label', { title: `Потрачено ${hitSpent} из ${hitTotal}` }, `Кости хитов ${Math.max(0, hitTotal - hitSpent)}/${hitTotal}`), el('input', { value: hp.hit_dice, disabled: dis(), onchange: e => { hp.hit_dice = e.target.value; save(); } }))),
       el('div', { class: 'hpbar' }, el('div', { style: `width:${Math.max(0, Math.min(100, hp.current / (hp.max || 1) * 100))}%` })),
-      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение')),
+      el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Урон')) || 0; hp.current -= v; save(); render(); } }, '− Урон'), el('button', { class: 'small', onclick: async () => { const v = +(await prompt2('Лечение')) || 0; hp.current = Math.min(hp.max, hp.current + v); save(); render(); } }, '+ Лечение'),
+        el('button', { class: 'small', title: 'Бросок кости хитов с модификатором Телосложения. Alt — преимущество, Ctrl — помеха, правая кнопка — выбрать режим', onclick: e => roll(hitDieExpr(), 'кость хитов', e, 'heal'), oncontextmenu: e => openRollModeMenu(e, hitDieExpr(), 'кость хитов', 'heal') }, icon('dice', 13), ' Кость хитов')),
       el('div', { class: 'row', style: 'margin-top:6px;font-size:12px' }, el('span', {}, 'Спасброски от смерти: ', ...[0, 1, 2].map(i => el('span', { class: 'pip', style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--ok);margin:0 2px;cursor:pointer;background:' + (s.death_saves.success > i ? 'var(--ok)' : 'transparent'), onclick: () => { s.death_saves.success = s.death_saves.success > i ? i : i + 1; save(); render(); } })), ' / ', ...[0, 1, 2].map(i => el('span', { style: 'display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--danger);margin:0 2px;cursor:pointer;background:' + (s.death_saves.failure > i ? 'var(--danger)' : 'transparent'), onclick: () => { s.death_saves.failure = s.death_saves.failure > i ? i : i + 1; save(); render(); } }))))));
 
     // Действия: экипированные предметы с кнопками + подготовленные заклинания с атаками + ручные атаки
@@ -527,8 +537,8 @@
     if (s.attacks.length) act.append(el('div', { class: 'atk-row muted', style: 'font-size:11px' }, el('span', {}, 'Ручные атаки'), el('span', {}, 'Атака'), el('span', {}, 'Урон'), el('span'), el('span')));
     s.attacks.forEach((a, i) => act.append(el('div', { class: 'atk-row' },
       el('input', { value: a.name, disabled: dis(), onchange: e => { a.name = e.target.value; save(); } }), el('input', { value: a.bonus, disabled: dis(), onchange: e => { a.bonus = e.target.value; save(); } }), el('input', { value: a.damage, disabled: dis(), onchange: e => { a.damage = e.target.value; save(); } }),
-      el('button', { class: 'small', title: 'Бросок атаки', onclick: e => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)', e, 'attack') }, icon('target')),
-      el('button', { class: 'small', title: 'Урон', onclick: () => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)', null, 'damage') }, icon('zap')),
+      el('button', { class: 'small', title: 'Бросок атаки. Правая кнопка — преимущество или помеха', onclick: e => roll('d20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)', e, 'attack'), oncontextmenu: e => openRollModeMenu(e, 'd20' + (/^[+-]/.test(a.bonus) ? a.bonus : '+' + (a.bonus || 0)), a.name + ' (атака)', 'attack') }, icon('target')),
+      el('button', { class: 'small', title: 'Урон. Правая кнопка — преимущество или помеха', onclick: e => roll(a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)', e, 'damage'), oncontextmenu: e => openRollModeMenu(e, a.damage.replace(/[^\dкd+\-khl@a-z_]/gi, ''), a.name + ' (урон)', 'damage') }, icon('zap')),
       readonly ? null : el('button', { class: 'small danger', style: 'grid-column:1/-1;justify-self:end;padding:0 6px', onclick: () => { s.attacks.splice(i, 1); save(); render(); } }, 'убрать'))));
     if (!eq.length && !castable.length && !s.attacks.length) act.append(el('p', { class: 'muted small' }, 'Экипируйте оружие во вкладке «Инвентарь» или подготовьте заклинания — их кнопки появятся здесь.'));
     if (!readonly) act.append(el('div', { class: 'row', style: 'margin-top:6px' }, el('button', { class: 'small', onclick: () => { s.attacks.push({ name: 'Атака', bonus: fmtMod(abMod('str') + prof()), damage: '1d8' + fmtMod(abMod('str')) }); save(); render(); } }, '+ Ручная атака'), el('button', { class: 'small', onclick: async () => { const it = await M.editItem(M.newItem({ type: 'weapon', equipped: false, actions: [{ name: 'Атака', kind: 'attack', roll: '1d20+@atk' }, { name: 'Урон', kind: 'damage', roll: '1d8+@best' }] })); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Оружие')));
