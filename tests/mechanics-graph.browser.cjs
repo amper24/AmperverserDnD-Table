@@ -18,7 +18,7 @@ const assert = require('node:assert/strict');
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'equipment', 'mechanics', 'node-params-form', 'mechanics-graph', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'mechanics-graph', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://mechanics-graph.test/');
     await page.evaluate(() => {

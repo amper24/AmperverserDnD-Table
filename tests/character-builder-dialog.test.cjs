@@ -75,7 +75,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.confirm = () => true; // диалог подтверждения: по умолчанию «да», тест переопределяет
 vm.createContext(sandbox);
-for (const f of ['common.js', 'dice.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'character-builder.js', 'builder-dialog.js'])
+for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'character-builder.js', 'builder-dialog.js'])
   vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), sandbox, { filename: f });
 
 // ---------- помощники ----------

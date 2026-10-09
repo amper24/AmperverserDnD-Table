@@ -39,6 +39,13 @@ window.CharacterBuilder = (() => {
   // ---------- Реестр проекций: как запись справочника меняет лист ----------
   const handlers = new Map();
   const register = (category, apply) => handlers.set(category, apply);
+  // Значение пассивного блока v1 записи (без зависимости от порядка загрузки mechanics.js).
+  const passiveFieldValue = (entry, field) => {
+    for (const program of entry?.data?.mechanics?.programs || [])
+      if (program.trigger === 'passive') for (const block of program.blocks || [])
+        if (block.kind === 'passive' && block.enabled !== false && block.field === field) return block.value;
+    return null;
+  };
   const feature = (s, name, text, source, mechanics) => s.features.push(Modules.newFeature({ name, text: text || '', source, mechanics }));
   register('race', (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name; if (d.speed) s.speed = d.speed;
@@ -654,7 +661,9 @@ window.CharacterBuilder = (() => {
     }
     const classEntry = draft.selected.class;
     const classSlug = String(classEntry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[classEntry?.name] || '';
-    if (classSlug === 'barbarian' || classSlug === 'monk') s.unarmored_defense = classSlug;
+    // Защита без доспехов — пассивный блок записи класса (поле unarmored_defense), а не проверка по имени класса.
+    const classRule = passiveFieldValue(classEntry, 'unarmored_defense');
+    if (classRule && typeof classRule === 'object') s.unarmored_defense = JSON.parse(JSON.stringify(classRule));
     const raceEntry = draft.selected.race, raceRoot = raceEntry?.data?.parent || raceEntry?.name;
     const raceParentEntry = (draft.catalog || []).find(e => e.category === 'race' && e.name === raceRoot && !e.data?.parent);
     const raceRootNameEn = String(raceParentEntry?.data?.name_en || raceEntry?.data?.name_en || '').toLowerCase();

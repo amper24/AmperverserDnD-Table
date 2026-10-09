@@ -132,7 +132,9 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "rule.spell_slots" | "rule.asi" | "rule.class_progression" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
         "rule.armor_formula" => {
             let formula = p["formula"].as_str().unwrap_or("");
-            if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(). \t\r\n".contains(c)) { return Err(bad("Формула КД содержит только числа, характеристики и арифметические символы.")); }
+            if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); }
+            if p.get("name").is_some() && (p["name"].as_str().is_none() || utf16_len(p["name"].as_str().unwrap_or("")) > 120) { return Err(bad("Название защиты без доспехов: строка до 120 символов.")); }
+            if p.get("no_shield").is_some() && !p["no_shield"].is_boolean() { return Err(bad("Запрет щита: логическое значение.")); }
         }
         "rule.hp_bonus" if p.get("amount").is_some() && json_integer(&p["amount"]).map(|n| n < -1000 || n > 1000).unwrap_or(true) => return Err(bad("Бонус хитов: целое от −1000 до 1000.")),
         "rule.manual" if p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000 => return Err(bad("Ручное правило: до 4000 символов.")),

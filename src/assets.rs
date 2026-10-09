@@ -6,6 +6,9 @@ use axum::{
     routing::get,
     Json, Router,
 };
+
+/// Допустимые типы ассетов. Клиентский реестр — static/asset-kinds.js; tests/asset-kinds.test.cjs сверяет списки.
+const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item"];
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -84,7 +87,7 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
     if let Some(cid) = &campaign_id {
         get_member(&st, cid, &user.id).await?;
     }
-    if !["map", "token", "prop", "portrait", "item"].contains(&kind.as_str()) {
+    if !ASSET_KINDS.contains(&kind.as_str()) {
         kind = "token".into();
     }
     let max_side = st.cfg.images.max_side(&kind);

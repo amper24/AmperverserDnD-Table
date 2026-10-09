@@ -465,11 +465,11 @@ window.Table = (function () {
 
   function placeAsset(a, w) {
     const g = grid();
-    let layer = a.kind === 'map' ? 'map' : a.kind === 'prop' ? 'prop' : 'character';
+    let layer = AssetKinds.layerOf(a.kind);
     if (!S.isGM && layer !== 'character') layer = 'character';
     let wdt, hgt, x = w.x, y = w.y;
     if (layer === 'map') { wdt = a.width; hgt = a.height; if (S.scene.items.some(i => i.layer === 'map')) { if (!confirm('Заменить текущую карту?')) return; S.scene.items.filter(i => i.layer === 'map').forEach(i => S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: i.id })); } x = wdt / 2; y = hgt / 2; }
-    else { const ratio = a.width / a.height || 1; wdt = g; hgt = g / ratio; if (a.kind === 'prop') { wdt = g; hgt = g; } const p = snapPos(x, y, wdt, hgt); x = p.x; y = p.y; }
+    else { const ratio = a.width / a.height || 1; wdt = g; hgt = g / ratio; if (AssetKinds.get(a.kind).square) { wdt = g; hgt = g; } const p = snapPos(x, y, wdt, hgt); x = p.x; y = p.y; }
     upsert({ layer, z: layer === 'map' ? -100 : 0, data: { type: 'image', asset_id: a.id, x, y, w: wdt, h: hgt, name: layer === 'character' ? a.name : undefined, owner_id: S.isGM ? undefined : S.user.id, locked: layer === 'map' } });
     if (layer === 'map') setTimeout(fitToMap, 100);
   }

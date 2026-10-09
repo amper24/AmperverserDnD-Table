@@ -6,6 +6,8 @@
 (() => {
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до mechanics-graph.js');
+  const Formulas = window.Formulas;
+  if (!Formulas) throw new Error('formulas.js должен быть загружен до mechanics-graph.js');
   const NodeForm = window.NodeForm;
   if (!NodeForm) throw new Error('node-params-form.js должен быть загружен до mechanics-graph.js');
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -37,7 +39,7 @@
     'rule.spell_slots': { label: 'Ячейки заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
     'rule.asi': { label: 'Улучшение характеристик', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
     'rule.class_progression': { label: 'Прогрессия класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.armor_formula': { label: 'Формула КД', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex' } },
+    'rule.armor_formula': { label: 'Защита без доспехов', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex + @con', name: 'Защита без доспехов', no_shield: false } },
     'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
     'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
     'action.program': { label: 'Действие / программа', group: 'Действия', inputs: {}, outputs: { exec: 'flow' }, defaults: { program_id: '', name: 'Новое действие', trigger: 'use' } },
@@ -385,7 +387,12 @@
     if (type === 'rule.skills' && (!idText(p.id, 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
     if (type === 'rule.spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
     if (['rule.spell_slots', 'rule.asi', 'rule.class_progression'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
-    if (type === 'rule.armor_formula' && (typeof p.formula !== 'string' || !/^[0-9+\-*@a-z_().\s]{1,100}$/i.test(p.formula))) return 'Формула КД содержит только числа, характеристики и арифметические символы.';
+    if (type === 'rule.armor_formula') {
+      const formulaError = typeof p.formula === 'string' && p.formula.length <= 100 ? Formulas.validate(p.formula) : 'Формула защиты: строка до 100 символов.';
+      if (formulaError) return `Формула защиты без доспехов: ${formulaError}`;
+      if (p.name !== undefined && (typeof p.name !== 'string' || p.name.length > 120)) return 'Название защиты без доспехов: строка до 120 символов.';
+      if (p.no_shield !== undefined && typeof p.no_shield !== 'boolean') return 'Запрет щита: логическое значение.';
+    }
     if (type === 'rule.hp_bonus' && p.amount !== undefined && (!Number.isInteger(p.amount) || Math.abs(p.amount) > 1000)) return 'Бонус хитов: целое от −1000 до 1000.';
     if (type === 'rule.manual' && (typeof p.text !== 'string' || p.text.length > 4000)) return 'Ручное правило: до 4000 символов.';
     return '';
@@ -464,7 +471,7 @@
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.asi_rules.push(clone(table)); emit('asi', { table }); }
     } else if (type === 'rule.class_progression') {
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_progression = clone(table); emit('class_progression', { table }); }
-    } else if (type === 'rule.armor_formula') { const formula = String(n('formula') ?? p.formula ?? ''); sheet.armor_formula = formula; emit('armor_formula', { formula });
+    } else if (type === 'rule.armor_formula') { const rule = { formula: String(n('formula') ?? p.formula ?? ''), name: String(p.name || 'Защита без доспехов').slice(0, 120), no_shield: Boolean(p.no_shield) }; sheet.unarmored_defense = clone(rule); emit('unarmored_defense', rule);
     } else if (type === 'rule.hp_bonus') { const amount = Number(n('amount') ?? p.amount) || 0; sheet.hp.max += amount; sheet.hp.current += amount; emit('hp_bonus', { amount });
     } else if (type === 'rule.manual') { const text = String(n('text') ?? p.text ?? ''); sheet.manual_rules.push(text); emit('manual', { text }); }
     outputs.set(`${context.nodeId}:effect`, { type: 'effect', node_type: type });
@@ -519,7 +526,7 @@
       else if (effect.kind === 'spell_slots') target.spells.slots = { ...target.spells.slots, ...clone(effect.table) };
       else if (effect.kind === 'asi') target.asi_rules.push(clone(effect.table));
       else if (effect.kind === 'class_progression') target.class_progression = clone(effect.table);
-      else if (effect.kind === 'armor_formula') target.armor_formula = effect.formula;
+      else if (effect.kind === 'unarmored_defense') target.unarmored_defense = { formula: effect.formula, name: effect.name, no_shield: effect.no_shield };
       else if (effect.kind === 'hp_bonus') { target.hp.max += effect.amount; target.hp.current += effect.amount; }
       else if (effect.kind === 'manual') (target.manual_rules ||= []).push(effect.text);
     }
