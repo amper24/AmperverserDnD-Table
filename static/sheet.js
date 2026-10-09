@@ -140,7 +140,7 @@
   window.PROGRAM_USE = ref => {
     if(ref.character_id!==id)return toast('Откройте лист владельца.');
     const list=ref.source_kind==='item'?s.inventory:ref.source_kind==='spell'?s.spells.known:s.features;
-    const doc=list.find(d=>d.uid===ref.source_uid),p=doc?.mechanics?.programs.find(p=>p.id===ref.program_id);
+    const doc=list.find(d=>d.uid===ref.source_uid),p=doc?.mechanics?window.Mechanics?.programsOf?.(doc.mechanics,{edition:s.edition,level:s.level,subclass:s.subclass,choices:s.creation?.rule_choices}).find(p=>p.id===ref.program_id):null;
     if(!p)return toast('Действие больше недоступно.');return runProgram(doc,ref.source_kind,p,{mode:ref.mode,gm_only:ref.gm_only});
   };
   window.ITEM_USE = ref => ref.character_id === id ? inventoryOp({ op: 'use', item_uid: ref.item_uid, actions: ref.actions, mode: ref.mode, gm_only: ref.gm_only }) : toast('Используйте предмет на листе его владельца.');
@@ -749,7 +749,7 @@
     const copySpell = JSON.parse(JSON.stringify(x));
     const check = SpellRules.spend(JSON.parse(JSON.stringify(sp)), copySpell, choice);
     if (!check.ok) return toast(check.reason, 4000);
-    const program = x.mechanics?.programs?.find(p => p.trigger === 'use');
+    const program = x.mechanics ? window.Mechanics?.programsOf?.(x.mechanics,{edition:s.edition,level:s.level,subclass:s.subclass,choices:s.creation?.rule_choices}).find(p=>p.trigger==='use') : null;
     if (x.mechanics && !program) return toast('Для этого заклинания не настроено действие сотворения.');
     if (program) {
       const result = await runProgram(x, 'spell', program);

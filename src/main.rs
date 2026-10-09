@@ -12,6 +12,7 @@ mod i18n;
 mod images;
 mod inventory;
 mod mechanics;
+mod mechanics_graph;
 mod packs;
 mod realtime;
 mod scenes;

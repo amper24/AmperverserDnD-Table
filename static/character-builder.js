@@ -21,6 +21,8 @@
 // =============================================================================
 window.CharacterBuilder = (() => {
   const keys = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+  const mechanicsPrograms = (mechanics, context) => window.Mechanics?.programsOf ? window.Mechanics.programsOf(mechanics, context) : mechanics?.programs || [];
+  const mechanicsContext = (draft, level = 1) => ({ edition: draft.edition || '2014', level, subclass: draft.selected?.subclass?.id || '', choices: { ...(draft.picks || {}), ...(draft.ruleChoices || {}) } });
   const short = { СИЛ: 'str', ЛОВ: 'dex', ТЕЛ: 'con', ИНТ: 'int', МДР: 'wis', ХАР: 'cha' };
   const ALIGNMENTS = ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
   const LANGUAGES = ['Общий', 'Общий жестовый язык', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Абиссальный', 'Небесный', 'Драконий', 'Глубинная речь', 'Инфернальный', 'Первичный', 'Сильван', 'Подземный общий'];
@@ -451,14 +453,14 @@ window.CharacterBuilder = (() => {
 
   // ---------- Навыки: что дают модули и что выбирает игрок ----------
   /// Навыки, которые модуль выдаёт без выбора (предыстория, раса, пассивные блоки «Навыки»).
-  function passiveSkills(entry, kind = '') {
+  function passiveSkills(entry, kind = '', context = {}) {
     if (!entry) return [];
     const out = [], add = name => { const key = skillKey(name); if (key && !out.some(x => x.key === key)) out.push({ key, name: skillName(key), ability: (SKILLS.find(([k]) => k === key) || [])[2] || 'str', source: entry.name, kind }); };
     const data = entry.data || {};
     for (const name of Array.isArray(data.skills) ? data.skills : []) add(name);
-    const passive = window.Mechanics?.passiveData?.(entry) || entry;
+    const passive = window.Mechanics?.passiveData?.(entry, context) || entry;
     for (const name of Array.isArray(passive?.data?.skills) ? passive.data.skills : []) add(name);
-    for (const program of data.mechanics?.programs || []) if (program.trigger === 'passive')
+    if (!window.Mechanics?.passiveData) for (const program of mechanicsPrograms(data.mechanics, context)) if (program.trigger === 'passive')
       for (const block of program.blocks || []) if (block.kind === 'passive' && block.enabled !== false && block.field === 'skills')
         for (const name of asList(block.value)) add(name);
     return out;
@@ -563,11 +565,12 @@ window.CharacterBuilder = (() => {
   const SKILL_SOURCES = { race: 'раса', class: 'класс', background: 'предыстория' };
   const sourceLabel = item => [SKILL_SOURCES[item.kind] || item.kind, item.source].filter(Boolean).join(' · ');
   function skillsState(draft) {
-    const granted = [...passiveSkills(draft.selected?.race, 'race'), ...passiveSkills(draft.selected?.class, 'class'), ...passiveSkills(draft.selected?.background, 'background'), ...choiceSkills(draft)];
+    const context = mechanicsContext(draft, 1);
+    const granted = [...passiveSkills(draft.selected?.race, 'race', context), ...passiveSkills(draft.selected?.class, 'class', context), ...passiveSkills(draft.selected?.background, 'background', context), ...choiceSkills(draft)];
     const unique = []; for (const item of granted) if (!unique.some(x => x.key === item.key)) unique.push(item);
     const taken = new Set(unique.map(g => g.key));
     const klass = draft.selected?.class;
-    const data = ((klass && window.Mechanics?.passiveData?.(klass)) || klass)?.data || {};
+    const data = ((klass && window.Mechanics?.passiveData?.(klass, context)) || klass)?.data || {};
     const from = Array.isArray(data.skills?.from) ? data.skills.from : [];
     const choose = Math.max(0, Math.min(Number(data.skills?.choose) || 0, from.length));
     const options = from.map(name => {
@@ -596,8 +599,9 @@ window.CharacterBuilder = (() => {
       spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [],
       inventory: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
       traits: Object.fromEntries(['player_name', 'faith', 'age', 'height', 'weight', 'eyes', 'skin', 'hair', 'personality', 'ideals', 'bonds', 'flaws', 'appearance', 'backstory'].map(k => [k, String(draft.traits?.[k] || '')])) };
-    const picks = draft.picks || {}, chosen = [];
+    const picks = draft.picks || {}, chosen = [], context = mechanicsContext(draft, 1);
     const entries = ['race', 'class', 'subclass', 'background', 'feat'].map(k => draft.selected[k]).filter(Boolean).concat(draft.spells || []);
+    const graphHpBonuses = [];
     const race = draft.selected.race;
     if (race?.data?.parent) {
       const candidates = (draft.catalog || []).filter(e => e.category === 'race' && e.name === race.data.parent && !e.data?.subrace);
@@ -605,7 +609,7 @@ window.CharacterBuilder = (() => {
       if (parent) entries.unshift(parent);
     }
     for (const raw of entries) {
-      let e = window.Mechanics ? Mechanics.passiveData(raw) : raw;
+      let e = window.Mechanics ? Mechanics.passiveData(raw, context) : raw;
       if (e.category === 'subclass' && e.data?.features) {
         const features = { ...e.data.features }, selections = draft.ruleChoices?.subclassVariants || {};
         for (const level of Object.keys(features)) for (const group of subclassVariantGroups(e, Number(level))) {
@@ -617,7 +621,7 @@ window.CharacterBuilder = (() => {
       handlers.get(e.category)?.(s, e);
       // Explicit passive blocks also work on homebrew categories, not just the old
       // race/class fields. The build remains a pure projection, so bonuses never stack on rebuild.
-      for(const p of e.data?.mechanics?.programs||[])if(p.trigger==='passive')for(const b of p.blocks||[])if(b.kind==='passive'&&b.enabled!==false){
+      if (!window.Mechanics?.passiveData) for (const p of mechanicsPrograms(e.data?.mechanics, context)) if(p.trigger==='passive')for(const b of p.blocks||[])if(b.kind==='passive'&&b.enabled!==false){
         const field=b.field,v=b.value;
         if(field==='speed'&&Number.isFinite(v))s.speed=v;
         else if(field==='hit_die')s.hp.hit_dice='1'+v;
@@ -639,10 +643,14 @@ window.CharacterBuilder = (() => {
           chosen.push({ group_id: group.id, group: group.name, type: group.type, source: e.name, option_id: option.id, name: option.name });
         }
       }
-      for (const t of e.data?.traits || []) feature(s, t.name, t.text, e.name, t.mechanics || window.Mechanics?.forFeature(e.data?.mechanics,t.name));
-      const custom=e.data?.mechanics?.programs?.filter(p=>p.trigger==='use'&&!p.feature_name);
+      for (const t of e.data?.traits || []) feature(s, t.name, t.text, e.name, t.mechanics || window.Mechanics?.forFeature(e.data?.mechanics,t.name,context));
+      const custom=mechanicsPrograms(e.data?.mechanics, context).filter(p=>p.trigger==='use'&&!p.feature_name);
       if(custom?.length&&e.category!=='spell'&&e.category!=='feat')feature(s,e.name,e.data.desc,e.source,{version:1,programs:JSON.parse(JSON.stringify(custom))});
       s.modules.push({ schema_version: 1, entry_id: e.id, category: e.category, source: e.source, pack_id: e.pack_id || null, snapshot: JSON.parse(JSON.stringify(e)) });
+      if (window.Mechanics?.applyGraphRules) {
+        const applied = Mechanics.applyGraphRules(e.data?.mechanics, s, { ...context, source: e.name });
+        if (!applied.error) graphHpBonuses.push(...applied.effects.filter(effect => effect.kind === 'hp_bonus').map(effect => Number(effect.amount) || 0));
+      }
     }
     const classEntry = draft.selected.class;
     const classSlug = String(classEntry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[classEntry?.name] || '';
@@ -777,7 +785,7 @@ window.CharacterBuilder = (() => {
       if (!existing) s.spells.known.push(spell);
     }
     const ancestryHp = s.edition === '2024' && /(^|[ (])Дварф([ )]|$)/i.test(s.race) ? 1 : 0;
-    s.hp.max = s.hp.current = Math.max(1, Number(s.hp.hit_dice.split('d')[1]) + modifier(s.abilities.con)) + ancestryHp;
+    s.hp.max = s.hp.current = Math.max(1, Number(s.hp.hit_dice.split('d')[1]) + modifier(s.abilities.con)) + ancestryHp + graphHpBonuses.reduce((sum, amount) => sum + amount, 0);
     // Стартовое снаряжение: предметы справочника со стопками, слотами и расходом боеприпасов.
     const starting = startingInventory(draft);
     s.inventory = starting.inventory;

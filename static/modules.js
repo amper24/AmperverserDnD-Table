@@ -253,7 +253,7 @@ window.Modules = (function () {
   }
   function itemIconName(it) { return ITEM_ICONS[it?.type] || 'box'; }
   function actionButtons(doc, ctx, prefix, options = {}) {
-    if (doc.mechanics && window.Mechanics) return Mechanics.buttons(doc, options);
+    if (doc.mechanics && window.Mechanics) return Mechanics.buttons(doc, { ...options, context: ctx });
     const row = el('div', { class: 'actions-row' });
     const usable = options.item ? Equipment.activeActions(doc) : (doc.actions || []).map((a, index) => ({ ...a, index }));
     const rollable = usable.filter(a => a.roll), paired = new Set();
