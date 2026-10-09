@@ -1,0 +1,458 @@
+{
+  "cases": [
+    {
+      "name": "empty-v2",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "typed-number-to-speed",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 35
+              }
+            },
+            {
+              "id": "s",
+              "type": "rule.speed",
+              "params": {
+                "value": 30
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "s",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "socket-type-mismatch",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "t",
+              "type": "data.text",
+              "params": {
+                "value": "35"
+              }
+            },
+            {
+              "id": "s",
+              "type": "rule.speed",
+              "params": {
+                "value": 30
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "t",
+                "socket": "value"
+              },
+              "to": {
+                "node": "s",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "directed-cycle",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "a",
+              "type": "action.manual",
+              "params": {
+                "block_id": "a",
+                "text": "a"
+              }
+            },
+            {
+              "id": "b",
+              "type": "action.manual",
+              "params": {
+                "block_id": "b",
+                "text": "b"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "b",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "b",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "fractional-dice-count",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "d",
+              "type": "data.dice",
+              "params": {
+                "value": {
+                  "count": 1.5,
+                  "sides": 6
+                }
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "numeric-string-speed",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "s",
+              "type": "rule.speed",
+              "params": {
+                "value": "30"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "numeric-edition-token",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "e",
+              "type": "condition.edition",
+              "params": {
+                "editions": [
+                  2014
+                ]
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "group-boundary-outside-definition",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "i",
+              "type": "group.input",
+              "params": {
+                "socket_id": "in"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "reusable-group-boundary",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "p",
+                "name": "Test",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "g",
+              "type": "group.instance",
+              "params": {
+                "group_id": "g1"
+              }
+            },
+            {
+              "id": "r",
+              "type": "action.roll",
+              "params": {
+                "block_id": "root-roll",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0
+                },
+                "when": "always"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "g",
+                "socket": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "g",
+                "socket": "out"
+              },
+              "to": {
+                "node": "r",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g1",
+              "name": "Wrapper",
+              "inputs": [
+                {
+                  "id": "in",
+                  "name": "Flow in",
+                  "type": "flow"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "Flow out",
+                  "type": "flow"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "in"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                },
+                {
+                  "id": "m",
+                  "type": "action.manual",
+                  "params": {
+                    "block_id": "inner-manual",
+                    "text": "Apply manually",
+                    "when": "always"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "m",
+                    "socket": "exec"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "m",
+                    "socket": "exec"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "group-interface-without-boundary-node",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g1",
+              "name": "Missing boundary",
+              "inputs": [
+                {
+                  "id": "in",
+                  "name": "Input",
+                  "type": "flow"
+                }
+              ],
+              "outputs": [],
+              "nodes": [],
+              "links": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "recursive-group-reference",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g1",
+              "name": "One",
+              "inputs": [],
+              "outputs": [],
+              "nodes": [
+                {
+                  "id": "g2i",
+                  "type": "group.instance",
+                  "params": {
+                    "group_id": "g2"
+                  }
+                }
+              ],
+              "links": []
+            },
+            {
+              "id": "g2",
+              "name": "Two",
+              "inputs": [],
+              "outputs": [],
+              "nodes": [
+                {
+                  "id": "g1i",
+                  "type": "group.instance",
+                  "params": {
+                    "group_id": "g1"
+                  }
+                }
+              ],
+              "links": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "conditional-needs-bool-input",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "if",
+              "type": "flow.if",
+              "params": {}
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    }
+  ]
+}

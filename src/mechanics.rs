@@ -10,7 +10,18 @@ fn num(v: &Value, k: &str) -> i64 { v[k].as_i64().unwrap_or(0) }
 fn bounded(v: &Value, k: &str, low: i64, high: i64) -> ApiResult<i64> { v[k].as_i64().filter(|n| (low..=high).contains(n)).ok_or_else(|| bad("Некорректное число в блоке")) }
 fn field_ok(s: &str) -> bool { ["speed","initiative_bonus","currency.gp","currency.sp","hp.max","abilities.str","abilities.dex","abilities.con","abilities.int","abilities.wis","abilities.cha"].contains(&s) }
 fn pointer(s: &str) -> String { format!("/{}", s.replace('.', "/")) }
-pub fn validate(m: &Value) -> ApiResult<()> { validate_depth(m, 0) }
+pub fn validate(m: &Value) -> ApiResult<()> { validate_nested(m, 0) }
+fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
+    if depth > 4 { return Err(bad("Слишком глубокая вложенность механик")); }
+    match m["version"].as_i64() {
+        Some(1) => validate_depth(m, depth),
+        Some(2) => {
+            crate::mechanics_graph::validate(m)?;
+            validate_depth(&crate::mechanics_graph::to_v1(m), depth)
+        }
+        _ => Err(bad("Неподдерживаемая или слишком большая схема механик")),
+    }
+}
 /// Выбор «либо / либо» при создании персонажа: `data.choices` расы, класса или предыстории.
 /// Ограниченная схема: группа (тип, сколько выбрать) и до 18 вариантов со значением по типу.
 const CHOICE_TYPES: &[&str] = &["ability","skill","language","feature","proficiency"];
@@ -48,7 +59,7 @@ pub fn validate_choices(v: &Value) -> ApiResult<()> {
                 "feature" => {
                     let t = text(&o["value"], "text");
                     if t.trim().is_empty() || t.chars().count() > 4000 { return Err(bad("Описание умения варианта: до 4000 символов")); }
-                    if !o["value"]["mechanics"].is_null() { validate_depth(&o["value"]["mechanics"], 0)?; }
+                    if !o["value"]["mechanics"].is_null() { validate_nested(&o["value"]["mechanics"], 1)?; }
                 }
                 _ => {
                     let s = o["value"].as_str().unwrap_or("");
@@ -79,7 +90,7 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
             if ["attack","damage","heal","temp_hp","roll"].contains(&kind) || (kind == "save" && !b["dice"].is_null()) { formula(b)?; }
             match kind {
                 "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",1,9)?; } }
-                "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_depth(&b["item"]["mechanics"],depth+1)?; } }
+                "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_nested(&b["item"]["mechanics"], depth + 1)?; } }
                 "adjust" => { if !field_ok(text(b,"field")) { return Err(bad("Недоступный показатель")); } bounded(b,"amount",-10000,10000)?; }
                 "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
@@ -173,7 +184,15 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     let mut s=sheet.clone();inventory::normalize(&mut s)?;
     let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(bad("Неизвестный источник механики"))};
     let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||bad("Источник не найден"))?;
-    let m=normalize(&doc["mechanics"]);validate(&m)?;
+    validate(&doc["mechanics"])?;
+    let graph_context = json!({
+        "edition": s.get("edition").and_then(Value::as_str).unwrap_or("2014"),
+        "level": s.get("level").and_then(Value::as_i64).unwrap_or(1),
+        "subclass": s.get("subclass").cloned().unwrap_or(json!("")),
+        "choices": s.pointer("/creation/rule_choices").filter(|value| value.is_object()).cloned().unwrap_or(json!({})),
+    });
+    let legacy = if doc["mechanics"]["version"] == 2 { crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context) } else { doc["mechanics"].clone() };
+    let m=normalize(&legacy);validate(&m)?;
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
     if category=="item" { inventory::validate_use(&doc)?; }
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();

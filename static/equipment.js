@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 // Inventory rules shared by the sheet, item templates and editors. Server enforces mutations.
 window.Equipment = (() => {
+  const mechanicsPrograms = (mechanics, context) => window.Mechanics?.programsOf ? window.Mechanics.programsOf(mechanics, context) : mechanics?.programs || [];
   // Слоты рук и одежды. Эти ключи зеркалят src/inventory.rs; сервер повторно проверяет операции.
   const slots = {
     main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', armor: 'Доспех', head: 'Голова',
@@ -150,8 +151,9 @@ window.Equipment = (() => {
     
     // Сначала проверяем blocks у надетого доспеха
     const armorItem = sheet.inventory?.find(it => it.equipped && it.worn_slot === 'armor' && it.qty === 1);
-    if (armorItem?.mechanics?.programs) {
-      for (const prog of armorItem.mechanics.programs) {
+    const armorPrograms = armorItem ? mechanicsPrograms(armorItem.mechanics, { edition: sheet.edition, level: sheet.level, subclass: sheet.subclass, choices: sheet.creation?.rule_choices }) : [];
+    if (armorPrograms.length) {
+      for (const prog of armorPrograms) {
         if (prog.trigger !== 'passive') continue;
         for (const block of prog.blocks || []) {
           if (block.kind !== 'adjust' || block.field !== 'armor' || block.enabled === false) continue;
@@ -242,7 +244,7 @@ window.Equipment = (() => {
   const activeActions = it => (it.actions || []).map((a, index) => ({ ...a, index })).filter(a => !a.grip || (a.grip === 'two' ? it.hand_slot === 'both' : it.hand_slot !== 'both'));
   function resourceStatus(it, inventory) {
     if(it.mechanics){
-      const costs=it.mechanics.programs.flatMap(p=>p.trigger==='use'?p.blocks.filter(b=>b.kind==='consume'&&b.enabled!==false):[]);
+      const costs=mechanicsPrograms(it.mechanics, window.SHEET_CTX || {}).flatMap(p=>p.trigger==='use'?p.blocks.filter(b=>b.kind==='consume'&&b.enabled!==false):[]);
       if(!costs.length)return {text:'Авторасход выключен',available:Infinity};
       const reports=costs.map(b=>['slot','uses'].includes(b.resource)?{text:`${b.resource==='slot'?'Ячейка':'Использования'}: −${b.amount}`,available:Infinity}:resourceStatus({...it,mechanics:null,consume:{enabled:true,resource:b.resource,target_uid:b.source==='self'?'self':b.source==='item'?b.item_uid:'',ammo_tag:b.tag,amount:b.amount,trigger:b.trigger}},inventory));
       return {text:reports.map(r=>r.text).join(' / '),available:Math.min(...reports.map(r=>r.available))};
