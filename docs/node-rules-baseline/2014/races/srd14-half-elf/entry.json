@@ -1,0 +1,20 @@
+{
+  "slug": "srd14-half-elf",
+  "name": "Полуэльф",
+  "parent": null,
+  "choices": {
+    "raceSkills": [
+      "acrobatics",
+      "athletics"
+    ]
+  },
+  "edition": "2014",
+  "kind": "races",
+  "levels": [
+    1,
+    3,
+    5,
+    11,
+    20
+  ]
+}

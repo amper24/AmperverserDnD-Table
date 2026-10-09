@@ -1,0 +1,17 @@
+{
+  "slug": "srd14-dragonborn",
+  "name": "Драконорождённый",
+  "parent": null,
+  "choices": {
+    "dragonAncestry": "Чёрный"
+  },
+  "edition": "2014",
+  "kind": "races",
+  "levels": [
+    1,
+    3,
+    5,
+    11,
+    20
+  ]
+}
