@@ -194,16 +194,44 @@ window.Modules = (function () {
 
   /// Строка атаки в стиле листов D&D: название, кнопка попадания и кнопка урона.
   /// hit / damage: { expr, dtype, kind, index? }; index нужен, если бросок идёт через onUse (инвентарь).
+  // Правый клик по кнопке броска: обычный бросок, преимущество или помеха (как в листе).
+  let activeModeMenu = null, modeMenuCleanup = null;
+  function closeModeMenu() {
+    modeMenuCleanup?.(); modeMenuCleanup = null;
+    activeModeMenu?.remove(); activeModeMenu = null;
+  }
+  function openModeMenu(event, label, pick) {
+    event.preventDefault(); event.stopPropagation();
+    closeModeMenu();
+    const menu = el('div', { class: 'roll-mode-menu', role: 'menu', 'aria-label': `Режим броска: ${label}` });
+    for (const [mode, text] of [['normal', 'Обычный бросок'], ['dis', 'С помехой'], ['adv', 'С преимуществом']]) menu.append(el('button', {
+      type: 'button', class: 'roll-mode-option' + (mode === 'normal' ? ' normal' : ''), role: 'menuitem',
+      onclick: () => { closeModeMenu(); pick({ mode, gm_only: false }); }
+    }, text));
+    document.body.append(menu);
+    activeModeMenu = menu;
+    const margin = 8, rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin))}px`;
+    menu.style.top = `${Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin))}px`;
+    const onDown = e => { if (!menu.contains(e.target)) closeModeMenu(); };
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); closeModeMenu(); } };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    modeMenuCleanup = () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true); };
+  }
   function attackRow(name, hit, damage, ctx, prefix, options = {}) {
     const row = el('div', { class: 'attack-row' });
     const label = text => (prefix ? prefix + ': ' : '') + text;
     const mk = (action, cls, caption) => {
       const shown = ctx ? resolve(action.expr, ctx) : action.expr;
+      const fire = mode => {
+        if (options.onUse && action.index !== undefined) return options.onUse([action.index], mode);
+        roll(action.expr, label(action.name || caption), { ctx, kind: action.kind, ...mode });
+      };
       return el('button', { class: 'act-btn ' + cls, disabled: options.disabled ? '' : null,
-        title: [shown, action.dtype, options.note, 'Alt — преимущество, Ctrl — помеха, Shift — только мастеру'].filter(Boolean).join('\n'),
-        onclick: e => { e.stopPropagation();
-          if (options.onUse && action.index !== undefined) return options.onUse([action.index], modeFromEvent(e));
-          roll(action.expr, label(action.name || caption), { ctx, kind: action.kind, ...modeFromEvent(e) }); } },
+        title: [shown, action.dtype, options.note, 'Alt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим'].filter(Boolean).join('\n'),
+        onclick: e => { e.stopPropagation(); fire(modeFromEvent(e)); },
+        oncontextmenu: e => openModeMenu(e, label(action.name || caption), fire) },
         icon(cls === 'attack' ? 'target' : 'zap', 13), ' ', caption, el('small', {}, ' ' + shown));
     };
     if (name) row.append(el('span', { class: 'attack-row-name' }, name));
@@ -240,13 +268,17 @@ window.Modules = (function () {
         const line = attackRow(a.name || d.name || doc.name,
           { expr: a.roll, dtype: a.dtype, kind: 'attack', index: a.index, name: a.name },
           { expr: d.roll, dtype: d.dtype, kind: 'damage', index: d.index, name: d.name }, ctx, prefix, options);
-        line.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Попадание и урон одной связкой: при критическом попадании кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру',
-          onclick: e => { e.stopPropagation(); if (options.onUse) return options.onUse([a.index, d.index], modeFromEvent(e)); rollMulti([a, d], prefix || doc.name, { ctx, ...modeFromEvent(e) }); } }, icon('dice', 13), ' Всё'));
+        const fireAll = mode => { if (options.onUse) return options.onUse([a.index, d.index], mode); rollMulti([a, d], prefix || doc.name, { ctx, ...mode }); };
+        line.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Попадание и урон одной связкой: при критическом попадании кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим',
+          onclick: e => { e.stopPropagation(); fireAll(modeFromEvent(e)); },
+          oncontextmenu: e => openModeMenu(e, prefix || doc.name, fireAll) }, icon('dice', 13), ' Всё'));
         row.append(line);
         continue;
       }
       const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
-      row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip, onclick: (e) => { e.stopPropagation(); if (options.onUse) return options.onUse([a.index], modeFromEvent(e)); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...modeFromEvent(e) }); } },
+      const fireOne = mode => { if (options.onUse) return options.onUse([a.index], mode); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...mode }); };
+      row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip.replace('Shift — только мастеру', 'Shift — только мастеру, правая кнопка — выбрать режим'), onclick: (e) => { e.stopPropagation(); fireOne(modeFromEvent(e)); },
+        oncontextmenu: e => openModeMenu(e, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}`, fireOne) },
         icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
     const rest = rollable.filter((a, i) => !paired.has(i));
@@ -453,5 +485,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();
