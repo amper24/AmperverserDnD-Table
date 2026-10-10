@@ -112,7 +112,7 @@ jobs:
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/preview/${GITHUB_REF_NAME}
 
   # Браузерные тесты (Chromium через Playwright): страницы собираются из static/ через page.route, сервер не нужен.
-  # equipment.browser.cjs не включён: падает и на main (ожидание переключателя «Автоматически расходовать ресурс»).
+  # equipment.browser.cjs: шаг переписан под узел consume графа (см. CHANGELOG).
   browser:
     name: Browser tests (Chromium)
     runs-on: ubuntu-latest
@@ -131,7 +131,7 @@ jobs:
       - name: Browser tests
         run: |
           set -e
-          for t in dice forms-create mechanics-graph mechanics node-card node-editor presets-manager; do
+          for t in dice equipment forms-create mechanics-graph mechanics node-card node-editor presets-manager; do
             echo "== $t"
             node "tests/$t.browser.cjs"
           done

@@ -112,20 +112,8 @@ window.newCharacterDialog = async function (defaults = {}) {
       if (draft.edition === '2024' && !String(draft.selected.background?.data?.feat || '').trim()) return 'В редакции 2024 предыстория должна давать черту происхождения; проверьте запись справочника.';
       if (draft.edition === '2024' && draft.selected.background?.data?.feat && !draft.selected.feat) return `Черта предыстории «${draft.selected.background.data.feat}» не найдена в справочнике; добавьте корректную запись, прежде чем продолжить.`;
       if (entries.some(e => e.category === 'race' && e.data?.parent === draft.selected.race?.name) && !draft.selected.race?.data?.parent) return 'Для этой расы выберите одну из доступных родословных.';
-      const raceNameEn = String(draft.selected.race?.data?.name_en || '').toLowerCase(), raceRoot = draft.selected.race?.data?.parent || draft.selected.race?.name;
-      const raceParentEntry = entries.find(e => e.category === 'race' && e.name === raceRoot && !e.data?.parent);
-      const raceRootNameEn = String(raceParentEntry?.data?.name_en || raceNameEn).toLowerCase();
-      if (draft.edition === '2014' && raceNameEn === 'half-elf' && (draft.ruleChoices?.raceSkills || []).length !== 2) return 'Полуэльфу нужно выбрать два навыка.';
-      if (draft.edition === '2014' && normalizeName(raceRoot) === normalizeName('Дварф') && !draft.ruleChoices?.dwarfTool) return 'Дварфу нужно выбрать ремесленные инструменты.';
-      if (draft.edition === '2014' && raceNameEn === 'dragonborn' && !draft.ruleChoices?.dragonAncestry) return 'Выберите драконье наследие.';
-      if (draft.edition === '2014' && raceNameEn === 'high elf' && !draft.ruleChoices?.racialCantrip) return 'Высшему эльфу нужно выбрать заговор волшебника.';
-      if (draft.edition === '2024' && raceRootNameEn === 'elf' && (draft.ruleChoices?.raceSkills || []).length !== 1) return 'Эльфу нужно выбрать один навык из Острых чувств.';
-      if (draft.edition === '2024' && raceRootNameEn === 'human') {
-        const eligibleFeats = entries.filter(entry => entry.category === 'feat' && !entry.data?.prerequisites
-          && normalizeName(entry.name) !== normalizeName(draft.selected.feat?.name || ''));
-        if ((draft.ruleChoices?.raceSkills || []).length !== 1 || !eligibleFeats.some(feat => feat.id === draft.ruleChoices?.humanOriginFeat)) return 'Человек должен выбрать навык и допустимую дополнительную черту происхождения (без повтора черты предыстории).';
-      }
-      if (draft.edition === '2024' && ['elf', 'gnome', 'tiefling'].includes(raceRootNameEn) && !draft.ruleChoices?.raceSpellAbility) return 'Выберите заклинательную характеристику родословной.';
+      const raceProblem = B.raceChoiceProblem(draft);
+      if (raceProblem) return raceProblem;
       if (subclassLevel(draft.selected.class) === 1 && (draft.selected.class?.data?.subclasses || []).some(s => typeof s === 'object' && s.name)
         && !draft.selected.subclass) return 'Выберите подкласс: у вашего класса он выбирается уже на 1 уровне.';
       for (const group of subclassVariantGroups(draft.selected.subclass, 1))
@@ -271,7 +259,8 @@ window.newCharacterDialog = async function (defaults = {}) {
     return spellAllowedForList(entry, classSlugOf(klass));
   }
   function magicInitiateFeat() {
-    const extra = (draft.catalog || []).find(entry => entry.category === 'feat' && entry.id === draft.ruleChoices?.humanOriginFeat);
+    const raceFeatIds = B.raceChoices(draft).filter(c => c.kind === 'feat').map(c => draft.ruleChoices?.[c.key]);
+    const extra = (draft.catalog || []).find(entry => entry.category === 'feat' && raceFeatIds.includes(entry.id));
     const candidates = [draft.selected.feat, extra].filter(Boolean);
     return candidates.find(feat => normalizeName(feat.name || '') === normalizeName('Посвящённый в магию')
       || normalizeName(feat.data?.name_en || '') === normalizeName('Magic Initiate')) || null;
@@ -488,12 +477,9 @@ window.newCharacterDialog = async function (defaults = {}) {
     }
     return panels.length ? el('div', { class: 'builder-class-rule-choice-list' }, ...panels) : null;
   }
+  // Выборы расы и родословной рисуются по набору race_rules (B.raceChoices): навыки, варианты, заговоры, черты.
   function raceRuleChoiceSection() {
-    const race = draft.selected.race;
-    if (!race) return null;
-    const rootName = race.data?.parent || race.name;
-    const rootEntry = entries.find(e => e.category === 'race' && e.name === rootName && !e.data?.parent);
-    const nameEn = String(race.data?.name_en || '').toLowerCase(), rootNameEn = String(rootEntry?.data?.name_en || race.data?.name_en || '').toLowerCase();
+    if (!draft.selected.race) return null;
     const choices = draft.ruleChoices || (draft.ruleChoices = {}), panels = [];
     const radioPanel = (key, title, hint, options) => {
       const selected = choices[key];
@@ -507,44 +493,24 @@ window.newCharacterDialog = async function (defaults = {}) {
             el('span', {}, el('b', {}, o.name), o.text ? el('small', { class: 'muted' }, o.text) : null));
         }))));
     };
-    const skillPanel = (count, title) => {
-      const selected = choices.raceSkills || [];
+    const skillPanel = (key, count, title) => {
+      const selected = choices[key] || [];
       panels.push(el('section', { class: 'builder-panel builder-race-rule-choices' },
         el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, title), el('small', { class: 'muted' }, `Выберите ${count} навы${count === 1 ? 'к' : 'ка'} на выбор.`)),
           el('span', { class: 'builder-counter' + (selected.length === count ? ' ok' : ' flag') }, `${selected.length} из ${count}`)),
-        el('div', { class: 'builder-choice-options' }, ...SKILLS.map(([key, label]) => {
-          const on = selected.includes(key);
+        el('div', { class: 'builder-choice-options' }, ...SKILLS.map(([skill, label]) => {
+          const on = selected.includes(skill);
           return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
             el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && selected.length >= count ? '' : null, onchange: e => {
-              const next = selected.filter(k => k !== key);
-              if (e.target.checked) next.push(key);
-              choices.raceSkills = next.slice(0, count); render();
+              const next = selected.filter(k => k !== skill);
+              if (e.target.checked) next.push(skill);
+              choices[key] = next.slice(0, count); render();
             } }), el('span', {}, label));
         }))));
     };
-    if (draft.edition === '2014' && nameEn === 'half-elf') skillPanel(2, 'Универсальность навыков · полуэльф');
-    if (draft.edition === '2024' && rootNameEn === 'elf') skillPanel(1, 'Острые чувства · эльф');
-    if (draft.edition === '2024' && rootNameEn === 'human') {
-      skillPanel(1, 'Умелость · человек');
-      const feats = entries.filter(e => e.category === 'feat' && !e.data?.prerequisites
-        && normalizeName(e.name) !== normalizeName(draft.selected.feat?.name || ''));
-      if (feats.length) radioPanel('humanOriginFeat', 'Универсальность · черта происхождения', 'Человек выбирает дополнительную черту происхождения.', feats.map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' })));
-    }
-    if (draft.edition === '2014' && normalizeName(rootName) === normalizeName('Дварф'))
-      radioPanel('dwarfTool', 'Владение инструментами · дварф', 'Выберите один вид ремесленных инструментов.', [
-        { value: 'Инструменты кузнеца', name: 'Инструменты кузнеца' }, { value: 'Пивоваренные принадлежности', name: 'Пивоваренные принадлежности' }, { value: 'Инструменты каменщика', name: 'Инструменты каменщика' },
-      ]);
-    if (draft.edition === '2014' && nameEn === 'dragonborn')
-      radioPanel('dragonAncestry', 'Драконье наследие · драконорождённый', 'Выбор определяет тип урона дыхания и сопротивление.', [
-        { value: 'Чёрный', name: 'Чёрный · кислота' }, { value: 'Синий', name: 'Синий · электричество' }, { value: 'Латунный', name: 'Латунный · огонь' }, { value: 'Бронзовый', name: 'Бронзовый · электричество' }, { value: 'Медный', name: 'Медный · кислота' }, { value: 'Золотой', name: 'Золотой · огонь' }, { value: 'Зелёный', name: 'Зелёный · яд' }, { value: 'Красный', name: 'Красный · огонь' }, { value: 'Серебряный', name: 'Серебряный · холод' }, { value: 'Белый', name: 'Белый · холод' },
-      ]);
-    if (draft.edition === '2024' && ['elf', 'gnome', 'tiefling'].includes(rootNameEn))
-      radioPanel('raceSpellAbility', 'Заклинательная характеристика родословной', 'Выберите характеристику, указанную в особенности расы.', [
-        { value: 'int', name: 'Интеллект' }, { value: 'wis', name: 'Мудрость' }, { value: 'cha', name: 'Харизма' },
-      ]);
-    if (draft.edition === '2014' && nameEn === 'high elf') {
-      const cantrips = entries.filter(e => e.category === 'spell' && Number(e.data?.level) === 0 && (e.data?.classes || []).some(c => ['волшебник', 'wizard'].includes(String(c).toLowerCase())));
-      if (cantrips.length) radioPanel('racialCantrip', 'Заговор высшего эльфа', 'Выберите один заговор из списка волшебника; Интеллект — заклинательная характеристика.', cantrips.map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' })));
+    for (const c of B.raceChoices(draft)) {
+      if (c.kind === 'skills') skillPanel(c.key, c.count, c.title);
+      else if ((c.options || []).length) radioPanel(c.key, c.title, c.hint || '', c.options);
     }
     return panels.length ? el('div', { class: 'builder-race-rule-choice-list' }, ...panels) : null;
   }

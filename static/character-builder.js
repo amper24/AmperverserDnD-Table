@@ -611,6 +611,45 @@ window.CharacterBuilder = (() => {
     const root = byName(rootNameEn), own = byName(entry?.data?.name_en);
     return { ...(root || {}), ...(own && own !== root ? own : {}) };
   }
+  // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт
+  // берутся из справочника по фильтру набора, поэтому кастомная раса описывается только данными.
+  function raceChoices(draft) {
+    const race = draft.selected?.race;
+    if (!race) return [];
+    const rootName = race.data?.parent || race.name;
+    const rootEntry = (draft.catalog || []).find(e => e.category === 'race' && e.name === rootName && !e.data?.parent);
+    const rootNameEn = String(rootEntry?.data?.name_en || race.data?.name_en || '').toLowerCase();
+    const catalog = draft.catalog || [];
+    return (raceRules(race, rootNameEn, draft.edition || '2014').choices || []).map(c => {
+      const choice = { ...JSON.parse(JSON.stringify(c)), required: c.optional !== true };
+      if (c.kind === 'skills') choice.options = SKILLS.map(([key, label]) => ({ value: key, name: label }));
+      if (c.kind === 'spell') {
+        const level = Number(c.filter?.level ?? 0), classes = c.filter?.classes || [];
+        choice.options = catalog.filter(e => e.category === 'spell' && Number(e.data?.level) === level
+          && (e.data?.classes || []).some(k => classes.includes(String(k).toLowerCase())))
+          .map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' }));
+      }
+      if (c.kind === 'feat') {
+        const selectedFeat = normalizeName(draft.selected?.feat?.name || '');
+        choice.options = catalog.filter(e => e.category === 'feat'
+          && !(c.filter?.no_prerequisites && e.data?.prerequisites)
+          && !(c.filter?.exclude_selected_feat && normalizeName(e.name) === selectedFeat))
+          .map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' }));
+      }
+      return choice;
+    });
+  }
+  // Что мешает пройти шаг выбора расы; пустая строка — выборы сделаны.
+  function raceChoiceProblem(draft) {
+    for (const c of raceChoices(draft)) {
+      if (!c.required) continue;
+      const picked = draft.ruleChoices?.[c.key];
+      if (c.kind === 'skills') {
+        if ((picked || []).length !== c.count) return `Выберите ${c.count} навыка в разделе «${c.title}».`;
+      } else if (!(c.options || []).some(o => o.value === picked)) return `Сделайте выбор в разделе «${c.title}».`;
+    }
+    return '';
+  }
   function build(draft) {
     const s = { name: draft.name.trim(), edition: draft.edition, level: 1, alignment: draft.alignment || '', abilities: { ...draft.abilities },
       race: '', class: '', subclass: '', background: '', classes: [], proficiency_bonus: 2, saving_throws: [], skills: [...new Set([...(draft.skills || []), ...(draft.freeSkills || [])])], expertise: [],
@@ -684,7 +723,7 @@ window.CharacterBuilder = (() => {
     for (const key of ruleChoices.raceSkills || []) if (SKILLS.some(([skill]) => skill === key)) s.skills.push(key);
     if (rr.speed) s.speed = rr.speed;
     if (rr.weapons?.length) appendProficiency(s, 'Оружие расы', rr.weapons);
-    if (rr.tool_choice && ruleChoices[rr.tool_choice]) appendProficiency(s, 'Инструменты расы', [ruleChoices[rr.tool_choice]]);
+    for (const c of raceChoices(draft)) if (c.kind === 'options' && c.grant && ruleChoices[c.key]) appendProficiency(s, c.grant, [ruleChoices[c.key]]);
     if (classSlug === 'bard' && (ruleChoices.bardInstruments || []).length)
       appendProficiency(s, 'Музыкальные инструменты', ruleChoices.bardInstruments);
     if (s.edition === '2014' && classSlug === 'ranger') {
@@ -695,15 +734,19 @@ window.CharacterBuilder = (() => {
       }
       if (ruleChoices.favoredTerrain) feature(s, 'Природный исследователь: ' + ruleChoices.favoredTerrain, `Выбрана местность: ${ruleChoices.favoredTerrain}.`, classEntry.name);
     }
-    if (rr.damage_choice && ruleChoices[rr.damage_choice.key]) {
-      const ancestry = ruleChoices[rr.damage_choice.key], damage = rr.damage_choice.values?.[ancestry];
-      feature(s, 'Драконье наследие: ' + ancestry, `Оружие дыхания и сопротивление урону: ${damage}.`, raceEntry.name);
-    }
-    if (rr.origin_feat && ruleChoices.humanOriginFeat) {
-      const featEntry = (draft.catalog || []).find(e => e.category === 'feat' && e.id === ruleChoices.humanOriginFeat);
-      if (featEntry) {
-        handlers.get('feat')?.(s, featEntry);
-        s.modules.push({ schema_version: 1, entry_id: featEntry.id, category: 'feat', source: featEntry.source, pack_id: featEntry.pack_id || null, snapshot: JSON.parse(JSON.stringify(featEntry)) });
+    for (const c of raceChoices(draft)) {
+      const picked = ruleChoices[c.key];
+      if (!picked) continue;
+      if (c.kind === 'options' && c.feature_name) {
+        const option = (c.options || []).find(o => o.value === picked);
+        if (option?.feature_text) feature(s, `${c.feature_name}: ${picked}`, option.feature_text, raceEntry.name);
+      }
+      if (c.kind === 'feat') {
+        const featEntry = (draft.catalog || []).find(e => e.category === 'feat' && e.id === picked);
+        if (featEntry) {
+          handlers.get('feat')?.(s, featEntry);
+          s.modules.push({ schema_version: 1, entry_id: featEntry.id, category: 'feat', source: featEntry.source, pack_id: featEntry.pack_id || null, snapshot: JSON.parse(JSON.stringify(featEntry)) });
+        }
       }
     }
     if (s.edition === '2014' && classSlug === 'fighter') {
@@ -762,11 +805,12 @@ window.CharacterBuilder = (() => {
         const spell = Modules.spellFromCompendium(found); spell.prepared = true; s.spells.known.push(spell);
       }
     }
-    // Заговоры расы: выбранный заговор (cantrip_choice) и фиксированные из набора; ability 'choice' — выбранная характеристика.
+    // Заговоры расы: выбранные заговоры (kind 'spell' в choices) и фиксированные из набора; ability 'choice' — выбранная характеристика.
     const racialCantrips = [];
-    if (rr.cantrip_choice && ruleChoices[rr.cantrip_choice.key]) {
-      const cantrip = (draft.catalog || []).find(e => e.category === 'spell' && e.id === ruleChoices[rr.cantrip_choice.key]);
-      if (cantrip) racialCantrips.push({ entry: cantrip, ability: rr.cantrip_choice.ability });
+    for (const c of raceChoices(draft)) {
+      if (c.kind !== 'spell' || !ruleChoices[c.key]) continue;
+      const cantrip = (draft.catalog || []).find(e => e.category === 'spell' && e.id === ruleChoices[c.key]);
+      if (cantrip) racialCantrips.push({ entry: cantrip, ability: c.ability });
     }
     for (const c of rr.cantrips || []) {
       const found = (draft.catalog || []).find(e => e.category === 'spell' && normalizeName(entryName(e)) === normalizeName(c.name));
@@ -896,7 +940,7 @@ window.CharacterBuilder = (() => {
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 6 × 1d20 (вариант стола)', rolls: results.map((r, i) => ({ ...r, name: `${ABIL[keys[i]] || keys[i]}` })) }, { local: true });
     return results.map(r => ({ dice: r.parts[0].rolls, dropped: -1, total: r.total }));
   }
-  return { register, build, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
+  return { register, build, raceChoices, raceChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
     parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, startingInventory, packContents, skillsState, passiveSkills, itemKind, PICK_FILTERS, SKILL_SOURCES, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
     normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, CLASS_SLUGS_RU, POINT_BUY_COST };
 })();

@@ -20,6 +20,34 @@
             "name": "Искусство друидов",
             "ability": "choice"
           }
+        ],
+        "choices": [
+          {
+            "key": "raceSkills",
+            "kind": "skills",
+            "count": 1,
+            "title": "Острые чувства · эльф"
+          },
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
+          }
         ]
       }
     },
@@ -67,6 +95,28 @@
             "name": "Фокусы",
             "ability": "choice"
           }
+        ],
+        "choices": [
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
+          }
         ]
       }
     },
@@ -89,7 +139,24 @@
       "id": "human",
       "table": {
         "name_en": "Human",
-        "origin_feat": true
+        "choices": [
+          {
+            "key": "raceSkills",
+            "kind": "skills",
+            "count": 1,
+            "title": "Умелость · человек"
+          },
+          {
+            "key": "humanOriginFeat",
+            "kind": "feat",
+            "title": "Универсальность · черта происхождения",
+            "hint": "Человек выбирает дополнительную черту происхождения.",
+            "filter": {
+              "no_prerequisites": true,
+              "exclude_selected_feat": true
+            }
+          }
+        ]
       }
     },
     {
@@ -104,6 +171,28 @@
           {
             "name": "Огненный снаряд",
             "ability": "choice"
+          }
+        ],
+        "choices": [
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
           }
         ]
       }
