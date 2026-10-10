@@ -1,0 +1,71 @@
+{
+  "kind": "spell_schools",
+  "id": "spell_schools",
+  "name": "Школы магии (SRD)",
+  "items": [
+    {
+      "id": "evocation",
+      "table": {
+        "ru": "Воплощение",
+        "en": "Evocation",
+        "color": "#e2604d"
+      }
+    },
+    {
+      "id": "conjuration",
+      "table": {
+        "ru": "Вызов",
+        "en": "Conjuration",
+        "color": "#d6a83c"
+      }
+    },
+    {
+      "id": "illusion",
+      "table": {
+        "ru": "Иллюзия",
+        "en": "Illusion",
+        "color": "#a47be0"
+      }
+    },
+    {
+      "id": "necromancy",
+      "table": {
+        "ru": "Некромантия",
+        "en": "Necromancy",
+        "color": "#4fae7c"
+      }
+    },
+    {
+      "id": "abjuration",
+      "table": {
+        "ru": "Ограждение",
+        "en": "Abjuration",
+        "color": "#3fb8b8"
+      }
+    },
+    {
+      "id": "enchantment",
+      "table": {
+        "ru": "Очарование",
+        "en": "Enchantment",
+        "color": "#e07bb0"
+      }
+    },
+    {
+      "id": "transmutation",
+      "table": {
+        "ru": "Преобразование",
+        "en": "Transmutation",
+        "color": "#e29246"
+      }
+    },
+    {
+      "id": "divination",
+      "table": {
+        "ru": "Прорицание",
+        "en": "Divination",
+        "color": "#63b3d8"
+      }
+    }
+  ]
+}

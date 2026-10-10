@@ -60,7 +60,9 @@ for (const ed of ['2014', '2024']) {
   });
 
   test(`SRD ${ed}: английский вид не содержит русского текста, кроме служебных значений механик`, () => {
-    const allowed = new Set(Object.keys(client().Lang.TERMS_EN));
+    // Служебные значения: ключи словаря терминов и названия состояний из набора conditions (их хранит механика).
+    const conditions = JSON.parse(fs.readFileSync('static/presets/conditions.json', 'utf8')).items.map(i => i.table.ru);
+    const allowed = new Set([...Object.keys(client().Lang.TERMS_EN), ...conditions]);
     const bad = [];
     for (const e of seed(ed)) {
       const v = view(e, 'en');

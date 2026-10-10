@@ -11,6 +11,8 @@ window.Mechanics = (() => {
   const VERSION = 1, clone = x => JSON.parse(JSON.stringify(x)), uid = () => crypto.randomUUID();
   // Блоки не работают по чужой цели: эффекты применяются к владельцу листа, а урон и
   // бывший «спасбросок цели» — это своё действие (бросок и правило), результат которого применяет ДМ.
+  // Русское название состояния по его ключу из набора conditions (запасом — сам ключ).
+  const conditionName = key => window.Presets?.item('conditions', key)?.table?.ru || key;
   const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
   // Виды блоков, которых больше нет в палитре: старые записи с ними читаются и превращаются в свои действия.
   const LEGACY_KINDS = ['save'];
@@ -29,7 +31,7 @@ window.Mechanics = (() => {
     if(['attack','damage','heal','temp_hp','roll'].includes(kind)) Object.assign(b,{dice:dice(kind==='attack'?'1d20+@atk':'1d6'),...(['heal','temp_hp'].includes(kind)?{target:'self',apply:true}:{})});
     if(kind==='consume') Object.assign(b,{resource:'quantity',source:'self',amount:1,trigger:'use'});
     if(kind==='grant_item') Object.assign(b,{target:'self',amount:1,item:{name:'Пустой флакон',type:'gear',qty:1,weight:0.1,stackable:true,handedness:'none',actions:[]}});
-    if(kind==='condition') Object.assign(b,{target:'self',condition:'Отравленный',operation:'add'});
+    if(kind==='condition') Object.assign(b,{target:'self',condition:conditionName('poisoned'),operation:'add'});
     if(kind==='adjust') Object.assign(b,{target:'self',field:'speed',amount:5});
     if(kind==='require') Object.assign(b,{field:'hp.current',minimum:1});
     if(kind==='manual') Object.assign(b,{text:'Опишите правило, которое мастер применяет вручную.'});
@@ -88,9 +90,9 @@ window.Mechanics = (() => {
     { id:'consume_only', group:'Предметы', name:'Расход заряда', hint:'Только списание ресурса, без эффектов', chain:['consume'],
       build:()=>({name:'Потратить заряд',blocks:[{...block('consume'),resource:'charges',source:'self'}]}) },
     { id:'condition_on', group:'Умения и эффекты', name:'Наложить состояние', hint:'Добавляет состояние владельцу или цели', chain:['condition'],
-      build:()=>({name:'Наложить',blocks:[{...block('condition'),condition:'Отравленный'}]}) },
+      build:()=>({name:'Наложить',blocks:[{...block('condition'),condition:conditionName('poisoned')}]}) },
     { id:'condition_off', group:'Умения и эффекты', name:'Снять состояние', hint:'Убирает состояние, например яд или страх', chain:['condition'],
-      build:()=>({name:'Снять',blocks:[{...block('condition'),condition:'Испуганный',operation:'remove'}]}) },
+      build:()=>({name:'Снять',blocks:[{...block('condition'),condition:conditionName('frightened'),operation:'remove'}]}) },
     { id:'buff', group:'Умения и эффекты', name:'Изменить показатель', hint:'Скорость, хиты, инициатива, характеристика', chain:['adjust'],
       build:()=>({name:'Усиление',blocks:[{...block('adjust'),field:'speed',amount:10}]}) },
     { id:'check', group:'Умения и эффекты', name:'Проверка характеристики', hint:'Отдельный бросок d20 с модификатором', chain:['roll'],

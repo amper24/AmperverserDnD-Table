@@ -25,8 +25,10 @@ window.CharacterBuilder = (() => {
   const mechanicsContext = (draft, level = 1) => ({ edition: draft.edition || '2014', level, subclass: draft.selected?.subclass?.id || '', choices: { ...(draft.picks || {}), ...(draft.ruleChoices || {}) } });
   const short = { СИЛ: 'str', ЛОВ: 'dex', ТЕЛ: 'con', ИНТ: 'int', МДР: 'wis', ХАР: 'cha' };
   const ALIGNMENTS = ['', 'Законно-доброе', 'Нейтрально-доброе', 'Хаотично-доброе', 'Законно-нейтральное', 'Нейтральное', 'Хаотично-нейтральное', 'Законно-злое', 'Нейтрально-злое', 'Хаотично-злое', 'Без мировоззрения'];
-  const LANGUAGES = ['Общий', 'Общий жестовый язык', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Абиссальный', 'Небесный', 'Драконий', 'Глубинная речь', 'Инфернальный', 'Первичный', 'Сильван', 'Подземный общий'];
-  const LANGUAGES_2024_STANDARD = ['Общий жестовый язык', 'Драконий', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий'];
+  // Языки из набора languages (ru); стандартные для 2024 — поле standard_2024. Списки обновляются при загрузке наборов,
+  // поэтому ссылки, которые берёт builder-dialog.js при загрузке, остаются верными.
+  const LANGUAGES = window.Presets?.liveList('languages', i => i.table.ru) || [];
+  const LANGUAGES_2024_STANDARD = window.Presets?.liveList('languages', i => i.table.ru, i => i.table.standard_2024) || [];
   const modifier = n => Math.floor((n - 10) / 2);
   const POINT_BUY_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
   const pointBuyTotal = abilities => Object.values(abilities || {}).reduce((sum, n) => sum + (POINT_BUY_COST[Number(n)] ?? 999), 0);

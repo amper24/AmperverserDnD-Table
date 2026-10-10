@@ -22,7 +22,10 @@ window.Modules = (function () {
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
-  const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
+  // Школы магии — из набора spell_schools (порядок набора; список обновляется при загрузке наборов).
+  const SCHOOLS = window.Presets?.liveList('spell_schools') || [];
+  // Школа по ключу набора (запасом — сам ключ).
+  const schoolName = key => window.Presets?.item('spell_schools', key)?.table?.ru || key;
   // Основы для создания записи (шаг «Что создаём?») — наборы данных item_preset / spell_preset (реестр Presets).
   const itemPresets = () => window.Presets?.items('item_preset') || [];
   const spellPresets = () => window.Presets?.items('spell_preset') || [];
@@ -44,7 +47,7 @@ window.Modules = (function () {
   }
   function newSpell(o = {}) {
     o = defined(o);
-    return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
+    return { uid: uid(), name: 'Заклинание', level: 1, school: schoolName('evocation'), casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
       concentration: false, ritual: false, desc: '', prepared: false, cast_cost: null, use_cost: 1, uses: null, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
   }
   /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.

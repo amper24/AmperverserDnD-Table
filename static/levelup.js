@@ -27,7 +27,6 @@ window.LevelUp = (() => {
   const classRulesOf = (slug, edition) => window.Presets?.classRules(String(edition || '2014'), slug) || {};
   const mcRequirements = (slug, edition) => classRulesOf(slug, edition).multiclass?.requirements || [];
   const mcProficiency = (slug, edition) => classRulesOf(slug, edition).multiclass?.proficiencies || '';
-  const ENEMY_TYPES = ['Аберрации', 'Звери', 'Небожители', 'Конструкты', 'Драконы', 'Элементали', 'Феи', 'Исчадия', 'Великаны', 'Чудовища', 'Слизи', 'Растения', 'Нежить', 'Гуманоиды (две расы)'];
   const TERRAINS = ['Арктика', 'Побережье', 'Пустыня', 'Лес', 'Луг', 'Горы', 'Болото', 'Подземье'];
   const STYLE_FEATS_EN = ['archery', 'defense', 'great weapon fighting', 'two weapon fighting', 'two-weapon fighting', 'dueling', 'protection'];
   const isStyleFeat = e => STYLE_FEATS_EN.includes(String(e?.data?.name_en || '').toLowerCase()) || /fighting|боев(ой|ые) стил/i.test(String(e?.data?.category || ''));
@@ -450,7 +449,10 @@ window.LevelUp = (() => {
   const abilName = k => (typeof ABIL !== 'undefined' && ABIL[k]) || k;
 
   // Цвета классов и школ магии: акцент мастера подстраивается под класс.
-  const SCHOOL_COLOR = { 'Воплощение': '#e2604d', 'Вызов': '#d6a83c', 'Прорицание': '#63b3d8', 'Очарование': '#e07bb0', 'Иллюзия': '#a47be0', 'Некромантия': '#4fae7c', 'Ограждение': '#3fb8b8', 'Преобразование': '#e29246' };
+  // Типы врагов для избранного врага следопыта — из набора enemy_types (список обновляется при загрузке наборов).
+  const ENEMY_TYPES = window.Presets?.liveList('enemy_types') || [];
+  // Цвет школы магии из набора spell_schools (поле color).
+  const schoolColor = name => window.Presets?.items('spell_schools').find(i => i.table.ru === name)?.table.color || '';
   const classColor = e => window.Presets?.item('class_rules', slugOf(e))?.table?.color || '#8fa8d0';
   const monogram = e => String(e?.name || '?').trim().charAt(0).toUpperCase();
   const hexRgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(', ');
@@ -846,7 +848,7 @@ window.LevelUp = (() => {
         const newCantrips = p.spells.cantrips + subclassCantripChoices();
         const needSp = Math.min(p.spells.spells + st.drop.length, leveled.length), needC = Math.min(newCantrips, cant.length), q = st.q.toLowerCase();
         const card = (e, list, cap) => {
-          const d = e.data || {}, on = list.includes(e), full = !on && list.length >= cap, open = st.open.has('sp' + e.name), col = SCHOOL_COLOR[school(e)] || '#8b919c';
+          const d = e.data || {}, on = list.includes(e), full = !on && list.length >= cap, open = st.open.has('sp' + e.name), col = schoolColor(school(e)) || '#8b919c';
           const meta = [school(e), shortTime(d.casting_time)].filter(Boolean);
           const c = h('article', 'lu-sp' + (on ? ' on' : '') + (full ? ' full' : '') + (open ? ' open' : ''),
             el('button', { type: 'button', class: 'lu-sp-main', 'aria-pressed': String(on), disabled: full ? '' : null, onclick: () => { const i = list.indexOf(e); if (i >= 0) list.splice(i, 1); else list.push(e); render(); } },

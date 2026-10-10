@@ -182,7 +182,7 @@ window.Table = (function () {
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
           c.fillStyle = p > 0.5 ? '#46a758' : p > 0.25 ? '#f5a524' : '#e5484d'; c.fillRect(-bw / 2, y, bw * p, bh);
         }
-        if (d.conditions?.length) { c.font = `bold ${d.h * 0.14}px sans-serif`; c.textAlign = 'left'; c.fillStyle = '#ffd77a'; c.fillText(d.conditions.map(x => CONDICON[x] || '?').join(' '), -d.w / 2, -d.h / 2 + d.h * 0.18); }
+        if (d.conditions?.length) { c.font = `bold ${d.h * 0.14}px sans-serif`; c.textAlign = 'left'; c.fillStyle = '#ffd77a'; c.fillText(d.conditions.map(x => condIcon(x)).join(' '), -d.w / 2, -d.h / 2 + d.h * 0.18); }
         if (d.dead) { c.strokeStyle = '#e5484d'; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
       }
     } else if (d.type === 'loot') {
@@ -245,7 +245,11 @@ window.Table = (function () {
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(fc, 0, 0); c.restore();
     c.translate(0, 0);
   }
-  const CONDICON = { blinded: 'ОС', charmed: 'ОЧ', deafened: 'ГЛ', frightened: 'ИС', grappled: 'СХ', incapacitated: 'НД', invisible: 'НВ', paralyzed: 'ПР', petrified: 'ОК', poisoned: 'ОТ', prone: 'СБ', restrained: 'ОП', stunned: 'ОШ', unconscious: 'БС', exhaustion: 'ИТ', concentration: 'КЦ' };
+  // Состояния — из набора conditions (короткое имя и значок на жетоне). Нет в наборе — показываем ключ.
+  const condItem = key => window.Presets?.item('conditions', key)?.table || null;
+  const condShort = key => condItem(key)?.short || key;
+  const condIcon = key => condItem(key)?.icon || '?';
+  const condKeys = () => window.Presets?.items('conditions').map(i => i.id) || [];
 
   // ---------- инструменты ----------
   // ---------- Инструменты и события мыши/касаний ----------
@@ -570,8 +574,8 @@ window.Table = (function () {
             el('button', { class: 'small', onclick: () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max, d.hp.cur + v); save(); } }, '+ Лечение')));
           const conds = d.conditions || [];
           const cbox = el('div', { style: 'margin-bottom:8px' });
-          const sel = el('select', { onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } } }, el('option', { value: '' }, '+ состояние'), ...Object.entries(CONDICON).map(([k, v]) => el('option', { value: k }, v + ' ' + (CONDNAMES[k] || k))));
-          cbox.append(el('div', {}, ...conds.map(c => el('span', { class: 'chip' }, CONDNAMES[c] || c, el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '×')))), sel);
+          const sel = el('select', { onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } } }, el('option', { value: '' }, '+ состояние'), ...condKeys().map(k => el('option', { value: k }, condIcon(k) + ' ' + condShort(k))));
+          cbox.append(el('div', {}, ...conds.map(c => el('span', { class: 'chip' }, condShort(c), el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '×')))), sel);
           box.append(cbox);
           box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
             el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto', onchange: e => { d.dead = e.target.checked; save(); } }), ' Мёртв'),
@@ -604,7 +608,6 @@ window.Table = (function () {
   }
   // ---------- Публичный API (window.Table) ----------
   const LAYER_NAMES = { map: 'Карта', prop: 'Объекты', mount: 'Ездовые', character: 'Персонажи', attachment: 'Прикреплённые', drawing: 'Рисунки', text: 'Текст', note: 'Заметки' };
-  const CONDNAMES = { blinded: 'Ослеплён', charmed: 'Очарован', deafened: 'Оглох', frightened: 'Испуган', grappled: 'Схвачен', incapacitated: 'Недееспособен', invisible: 'Невидим', paralyzed: 'Парализован', petrified: 'Окаменел', poisoned: 'Отравлен', prone: 'Сбит с ног', restrained: 'Опутан', stunned: 'Ошеломлён', unconscious: 'Без сознания', exhaustion: 'Истощение', concentration: 'Концентрация' };
 
   function setActiveLayer(l) { S.activeLayer = l; }
   function getScene() { return S.scene; }
@@ -621,5 +624,5 @@ window.Table = (function () {
     if (o.monster) data.monster = o.monster;
     upsert({ layer: 'character', z: 1, data });
   }
-  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, CONDNAMES, CONDICON, dropLootAtCenter, placeTokenAtCenter };
+  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, condShort, condIcon, dropLootAtCenter, placeTokenAtCenter };
 })();

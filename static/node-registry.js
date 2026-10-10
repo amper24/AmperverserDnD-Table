@@ -59,7 +59,7 @@
     if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
-    if (kind === 'condition') Object.assign(base, { condition: 'Отравленный', operation: 'add' });
+    if (kind === 'condition') Object.assign(base, { condition: window.Presets?.item('conditions', 'poisoned')?.table?.ru || 'poisoned', operation: 'add' });
     if (kind === 'adjust') Object.assign(base, { field: 'speed', amount: 5 });
     if (kind === 'require') Object.assign(base, { field: 'hp.current', minimum: 1 });
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });

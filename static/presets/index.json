@@ -8,6 +8,10 @@
     "class-progression-2024.json",
     "multiclass-slots-2024.json",
     "class-rules-2014.json",
-    "class-rules-2024.json"
+    "class-rules-2024.json",
+    "conditions.json",
+    "spell-schools.json",
+    "languages.json",
+    "enemy-types.json"
   ]
 }

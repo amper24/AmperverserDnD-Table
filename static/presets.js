@@ -26,6 +26,11 @@
     class_progression: { fields: ['table'], needsEdition: true },
     multiclass_slots: { fields: ['table'], needsEdition: true },
     class_rules: { fields: ['table'], needsEdition: true },
+    // Словари правил: каждый элемент — table с полями, которые читают потребители (см. docs/presets.md).
+    conditions: { fields: ['table'] },
+    spell_schools: { fields: ['table'] },
+    languages: { fields: ['table'] },
+    enemy_types: { fields: ['table'] },
   };
   const STORE_KEY = 'et-presets-user';
   const MANIFEST = 'index.json';
@@ -132,6 +137,18 @@
     return t ? t.table : null;
   }
 
+  // Список, который сохраняет ссылку: модули читают его при загрузке скрипта, а наборы приходят позже.
+  // Список заполняется сразу и после каждой загрузки/изменения наборов. pick — что положить, filter — что оставить.
+  const liveLists = [];
+  function liveList(kind, pick = i => i.table?.ru ?? i.id, filter = () => true) {
+    const list = [];
+    const fill = () => { list.length = 0; for (const i of items(kind)) if (filter(i)) list.push(pick(i)); };
+    fill();
+    liveLists.push(fill);
+    return list;
+  }
+  function refreshLive() { for (const fill of liveLists) fill(); }
+
   function userSets() { return state.user.slice(); }
   // Импорт пользовательских наборов из JSON-текста: один набор или массив наборов.
   // id набора не должен совпадать со встроенным; повторный импорт того же id заменяет пользовательский набор.
@@ -155,6 +172,7 @@
   }
   // Открытые редакторы перерисовывают списки наборов по событию presets:changed.
   function changed() {
+    refreshLive();
     if (typeof window !== 'undefined' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('presets:changed'));
   }
 
@@ -188,7 +206,7 @@
   const api = {
     KINDS: Object.keys(KINDS),
     ready,
-    load, sets, items, item, classProgression, multiclassSlots, classRules,
+    load, sets, items, item, classProgression, multiclassSlots, classRules, liveList,
     userSets, importUser, removeUser, problemOf, openManager,
     get loaded() { return state.loaded; },
   };

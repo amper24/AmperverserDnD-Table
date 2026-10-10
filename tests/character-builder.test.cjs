@@ -31,7 +31,7 @@ test('2024 creation grants Common and requires the two additional standard langu
   const sheet = B.build(d);
   assert.match(sheet.proficiencies, /Языки: Общий, Драконий, Эльфийский/);
   assert.equal(sheet.hp.max, 9, '2024 dwarven toughness adds 1 hit point at level 1');
-  assert.deepEqual(Array.from(B.LANGUAGES_2024_STANDARD), ['Общий жестовый язык', 'Драконий', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий']);
+  assert.deepEqual(Array.from(B.LANGUAGES_2024_STANDARD), ['Общий жестовый язык', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Драконий']);
 });
 
 test('origin selections project into starting proficiencies and 2024 lineage spells', () => {
