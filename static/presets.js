@@ -28,6 +28,7 @@
     class_rules: { fields: ['table'], needsEdition: true },
     race_rules: { fields: ['table'], needsEdition: true },
     feat_rules: { fields: ['table'], needsEdition: true },
+    feature_rules: { fields: ['table'], needsEdition: true },
     // Словари правил: каждый элемент — table с полями, которые читают потребители (см. docs/presets.md).
     conditions: { fields: ['table'] },
     spell_schools: { fields: ['table'] },

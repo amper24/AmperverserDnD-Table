@@ -1,0 +1,96 @@
+{
+  "kind": "feature_rules",
+  "id": "builtin.feature-rules.2024",
+  "name": "Классификация особенностей SRD 2024",
+  "edition": "2024",
+  "items": [
+    {
+      "id": "asi",
+      "table": {
+        "kind": "asi",
+        "match": "regex",
+        "pattern": "увеличение характеристик",
+        "flags": "i",
+        "label": "Вехи улучшения характеристик"
+      }
+    },
+    {
+      "id": "epic",
+      "table": {
+        "kind": "epic",
+        "match": "regex",
+        "pattern": "эпическ(ое благо|ий дар)",
+        "flags": "i",
+        "label": "Эпический дар"
+      }
+    },
+    {
+      "id": "expertise",
+      "table": {
+        "kind": "expertise",
+        "match": "regex",
+        "pattern": "компетентност|экспертиз",
+        "flags": "i",
+        "label": "Компетентность / экспертиза"
+      }
+    },
+    {
+      "id": "secrets",
+      "table": {
+        "kind": "secrets",
+        "match": "regex",
+        "pattern": "магические секреты|тайны магии",
+        "flags": "i",
+        "label": "Магические секреты (тайны магии)"
+      }
+    },
+    {
+      "id": "pact-boon",
+      "table": {
+        "kind": "pact_boon",
+        "match": "regex",
+        "pattern": "^договор ",
+        "flags": "i",
+        "label": "Дар договора (варианты)"
+      }
+    },
+    {
+      "id": "pact-choice",
+      "table": {
+        "kind": "pact_choice",
+        "match": "exact",
+        "pattern": "Дар договора",
+        "label": "Дар договора (выбор)"
+      }
+    },
+    {
+      "id": "invocation",
+      "table": {
+        "kind": "invocation",
+        "match": "prefix",
+        "pattern": "Таинственные воззвания ",
+        "label": "Таинственные воззвания"
+      }
+    },
+    {
+      "id": "enemy",
+      "table": {
+        "kind": "enemy",
+        "match": "regex",
+        "pattern": "^избранный враг \\(",
+        "flags": "i",
+        "label": "Избранный враг"
+      }
+    },
+    {
+      "id": "terrain",
+      "table": {
+        "kind": "terrain",
+        "match": "regex",
+        "pattern": "^природный исследователь \\(",
+        "flags": "i",
+        "label": "Природный исследователь"
+      }
+    }
+  ]
+}
