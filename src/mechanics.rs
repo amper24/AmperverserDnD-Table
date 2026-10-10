@@ -309,3 +309,40 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         }
     }
 }
+
+#[cfg(test)]
+mod graph_hit_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Лист с предметом-графом: атака (КД задаёт тест) → «Попадание атаки» → урон. Бросок атаки детерминирован.
+    fn sheet_with(dc: i64) -> Value {
+        json!({"hp": {"max": 20, "current": 10, "temp": 0}, "inventory": [{"uid": "w", "name": "Клинок", "qty": 1, "type": "gear", "mechanics": {"version": 2, "origin": "test", "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}, "position": {"x": 0, "y": 0}},
+            {"id": "a", "type": "action.attack", "params": {"block_id": "atk", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
+            {"id": "h", "type": "condition.hit", "params": {}, "position": {"x": 520, "y": 120}},
+            {"id": "f", "type": "flow.if", "params": {}, "position": {"x": 520, "y": 0}},
+            {"id": "d", "type": "action.damage", "params": {"block_id": "dmg", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
+            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+            {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
+        ], "frames": [], "groups": []}}}]})
+    }
+
+    /// Урон по кнопке исполняется только после попадания: при промахе второго броска нет.
+    #[test]
+    fn hit_chain_runs_damage_only_after_a_hit() {
+        let mut hit = sheet_with(3);
+        let r = execute(&mut hit, "item", "w", "use", "", false).unwrap();
+        let rolls = r["rolls"].as_array().unwrap();
+        assert_eq!(rolls.len(), 2);
+        assert_eq!(rolls[0]["kind"], "attack");
+        assert_eq!(rolls[1]["kind"], "damage");
+
+        let mut miss = sheet_with(10);
+        let r = execute(&mut miss, "item", "w", "use", "", false).unwrap();
+        assert_eq!(r["rolls"].as_array().unwrap().len(), 1);
+    }
+}

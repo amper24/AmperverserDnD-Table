@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'asset-kinds', 'modules'];
+const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets-data', 'mechanics-graph', 'asset-kinds', 'modules'];
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -60,7 +60,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     assert.notEqual(await transform(), t0, 'средняя кнопка двигает полотно');
 
     // 3. ПКМ на пустом месте: меню с поиском и категориями, узел появляется у курсора.
-    await page.mouse.click(box.x + 250, box.y + 560, { button: 'right' });
+    await page.mouse.click(box.x + 600, box.y + 700, { button: 'right' }); // пустое место: карточки с полями выше, чем раньше
     await page.locator('.node-menu').waitFor();
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
@@ -134,7 +134,16 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     // Условие: bool → условие flow.if, затем отвод провода на пустое место удаляет связь.
     await dragWire(socket('c', 'outputs', 'value'), inD);
     assert.deepEqual(await linkOf(), ['e.value->b.value', 'c.value->d.condition'], 'bool → условие создано');
-    const cvs = await canvas.boundingBox(), empty = { x: cvs.x + cvs.width - 24, y: cvs.y + cvs.height - 24 };
+    // Ищем пустую точку от правого нижнего угла холста: карточки с полями занимают больше места, чем раньше.
+    const cvs = await canvas.boundingBox();
+    const empty = await page.evaluate(([x0, y0]) => {
+      for (let y = y0; y > y0 - 500; y -= 16) for (let x = x0; x > x0 - 700; x -= 16) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && !hit.closest('.graph-node, .node-menu, .node-wires, .node-frame, .node-toolbar, .node-starters')) return { x, y };
+      }
+      return null;
+    }, [cvs.x + cvs.width - 24, cvs.y + cvs.height - 24]);
+    assert.ok(empty, 'на холсте есть пустая точка для отвода провода');
     assert.ok(await page.evaluate(([x, y]) => !document.elementFromPoint(x, y)?.closest('.graph-node, .node-menu'), [empty.x, empty.y]), 'точка отвода действительно пустая');
     const cond = await center(socket('d', 'inputs', 'condition'));
     await page.mouse.move(cond.x, cond.y); await page.mouse.down(); await page.mouse.move(empty.x, empty.y, { steps: 6 }); await page.mouse.up();

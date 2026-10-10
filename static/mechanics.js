@@ -262,7 +262,9 @@ window.Mechanics = (() => {
           {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name,index:blocks.indexOf(atk)},
           {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name,index:blocks.indexOf(dmg)},
           window.SHEET_CTX||{},'',{disabled:options.disabled,note:options.onUse?'Сотворение заклинания сначала оплачивает расход':'Отдельный бросок: без расхода и эффектов',onUse:options.onUse});
-        const pureAttackDamage = blocks.length === 2 && blocks.some(b=>b.kind==='attack') && blocks.some(b=>b.kind==='damage');
+        // Пара «атака + урон» без условия — только два отдельных броска. Ветвление по попаданию (when hit/miss) — это цепочка: её запускает кнопка программы.
+        const gated = blocks.some(b=>b.when==='hit'||b.when==='miss');
+        const pureAttackDamage = blocks.length === 2 && !gated && blocks.some(b=>b.kind==='attack') && blocks.some(b=>b.kind==='damage');
         if(pureAttackDamage) root.append(el('div',{class:'actions-row'},row));
         else {
           program.classList.add('all');

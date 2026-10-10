@@ -1589,3 +1589,14 @@ body.lu-open { overflow: hidden; }
 .preset-tile:focus-within { outline: 2px solid var(--accent, #c9a227); outline-offset: 2px; }
 .node-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; margin: 6px 0; border: 1px dashed var(--line, #3a3a3a); border-radius: 8px; }
 .node-starters > b { width: 100%; }
+/* Параметры узла прямо на карточке холста: поля не двигают узел и не мешают проводам (см. inlineParams в mechanics-graph.js). */
+.node-inline{padding:4px 8px 6px;font-size:11px;cursor:default;user-select:text}
+.node-inline .param-form{display:flex;flex-direction:column;gap:4px}
+.node-inline .param-form:empty,.node-inline:has(.param-form:empty){display:none}
+.node-inline .param-row,.node-inline .node-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.node-inline .param-label{font-size:10px;color:var(--muted)}
+.node-inline input,.node-inline select{width:100%;min-width:0;box-sizing:border-box;font-size:11px;padding:2px 4px}
+.node-inline .param-check{display:flex;align-items:center;gap:4px;font-size:11px}
+.node-inline .param-group{margin:0;padding:2px 4px;border:1px dashed var(--border);border-radius:6px;display:flex;flex-wrap:wrap;gap:4px}
+.node-inline .param-group legend{font-size:10px;color:var(--muted);padding:0 3px}
+.node-inline .param-group input{width:44px}

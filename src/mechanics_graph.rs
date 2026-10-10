@@ -24,7 +24,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.table" => { outputs.insert("value".into(), "table".into()); }
         "data.choice" => { outputs.insert("value".into(), "choice".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
-        "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" => { outputs.insert("value".into(), "bool".into()); }
+        "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.ability_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.speed" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -184,6 +184,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
             _ => { problems.push("Провод подключён к отсутствующему сокету.".to_string()); continue; }
         };
         if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
+        if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") { problems.push("Условие попадания подключается только ко входу «Если».".to_string()); continue; }
         let key = format!("{target}:{in_socket}");
         if !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
         let edge_key = format!("{source}:{out_socket}>{target}:{in_socket}");
@@ -194,6 +195,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     let mut queue: VecDeque<String> = indegree.iter().filter(|(_, d)| **d == 0).map(|(id, _)| id.clone()).collect(); let mut visited = 0;
     while let Some(current) = queue.pop_front() { visited += 1; for target in adjacency.get(&current).into_iter().flatten() { let d = indegree.get_mut(target).unwrap(); *d -= 1; if *d == 0 { queue.push_back(target.clone()); } } }
     if visited != node_ids.len() { problems.push("Цикл в графе запрещён.".to_string()); }
+    if gated_hit_nesting(nodes, links) { problems.push("Ветвление по попаданию нельзя вкладывать в другое ветвление по попаданию.".to_string()); }
     let mut frame_ids = HashSet::new(); let mut framed_nodes = HashSet::new();
     for frame in frames {
         let id = frame["id"].as_str().unwrap_or(""); let title = frame["title"].as_str().unwrap_or("");
@@ -203,9 +205,35 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     }
     Ok(())
 }
+/// Ветвление по попаданию внутри ветви другого (см. gatedHitNesting в static/mechanics-graph.js).
+fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
+    let kind_of = |id: &str| -> String { nodes.iter().find(|n| n["id"].as_str() == Some(id)).and_then(|n| n["type"].as_str()).unwrap_or("").to_string() };
+    let edges: Vec<(String, String, String, String)> = links.iter().map(|l| (
+        l["from"]["node"].as_str().unwrap_or("").to_string(), l["from"]["socket"].as_str().unwrap_or("").to_string(),
+        l["to"]["node"].as_str().unwrap_or("").to_string(), l["to"]["socket"].as_str().unwrap_or("").to_string(),
+    )).collect();
+    let hit_flows: HashSet<String> = nodes.iter()
+        .filter(|n| n["type"].as_str() == Some("flow.if"))
+        .filter_map(|n| n["id"].as_str().map(|id| id.to_string()))
+        .filter(|id| edges.iter().any(|(from, _, to, socket)| to.as_str() == id.as_str() && socket.as_str() == "condition" && kind_of(from.as_str()) == "condition.hit"))
+        .collect();
+    let targets = |id: &str| -> Vec<String> {
+        edges.iter().filter(|(from, out, _, _)| from.as_str() == id && (out.as_str() == "then" || out.as_str() == "else")).map(|(_, _, to, _)| to.clone()).collect()
+    };
+    for id in &hit_flows {
+        let mut stack = targets(id.as_str());
+        let mut seen: HashSet<String> = HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current.clone()) { continue; }
+            if hit_flows.contains(&current) { return true; }
+            if kind_of(current.as_str()) == "flow.if" { stack.extend(targets(current.as_str())); }
+        }
+    }
+    false
+}
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "flow.if",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "flow.if",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
@@ -413,34 +441,39 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
         program.insert("trigger".into(), json!(if params["trigger"] == "passive" { "passive" } else { "use" }));
         for key in ["feature_name", "group", "roll_only"] { if let Some(value) = params.get(key) { program.insert(key.into(), value.clone()); } }
         let start = (node["id"].as_str().unwrap_or("").to_string(), "exec".to_string());
-        let mut pending: Vec<Endpoint> = outgoing.get(&start).cloned().unwrap_or_default().into_iter().rev().collect();
+        // Очередь хранит [конечная точка, гейт]. Гейт «hit»/«miss» ставит ветка «Если» по условию «Попадание атаки»
+        // и действует только на узел у выхода ветки (как when в v1); продолжение цепочки — без гейта.
+        let mut pending: Vec<(Endpoint, Option<String>)> = outgoing.get(&start).cloned().unwrap_or_default().into_iter().rev().map(|endpoint| (endpoint, None)).collect();
         let mut visited = HashSet::new(); let mut blocks = Vec::new();
-        while let Some((node_id, _input_socket)) = pending.pop() {
+        while let Some(((node_id, _input_socket), gate)) = pending.pop() {
             if !visited.insert(node_id.clone()) { continue; }
             let Some(current) = nodes.get(&node_id).copied() else { continue; };
             if current["type"] == "flow.if" {
-                let condition = graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool());
+                let hit_gate = incoming.get(&(node_id.clone(), "condition".to_string())).and_then(|source| nodes.get(&source.0).copied()).is_some_and(|source| source["type"] == "condition.hit");
+                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) };
                 let sockets: &[&str] = match condition { Some(true) => &["then"], Some(false) => &["else"], None => &["then", "else"] };
                 for socket in sockets.iter().rev() {
+                    let branch: Option<String> = if hit_gate { Some(if *socket == "then" { "hit".to_string() } else { "miss".to_string() }) } else { gate.clone() };
                     let key = (node_id.clone(), (*socket).to_string());
-                    for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+                    for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, branch.clone())); }
                 }
                 continue;
             }
             let kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("");
             if !ACTIONS.contains(&kind) { continue; }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
+            if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
             let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned());
             if enabled.as_ref().is_some_and(|value| value == &json!(false)) {
                 let key = (node_id.clone(), "exec".to_string());
-                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
                 continue;
             }
             if let Some(value) = enabled { block.insert("enabled".into(), value); }
             let block_id = block.remove("block_id").unwrap_or(json!(node_id));
             block.insert("id".into(), block_id); block.insert("kind".into(), json!(kind)); blocks.push(Value::Object(block));
             let key = (node_id, "exec".to_string());
-            for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+            for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
         }
         program.insert("blocks".into(), json!(blocks)); programs.push(Value::Object(program));
     }
@@ -469,5 +502,60 @@ mod tests {
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
         assert_eq!(blocks.iter().map(|block| block["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["inner-manual", "root-roll"]);
+    }
+}
+
+#[cfg(test)]
+mod hit_gate_tests {
+    use super::*;
+
+    /// Атака → «Если» по условию «Попадание атаки» → урон. Бросок атаки детерминирован (без костей, +5).
+    fn hit_chain() -> Value {
+        json!({"version": 2, "origin": "test", "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
+            {"id": "a", "type": "action.attack", "params": {"block_id": "atk", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
+            {"id": "h", "type": "condition.hit", "params": {}},
+            {"id": "f", "type": "flow.if", "params": {}},
+            {"id": "d", "type": "action.damage", "params": {"block_id": "dmg", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
+            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+            {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
+        ], "frames": [], "groups": []}})
+    }
+
+    #[test]
+    fn hit_branch_compiles_to_a_gated_block() {
+        let graph = hit_chain();
+        assert!(problems(&graph).unwrap().is_empty());
+        let v1 = to_v1(&graph);
+        let blocks = v1["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["kind"], "attack");
+        assert_eq!(blocks[1]["kind"], "damage");
+        assert_eq!(blocks[1]["when"], "hit");
+    }
+
+    #[test]
+    fn hit_condition_only_feeds_a_branch() {
+        let mut graph = hit_chain();
+        // Условие попадания подключено к узлу, который не является «Если»: сохранение и исполнение отклоняют граф.
+        graph["graph"]["links"].as_array_mut().unwrap().push(json!({"from": {"node": "h", "socket": "value"}, "to": {"node": "d", "socket": "enabled"}}));
+        let list = problems(&graph).unwrap();
+        assert!(list.iter().any(|message| message.contains("только ко входу")), "{list:?}");
+    }
+
+    #[test]
+    fn nested_hit_branches_are_problems() {
+        let mut graph = hit_chain();
+        let nodes = graph["graph"]["nodes"].as_array_mut().unwrap();
+        nodes.push(json!({"id": "h2", "type": "condition.hit", "params": {}}));
+        nodes.push(json!({"id": "f2", "type": "flow.if", "params": {}}));
+        let links = graph["graph"]["links"].as_array_mut().unwrap();
+        links.push(json!({"from": {"node": "h2", "socket": "value"}, "to": {"node": "f2", "socket": "condition"}}));
+        links.push(json!({"from": {"node": "f", "socket": "then"}, "to": {"node": "f2", "socket": "exec"}}));
+        let list = problems(&graph).unwrap();
+        assert!(list.iter().any(|message| message.contains("вкладывать")), "{list:?}");
     }
 }
