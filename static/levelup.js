@@ -148,15 +148,23 @@ window.LevelUp = (() => {
   const subclassFeaturesAt = (sub, level, choices = {}) => sub ? [...new Set((sub.features?.[String(level)] || []).filter(n => typeof n === 'string' && !n.startsWith('|')))]
     .filter(name => { const group = subclassVariantGroups(sub, level).find(g => g.options.includes(name)); return !group || choices[group.base] === name; })
     .map(name => ({ name, text: sub.feature_texts?.[name] || '' })) : [];
-  function subclassCantripGain(entry, sub, edition, level) {
-    return edition === '2014' && slugOf(entry) === 'druid' && Number(level) === 2 && /круг земли/i.test(sub?.name || '')
-      && subclassFeaturesAt(sub, 2).some(feature => /дополнительный заговор/i.test(feature.name)) ? 1 : 0;
+  // Правила подклассов из набора class_rules (subclass_rules): эффект, уровень, подкласс по name_en.
+  function subclassRulesOf(entry, sub, edition, effect, level) {
+    const en = String(sub?.name_en || '').toLowerCase();
+    if (!en) return [];
+    return (window.Presets?.classRules(String(edition || entry?.data?.edition || '2014'), slugOf(entry))?.subclass_rules || [])
+      .filter(r => r.effect === effect && Number(r.level) === Number(level) && String(r.subclass || '').toLowerCase() === en);
   }
-  function subclassSkillChoices(entry, sub, level) {
+  function subclassCantripGain(entry, sub, edition, level) {
+    const rule = subclassRulesOf(entry, sub, edition, 'extra_cantrip', level)[0];
+    return rule && subclassFeaturesAt(sub, level).some(feature => new RegExp(rule.feature, 'i').test(feature.name)) ? (Number(rule.count) || 1) : 0;
+  }
+  function subclassSkillChoices(entry, sub, level, edition) {
+    const rule = subclassRulesOf(entry, sub, edition, 'skills', level)[0];
+    if (!rule) return null;
     const features = subclassFeaturesAt(sub, level);
-    return slugOf(entry) === 'bard' && Number(level) === 3 && /коллегия знаний|college of lore/i.test(`${sub?.name || ''} ${sub?.name_en || ''}`)
-      && features.some(feature => /дополнительные владения|bonus proficiencies/i.test(feature.name) && /три навык|трем[яи]\s+навы|three skills/i.test(feature.text))
-      ? { count: 3, any: true } : null;
+    return features.some(feature => new RegExp(rule.feature, 'i').test(feature.name) && new RegExp(rule.text, 'i').test(feature.text))
+      ? { count: Number(rule.count) || 1, any: rule.any === true } : null;
   }
   /// Уровень выбора подкласса: первый уровень, на котором у подклассов есть умения.
   function subclassLevel(entry) {
@@ -605,7 +613,7 @@ window.LevelUp = (() => {
         const four = ['Бард', 'Жрец', 'Друид', 'Волшебник', 'Bard', 'Cleric', 'Druid', 'Wizard'];
         return (st.catalogs.spell || []).filter(e => (e.data?.level || 0) <= p.spells.maxLevel && !have.has(e.name) && (p.edition !== '2024' || (e.data?.classes || []).some(c => four.includes(c))));
       };
-      const subclassSkillRule = () => subclassSkillChoices(st.p.entry, st.subclass || st.p.subclass, st.p.to);
+      const subclassSkillRule = () => subclassSkillChoices(st.p.entry, st.subclass || st.p.subclass, st.p.to, st.p.edition);
       const subclassVariantRules = () => subclassVariantGroups(st.subclass || st.p.subclass, st.p.to);
       const subclassCantripChoices = () => {
         const sub = st.subclass || st.p.subclass;
@@ -731,7 +739,7 @@ window.LevelUp = (() => {
       const subclassVariantsStep = () => {
         const sub = st.subclass || st.p.subclass, selected = { ...(st.p.subclassChoices || {}), ...(st.subclassVariants || {}) };
         return subclassVariantRules().map(group => h('section', 'lu-panel', h('h3', 'lu-h', group.base),
-          h('p', 'lu-lead', group.base === 'Круг Земли' ? 'Выберите тип местности, от которого зависят умения и заклинания круга.' : 'Выберите один вариант умения подкласса.'),
+          h('p', 'lu-lead', subclassRulesOf(st.p.entry, sub, st.p.edition, 'variant_hint', st.p.to).find(r => r.base === group.base)?.text || 'Выберите один вариант умения подкласса.'),
           h('div', 'lu-cards', ...group.options.map(name => {
             const feature = sub.feature_texts?.[name] || '', option = name.slice(group.base.length + 1).trim(), on = selected[group.base] === name;
             const card = h('div', 'lu-pick' + (on ? ' on' : ''), h('div', 'lu-pick-head', crest('✦', 'sm'), h('div', 'lu-pick-t', h('b', '', option)), on ? h('span', 'lu-check', '✓') : null),

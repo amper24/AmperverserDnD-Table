@@ -112,3 +112,36 @@ test('Посвящённый в магию: правило выбора закл
   assert.equal(B.spellChoiceOf({ name: 'Бдительность', data: { name_en: 'Alert' } }, '2024'), null);
   assert.equal(B.spellChoiceOf(feat, '2014'), null);
 });
+
+test('пользовательский класс из своего набора class_rules: выбор, проверка и особенность на листе', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'class_rules', id: 'user.homebrew-class', name: 'Свой класс', edition: '2014',
+    items: [{ id: 'homebrew', table: { ru: 'Свой класс', choices: [{ key: 'school', kind: 'options', title: 'Школа', feature_name: 'Школа',
+      options: [{ value: 'fire', name: 'Огонь', feature_text: 'Огненный удар.' }, { value: 'ice', name: 'Лёд', feature_text: 'Ледяной удар.' }] }] } }] });
+  const cls = { id: 'user-homebrew', category: 'class', name: 'Свой класс', slug: 'homebrew', source: 'user', data: { name_en: 'homebrew', edition: '2014' } };
+  const d = { name: 'T', edition: '2014', level: 1, abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, catalog: [], ruleChoices: {}, skills: [], freeSkills: [], languages: [],
+    selected: { class: cls, race: null, background: null, feat: null, subclass: null } };
+  assert.equal(B.classChoices(d).length, 1, 'выбор из пользовательского набора виден мастеру');
+  assert.match(B.classChoiceProblem(d), /Школа|Выберите/);
+  const ok = { ...d, ruleChoices: { school: 'ice' } };
+  assert.equal(B.classChoiceProblem(ok), null);
+  const sheet = B.build(ok);
+  assert.ok(sheet.features.some(f => f.name === 'Школа: Лёд' && f.text === 'Ледяной удар.'), JSON.stringify(sheet.features.map(f => f.name)));
+  assert.equal(B.classChoices({ ...d, edition: '2024' }).length, 0, 'редакция 2024 пользовательским набором не затронута');
+});
+
+test('заклинания класса на листе: домен жизни 2014 и всегда подготовленные из наборов', () => {
+  const cleric = seed('2014').find(e => e.category === 'class' && e.slug === 'srd14-cleric');
+  const life = cleric.data.subclasses.find(s => s.name_en === 'Life');
+  const lifeDraft = draft('2014', 'cleric');
+  lifeDraft.selected.subclass = { name: life.name, data: life };
+  const known = B.build(lifeDraft).spells.known;
+  for (const name of ['Благословение', 'Лечение ран']) {
+    const spell = known.find(s => s.name === name);
+    assert.ok(spell && spell.prepared, `домен жизни: ${name} подготовлено`);
+  }
+  const druid = B.build(draft('2024', 'druid')).spells.known.find(s => s.name === 'Разговор с животными');
+  assert.ok(druid && druid.prepared, 'друид 2024: «Разговор с животными» всегда подготовлено');
+  assert.equal(B.build(draft('2014', 'cleric')).spells.known.some(s => s.name === 'Благословение'), false, 'без домена заклинаний домена нет');
+  assert.ok(B.build(draft('2024', 'druid')).proficiencies.includes('Друидический'), 'язык класса друида из набора');
+});

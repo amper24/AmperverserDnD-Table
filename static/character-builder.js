@@ -619,6 +619,13 @@ window.CharacterBuilder = (() => {
   // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт
   // берутся из справочника по фильтру набора, поэтому кастомная раса описывается только данными.
   // Выборы класса — набор class_rules (поле choices) по редакции. Ключи совпадают с draft.ruleChoices.
+  // Выдачи подкласса из набора class_rules (subclass_grants): владения и заклинания по name_en подкласса.
+  function subclassGrants(draft, edition, slug) {
+    const en = String(draft.selected?.subclass?.data?.name_en || '').toLowerCase();
+    if (!en) return [];
+    return (window.Presets?.classRules(String(edition || '2014'), slug)?.subclass_grants || [])
+      .filter(g => String(g.subclass || '').toLowerCase() === en);
+  }
   // Черта с выбором заклинаний (Посвящённый в магию): правило spell_choice из набора feat_rules, по name_en.
   function spellChoiceOf(feat, edition) {
     const name = normalizeName(feat?.data?.name_en || '');
@@ -848,10 +855,7 @@ window.CharacterBuilder = (() => {
     }
     applyClassChoices(s, draft, classEntry);
     // Владения подкласса задаёт набор class_rules (subclass_grants): подкласс по name_en, без проверки имени в коде.
-    const subclassEn = String(draft.selected.subclass?.data?.name_en || '').toLowerCase();
-    for (const grant of window.Presets?.classRules(s.edition, classSlug)?.subclass_grants || [])
-      if (subclassEn && subclassEn === String(grant.subclass || '').toLowerCase()) appendProficiency(s, grant.label, grant.proficiencies || []);
-    if (classSlug === 'rogue') appendProficiency(s, 'Инструменты класса', ['Воровские инструменты']);
+    for (const grant of subclassGrants(draft, s.edition, classSlug)) appendProficiency(s, grant.label, grant.proficiencies || []);
     const featName = String(draft.selected.background?.data?.feat || '').trim();
     if (featName && !draft.selected.feat) feature(s, featName, 'Черта предыстории указана текстом; запись черты не найдена в справочнике.', draft.selected.background.name);
     if (s.edition === '2024') for (const k of keys) s.abilities[k] += Number(draft.bonuses?.[k]) || 0;
@@ -859,8 +863,8 @@ window.CharacterBuilder = (() => {
     const chosenLanguages = [...(draft.languages || [])];
     if (s.edition === '2024') chosenLanguages.unshift('Общий');
     appendProficiency(s, 'Языки', chosenLanguages);
-    if (creationClassSlug === 'druid') appendProficiency(s, 'Язык класса', ['Друидический']);
-    if (creationClassSlug === 'rogue') appendProficiency(s, 'Язык класса', ['Воровской жаргон']);
+    const classRulesNow = window.Presets?.classRules(s.edition, creationClassSlug) || {};
+    for (const p of classRulesNow.class_proficiencies || []) appendProficiency(s, p.title, p.items || []);
     s.skills = [...new Set(s.skills)];
     const expertiseChoices = [...new Set(draft.ruleChoices?.expertise || [])];
     const expertiseRule = classChoiceRules(s.edition, creationClassSlug).find(c => c.kind === 'expertise') || {};
@@ -873,11 +877,9 @@ window.CharacterBuilder = (() => {
       for (const spell of s.spells.known) spell.prepared = spell.level === 0 || (spellRule.mode === 'book' ? (draft.preparedSpells || []).includes(spell.name) : ['known', 'prepared'].includes(spellRule.mode));
     }
     const alwaysPrepared = [];
-    if (s.edition === '2024' && creationClassSlug === 'druid') alwaysPrepared.push('Разговор с животными');
-    if (s.edition === '2024' && creationClassSlug === 'ranger') alwaysPrepared.push('Метка охотника');
+    alwaysPrepared.push(...(classRulesNow.always_prepared || []));
+    alwaysPrepared.push(...subclassGrants(draft, s.edition, creationClassSlug).flatMap(g => g.spells || []));
     alwaysPrepared.push(...(rr.always_prepared || []));
-    if (s.edition === '2014' && creationClassSlug === 'cleric' && /life/i.test(String(draft.selected.subclass?.data?.name_en || '')))
-      alwaysPrepared.push('Благословение', 'Лечение ран');
     for (const name of alwaysPrepared) {
       const found = (draft.catalog || []).find(e => e.category === 'spell' && normalizeName(entryName(e)) === normalizeName(name));
       if (found && !s.spells.known.some(spell => normalizeName(spell.name) === normalizeName(entryName(found)))) {
