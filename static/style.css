@@ -1568,6 +1568,12 @@ body.lu-open { overflow: hidden; }
 .node-menu-item:hover,.node-menu-item:focus{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .node-menu-item small{opacity:.55;font-size:10px}
 .node-menu-empty{opacity:.6;padding:8px}
+.node-menu-sub{position:absolute;z-index:11;min-width:220px;max-width:300px;max-height:340px;overflow:auto;display:flex;flex-direction:column;background:var(--bg);color:inherit;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:6px}
+.node-menu-sub[hidden]{display:none}
+.node-menu-cat{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%}
+.node-menu-title.node-menu-cat{text-transform:none;letter-spacing:0;font-size:13px;opacity:1;padding:6px 8px}
+.node-menu-arrow::after{content:'›';opacity:.6}
+.node-menu-cat[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 
 .node-status.warn{color:var(--warn,#b7791f)}
 /* Холст получает всю ширину, а панель параметров уходит под него, когда редактор узкий (модальное окно). */

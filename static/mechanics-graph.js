@@ -635,6 +635,18 @@
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 } });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
     }
+    // Копии выделенных узлов со сдвигом; связи не копируются. block_id действия создаётся заново (уникален в графе).
+    function duplicateNodes(ids) {
+      const source = graph.nodes.filter(n => ids.includes(n.id));
+      if (!source.length) return;
+      const copies = source.map(n => {
+        const params = clone(n.params || {});
+        if (actionType(n.type)) params.block_id = mkId('b');
+        return { id: mkId('node'), type: n.type, params, position: { x: n.position.x + 40, y: n.position.y + 40 } };
+      });
+      graph.nodes.push(...copies);
+      checkpoint(); selected = new Set(copies.map(n => n.id)); activeNode = copies[0].id; render();
+    }
     // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
     function insertStarter(starter) {
       if (!isBlankGraph(graph)) return;
@@ -859,9 +871,16 @@
         // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
-        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { sections: [{ title: 'Узел', items: [
-          { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }, { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) }, { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] }],
-          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else addFrame(); } }); } },
+        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { categories: true, sections: [
+          { title: 'Узел', items: [
+            { label: 'Дублировать', run: () => ({ action: 'duplicate' }) },
+            { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }] },
+          { title: 'Группа', items: [
+            { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) },
+            { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] },
+          { title: 'Добавить рядом', items: window.NodeMenu.catalogCategories().map(cat => ({ label: cat.label, children: cat.children.map(c => ({ ...c, run: () => ({ action: 'add', type: c.hint, at: { x: node.position.x + 280, y: node.position.y } }) })) })) },
+        ],
+          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), sockets);
@@ -968,7 +987,7 @@
           startMarquee(e);
         },
         onauxclick: e => e.preventDefault(),
-        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
+        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, categories: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
       const inspector = renderProperties();
       // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
       // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.

@@ -169,18 +169,42 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     await page.locator('.graph-node[data-node-id="c"] .node-id').click();
     await page.locator('.graph-node[data-node-id="d"] .node-id').click({ modifiers: ['Control'] });
     await page.locator('.graph-node[data-node-id="d"] .node-id').click({ button: 'right' });
+    // Меню узла: категории видны сразу, варианты — только при наведении на категорию.
+    await page.locator('.node-menu').waitFor();
+    const nodeCats = await page.locator('.node-menu > .node-menu-list > .node-menu-cat').allTextContents();
+    assert.deepEqual(nodeCats, ['Узел', 'Группа', 'Добавить рядом'], 'категории меню узла');
+    assert.equal(await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).isVisible(), false, 'вариант скрыт, пока не наведён курсор на категорию');
+    await page.locator('.node-menu-cat', { hasText: 'Группа' }).hover();
     await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).click();
     const graphNow = await page.evaluate(() => document.querySelector('.node-editor').getGraph());
     assert.equal(graphNow.groups.length, 1, 'выделение превращено в группу');
     assert.ok(graphNow.nodes.some(n => n.type === 'group.instance'), 'вместо выделения появился экземпляр группы');
     assert.ok(!graphNow.nodes.some(n => n.id === 'c' || n.id === 'd'), 'узлы группы убраны с полотна и лежат внутри группы');
 
+    // 10б. Дублирование из меню узла: копия появляется со сдвигом, связи не копируются.
+    const beforeDup = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.length);
+    await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
+    await page.locator('.node-menu-cat', { hasText: 'Узел' }).hover();
+    await page.locator('.node-menu-item', { hasText: 'Дублировать' }).click();
+    const afterDup = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.length);
+    assert.ok(afterDup > beforeDup, 'дублирование добавило узел');
+    const dupIds = await page.evaluate(() => { const g = document.querySelector('.node-editor').getGraph(); return new Set(g.nodes.map(n => n.id)).size === g.nodes.length; });
+    assert.equal(dupIds, true, 'у копии свой id');
+
+    // 10в. Добавление рядом: категория → подкатегория → узел (вложенные подменю).
+    await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
+    await page.locator('.node-menu-cat', { hasText: 'Добавить рядом' }).hover();
+    await page.locator('.node-menu-cat', { hasText: 'Условия' }).hover();
+    await page.locator('.node-menu-item', { hasText: 'Если уровень' }).click();
+    const lastType = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.at(-1).type);
+    assert.equal(lastType, 'condition.level', 'узел добавлен через вложенное меню');
+
     // 11. Неполный граф не блокирует связи; статус показывает незавершённость.
     await page.locator('.node-editor').focus();
     await page.keyboard.press('Escape'); // сбрасывает одноразовое сообщение, остаётся статус незавершённости
     assert.match(await statusText(), /не исполняется/i, 'незавершённый граф показан списком в статусе');
     assert.deepEqual(errors, [], 'нет ошибок страницы');
-    console.log('PASS node editor browser: zoom, middle pan, context search menu, marquee, group move, typed wires, reconnect, detach, wire anchors, view not saved');
+    console.log('PASS node editor browser: zoom, middle pan, context search menu, node menu categories and hover variants, duplicate, nested add, marquee, group move, typed wires, reconnect, detach, wire anchors, view not saved');
   } finally {
     await browser.close();
   }
