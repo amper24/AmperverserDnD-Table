@@ -1,0 +1,14 @@
+{
+  "slug": "srd14-wizard",
+  "name": "Волшебник",
+  "choices": {},
+  "edition": "2014",
+  "kind": "classes",
+  "levels": [
+    1,
+    3,
+    5,
+    11,
+    20
+  ]
+}

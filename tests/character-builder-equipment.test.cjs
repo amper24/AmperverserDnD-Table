@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const ctx = { window: {}, console, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
 ctx.Equipment = ctx.window.Equipment;
 vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), ctx);
@@ -22,6 +23,7 @@ ctx.window.SKILLS = [
 ];
 ctx.SKILLS = ctx.window.SKILLS;
 ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
+vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 // Значения приходят из песочницы vm — сравниваем структуру, а не прототипы другого контекста.
@@ -233,6 +235,12 @@ test('feat spellcasting ability is preserved when a spell is sent to chat', () =
   assert.equal(ctx.Modules.toChatCard({ ...spell, spell_ability: undefined }, 'spell').spell_ability, undefined);
 });
 
+// Правило защиты без доспехов как пассивный блок записи класса (так же, как в data_seed).
+function unarmoredProgram(formula, noShield) {
+  return { version: 1, origin: 'test', programs: [{ id: 'p1', name: 'Параметры при создании', trigger: 'passive', blocks: [
+    { id: 'b1', kind: 'passive', enabled: true, when: 'always', field: 'unarmored_defense', value: { formula, no_shield: noShield } }] }] };
+}
+
 test('Unarmored Defense calculates class AC and enforces the monk shield restriction', () => {
   const base = { abilities: { dex: 14, con: 16, wis: 16 }, inventory: [] };
   assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'barbarian' }).ac, 15, 'barbarian adds Constitution');
@@ -241,10 +249,25 @@ test('Unarmored Defense calculates class AC and enforces the monk shield restric
   assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'barbarian', inventory: [shield] }).ac, 17, 'barbarian can use a shield with Unarmored Defense');
   assert.equal(ctx.Equipment.armorClassParts({ ...base, unarmored_defense: 'monk', inventory: [shield] }).ac, 14, 'monk loses Unarmored Defense while using a shield');
   const barbarian = B.build({ name: 'Варвар', edition: '2014', abilities: { str: 10, dex: 14, con: 16, int: 10, wis: 10, cha: 10 },
-    selected: { class: entryOf('class', 'Варвар', { name_en: 'barbarian', hit_die: 'd12', starting_equipment: '' }) }, spells: [], catalog: CATALOG,
+    selected: { class: entryOf('class', 'Варвар', { name_en: 'barbarian', hit_die: 'd12', starting_equipment: '', mechanics: unarmoredProgram('@dex + 10 + @con', false) }) }, spells: [], catalog: CATALOG,
     equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true } });
   assert.equal(barbarian.ac, 15, 'the creation projection calculates unarmored AC, not just the equipment helper');
-  assert.equal(barbarian.unarmored_defense, 'barbarian');
+  assert.deepEqual(JSON.parse(JSON.stringify(barbarian.unarmored_defense)), { formula: '@dex + 10 + @con', no_shield: false }, 'the rule comes from the class record, not from its name');
+});
+
+test('a homebrew class gets its own Unarmored Defense from data alone, with no code for its name', () => {
+  const homebrew = entryOf('class', 'Мистик', { name_en: 'mystic', hit_die: 'd8', starting_equipment: '',
+    mechanics: unarmoredProgram('12 + @cha', false) });
+  const sheet = B.build({ name: 'Мистик', edition: '2014', abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 16 },
+    selected: { class: homebrew }, spells: [], catalog: CATALOG,
+    equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true } });
+  assert.equal(sheet.ac, 15, 'AC = 12 + Charisma modifier (+3)');
+  assert.equal(sheet.unarmored_defense.formula, '12 + @cha');
+  const plain = B.build({ name: 'Без правила', edition: '2014', abilities: { str: 10, dex: 14, con: 10, int: 10, wis: 10, cha: 16 },
+    selected: { class: entryOf('class', 'Без правила', { hit_die: 'd8', starting_equipment: '' }) }, spells: [], catalog: CATALOG,
+    equipment: { choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true } });
+  assert.equal(plain.ac, 12, 'a class without the rule gets the plain 10 + Dexterity');
+  assert.ok(!plain.unarmored_defense, 'no rule is stored');
 });
 
 test('an ammo weapon consumes ammo, and the pack is a single row unless disabled', () => {

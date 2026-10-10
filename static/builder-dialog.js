@@ -98,7 +98,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   /// Сколько языков ещё выбирает игрок: от предыстории и от расы.
   function languageRule() {
     const backgroundLanguages = Number(draft.selected.background?.data?.languages);
-    const classSlug = String(draft.selected.class?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[draft.selected.class?.name] || '';
+    const classSlug = window.ClassRules.slugOf(draft.selected.class);
     const originLanguages = draft.edition === '2024' ? 2 : 0; // Common is automatic; choose two Standard Languages
     const rogueLanguage = draft.edition === '2024' && classSlug === 'rogue' ? 1 : 0;
     return originLanguages + (Number.isInteger(backgroundLanguages) && backgroundLanguages > 0 ? backgroundLanguages : 0) + raceLanguageChoice() + rogueLanguage;
@@ -587,7 +587,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     const knownSet = new Set(known.map(normalizeName));
     const options = eligible.filter(language => !knownSet.has(normalizeName(language)) || selected.some(value => normalizeName(value) === normalizeName(language)));
     const fromRace = raceLanguageChoice();
-    const classSlug = String(draft.selected.class?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[draft.selected.class?.name] || '';
+    const classSlug = window.ClassRules.slugOf(draft.selected.class);
     const origin = [draft.edition === '2024' ? 'происхождение — 2 стандартных' : '',
       Number(draft.selected.background?.data?.languages) > 0 ? `предыстория — ${draft.selected.background.data.languages}` : '',
       fromRace ? `раса — ${fromRace}` : '', draft.edition === '2024' && classSlug === 'rogue' ? 'плут — 1 стандартный' : ''].filter(Boolean).join(' · ');

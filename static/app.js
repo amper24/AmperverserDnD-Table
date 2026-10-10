@@ -233,7 +233,7 @@
     file.addEventListener('change', async () => {
       const f = file.files[0]; if (!f) return;
       try {
-        const fd = new FormData(); fd.append('file', f); fd.append('kind', 'portrait'); fd.append('name', 'Аватар ' + me.name);
+        const fd = new FormData(); fd.append('file', f); fd.append('kind', AssetKinds.forUsage('avatar')); fd.append('name', 'Аватар ' + me.name);
         const a = await API.upload('/api/assets', fd);
         await API.patch('/api/auth/me', { avatar_asset_id: a.id });
         me.avatar_asset_id = a.id; window.ME = me; okmsg('Аватар обновлён'); reloadPage();
@@ -354,8 +354,8 @@
   // Библиотека ресурсов: все изображения пользователя (карты, токены, портреты, объекты) + встроенные
   async function lobbyLibrary() {
     const wrap = el('div');
-    const kindSel = el('select', {}, ...[['', 'Все типы'], ['map', 'Карты'], ['token', 'Токены'], ['prop', 'Объекты'], ['portrait', 'Портреты']].map(([k, v]) => el('option', { value: k }, v)));
-    const upKind = el('select', {}, ...[['token', 'Токен'], ['map', 'Карта'], ['prop', 'Объект'], ['portrait', 'Портрет']].map(([k, v]) => el('option', { value: k }, v)));
+    const kindSel = el('select', {}, ...AssetKinds.filterOptions().map(([k, v]) => el('option', { value: k }, v)));
+    const upKind = el('select', {}, ...AssetKinds.uploadOptions().map(([k, v]) => el('option', { value: k }, v)));
     const file = el('input', { type: 'file', accept: 'image/*', multiple: '', class: 'hidden' });
     const showBuiltin = el('input', { type: 'checkbox', style: 'width:auto' });
     const asBuiltin = el('input', { type: 'checkbox', style: 'width:auto' });
@@ -371,7 +371,7 @@
         const im = el('div', { class: 'thumb' });
         assetURL(a.id).then(u => im.append(el('img', { src: u })));
         grid.append(el('div', { class: 'asset' }, im, el('div', { class: 'row' }, el('span', { class: 'grow ellipsis', title: a.name }, a.name), a.builtin ? el('span', { class: 'badge' }, 'встроенный') : null, (!a.builtin || me.is_root) ? el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить?')) { await API.del('/api/assets/' + a.id); refresh(); } } }, icon('trash')) : null),
-          el('div', { class: 'muted small' }, `${{ map: 'карта', token: 'токен', prop: 'объект', portrait: 'портрет' }[a.kind] || a.kind} · ${a.width}×${a.height}`)));
+          el('div', { class: 'muted small' }, `${AssetKinds.label(a.kind).toLowerCase()} · ${a.width}×${a.height}`)));
       }
     }
     file.addEventListener('change', async () => { for (const f of file.files) { const fd = new FormData(); fd.append('file', f); fd.append('name', f.name.replace(/\.[^.]+$/, '')); fd.append('kind', upKind.value); if (me.is_root && asBuiltin.checked) fd.append('builtin', '1'); toast('Загрузка ' + f.name + '…'); await API.upload('/api/assets', fd); } file.value = ''; refresh(); });
@@ -590,7 +590,7 @@
     // ---- ассеты ----
     function buildAssets() {
       const w = el('div');
-      const kindSel = el('select', {}, ...[['token', 'Токены'], ['prop', 'Объекты'], ['map', 'Карты'], ['portrait', 'Портреты']].map(([k, v]) => el('option', { value: k }, v)));
+      const kindSel = el('select', {}, ...AssetKinds.filterOptions().slice(1).map(([k, v]) => el('option', { value: k }, v)));
       const gridEl = el('div', { class: 'asset-grid' });
       const drop = el('div', { class: 'dropzone' }, 'Перетащите изображения сюда или ', el('a', { href: '#', onclick: e => { e.preventDefault(); file.click(); } }, 'выберите файл'));
       const file = el('input', { type: 'file', accept: 'image/*', multiple: '', class: 'hidden' });

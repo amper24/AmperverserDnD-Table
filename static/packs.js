@@ -165,7 +165,7 @@ window.Packs = (function () {
       const form = el('div', {}, f('Название', el('input', { value: d.name, oninput: e => d.name = e.target.value })), f('Описание', el('textarea', { style: 'min-height:80px', oninput: e => d.description = e.target.value }, d.description)),
         el('div', { class: 'row' }, f('Теги (через запятую)', el('input', { value: d.tags, placeholder: 'сеттинг, предметы, NPC', oninput: e => d.tags = e.target.value })), f('Редакция', el('select', { onchange: e => d.edition = e.target.value }, ...[['', 'Любая'], ['2014', '2014'], ['2024', '2024']].map(([k, v]) => el('option', { value: k, selected: d.edition === k ? '' : null }, v))))),
         f('Язык записей набора', localeSel), trBox,
-        M().imagePicker(d, 'cover_asset_id', { kind: 'item', label: 'Обложка набора' }));
+        M().imagePicker(d, 'cover_asset_id', { kind: AssetKinds.forUsage('item'), label: 'Обложка набора' }));
       const ok = await modal('Настройки набора', form, [{ label: 'Сохранить', cls: 'primary', fn: () => d.name.trim() || false }], { wide: true });
       if (!ok) return;
       try { await API.patch('/api/packs/' + p.id, { ...d, is_public: p.is_public }); toast('Сохранено'); renderSide(); openPack(p.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); }

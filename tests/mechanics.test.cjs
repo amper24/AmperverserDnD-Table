@@ -2,6 +2,9 @@ const { test }=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function node(tag,attrs={},...children){return {tag,attrs,children:children.flat().filter(x=>x!==null&&x!==undefined),classList:{add(){}},append(...more){this.children.push(...more.flat().filter(x=>x!==null&&x!==undefined));}};}
 const ctx={window:{},crypto:require('node:crypto').webcrypto,el:node,toast(){}};vm.createContext(ctx);vm.runInContext(fs.readFileSync('static/dice.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics.js','utf8'),ctx);const M=ctx.window.Mechanics;
+// SRD хранится в графе v2; проверки ниже читают его v1-представление (toLegacy), то есть ту же логику, что редактор.
+vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-params-form.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-registry.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics-graph.js','utf8'),ctx);const G=ctx.window.Mechanics;
+const srd=f=>JSON.parse(fs.readFileSync(f)).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,mechanics:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));
 test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+0+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
 test('pure attack plus damage shows only hit and damage buttons; extra blocks keep the full-action button',()=>{
@@ -32,7 +35,7 @@ test('full SRD coverage: all 2499 records across categories, optional item mecha
   let count=0;
   const expected={2014:{total:1294,item:599,attunement:176},2024:{total:1205,item:444,attunement:136}};
   for(const ed of ['2014','2024']){
-    const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));
+    const data=srd(`data_seed/srd_${ed}.json`);
     assert.equal(data.length,expected[ed].total,ed);
     assert.equal(data.filter(e=>e.category==='item').length,expected[ed].item,ed);
     assert.equal(data.filter(e=>e.category==='item'&&e.data.attunement===true).length,expected[ed].attunement,ed+' attunement');
@@ -43,12 +46,12 @@ test('full SRD coverage: all 2499 records across categories, optional item mecha
     }
   }
   assert.equal(count,2499);
-  const passive=JSON.parse(fs.readFileSync('data_seed/srd_2014.json')).find(e=>e.slug==='srd14-backpack');
+  const passive=srd('data_seed/srd_2014.json').find(e=>e.slug==='srd14-backpack');
   assert.equal(passive.data.mechanics,undefined,'пассивное снаряжение не получает фиктивные правила использования');
 });
 test('curated healing: potion expenditure is separate from a target-applied healing roll',()=>{
   for(const ed of ['2014','2024']){
-    const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));
+    const data=srd(`data_seed/srd_${ed}.json`);
     const spell=data.find(e=>e.category==='spell'&&e.data.name_en==='Cure Wounds');
     const blocks=spell.data.mechanics.programs[0].blocks;
     assert.equal(blocks[0].resource,'slot');
@@ -65,16 +68,16 @@ test('curated healing: potion expenditure is separate from a target-applied heal
     if(ed==='2014')assert.match(pblocks[1].text,/требует действия/);
     else assert.match(pblocks[1].text,/бонусным действием/i);
   }
-  const legacy=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));
+  const legacy=srd('data_seed/srd_2014.json');
   for(const slug of ['srd14-potion-of-healing','srd14-spell-scroll','srd14-feather-token','srd14-ring-of-elemental-command']){
     const family=legacy.find(e=>e.slug===slug);assert.ok(family);assert.equal(family.data.mechanics,undefined,slug);
   }
-  const family24=JSON.parse(fs.readFileSync('data_seed/srd_2024.json')).find(e=>e.slug==='srd24-potions-of-healing');
+  const family24=srd('data_seed/srd_2024.json').find(e=>e.slug==='srd24-potions-of-healing');
   if(family24)assert.equal(family24.data.mechanics,undefined);
 });
 test('charge automation is limited to one explicit fixed cost; variable costs stay manual',()=>{
-  const data=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));
-  const data24=JSON.parse(fs.readFileSync('data_seed/srd_2024.json'));
+  const data=srd('data_seed/srd_2014.json');
+  const data24=srd('data_seed/srd_2024.json');
   const find=(rows,slug)=>rows.find(e=>e.slug===slug);
   const blocks=(rows,slug)=>find(rows,slug).data.mechanics.programs[0].blocks;
   const hasChargeSpend=bs=>bs.some(b=>b.kind==='consume'&&b.resource==='charges');
@@ -91,8 +94,8 @@ test('charge automation is limited to one explicit fixed cost; variable costs st
   assert.ok(hasChargeSpend(fixedUse),'a single explicit fixed charge cost remains automated');
 });
 test('item rules preserve finesse and edition-specific net procedures without invented rolls',()=>{
-  const d14=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));
-  const d24=JSON.parse(fs.readFileSync('data_seed/srd_2024.json'));
+  const d14=srd('data_seed/srd_2014.json');
+  const d24=srd('data_seed/srd_2024.json');
   const dart=d14.find(e=>e.slug==='srd14-dart').data.mechanics.programs[0].blocks;
   assert.equal(dart.find(b=>b.kind==='attack').dice.stat,'atk');
   assert.equal(dart.find(b=>b.kind==='damage').dice.stat,'best');
@@ -105,9 +108,9 @@ test('item rules preserve finesse and edition-specific net procedures without in
   const lance=d14.find(e=>e.slug==='srd14-lance').data.mechanics.programs[0].blocks;
   assert.ok(lance.some(b=>b.kind==='manual'&&/помехой/.test(b.text||'')));
 });
-test('no standard entry targets another character: weapons and conditions are owner-side',()=>{for(const ed of ['2014','2024']){for(const e of JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`))){for(const p of e.data.mechanics?.programs||[])for(const b of p.blocks){assert.ok(b.target!=='target',`${e.slug}: цель «${b.target}»`);if(['heal','temp_hp','condition','adjust','grant_item'].includes(b.kind))assert.equal(b.target,'self',`${e.slug}/${b.kind}`);if(['attack','damage','roll'].includes(b.kind))assert.equal(b.apply,undefined,`${e.slug}/${b.kind}`);}}}});
-test('monster extracted conditional dice never become one automatically executed attack',()=>{const data=JSON.parse(fs.readFileSync('data_seed/srd_2014.json'));const m=data.find(e=>e.category==='monster'&&e.data.name_en==='Aboleth').data.mechanics;assert.ok(m.programs.every(p=>p.blocks.filter(b=>b.dice).length<=1));assert.ok(m.programs.flatMap(p=>p.blocks).every(b=>b.apply!==true));});
-test('standard ammo defaults conserve package weight and distinguish firearm resources',()=>{for(const ed of ['2014','2024']){const data=JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`));for(const e of data){const d=e.data.mechanics?.item_defaults;if(!d)continue;assert.ok(Number.isInteger(d.qty)&&d.qty>1);assert.ok(Math.abs(d.qty*d.unit_weight-e.data.weight)<1e-9,e.slug);if(e.data.name_en==='Bullets, Firearm')assert.equal(d.ammo_tag,'firearm_bullet');}}});
+test('no standard entry targets another character: weapons and conditions are owner-side',()=>{for(const ed of ['2014','2024']){for(const e of srd(`data_seed/srd_${ed}.json`)){for(const p of e.data.mechanics?.programs||[])for(const b of p.blocks){assert.ok(b.target!=='target',`${e.slug}: цель «${b.target}»`);if(['heal','temp_hp','condition','adjust','grant_item'].includes(b.kind))assert.equal(b.target,'self',`${e.slug}/${b.kind}`);if(['attack','damage','roll'].includes(b.kind))assert.equal(b.apply,undefined,`${e.slug}/${b.kind}`);}}}});
+test('monster extracted conditional dice never become one automatically executed attack',()=>{const data=srd('data_seed/srd_2014.json');const m=data.find(e=>e.category==='monster'&&e.data.name_en==='Aboleth').data.mechanics;assert.ok(m.programs.every(p=>p.blocks.filter(b=>b.dice).length<=1));assert.ok(m.programs.flatMap(p=>p.blocks).every(b=>b.apply!==true));});
+test('standard ammo defaults conserve package weight and distinguish firearm resources',()=>{for(const ed of ['2014','2024']){const data=srd(`data_seed/srd_${ed}.json`);for(const e of data){const d=e.data.mechanics?.item_defaults;if(!d)continue;assert.ok(Number.isInteger(d.qty)&&d.qty>1);assert.ok(Math.abs(d.qty*d.unit_weight-e.data.weight)<1e-9,e.slug);if(e.data.name_en==='Bullets, Firearm')assert.equal(d.ammo_tag,'firearm_bullet');}}});
 test('named feature projection preserves mechanics without sharing mutable blocks',()=>{const m={version:1,programs:[{id:'rage',name:'Ярость',feature_name:'Ярость',trigger:'use',blocks:[{id:'b',kind:'manual',text:'Правило'}]},{id:'profile',name:'Параметры',trigger:'passive',blocks:[]}]};const f=M.forFeature(m,'Ярость');assert.equal(f.programs.length,1);f.programs[0].blocks[0].text='Изменено';assert.equal(m.programs[0].blocks[0].text,'Правило');assert.equal(M.forFeature(m,'Иное'),undefined);});
 test('starter templates give race and class valid creation blocks that project into the entry',()=>{
   for(const cat of ['race','class','background']){

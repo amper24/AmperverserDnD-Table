@@ -838,7 +838,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .cost{--block-color:#e9a45b}.roll{--block-color:#7c9ff5}.effect{--block-color:#54cbb0}.control{--block-color:#bf94ec}.passive{--block-color:#93a9bb}
 .block-stack{display:flex;flex-direction:column;gap:15px;min-width:0}.mechanic-block{position:relative;border:1px solid var(--border);border-left:4px solid var(--block-color);border-radius:9px;background:var(--panel,var(--bg));min-width:0}.mechanic-block:not(:last-child):after{content:'↓';position:absolute;left:20px;bottom:-17px;color:var(--muted);font-size:14px}.mechanic-block.disabled{opacity:.55}.mechanic-block header{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid var(--border)}.mechanic-block header>b{flex:1;font-size:13px}.block-index{font-size:11px;color:var(--block-color);font-variant-numeric:tabular-nums}.block-handle{cursor:grab;font-size:20px}.block-switch{font-size:11px;white-space:nowrap}.block-switch input{width:auto}.block-controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px}.block-field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:115px}.block-field>span{font-size:11px;color:var(--muted)}.block-field input,.block-field select{width:100%;min-width:0}.block-field:has(textarea){min-width:100%}.block-field textarea{width:100%;min-height:95px;resize:vertical}.block-controls>.muted{flex-basis:100%;line-height:1.5}.block-advanced{flex-basis:100%;font-size:11px;color:var(--muted)}.block-empty{border:1px dashed var(--border);border-radius:10px;padding:45px 18px;text-align:center;color:var(--muted)}.mechanics-validation{margin-top:9px;font-size:12px}.mechanics-editor>.small{margin-top:14px}.mechanics-preview{margin:14px 0;border:1px solid var(--border);border-radius:8px;padding:10px}.mechanics-preview details{padding:6px}.mechanic-preview-block{border-left:3px solid var(--block-color);padding:8px;margin-top:5px;font-size:12px}.mechanic-preview-block p,.manual-rule p{white-space:pre-wrap;overflow-wrap:anywhere}.manual-rule{border-left:3px solid #bf94ec;padding:10px 14px;margin:12px 0;max-height:280px;overflow:auto}.description-only{width:100%;resize:vertical}.mechanics-buttons{display:flex;flex-wrap:wrap;gap:6px}
 @media(max-width:700px){.mechanics-editor{padding:11px}.block-workspace{grid-template-columns:1fr}.block-palette{position:static;flex-direction:row;flex-wrap:wrap}.block-palette>b{width:100%}.block-palette .palette-block{font-size:11px;padding:6px}.mechanic-block header{gap:4px;flex-wrap:wrap}.block-switch{margin-left:auto}.block-field{min-width:100px}.mechanics-heading .badge{display:none}}
-@media(max-width:700px){.editor-form>.row,.editor-form .equipment-editor>.row{flex-wrap:wrap}.editor-form .visuals{flex-direction:column;align-items:stretch}.editor-form .imgpick-btns>.row{flex-wrap:wrap}.editor-form .imgpick-btns button{flex:0 1 auto}.editor-form .row .field{min-width:110px}}
+@media(max-width:700px){.editor-form>.row,.form-section-body>.row,.editor-form .equipment-editor>.row{flex-wrap:wrap}.editor-form .visuals{flex-direction:column;align-items:stretch}.editor-form .imgpick-btns>.row{flex-wrap:wrap}.editor-form .imgpick-btns button{flex:0 1 auto}.editor-form .row .field{min-width:110px}}
 .block-checks{display:flex;gap:9px;flex-wrap:wrap;width:100%;font-size:12px}.block-checks label{display:flex;align-items:center;gap:5px}.block-checks input{width:auto}
 
 /* Редактор вариантов выбора и заметки: списки строк в узких панелях */
@@ -1523,7 +1523,7 @@ body.lu-open { overflow: hidden; }
 .node-toolbar{display:flex;align-items:end;gap:7px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border)}
 .node-toolbar .node-field{min-width:210px;flex:1}.node-add{white-space:nowrap}
 .node-group-shelf{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0}.node-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(245px,300px);gap:12px;align-items:stretch}
-.node-canvas{position:relative;min-height:520px;height:min(68vh,760px);overflow:auto;border:1px solid var(--border);border-radius:10px;background-color:color-mix(in srgb,var(--bg) 92%,var(--accent) 8%);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:18px 18px;isolation:isolate}
+.node-canvas{position:relative;min-height:520px;height:min(68vh,760px);overflow:hidden;cursor:default;user-select:none;touch-action:none;border:1px solid var(--border);border-radius:10px;background-color:color-mix(in srgb,var(--bg) 92%,var(--accent) 8%);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:18px 18px;isolation:isolate}
 .graph-node{position:absolute;z-index:2;width:224px;min-height:94px;border:1px solid var(--border);border-radius:10px;background:var(--panel,#fff);box-shadow:0 4px 14px #0002;user-select:none;touch-action:none}
 .graph-node.selected{outline:2px solid var(--accent);outline-offset:1px}.graph-node.action-node{border-top:3px solid #df9b44}.graph-node.rule-node{border-top:3px solid #53a987}
 .graph-node-head{display:flex;align-items:center;gap:7px;min-height:36px;padding:5px 7px;border-bottom:1px solid var(--border);cursor:grab}.graph-node-head b{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}.node-delete{border:0;background:transparent;color:var(--muted);padding:0 4px;font-size:18px;line-height:1}.node-id{padding:5px 9px 0;font-size:9px;overflow:hidden;text-overflow:ellipsis}
@@ -1532,3 +1532,60 @@ body.lu-open { overflow: hidden; }
 .node-properties{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg);min-width:0}.node-properties h3{margin:0 0 8px;font-size:15px}.node-properties .node-field{display:flex;flex-direction:column;gap:5px}.node-properties textarea{width:100%;min-height:250px;resize:vertical;font:12px/1.45 ui-monospace,SFMono-Regular,monospace;white-space:pre}.node-status{min-height:22px;padding-top:7px;color:var(--muted);font-size:12px}.node-status:not(:empty){color:var(--accent)}.node-preview{margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:10px}.node-preview summary{font-weight:600;cursor:pointer}.node-preview .row{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.node-preview .node-field{display:flex;flex-direction:column;gap:4px;min-width:120px}.node-preview textarea{width:100%;min-height:75px;resize:vertical;font:11px/1.4 ui-monospace,SFMono-Regular,monospace}.node-preview-output{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
 @media(max-width:850px){.node-workspace{grid-template-columns:1fr}.node-properties{min-height:180px}.node-properties textarea{min-height:180px}}
 @media(max-width:600px){.node-editor{padding:9px}.node-canvas{height:60vh;min-height:440px}.node-toolbar .node-field{min-width:100%;flex-basis:100%}.node-add{font-size:11px}}
+
+/* Форма параметров узла и выборов (node-params-form.js): поля вместо ручного JSON */
+.param-form{display:flex;flex-direction:column;gap:8px;min-width:0}
+.param-form .param-row,.param-form .node-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.param-form .param-row.param-check{flex-direction:row;align-items:center;gap:6px}
+.param-form input:not([type=checkbox]),.param-form select,.param-form textarea{width:100%;min-width:0;box-sizing:border-box}
+.param-label{font-size:12px;color:var(--muted)}
+.param-group{border:1px dashed var(--border);border-radius:8px;padding:8px;margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.param-group.in-list{border-style:solid}
+.param-group legend{font-size:12px;color:var(--muted);padding:0 4px}
+.param-checks{display:flex;gap:12px;flex-wrap:wrap}
+.param-list{display:flex;flex-direction:column;gap:8px}
+.param-item{border:1px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.param-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.param-add-key{display:flex;gap:6px;align-items:center}
+.param-add-key input{flex:1;min-width:0}
+.node-raw{margin-top:10px;font-size:12px}
+.node-raw summary{cursor:pointer;color:var(--muted)}
+
+/* Холст редактора механик: бесконечное полотно (transform у .node-world), рамка, провода, меню ПКМ. */
+.node-world{position:absolute;left:0;top:0;transform-origin:0 0;width:0;height:0}
+.node-world .node-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.node-world .node-wire{pointer-events:none;stroke-width:2.5}
+.node-world .node-wire-hit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
+.node-world .node-wire-hit:hover + .node-wire{stroke-width:4;opacity:1}
+.node-world .node-wire-preview{pointer-events:none;stroke-dasharray:6 4;opacity:.9}
+.node-marquee{position:absolute;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);pointer-events:none;z-index:3}
+.node-socket.compatible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
+.node-menu{position:absolute;z-index:10;min-width:240px;max-width:300px;max-height:360px;display:flex;flex-direction:column;background:var(--bg);color:inherit;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:6px}
+.node-menu-search{margin:0 0 6px;width:100%}
+.node-menu-list{overflow:auto;display:flex;flex-direction:column}
+.node-menu-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;padding:6px 6px 2px}
+.node-menu-item{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:none;border:0;padding:6px 8px;border-radius:6px;cursor:pointer;color:inherit}
+.node-menu-item:hover,.node-menu-item:focus{background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.node-menu-item small{opacity:.55;font-size:10px}
+.node-menu-empty{opacity:.6;padding:8px}
+
+.node-status.warn{color:var(--warn,#b7791f)}
+/* Холст получает всю ширину, а панель параметров уходит под него, когда редактор узкий (модальное окно). */
+.node-editor{container-type:inline-size}
+@container (max-width: 980px){.node-workspace{grid-template-columns:minmax(0,1fr)}}
+/* Точки сокетов прижаты к своему краю карточки (входы слева, выходы справа). */
+.node-socket.in{justify-content:flex-start;text-align:left}.node-socket.out{justify-content:flex-end;text-align:right}
+
+/* Формы создания записей: разделы и выбор основы */
+.form-section { border: 1px solid var(--line, #3a3a3a); border-radius: 8px; padding: 0 10px; margin: 8px 0; }
+.form-section > summary { cursor: pointer; padding: 8px 0; font-weight: 600; list-style: none; }
+.form-section > summary::-webkit-details-marker { display: none; }
+.form-section > summary::before { content: '▸ '; display: inline-block; transition: transform .15s; }
+.form-section[open] > summary::before { content: '▾ '; }
+.form-section-body { padding-bottom: 10px; }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.preset-tile { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--line, #3a3a3a); border-radius: 8px; cursor: pointer; }
+.preset-tile:has(input:checked) { border-color: var(--accent, #c9a227); box-shadow: inset 0 0 0 1px var(--accent, #c9a227); }
+.preset-tile:focus-within { outline: 2px solid var(--accent, #c9a227); outline-offset: 2px; }
+.node-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; margin: 6px 0; border: 1px dashed var(--line, #3a3a3a); border-radius: 8px; }
+.node-starters > b { width: 100%; }

@@ -201,44 +201,19 @@ window.Equipment = (() => {
       }
     }
     
-    // Class feature: apply Unarmored Defense only while its armor/shield conditions are met.
-    if (!armored && sheet.unarmored_defense === 'barbarian') {
-      base = 10 + dex + Math.floor(((sheet.abilities?.con ?? 10) - 10) / 2);
-      baseName = 'Защита без доспехов (варвар)';
-    } else if (!armored && !shield && sheet.unarmored_defense === 'monk') {
-      base = 10 + dex + Math.floor(((sheet.abilities?.wis ?? 10) - 10) / 2);
-      baseName = 'Защита без доспехов (монах)';
+    // Защита без доспехов задаётся данными класса (формула, название, запрет со щитом), а не именем класса.
+    const unarmored = window.Formulas.unarmoredRule(sheet);
+    if (!armored && unarmored && (!unarmored.no_shield || !shield)) {
+      const value = window.Formulas.evaluate(unarmored.formula, window.Formulas.sheetVars(sheet));
+      if (value !== null) { base = value; baseName = unarmored.name || 'Защита без доспехов'; }
     }
     const parts = [[baseName, base]]; if (shield > 0) parts.push([shieldName, shield]); parts.push(...bonuses);
     return { ac: base + shield + bonuses.reduce((a, b) => a + b[1], 0), parts, notes, speedPenalty, stealth };
   }
   
-  // Вычисление формулы КД доспеха (например: "10 + dex + con", "14 + dex max 2")
+  // Формула КД доспеха (например: "10 + dex + con", "14 + dex max 2"): разбор и переменные — в formulas.js.
   function evaluateArmorFormula(formula, sheet) {
-    const dex = Math.floor(((sheet.abilities?.dex ?? 10) - 10) / 2);
-    const con = Math.floor(((sheet.abilities?.con ?? 10) - 10) / 2);
-    const wis = Math.floor(((sheet.abilities?.wis ?? 10) - 10) / 2);
-    const str = sheet.abilities?.str ?? 10;
-    
-    const normalized = String(formula).toLowerCase().replace(/\s+/g, '');
-    
-    // Простые формулы: 10+dex, 12+dexmax2, 14+dex, и т.д.
-    const match = normalized.match(/^(\d+)(?:\+([a-z]+)(?:max(\d+))?)?$/);
-    if (match) {
-      const base = Number(match[1]);
-      const stat = match[2];
-      const maxVal = match[3] ? Number(match[3]) : null;
-      
-      let statVal = 0;
-      if (stat === 'dex') statVal = dex;
-      else if (stat === 'con') statVal = con;
-      else if (stat === 'wis') statVal = wis;
-      
-      if (maxVal !== null) statVal = Math.min(statVal, maxVal);
-      return base + statVal;
-    }
-    
-    return null;
+    return window.Formulas.evaluate(window.Formulas.normalizeLegacy(formula), window.Formulas.sheetVars(sheet));
   }
   const armorClass = sheet => armorClassParts(sheet).ac;
   const activeActions = it => (it.actions || []).map((a, index) => ({ ...a, index })).filter(a => !a.grip || (a.grip === 'two' ? it.hand_slot === 'both' : it.hand_slot !== 'both'));

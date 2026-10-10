@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const ctx = { window: {}, console, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
 const E = ctx.window.Equipment;
 const plain = x => JSON.parse(JSON.stringify(x));

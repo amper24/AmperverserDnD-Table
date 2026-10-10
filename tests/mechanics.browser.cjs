@@ -2,7 +2,7 @@
 const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 (async()=>{let launch={headless:true};if(process.env.SPARTICUZ){const pkg=require('@sparticuz/chromium'),bin=pkg.default||pkg;launch={...launch,args:bin.args,executablePath:await bin.executablePath()};}const browser=await chromium.launch(launch);try{
  const page=await browser.newPage({viewport:{width:1250,height:1000}}),errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE',e.message);});
- await page.route('https://mechanics.test/**',route=>{const url=new URL(route.request().url());if(url.pathname.startsWith('/static/'))return route.fulfill({body:fs.readFileSync(path.join(process.cwd(),url.pathname)),contentType:url.pathname.endsWith('.css')?'text/css':'text/javascript'});if(url.pathname.startsWith('/api/'))return route.fulfill({contentType:'application/json',body:'[]'});return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>'+['common','dice','equipment','mechanics','modules','character-builder'].map(x=>`<script src="/static/${x}.js"></script>`).join('')});});
+ await page.route('https://mechanics.test/**',route=>{const url=new URL(route.request().url());if(url.pathname.startsWith('/static/'))return route.fulfill({body:fs.readFileSync(path.join(process.cwd(),url.pathname)),contentType:url.pathname.endsWith('.css')?'text/css':'text/javascript'});if(url.pathname.startsWith('/api/'))return route.fulfill({contentType:'application/json',body:'[]'});return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>'+['common','dice','equipment','mechanics','asset-kinds','class-rules','modules','character-builder'].map(x=>`<script src="/static/${x}.js"></script>`).join('')});});
  await page.goto('https://mechanics.test/');await page.evaluate(()=>Consent.set(false));
  await page.evaluate(()=>{Modules.editItem(Modules.newItem({name:'Лечебный эликсир',type:'consumable',qty:3})).then(x=>window.saved=x);});
  await page.getByRole('button',{name:'Зелье → хиты → флакон',exact:true}).click();assert.equal(await page.locator('.mechanic-block').count(),3);
@@ -16,7 +16,7 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
  const saved=await page.evaluate(()=>window.saved);assert.equal(saved.qty,3);const potion=saved.mechanics.programs.find(p=>p.name==='Выпить зелье');assert.deepEqual(potion.blocks.map(b=>b.kind),['consume','heal','grant_item']);assert.equal(potion.blocks[2].amount,2);
  // All constructors share the same canvas, including non-item resource categories.
  for(const category of ['spell','feature','race','class','background','monster','condition','feat','npc','lore']){
-  await page.evaluate(cat=>{const p=cat==='spell'?Modules.editSpell():cat==='feature'?Modules.editFeature():Modules.editGeneric(null,cat);p.then(x=>window.generic=x);},category);
+  await page.evaluate(cat=>{const p=cat==='spell'?Modules.editSpell(null,{noPresets:true}):cat==='feature'?Modules.editFeature():Modules.editGeneric(null,cat);p.then(x=>window.generic=x);},category);
   assert.ok(await page.locator('.mechanics-editor').isVisible(),category);
   await page.getByRole('button',{name:'+ Действие',exact:true}).click();await page.getByRole('button',{name:'+ Ручное правило',exact:true}).click();
   assert.equal(await page.locator('.mechanic-block').count(),1,category);

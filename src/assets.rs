@@ -6,6 +6,11 @@ use axum::{
     routing::get,
     Json, Router,
 };
+
+/// Допустимые типы ассетов. Клиентский реестр — static/asset-kinds.js; tests/asset-kinds.test.cjs сверяет списки.
+pub const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item"];
+/// Тип, который получает загрузка без типа или с неизвестным типом. Совпадает с default в static/asset-kinds.js.
+pub const DEFAULT_KIND: &str = "token";
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -56,7 +61,7 @@ async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQu
 async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -> ApiResult<Json<Value>> {
     let mut file: Option<(String, Vec<u8>)> = None;
     let mut name = String::new();
-    let mut kind = "token".to_string();
+    let mut kind = DEFAULT_KIND.to_string();
     let mut campaign_id: Option<String> = None;
     let mut builtin = false;
     while let Some(field) = mp.next_field().await.map_err(|e| AppError::bad(e.to_string()))? {
@@ -70,7 +75,7 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
                 file = Some((fname, bytes.to_vec()));
             }
             "name" => name = field.text().await.unwrap_or_default(),
-            "kind" => kind = field.text().await.unwrap_or_else(|_| "token".into()),
+            "kind" => kind = field.text().await.unwrap_or_else(|_| DEFAULT_KIND.into()),
             "campaign_id" => { let v = field.text().await.unwrap_or_default(); if !v.is_empty() { campaign_id = Some(v); } }
             "builtin" => { let v = field.text().await.unwrap_or_default(); builtin = v == "1" || v == "true"; }
             _ => {}
@@ -84,8 +89,8 @@ async fn upload(State(st): State<AppState>, user: AuthUser, mut mp: Multipart) -
     if let Some(cid) = &campaign_id {
         get_member(&st, cid, &user.id).await?;
     }
-    if !["map", "token", "prop", "portrait", "item"].contains(&kind.as_str()) {
-        kind = "token".into();
+    if !ASSET_KINDS.contains(&kind.as_str()) {
+        kind = DEFAULT_KIND.into();
     }
     let max_side = st.cfg.images.max_side(&kind);
     let quality = st.cfg.images.quality.min(100) as u8;

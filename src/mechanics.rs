@@ -17,6 +17,7 @@ fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
         Some(1) => validate_depth(m, depth),
         Some(2) => {
             crate::mechanics_graph::validate(m)?;
+            if !crate::mechanics_graph::is_executable(m) { return Ok(()); }
             validate_depth(&crate::mechanics_graph::to_v1(m), depth)
         }
         _ => Err(bad("Неподдерживаемая или слишком большая схема механик")),
@@ -96,7 +97,7 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
                 "condition" => { if text(b,"condition").trim().is_empty()||text(b,"condition").len()>200||!["add","remove"].contains(&text(b,"operation")) { return Err(bad("Неверное состояние")); } }
                 "save" => { bounded(b,"dc",1,40)?; if !["str","dex","con","int","wis","cha"].contains(&text(b,"ability")) { return Err(bad("Неверный спасбросок")); } }
-                "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
+                "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
                 _ => {}
             }
             if text(p,"trigger")=="passive"&&!["passive","manual"].contains(&kind) { return Err(bad("Пассивная программа не может расходовать или выдавать ресурсы")); }
@@ -191,6 +192,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         "subclass": s.get("subclass").cloned().unwrap_or(json!("")),
         "choices": s.pointer("/creation/rule_choices").filter(|value| value.is_object()).cloned().unwrap_or(json!({})),
     });
+    if doc["mechanics"]["version"] == 2 && !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
     let legacy = if doc["mechanics"]["version"] == 2 { crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context) } else { doc["mechanics"].clone() };
     let m=normalize(&legacy);validate(&m)?;
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;

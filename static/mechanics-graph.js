@@ -6,61 +6,15 @@
 (() => {
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до mechanics-graph.js');
+  const Formulas = window.Formulas;
+  if (!Formulas) throw new Error('formulas.js должен быть загружен до mechanics-graph.js');
+  const NodeForm = window.NodeForm;
+  if (!NodeForm) throw new Error('node-params-form.js должен быть загружен до mechanics-graph.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   const GRAPH_VERSION = 2;
-  const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
-  const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
-  const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-  const NODE_DEFS = {
-    'data.number': { label: 'Число', group: 'Данные', inputs: {}, outputs: { value: 'number' }, defaults: { value: 1 } },
-    'data.dice': { label: 'Кость', group: 'Данные', inputs: {}, outputs: { value: 'dice' }, defaults: { value: { count: 1, sides: 6, bonus: 0, stat: '' } } },
-    'data.ability': { label: 'Характеристика', group: 'Данные', inputs: {}, outputs: { value: 'ability' }, defaults: { value: 'str' } },
-    'data.table': { label: 'Таблица по уровню', group: 'Данные', inputs: {}, outputs: { value: 'table' }, defaults: { value: {} } },
-    'data.choice': { label: 'Выбор', group: 'Данные', inputs: {}, outputs: { value: 'choice' }, defaults: { value: { id: '', count: 1, options: [] } } },
-    'data.text': { label: 'Текст', group: 'Данные', inputs: {}, outputs: { value: 'text' }, defaults: { value: '' } },
-    'condition.edition': { label: 'Если редакция', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { editions: ['2014'] } },
-    'condition.level': { label: 'Если уровень', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { min: 1, max: 20 } },
-    'condition.subclass': { label: 'Если подкласс', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '' } },
-    'condition.choice': { label: 'Если выбран вариант', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '', value: '' } },
-    'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
-    'rule.ability_bonus': { label: 'Бонус характеристики', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { ability: 'str', amount: 1 } },
-    'rule.speed': { label: 'Скорость', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'number' }, outputs: { effect: 'effect' }, defaults: { value: 30 } },
-    'rule.languages': { label: 'Языки', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.proficiencies': { label: 'Владения', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { kind: 'general', value: [] } },
-    'rule.hit_die': { label: 'Кость хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'text' }, outputs: { effect: 'effect' }, defaults: { value: 'd8' } },
-    'rule.saving_throws': { label: 'Спасброски', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.feature': { label: 'Умение', group: 'Правила персонажа', inputs: { enabled: 'bool' }, outputs: { effect: 'effect' }, defaults: { name: 'Новое умение', text: '', feature_name: '' } },
-    'rule.skills': { label: 'Выбор навыков', group: 'Правила персонажа', inputs: { enabled: 'bool', options: 'list', count: 'number' }, outputs: { effect: 'effect' }, defaults: { id: '', count: 1, options: [] } },
-    'rule.spell_list': { label: 'Список заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', spells: 'list' }, outputs: { effect: 'effect' }, defaults: { mode: 'known', ability: 'int', spells: [] } },
-    'rule.spell_slots': { label: 'Ячейки заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.asi': { label: 'Улучшение характеристик', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.class_progression': { label: 'Прогрессия класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.armor_formula': { label: 'Формула КД', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex' } },
-    'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
-    'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
-    'action.program': { label: 'Действие / программа', group: 'Действия', inputs: {}, outputs: { exec: 'flow' }, defaults: { program_id: '', name: 'Новое действие', trigger: 'use' } },
-    'group.instance': { label: 'Группа', group: 'Группы', inputs: {}, outputs: {}, defaults: { group_id: '' } },
-    'group.input': { label: 'Вход группы', group: 'Группы', inputs: {}, outputs: { value: 'text' }, defaults: { socket_id: '' } },
-    'group.output': { label: 'Выход группы', group: 'Группы', inputs: { value: 'text' }, outputs: {}, defaults: { socket_id: '' } },
-  };
-  for (const kind of ACTION_KINDS) {
-    NODE_DEFS[`action.${kind}`] = {
-      label: Base.TYPES[kind]?.[0] || kind, group: 'Действия',
-      inputs: { exec: 'flow', enabled: 'bool' }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
-    };
-  }
-  function actionDefaults(kind) {
-    const base = { enabled: true, when: 'always' };
-    if (['attack', 'damage', 'heal', 'temp_hp', 'roll'].includes(kind)) base.dice = Base.dice(kind === 'attack' ? '1d20+@atk' : '1d6');
-    if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
-    if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
-    if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
-    if (kind === 'condition') Object.assign(base, { condition: 'Отравленный', operation: 'add' });
-    if (kind === 'adjust') Object.assign(base, { field: 'speed', amount: 5 });
-    if (kind === 'require') Object.assign(base, { field: 'hp.current', minimum: 1 });
-    if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
-    return base;
-  }
+  const NodeRegistry = window.NodeRegistry;
+  if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
+  const { ACTION_KINDS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
   const nodeLabel = type => NODE_DEFS[type]?.label || type;
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
@@ -266,7 +220,10 @@
     }
     return '';
   }
-  function validateGraph(graph, groups = [], nested = false, ownerGroup = null) {
+  // Смысловые проблемы связей (сокеты, типы, цикл, незавершённость) собираются в список problems:
+  // сохранение их не блокирует, исполнение пропускает граф. Без списка функция работает строго (первая ошибка).
+  function soft(problems, message) { if (!problems) return fail(message); problems.push(message); return ''; }
+  function validateGraph(graph, groups = [], nested = false, ownerGroup = null, problems = null) {
     if (!graph || typeof graph !== 'object' || Array.isArray(graph)) return fail('Граф должен быть объектом.');
     const nodes = graph.nodes, links = graph.links, frames = graph.frames || [];
     if (!nested && !Array.isArray(groups)) return fail('Не более 50 групп повторного использования.');
@@ -298,23 +255,23 @@
     const linkKeys = new Set();
     for (const link of links) {
       const source = link?.from, target = link?.to;
-      if (!source || !target || !nodeIds.has(source.node) || !nodeIds.has(target.node)) return fail('Провод указывает на отсутствующий узел.');
+      if (!source || !target || !nodeIds.has(source.node) || !nodeIds.has(target.node)) { const e = soft(problems, 'Провод указывает на отсутствующий узел.'); if (e) return e; continue; }
       const fromNode = nodes.find(n => n.id === source.node), toNode = nodes.find(n => n.id === target.node);
       const fromSockets = socketMap(fromNode, groupMap, ownerGroup).outputs, toSockets = socketMap(toNode, groupMap, ownerGroup).inputs;
-      if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) return fail('Провод подключён к отсутствующему сокету.');
-      if (fromSockets[source.socket] !== toSockets[target.socket]) return fail('Типы сокетов провода не совпадают.');
+      if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
+      if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
       const targetKey = `${target.node}:${target.socket}`;
-      if (incoming.has(targetKey)) return fail('К каждому входному сокету подключается только один провод.');
+      if (incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
       incoming.add(targetKey);
       const linkKey = `${source.node}:${source.socket}>${target.node}:${target.socket}`;
-      if (linkKeys.has(linkKey)) return fail('Повторяющийся провод.');
+      if (linkKeys.has(linkKey)) { const e = soft(problems, 'Повторяющийся провод.'); if (e) return e; continue; }
       linkKeys.add(linkKey);
       adjacency.get(source.node).push(target.node); indegree.set(target.node, indegree.get(target.node) + 1);
     }
-    for (const node of nodes) if (node.type === 'flow.if' && !incoming.has(`${node.id}:condition`)) return fail('Условному узлу требуется типизированное логическое условие.');
+    for (const node of nodes) if (node.type === 'flow.if' && !incoming.has(`${node.id}:condition`)) { const e = soft(problems, 'Условному узлу требуется типизированное логическое условие.'); if (e) return e; }
     const queue = [...nodeIds].filter(id => indegree.get(id) === 0); let visited = 0;
     while (queue.length) { const current = queue.pop(); visited++; for (const target of adjacency.get(current)) { indegree.set(target, indegree.get(target) - 1); if (indegree.get(target) === 0) queue.push(target); } }
-    if (visited !== nodeIds.size) return fail('Цикл в графе запрещён.');
+    if (visited !== nodeIds.size) { const e = soft(problems, 'Цикл в графе запрещён.'); if (e) return e; }
     const frameIds = new Set(), framedNodes = new Set();
     for (const frame of frames) {
       if (!frame || !idText(frame.id, 64) || frameIds.has(frame.id) || typeof frame.title !== 'string' || !frame.title.trim() || frame.title.length > 120 || !Array.isArray(frame.nodes) || frame.nodes.length > 100) return fail('Некорректная рамка графа.');
@@ -336,7 +293,7 @@
       };
       for (const id of refs.keys()) if (!walk(id)) return fail('Рекурсивная ссылка или цикл между группами запрещён.');
       for (const group of groups) {
-        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group);
+        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group, problems);
         if (error) return `Группа «${group.name}»: ${error}`;
         const boundaryInputs = (group.nodes || []).filter(n => n.type === 'group.input').map(n => n.params?.socket_id);
         const boundaryOutputs = (group.nodes || []).filter(n => n.type === 'group.output').map(n => n.params?.socket_id);
@@ -383,21 +340,29 @@
     if (type === 'rule.skills' && (!idText(p.id, 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
     if (type === 'rule.spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
     if (['rule.spell_slots', 'rule.asi', 'rule.class_progression'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
-    if (type === 'rule.armor_formula' && (typeof p.formula !== 'string' || !/^[0-9+\-*@a-z_().\s]{1,100}$/i.test(p.formula))) return 'Формула КД содержит только числа, характеристики и арифметические символы.';
+    if (type === 'rule.armor_formula') {
+      const formulaError = typeof p.formula === 'string' && p.formula.length <= 100 ? Formulas.validate(p.formula) : 'Формула защиты: строка до 100 символов.';
+      if (formulaError) return `Формула защиты без доспехов: ${formulaError}`;
+      if (p.name !== undefined && (typeof p.name !== 'string' || p.name.length > 120)) return 'Название защиты без доспехов: строка до 120 символов.';
+      if (p.no_shield !== undefined && typeof p.no_shield !== 'boolean') return 'Запрет щита: логическое значение.';
+    }
     if (type === 'rule.hp_bonus' && p.amount !== undefined && (!Number.isInteger(p.amount) || Math.abs(p.amount) > 1000)) return 'Бонус хитов: целое от −1000 до 1000.';
     if (type === 'rule.manual' && (typeof p.text !== 'string' || p.text.length > 4000)) return 'Ручное правило: до 4000 символов.';
     return '';
   }
   function toGraph(mechanics) { return v1ToV2(mechanics); }
+  // Сохранение: блокируют только структурные ошибки (размер, ID, типы узлов, параметры, интерфейс групп).
+  // Смысловые проблемы связей сохраняются и показываются списком; исполнение их пропускает (см. problems).
   function validate(mechanics) {
     if (!mechanics || ![1, GRAPH_VERSION].includes(mechanics.version)) return 'Неподдерживаемая схема механик.';
     if (mechanics.version === 1) return Base.validate(mechanics);
     if (!mechanics.graph || !Array.isArray(mechanics.graph.groups)) return 'Не более 50 групп повторного использования.';
     if (JSON.stringify(mechanics).length > 1_000_000) return 'Неподдерживаемая или слишком большая схема механик.';
-    const error = validateGraph(mechanics.graph, mechanics.graph.groups);
+    const list = [];
+    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list);
     if (error) return error;
-    const legacy = v2ToV1(mechanics);
-    const legacyError = Base.validate(legacy);
+    if (list.length) return '';
+    const legacyError = Base.validate(v2ToV1(mechanics));
     if (legacyError) return legacyError;
     const allNodes = [...(mechanics.graph.nodes || []), ...(mechanics.graph.groups || []).flatMap(g => g.nodes || [])];
     for (const n of allNodes) {
@@ -405,6 +370,21 @@
       if (e) return e;
     }
     return '';
+  }
+  // Список проблем графа без сохранения: пустой список значит, что граф можно исполнять.
+  function graphProblems(graph, groups = graph?.groups || []) {
+    const list = [];
+    const error = validateGraph(graph, groups, false, null, list);
+    return error ? [error] : list;
+  }
+  function problems(mechanics) {
+    const structural = validate(mechanics);
+    if (structural) return [structural];
+    if (mechanics.version === 1) return [];
+    const list = graphProblems(mechanics.graph, mechanics.graph.groups);
+    if (list.length) return list;
+    const legacyError = Base.validate(v2ToV1(mechanics));
+    return legacyError ? [legacyError] : [];
   }
 
   function valueForInput(node, socket, values) {
@@ -462,7 +442,7 @@
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.asi_rules.push(clone(table)); emit('asi', { table }); }
     } else if (type === 'rule.class_progression') {
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_progression = clone(table); emit('class_progression', { table }); }
-    } else if (type === 'rule.armor_formula') { const formula = String(n('formula') ?? p.formula ?? ''); sheet.armor_formula = formula; emit('armor_formula', { formula });
+    } else if (type === 'rule.armor_formula') { const rule = { formula: String(n('formula') ?? p.formula ?? ''), name: String(p.name || 'Защита без доспехов').slice(0, 120), no_shield: Boolean(p.no_shield) }; sheet.unarmored_defense = clone(rule); emit('unarmored_defense', rule);
     } else if (type === 'rule.hp_bonus') { const amount = Number(n('amount') ?? p.amount) || 0; sheet.hp.max += amount; sheet.hp.current += amount; emit('hp_bonus', { amount });
     } else if (type === 'rule.manual') { const text = String(n('text') ?? p.text ?? ''); sheet.manual_rules.push(text); emit('manual', { text }); }
     outputs.set(`${context.nodeId}:effect`, { type: 'effect', node_type: type });
@@ -473,8 +453,8 @@
   }
   function evaluateGraph(mechanics, options = {}) {
     const graphMechanics = toGraph(mechanics);
-    const validation = validate(graphMechanics);
-    if (validation) return { error: validation, sheet: null };
+    const blocking = problems(graphMechanics);
+    if (blocking.length) return { error: `Граф не исполняется: ${blocking[0]}`, sheet: null };
     const edition = String(options.edition || '2014');
     const level = Math.max(1, Math.min(20, Math.trunc(Number(options.level) || 1)));
     const sheet = { edition, level, abilities: Object.fromEntries(ABILITIES.map(k => [k, 10])), race: '', class: '', subclass: '', speed: 30, hp: { max: 0, current: 0, temp: 0 },
@@ -517,7 +497,7 @@
       else if (effect.kind === 'spell_slots') target.spells.slots = { ...target.spells.slots, ...clone(effect.table) };
       else if (effect.kind === 'asi') target.asi_rules.push(clone(effect.table));
       else if (effect.kind === 'class_progression') target.class_progression = clone(effect.table);
-      else if (effect.kind === 'armor_formula') target.armor_formula = effect.formula;
+      else if (effect.kind === 'unarmored_defense') target.unarmored_defense = { formula: effect.formula, name: effect.name, no_shield: effect.no_shield };
       else if (effect.kind === 'hp_bonus') { target.hp.max += effect.amount; target.hp.current += effect.amount; }
       else if (effect.kind === 'manual') (target.manual_rules ||= []).push(effect.text);
     }
@@ -535,6 +515,49 @@
   }
   function adaptForRead(mechanics) { return mechanics?.version === 1 ? v1ToV2(mechanics) : clone(mechanics); }
 
+  // Чистая проверка связи: петля, цикл и общий validateGraph. Возвращает текст ошибки или ''.
+  function wouldCycle(links, fromNode, toNode) {
+    const next = new Map();
+    for (const link of links) { if (!next.has(link.from.node)) next.set(link.from.node, []); next.get(link.from.node).push(link.to.node); }
+    const seen = new Set([toNode]), stack = [toNode];
+    while (stack.length) {
+      const id = stack.pop();
+      if (id === fromNode) return true;
+      for (const n of next.get(id) || []) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+    }
+    return false;
+  }
+  function connectionError(graph, link) {
+    const nodes = new Map((graph.nodes || []).map(n => [n.id, n])), groups = new Map((graph.groups || []).map(g => [g.id, g]));
+    const from = nodes.get(link?.from?.node), to = nodes.get(link?.to?.node);
+    if (!from || !to) return 'Узел провода не найден.';
+    if (from.id === to.id) return 'Нельзя соединить узел с самим собой.';
+    const outType = socketMap(from, groups).outputs?.[link.from.socket], inType = socketMap(to, groups).inputs?.[link.to.socket];
+    if (!outType || !inType) return 'Сокет не найден.';
+    if (!NodeRegistry.sameType(outType, inType)) return `Типы не совпадают: ${outType} → ${inType}.`;
+    const rest = (graph.links || []).filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+    if (wouldCycle(rest, link.from.node, link.to.node)) return 'Связь создаёт цикл.';
+    // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
+    // отклоняется только ошибка, которую добавила именно эта связь. Полная проверка — при сохранении.
+    const groupsList = graph.groups || [];
+    const before = graphProblems(graph, groupsList), after = graphProblems({ ...graph, links: [...rest, link] }, groupsList);
+    return after.find(problem => !before.includes(problem)) || '';
+  }
+
+  // Готовые стартовые графы для пустого редактора: узлы с относительными позициями и связи по ключам.
+  const GRAPH_STARTERS = [
+    { id: 'speed-level', name: 'Скорость с уровня', hint: 'Скорость 35 фт, если уровень персонажа от 5 до 20',
+      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 5, max: 20 }, x: 0, y: 0 }, { key: 'spd', type: 'rule.speed', params: { value: 35 }, x: 260, y: 0 }],
+      links: [['lvl', 'value', 'spd', 'enabled']] },
+    { id: 'hp-bonus', name: 'Бонус к хитам', hint: '+2 к максимуму хитов, всегда',
+      nodes: [{ key: 'amt', type: 'data.number', params: { value: 2 }, x: 0, y: 0 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 2 }, x: 260, y: 0 }],
+      links: [['amt', 'value', 'hp', 'amount']] },
+    { id: 'hp-bonus-level', name: 'Хиты с 3 уровня', hint: '+1 к хитам, начиная с 3 уровня персонажа',
+      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 3, max: 20 }, x: 0, y: 0 }, { key: 'amt', type: 'data.number', params: { value: 1 }, x: 0, y: 120 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 1 }, x: 260, y: 60 }],
+      links: [['lvl', 'value', 'hp', 'enabled'], ['amt', 'value', 'hp', 'amount']] },
+  ];
+  // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
+  const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
   function graphEditor(doc, options = {}) {
     const category = options.category || 'feature';
     const seed = doc.mechanics || Base.migrate(doc, category);
@@ -544,7 +567,9 @@
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
-    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', drag = null;
+    // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
+    root.getGraph = () => graph;
+    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     const snapshot = () => JSON.stringify(graph);
     function checkpoint() {
@@ -564,6 +589,17 @@
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 } });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
     }
+    // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
+    function insertStarter(starter) {
+      if (!isBlankGraph(graph)) return;
+      const ids = new Map(), origin = { x: 60, y: 70 };
+      for (const n of starter.nodes) {
+        const id = mkId('node'); ids.set(n.key, id);
+        graph.nodes.push({ id, type: n.type, params: clone(n.params), position: { x: origin.x + n.x, y: origin.y + n.y } });
+      }
+      for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
+      checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
+    }
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
       return socketMap(node, groups)[direction]?.[socket];
@@ -573,18 +609,116 @@
       const group = graph.groups.find(item => item.id === node.params?.group_id), list = direction === 'inputs' ? group?.inputs : group?.outputs;
       return list?.find(item => item.id === socket)?.name || socket;
     }
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const canvasEl = () => root.querySelector?.('.node-canvas');
+    const canvasRect = () => canvasEl()?.getBoundingClientRect?.() || { left: 0, top: 0 };
+    const worldPoint = (clientX, clientY) => { const rect = canvasRect(); return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k }; };
+    function applyView() { const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; canvasEl()?.setAttribute('data-zoom', view.k.toFixed(2)); }
+    // Слушатели на document на время жеста (перетаскивание, панорама, рамка, провод); снимаются сами.
+    function track(onMove, onUp) {
+      const move = e => onMove(e);
+      const up = e => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up); onUp(e); };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+    }
+    function zoomAt(clientX, clientY, factor) {
+      const rect = canvasRect(), cx = clientX - rect.left, cy = clientY - rect.top;
+      const k = clamp(view.k * factor, 0.3, 2.5), wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
+      view.k = k; view.x = cx - wx * k; view.y = cy - wy * k; applyView();
+    }
+    function startPan(e) {
+      const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      track(m => { view.x = start.vx + m.clientX - start.x; view.y = start.vy + m.clientY - start.y; applyView(); }, () => {});
+    }
+    function refreshWires() { const world = root.querySelector?.('.node-world'); if (!world) return; world.querySelector('.node-wires')?.remove(); drawWires(world); }
+    function startDrag(e, node) {
+      if (e.button !== 0) return;
+      e.preventDefault?.();
+      // С Ctrl/Shift выбор меняет клик (см. onclick карточки), поэтому здесь выделение не трогаем.
+      const modifier = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (!selected.has(node.id) && !modifier) { selected = new Set([node.id]); activeNode = node.id; }
+      const ids = selected.has(node.id) ? [...selected] : [node.id];
+      const items = ids.map(id => nodeById(id)).filter(Boolean).map(n => ({ node: n, left: n.position?.x || 0, top: n.position?.y || 0 }));
+      const start = { x: e.clientX, y: e.clientY }; let moved = false;
+      track(m => {
+        if (!moved && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 3) return;
+        moved = true; suppressClick = true;
+        const dx = (m.clientX - start.x) / view.k, dy = (m.clientY - start.y) / view.k;
+        for (const item of items) {
+          moveNode(item.node, item.left + dx, item.top + dy);
+          const card = root.querySelector?.(`[data-node-id="${item.node.id}"]`);
+          if (card) card.style.cssText = `left:${item.node.position.x}px;top:${item.node.position.y}px`;
+        }
+        refreshWires();
+      }, () => { if (moved) { checkpoint(); render(); } });
+    }
+    // Рамочное выделение по DOM-прямоугольникам карточек; Ctrl/Shift добавляет к выбранным.
+    function startMarquee(e) {
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey, start = { x: e.clientX, y: e.clientY }, base = additive ? [...selected] : [];
+      const rect0 = canvasRect(); let box = null;
+      track(m => {
+        if (!box) { if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 4) return; box = document.createElement('div'); box.className = 'node-marquee'; canvasEl()?.append(box); }
+        box.style.left = `${Math.min(start.x, m.clientX) - rect0.left}px`; box.style.top = `${Math.min(start.y, m.clientY) - rect0.top}px`;
+        box.style.width = `${Math.abs(m.clientX - start.x)}px`; box.style.height = `${Math.abs(m.clientY - start.y)}px`;
+      }, up => {
+        box?.remove();
+        if (!box) { if (!additive) { selected = new Set(); activeNode = ''; render(); } return; }
+        const l = Math.min(start.x, up.clientX), r = Math.max(start.x, up.clientX), t = Math.min(start.y, up.clientY), b = Math.max(start.y, up.clientY);
+        const hit = [...root.querySelectorAll('[data-node-id]')].filter(c => { const q = c.getBoundingClientRect(); return q.right >= l && q.left <= r && q.bottom >= t && q.top <= b; }).map(c => c.dataset.nodeId);
+        selected = new Set([...base, ...hit]); activeNode = hit.at(-1) || activeNode; render();
+      });
+    }
+    // Провод от выхода или входа. Совместимые сокеты подсвечиваются; при ошибке связь откатывается.
+    function startWire(e, node, socket, direction) {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      const type = portType(node, direction, socket), start = { x: e.clientX, y: e.clientY };
+      let moved = false, detached = null;
+      const origin = { node: node.id, socket, direction, type };
+      track(m => {
+        if (!moved) {
+          if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 4) return;
+          moved = true;
+          // Тянем уже подключённый вход: связь снимается на время жеста, при неудаче возвращается.
+          if (direction === 'inputs') { detached = graph.links.find(l => l.to.node === node.id && l.to.socket === socket) || null; if (detached) graph.links = graph.links.filter(l => l !== detached); }
+          wire = origin;
+        }
+        const p = worldPoint(m.clientX, m.clientY); wire = { ...origin, x: p.x, y: p.y };
+        root.querySelectorAll?.('.node-socket').forEach(s => s.classList.toggle('compatible', s.dataset.dir !== direction && NodeRegistry.sameType(s.dataset.type, type) && s.dataset.node !== node.id));
+        refreshWires();
+      }, up => {
+        const w = wire; wire = null;
+        if (!moved) return;
+        const hit = document.elementFromPoint?.(up.clientX, up.clientY)?.closest?.('.node-socket');
+        const restore = () => { if (detached) graph.links.push(detached); };
+        if (hit && hit.dataset.dir !== w.direction) {
+          const other = { node: hit.dataset.node, socket: hit.dataset.socket }, mine = { node: w.node, socket: w.socket };
+          const out = w.direction === 'outputs' ? mine : other, inp = w.direction === 'outputs' ? other : mine;
+          applyLink({ from: { node: out.node, socket: out.socket }, to: { node: inp.node, socket: inp.socket } }, 'Провод соединён.', restore);
+        } else if (hit) {
+          // Бросили на сокет того же направления: связь возвращается, это не удаление.
+          restore(); status = 'Соединять можно только входы с выходами.'; render();
+        } else {
+          // Подключённый вход перетащили на пустое место: связь удаляется (без отката).
+          status = detached ? 'Провод удалён.' : ''; render();
+        }
+      });
+    }
+    // Связь через клик: сначала выход, затем вход. Проверка и откат — в applyLink.
+    function applyLink(link, ok, rollback = null) {
+      const error = connectionError(graph, link);
+      if (error) { rollback?.(); status = error; render(); return false; }
+      graph.links = graph.links.filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+      graph.links.push(clone(link));
+      checkpoint(); pendingPort = null; status = ok; render(); return true;
+    }
+    function removeLink(link) { graph.links = graph.links.filter(l => l !== link); checkpoint(); status = 'Провод удалён.'; render(); }
     function choosePort(node, direction, socket) {
       if (direction === 'outputs') {
         pendingPort = { node: node.id, socket, type: portType(node, direction, socket) };
         status = `Выход «${socket}» выбран. Теперь нажмите совместимый вход.`; render(); return;
       }
       if (!pendingPort) { status = 'Сначала выберите выходной порт.'; render(); return; }
-      const targetType = portType(node, direction, socket);
-      if (!targetType || targetType !== pendingPort.type) { status = 'Типы сокетов не совпадают.'; render(); return; }
-      if (pendingPort.node === node.id) { status = 'Нельзя соединить узел с самим собой.'; render(); return; }
-      graph.links = graph.links.filter(l => !(l.to.node === node.id && l.to.socket === socket));
-      graph.links.push({ from: { node: pendingPort.node, socket: pendingPort.socket }, to: { node: node.id, socket } });
-      checkpoint(); pendingPort = null; status = ''; render();
+      applyLink({ from: { node: pendingPort.node, socket: pendingPort.socket }, to: { node: node.id, socket } }, '');
     }
     function addFrame() {
       const members = [...selected]; if (!members.length) { status = 'Выберите узел(ы) рамки с Ctrl/⌘ + щелчок.'; render(); return; }
@@ -634,44 +768,101 @@
     }
     function moveNode(node, x, y) { node.position ||= { x: 0, y: 0 }; node.position.x = Math.max(-100000, Math.min(100000, x)); node.position.y = Math.max(-100000, Math.min(100000, y)); }
     function nodeById(id) { return graph.nodes.find(n => n.id === id); }
+    function deleteNodes(ids) {
+      const drop = new Set(ids);
+      graph.nodes = graph.nodes.filter(n => !drop.has(n.id));
+      graph.links = graph.links.filter(l => !drop.has(l.from.node) && !drop.has(l.to.node));
+      graph.frames.forEach(f => f.nodes = f.nodes.filter(n => !drop.has(n)));
+      selected = new Set([...selected].filter(id => !drop.has(id)));
+      if (drop.has(activeNode)) activeNode = '';
+      checkpoint(); render();
+    }
+    let menuHandle = null;
+    function openMenu(clientX, clientY, options) {
+      menuHandle?.close(); menuHandle = null;
+      const container = canvasEl(), rect = canvasRect();
+      if (!container || !window.NodeMenu) return;
+      menuHandle = window.NodeMenu.open({ container, x: clientX - rect.left, y: clientY - rect.top, onClose: () => { menuHandle = null; }, ...options });
+    }
     function nodeCard(node) {
       const pos = node.position || { x: 0, y: 0 }, group = node.type === 'group.instance' ? graph.groups.find(g => g.id === node.params?.group_id) : null;
-      const inputs = socketMap(node, new Map(graph.groups.map(g => [g.id, g]))).inputs;
-      const outputs = socketMap(node, new Map(graph.groups.map(g => [g.id, g]))).outputs;
-      const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => el('button', { class: `node-socket in socket-${type}`, title: `${portLabel(node, 'inputs', name)} · ${type}`, onclick: e => { e.stopPropagation(); choosePort(node, 'inputs', name); } }, el('i'), portLabel(node, 'inputs', name)))),
-        el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => el('button', { class: `node-socket out socket-${type}`, title: `${portLabel(node, 'outputs', name)} · ${type}`, onclick: e => { e.stopPropagation(); choosePort(node, 'outputs', name); } }, portLabel(node, 'outputs', name), el('i')))));
+      const groups = new Map(graph.groups.map(g => [g.id, g]));
+      const inputs = socketMap(node, groups).inputs, outputs = socketMap(node, groups).outputs;
+      const socket = (direction, name, type) => el('button', { class: `node-socket ${direction === 'inputs' ? 'in' : 'out'} socket-${type}`, title: `${portLabel(node, direction, name)} · ${type}`,
+        'data-dir': direction, 'data-node': node.id, 'data-socket': name, 'data-type': type,
+        onpointerdown: e => startWire(e, node, name, direction), onclick: e => { e.stopPropagation(); choosePort(node, direction, name); } },
+        direction === 'inputs' ? [el('i'), portLabel(node, direction, name)] : [portLabel(node, direction, name), el('i')]);
+      const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => socket('inputs', name, type))),
+        el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => socket('outputs', name, type))));
       const card = el('article', { class: 'graph-node' + (selected.has(node.id) ? ' selected' : '') + (node.type.startsWith('action.') ? ' action-node' : node.type.startsWith('rule.') ? ' rule-node' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id,
-        onclick: e => { activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); } },
-        el('header', { class: 'graph-node-head', onpointerdown: e => { if (e.target?.closest?.('button')) return; drag = { id: node.id, x: e.clientX, y: e.clientY, left: pos.x, top: pos.y }; e.preventDefault?.(); } },
-          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); graph.frames.forEach(f => f.nodes = f.nodes.filter(n => n !== node.id)); selected.delete(node.id); if (activeNode === node.id) activeNode = ''; checkpoint(); render(); } }, '×')),
+        // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
+        onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
+        onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
+        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { sections: [{ title: 'Узел', items: [
+          { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }, { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) }, { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] }],
+          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else addFrame(); } }); } },
+        el('header', { class: 'graph-node-head' },
+          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), sockets);
       return card;
     }
+    // Точка провода в мировых координатах: центр точки сокета из DOM (зум и панорама учитываются),
+    // а если узел ещё не на экране (до первого показа) — оценка по позиции карточки.
+    function socketAnchor(nodeId, direction, socketName) {
+      const node = nodeById(nodeId), pos = node?.position || { x: 0, y: 0 };
+      const fallback = { x: pos.x + (direction === 'outputs' ? 224 : 0), y: pos.y + 56 };
+      const dot = root.querySelector?.(`.node-socket[data-node="${nodeId}"][data-dir="${direction}"][data-socket="${socketName}"] i`);
+      const rect = dot?.getBoundingClientRect?.();
+      if (!rect || !rect.width) return fallback;
+      return worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
     function drawWires(canvas) {
       if (!document.createElementNS) return;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'node-wires'); svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%'); svg.setAttribute('aria-hidden', 'true');
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'node-wires'); svg.setAttribute('aria-hidden', 'true');
+      // Кривая Безье: отступ пропорционален расстоянию, поэтому провод не «петляет» у близких узлов.
+      const curve = (x1, y1, x2, y2) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`; };
       for (const link of graph.links) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
-        const x1 = (a.position?.x || 0) + 224, y1 = (a.position?.y || 0) + 56;
-        const x2 = (b.position?.x || 0), y2 = (b.position?.y || 0) + 56;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + 80} ${y1}, ${x2 - 80} ${y2}, ${x2} ${y2}`); path.setAttribute('class', 'node-wire');
-        svg.appendChild(path);
+        const type = portType(a, 'outputs', link.from.socket) || 'any';
+        const from = socketAnchor(a.id, 'outputs', link.from.socket), to = socketAnchor(b.id, 'inputs', link.to.socket);
+        const d = curve(from.x, from.y, to.x, to.y), name = `${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`;
+        // Невидимая широкая зона попадания (клик удаляет провод) и тонкая видимая линия поверх неё.
+        const hit = document.createElementNS(NS, 'path');
+        hit.setAttribute('d', d); hit.setAttribute('class', 'node-wire-hit'); hit.setAttribute('data-link-hit', name);
+        hit.addEventListener('click', e => { e.stopPropagation(); removeLink(link); });
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('data-link', name);
+        path.setAttribute('class', `node-wire socket-${type}`);
+        svg.append(hit, path);
+      }
+      if (wire) {
+        const a = nodeById(wire.node); if (a) {
+          const origin = socketAnchor(a.id, wire.direction, wire.socket), sx = origin.x, sy = origin.y;
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', wire.direction === 'outputs' ? curve(sx, sy, wire.x, wire.y) : curve(wire.x, wire.y, sx, sy));
+          path.setAttribute('class', `node-wire node-wire-preview socket-${wire.type}`);
+          svg.appendChild(path);
+        }
       }
       canvas.appendChild(svg);
     }
     function renderProperties() {
       const node = nodeById(activeNode); if (!node) return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('p', { class: 'muted small' }, 'Выберите узел на поле.'));
-      const params = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'Параметры выбранного узла', onfocus: () => { params.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
-        try { const next = JSON.parse(params.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
+      const rawParams = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'JSON параметров узла', onfocus: () => { rawParams.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
+        try { const next = JSON.parse(rawParams.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
         catch (e) { status = e.message; if (root._statusNode) root._statusNode.textContent = status; }
       } }, JSON.stringify(node.params || {}, null, 2));
+      const groupOptions = graph.groups.map(item => ({ value: item.id, label: item.name }));
+      const form = NodeForm.nodeParams(node, { groups: groupOptions, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      const raw = el('details', { class: 'node-raw' }, el('summary', {}, 'Для разработчиков · JSON'), rawParams);
       const def = NODE_DEFS[node.type], group = node.type === 'group.instance' ? graph.groups.find(item => item.id === node.params?.group_id) : null;
       const groupDetails = group ? el('div', { class: 'node-group-details' }, field('Имя группы', el('input', { value: group.name, onchange: e => { group.name = String(e.target.value).slice(0, 120) || group.name; checkpoint(); render(); } })),
         el('p', { class: 'muted small' }, `Входы: ${(group.inputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`),
         el('p', { class: 'muted small' }, `Выходы: ${(group.outputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`)) : null;
-      return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('b', {}, def.label), el('p', { class: 'muted small' }, node.type), groupDetails, field('Параметры · JSON', params), el('button', { class: 'small danger', onclick: () => { graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); activeNode = ''; selected.delete(node.id); checkpoint(); render(); } }, 'Удалить узел'));
+      return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('b', {}, def.label), el('p', { class: 'muted small' }, node.type), groupDetails, el('div', { class: 'node-field' }, el('span', {}, 'Параметры'), form), raw, el('button', { class: 'small danger', onclick: () => { graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); activeNode = ''; selected.delete(node.id); checkpoint(); render(); } }, 'Удалить узел'));
     }
     function renderPreview() {
       const out = el('pre', { class: 'node-preview-output' });
@@ -679,14 +870,13 @@
       const edition = el('select', { value: currentEdition, onchange: e => { currentEdition = e.target.value; draw(); } }, ...['2014', '2024'].map(x => el('option', { value: x, selected: x === currentEdition ? '' : null }, `SRD ${x}`)));
       const level = el('input', { type: 'number', min: 1, max: 20, value: currentLevel, onchange: e => { currentLevel = Math.max(1, Math.min(20, Number(e.target.value) || 1)); draw(); } });
       const subclass = el('input', { value: currentSubclass, placeholder: 'ID подкласса', oninput: e => { currentSubclass = e.target.value; draw(); } });
-      const choices = el('textarea', { value: JSON.stringify(currentChoices, null, 2), 'aria-label': 'Выборы для предпросмотра', oninput: e => {
-        try { const next = JSON.parse(e.target.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Выборы должны быть JSON-объектом.'); currentChoices = next; draw(); }
-        catch (error) { out.textContent = error.message; }
-      } });
+      const choices = NodeForm.valueEditor(currentChoices, { ariaLabel: 'Выборы для предпросмотра', onChange: next => { currentChoices = next; draw(); } });
       draw();
-      return el('details', { class: 'node-preview', open: '' }, el('summary', {}, 'Предпросмотр графа · без сохранения'), el('div', { class: 'row' }, field('Редакция', edition), field('Уровень', level), field('Подкласс ID', subclass)), field('Выборы по ID · JSON', choices), out);
+      return el('details', { class: 'node-preview', open: '' }, el('summary', {}, 'Предпросмотр графа · без сохранения'), el('div', { class: 'row' }, field('Редакция', edition), field('Уровень', level), field('Подкласс ID', subclass)), el('div', { class: 'node-field' }, el('span', {}, 'Выборы по ID'), choices), out);
     }
     function render() {
+      // Редактор переназначает массивы графа (links, nodes); записываем актуальный граф в документ до каждого показа.
+      doc.mechanics.graph = graph;
       root.replaceChildren();
       const searchBox = el('input', { class: 'node-search', value: search, placeholder: 'Найти узел…  Shift+A', 'aria-label': 'Поиск узла', oninput: e => { search = e.target.value; render(); root.querySelector?.('.node-search')?.focus?.(); } });
       const query = search.toLocaleLowerCase();
@@ -694,30 +884,52 @@
       const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...palette.slice(0, 8).map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
-        el('button', { class: 'small', onclick: addFrame }, '＋ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'));
+        el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
+      // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
+      const starters = !isBlankGraph(graph) ? null : el('div', { class: 'node-starters' },
+        el('b', {}, 'Начните с готового графа'),
+        el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
+        ...GRAPH_STARTERS.map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
-      const canvas = el('div', { class: 'node-canvas', onpointermove: e => {
-        if (!drag) return; const node = nodeById(drag.id); if (!node) return;
-        moveNode(node, drag.left + e.clientX - drag.x, drag.top + e.clientY - drag.y);
-        const card = root.querySelector?.(`[data-node-id="${drag.id}"]`); if (card) card.style = `left:${node.position.x}px;top:${node.position.y}px`;
-      }, onpointerup: () => { if (drag) { checkpoint(); drag = null; render(); } } }, ...graph.frames.map(f => {
+      const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(Boolean); if (!members.length) return null;
         const left = Math.min(...members.map(n => n.position?.x || 0)) - 16, top = Math.min(...members.map(n => n.position?.y || 0)) - 34;
         return el('div', { class: 'node-frame', style: `left:${left}px;top:${top}px;width:${Math.max(230, ...members.map(n => (n.position?.x || 0) - left + 230))}px;height:${Math.max(100, ...members.map(n => (n.position?.y || 0) - top + 120))}px` }, el('b', {}, f.title));
-      }), ...graph.nodes.map(nodeCard));
-      drawWires(canvas);
+      });
+      const world = el('div', { class: 'node-world', style: `transform: translate(${view.x}px, ${view.y}px) scale(${view.k})` }, ...frames, ...graph.nodes.map(nodeCard));
+      const canvas = el('div', { class: 'node-canvas', 'data-zoom': view.k.toFixed(2),
+        onwheel: e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1); },
+        onpointerdown: e => {
+          if (e.button === 1) { e.preventDefault(); startPan(e); return; }
+          if (e.button !== 0 || e.target.closest?.('.graph-node, button, input, select, textarea, .node-menu, .node-wires')) return;
+          startMarquee(e);
+        },
+        onauxclick: e => e.preventDefault(),
+        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
       const inspector = renderProperties();
-      const statusLine = el('div', { class: 'node-status', role: 'status' }, status);
-      root.append(toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview());
+      // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
+      // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
+      const pending = graphProblems(graph, graph.groups || []);
+      const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
+      // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
+      root.append(...[toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
+      // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
+      drawWires(world);
       // Keep status reference in a closure-safe property for JSON validation errors.
       root._statusNode = statusLine;
+      // Сокеты измеряются по DOM. При первом показе редактор ещё не в документе: провода пересчитываются в следующем кадре.
+      // Если редактор уже на странице, провода измерены сразу (без отложенной перерисовки, которая могла бы заменить элемент под курсором).
+      if (!root.isConnected) requestAnimationFrame?.(() => refreshWires());
     }
     root.addEventListener('keydown', e => {
+      const typing = e.target?.closest?.('input, textarea, select');
       if (e.shiftKey && String(e.key).toLowerCase() === 'a') { e.preventDefault(); const input = root.querySelector?.('.node-search'); input?.focus?.(); input?.select?.(); }
       if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'z') { e.preventDefault(); restore(e.shiftKey ? historyIndex + 1 : historyIndex - 1); }
-      if (e.key === 'Escape') { pendingPort = null; status = ''; render(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && selected.size) { e.preventDefault(); deleteNodes([...selected]); }
+      if (e.key === 'Escape') { pendingPort = null; wire = null; status = ''; closeMenuSafe(); render(); }
     });
-    root.addEventListener('pointermove', e => { if (drag) { const node = nodeById(drag.id); if (node) moveNode(node, drag.left + e.clientX - drag.x, drag.top + e.clientY - drag.y); } });
+    function closeMenuSafe() { menuHandle?.close(); menuHandle = null; }
     // Validation and cancel are controlled by the enclosing record modal.
     mechanics = graphEnvelope(graph, Object.fromEntries(Object.entries(mechanics).filter(([k]) => k !== 'version' && k !== 'graph')));
     doc.mechanics = mechanics;
@@ -740,8 +952,18 @@
     toGraph,
     toLegacy: v2ToV1,
     validateGraph,
+    problems,
+    graphProblems,
+    connectionError,
+    wouldCycle,
     graphPreview: previewGraph,
     evaluateGraph,
+    // Таблица развития класса из узла rule.class_progression (с учётом редакции); null, если узла нет.
+    classProgression(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.class_progression || null);
+    },
     applyGraphRules,
     normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },
     validate,

@@ -1,0 +1,15 @@
+{
+  "slug": "srd14-rock-gnome",
+  "name": "Скальный гном",
+  "parent": "Гном",
+  "choices": {},
+  "edition": "2014",
+  "kind": "races",
+  "levels": [
+    1,
+    3,
+    5,
+    11,
+    20
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "slug": "srd24-rogue",
+  "name": "Плут",
+  "choices": {
+    "expertise": [
+      "acrobatics",
+      "thieves_tools"
+    ],
+    "weaponMasteries": [
+      "srd24-battleaxe",
+      "srd24-blowgun"
+    ]
+  },
+  "edition": "2024",
+  "kind": "classes",
+  "levels": [
+    1,
+    3,
+    5,
+    11,
+    20
+  ]
+}

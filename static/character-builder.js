@@ -39,6 +39,13 @@ window.CharacterBuilder = (() => {
   // ---------- Реестр проекций: как запись справочника меняет лист ----------
   const handlers = new Map();
   const register = (category, apply) => handlers.set(category, apply);
+  // Значение пассивного блока v1 записи (без зависимости от порядка загрузки mechanics.js).
+  const passiveFieldValue = (entry, field) => {
+    for (const program of entry?.data?.mechanics?.programs || [])
+      if (program.trigger === 'passive') for (const block of program.blocks || [])
+        if (block.kind === 'passive' && block.enabled !== false && block.field === field) return block.value;
+    return null;
+  };
   const feature = (s, name, text, source, mechanics) => s.features.push(Modules.newFeature({ name, text: text || '', source, mechanics }));
   register('race', (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name; if (d.speed) s.speed = d.speed;
@@ -48,7 +55,7 @@ window.CharacterBuilder = (() => {
   register('class', (s, e) => {
     const d = e.data || {}; s.class = e.name; s.saving_throws = [...(d.saves || [])];
     s.hp.hit_dice = '1' + (d.hit_die || 'd8'); s.spells.ability = d.spellcasting || '';
-    const slug = String(d.name_en || '').toLowerCase() || CLASS_SLUGS_RU[e.name] || '';
+    const slug = window.ClassRules.slugOf(e);
     for (const name of d.features?.['1'] || []) {
       if (s.edition === '2014' && slug === 'fighter' && /^(Боевой стиль)(:|$)/.test(name)) continue;
       feature(s, name, d.feature_texts?.[name], e.name, window.Mechanics?.forFeature(d.mechanics,name));
@@ -527,8 +534,8 @@ window.CharacterBuilder = (() => {
       parent_background: background.name, parent_background_id: background.id,
     } };
   }
-  const CLASS_SLUGS_RU = { Варвар: 'barbarian', Бард: 'bard', Жрец: 'cleric', Друид: 'druid', Воин: 'fighter', Монах: 'monk', Паладин: 'paladin', Следопыт: 'ranger', Плут: 'rogue', Чародей: 'sorcerer', Колдун: 'warlock', Волшебник: 'wizard' };
-  const classSlugOf = entry => String(entry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[entry?.name] || '';
+  const CLASS_SLUGS_RU = window.ClassRules.RU_NAMES;
+  const classSlugOf = entry => window.ClassRules.slugOf(entry);
   const weaponMasteryCount = (edition, slug) => edition === '2024' ? ({ barbarian: 2, fighter: 3, monk: 2, paladin: 2, ranger: 2, rogue: 2 }[slug] || 0) : 0;
   function weaponMasteryOptions(classEntry, catalog) {
     const slug = classSlugOf(classEntry), prof = String(classEntry?.data?.weapons || '').toLocaleLowerCase();
@@ -541,14 +548,15 @@ window.CharacterBuilder = (() => {
   }
   // ---------- Заклинания: лимиты класса на 1 уровне ----------
   function spellLimits(classEntry, edition, abilities = {}, ruleChoices = {}) {
-    const slug = String(classEntry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[classEntry?.name] || '';
-    const row = window.CLASS_PROGRESSION?.[edition]?.[slug]?.levels?.['1'];
+    const slug = window.ClassRules.slugOf(classEntry);
+    const prog = classEntry?.data?.progression || window.Mechanics?.classProgression?.(classEntry?.data?.mechanics, edition) || window.CLASS_PROGRESSION?.[edition]?.[slug];
+    const row = prog?.levels?.['1'];
     if (!row) return null; // homebrew-класс без таблицы развития остаётся решением мастера
     const mod = modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10);
     let spells = 0, mode = 'none';
-    if (slug === 'wizard') { spells = 6; mode = 'book'; } // стартовая книга заклинаний
-    else if (edition === '2014' && ['cleric', 'druid'].includes(slug)) { spells = Math.max(1, 1 + mod); mode = 'prepared'; }
-    else if (edition === '2024' && ['cleric', 'druid', 'paladin', 'ranger'].includes(slug)) { spells = Math.max(1, 1 + mod); mode = 'prepared'; }
+    const start = window.ClassRules.startMode(classEntry, edition);
+    if (start === 'book') { spells = 6; mode = 'book'; } // стартовая книга заклинаний
+    else if (start === 'prepared') { spells = Math.max(1, 1 + mod); mode = 'prepared'; }
     else if (row.known !== null && row.known !== undefined) { spells = Math.max(0, Number(row.known) || 0); mode = spells ? 'known' : 'none'; }
     else if (row.prepared !== null && row.prepared !== undefined) { spells = Math.max(0, Number(row.prepared) || 0); mode = spells ? 'known' : 'none'; }
     const slots = {};
@@ -558,7 +566,7 @@ window.CharacterBuilder = (() => {
       slots[level] = { max: current + Number(row.pact_slots), used: 0 };
     }
     const extraCantrip = edition === '2024' && ((slug === 'cleric' && ruleChoices.clericOrder === 'thaumaturge') || (slug === 'druid' && ruleChoices.druidOrder === 'magician')) ? 1 : 0;
-    const preparedCount = slug === 'wizard' ? Math.max(1, 1 + modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10)) : null;
+    const preparedCount = window.ClassRules.startMode(classEntry, edition) === 'book' ? Math.max(1, 1 + modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10)) : null;
     return { cantrips: Math.max(0, Number(row.cantrips) || 0) + extraCantrip, spells, mode, preparedCount, slots, maxLevel: Math.max(0, ...(row.slots || []).map((n, i) => Number(n) > 0 ? i + 1 : 0), Number(row.pact_level) || 0) };
   }
   /// Навыки, которые дают модули, и выбор класса: сколько выбрать и что уже занято.
@@ -653,8 +661,10 @@ window.CharacterBuilder = (() => {
       }
     }
     const classEntry = draft.selected.class;
-    const classSlug = String(classEntry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[classEntry?.name] || '';
-    if (classSlug === 'barbarian' || classSlug === 'monk') s.unarmored_defense = classSlug;
+    const classSlug = window.ClassRules.slugOf(classEntry);
+    // Защита без доспехов — пассивный блок записи класса (поле unarmored_defense), а не проверка по имени класса.
+    const classRule = passiveFieldValue(classEntry, 'unarmored_defense');
+    if (classRule && typeof classRule === 'object') s.unarmored_defense = JSON.parse(JSON.stringify(classRule));
     const raceEntry = draft.selected.race, raceRoot = raceEntry?.data?.parent || raceEntry?.name;
     const raceParentEntry = (draft.catalog || []).find(e => e.category === 'race' && e.name === raceRoot && !e.data?.parent);
     const raceRootNameEn = String(raceParentEntry?.data?.name_en || raceEntry?.data?.name_en || '').toLowerCase();
@@ -715,7 +725,7 @@ window.CharacterBuilder = (() => {
     const featName = String(draft.selected.background?.data?.feat || '').trim();
     if (featName && !draft.selected.feat) feature(s, featName, 'Черта предыстории указана текстом; запись черты не найдена в справочнике.', draft.selected.background.name);
     if (s.edition === '2024') for (const k of keys) s.abilities[k] += Number(draft.bonuses?.[k]) || 0;
-    const creationClassSlug = String(draft.selected.class?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[draft.selected.class?.name] || '';
+    const creationClassSlug = window.ClassRules.slugOf(draft.selected.class);
     const chosenLanguages = [...(draft.languages || [])];
     if (s.edition === '2024') chosenLanguages.unshift('Общий');
     appendProficiency(s, 'Языки', chosenLanguages);

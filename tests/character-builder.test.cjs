@@ -11,6 +11,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/class-progression.js', 'utf8'), ctx);
 ctx.DiceEngine = { ...ctx.window.DiceEngine, present() {} };
+vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 const entry = (category, name, data) => ({ id: name, category, name, source: 'Test pack', data });
