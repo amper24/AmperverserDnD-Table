@@ -13,8 +13,18 @@
 window.LevelUp = (() => {
   const KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   const MAX_LEVEL = 20;
-  const RE_ASI = /увеличение характеристик/i, RE_EPIC = /эпическ(ое благо|ий дар)/i, RE_EXPERT = /компетентност|экспертиз/i, RE_SECRETS = /магические секреты|тайны магии/i;
-  const RE_MANUAL = /боевой стиль|воззвани|метамагия|дар договора|избранный враг|исследователь|мастерство оружия|тактическое мастерство|стиль боя/i;
+  // Классификация особенностей класса — набор feature_rules (вид + шаблон) по редакции. Правила проверяются по порядку набора.
+  const featureRulesOf = edition => window.Presets?.items('feature_rules', edition) || [];
+  const featureRuleMatch = (rule, name) => {
+    const t = rule.table || {}, p = String(t.pattern || '');
+    if (t.match === 'exact') return name === p;
+    if (t.match === 'prefix') return name.startsWith(p);
+    return new RegExp(p, String(t.flags || '')).test(name);
+  };
+  const featureKinds = (name, edition) => featureRulesOf(edition).filter(r => featureRuleMatch(r, name)).map(r => r.table.kind);
+  const hasFeatureKind = (name, kind, edition) => featureKinds(name, edition).includes(kind);
+  const featureRuleOf = (kind, edition) => featureRulesOf(edition).find(r => r.table.kind === kind)?.table || null;
+  const featureTagOf = (name, edition) => featureRulesOf(edition).find(r => r.table.tag && featureRuleMatch(r, name))?.table.tag || '';
   const EXPERTISE_GAINS = { '2014': { bard: { 3: 2, 10: 2 }, rogue: { 1: 2, 6: 2 } }, '2024': { bard: { 2: 2, 9: 2 }, rogue: { 1: 2, 6: 2 }, ranger: { 2: 1, 9: 2 }, wizard: { 2: 1 } } };
   const expertiseGain = (edition, slug, level) => Number(EXPERTISE_GAINS[edition]?.[slug]?.[level]) || 0;
   const SKILL_KEYS_RU = { Акробатика: 'acrobatics', 'Уход за животными': 'animal_handling', Магия: 'arcana', Атлетика: 'athletics', Обман: 'deception', История: 'history', Проницательность: 'insight', Запугивание: 'intimidation', Анализ: 'investigation', Медицина: 'medicine', Природа: 'nature', Восприятие: 'perception', Выступление: 'performance', Убеждение: 'persuasion', Религия: 'religion', 'Ловкость рук': 'sleight_of_hand', Скрытность: 'stealth', Выживание: 'survival' };
@@ -177,23 +187,24 @@ window.LevelUp = (() => {
       if (options.length) { groups.push({ id: 'meta', kind: 'feature', label: 'Метамагия', hint: to === first ? 'Два варианта метамагии' : 'Ещё один вариант метамагии', count: to === first ? 2 : 1, options }); hide(['Метамагия', ...all]); }
     }
     if (edition === '2014' && slug === 'warlock') {
-      const prefix = 'Таинственные воззвания ';
+      const prefix = featureRuleOf('invocation', edition)?.pattern || '';
       const pool = Object.keys(d.features || {}).map(Number).filter(l => l <= to).sort((a, b) => a - b).flatMap(l => listed(l)).filter(n => n.startsWith(prefix));
       const nb = Number(prog?.levels?.[String(to)]?.['x:invocations_known']) || 0, na = Number(prog?.levels?.[String(from)]?.['x:invocations_known']) || 0;
       const options = [...new Set(pool)].filter(n => !owned.has(n)).map(opt), known = (sheet.features || []).filter(f => f.name.startsWith(prefix));
       if (nb > na && options.length) groups.push({ id: 'inv', kind: 'feature', label: 'Таинственные воззвания', hint: `Новых воззваний: ${nb - na}`, count: nb - na, options, swap: known.length ? known.map(f => ({ uid: f.uid, name: f.name })) : null });
       else if (from > 0 && known.length && options.length) groups.push({ id: 'inv', kind: 'feature', label: 'Таинственные воззвания', hint: 'Можно заменить одно воззвание', count: 0, options, swap: known.map(f => ({ uid: f.uid, name: f.name })) });
-      hide(listed(to).filter(n => n.startsWith(prefix) || n === 'Таинственные воззвания'));
-      if (names.includes('Дар договора')) {
-        const boons = names.filter(n => /^договор /i.test(n) && !owned.has(n)).map(opt);
-        if (boons.length) { groups.push({ id: 'pact', kind: 'feature', label: 'Дар договора', hint: 'Выберите договор', count: 1, options: boons }); hide(['Дар договора', ...names.filter(n => /^договор /i.test(n))]); }
+      hide(listed(to).filter(n => n.startsWith(prefix) || hasFeatureKind(n, 'invocation', edition)));
+      const choice = names.find(n => hasFeatureKind(n, 'pact_choice', edition));
+      if (choice) {
+        const boons = names.filter(n => hasFeatureKind(n, 'pact_boon', edition) && !owned.has(n)).map(opt);
+        if (boons.length) { groups.push({ id: 'pact', kind: 'feature', label: choice, hint: 'Выберите договор', count: 1, options: boons }); hide([choice, ...names.filter(n => hasFeatureKind(n, 'pact_boon', edition))]); }
       }
     }
     if (edition === '2014' && slug === 'ranger') {
       let i = 0;
       for (const n of names) {
-        if (/^избранный враг \(/i.test(n)) groups.push({ id: 'enemy' + i++, kind: 'text', label: 'Избранный враг', hint: 'Тип существ', feature: n, suggestions: ENEMY_TYPES, count: 1 });
-        else if (/^природный исследователь \(/i.test(n)) groups.push({ id: 'terrain' + i++, kind: 'text', label: 'Природный исследователь', hint: 'Тип местности', feature: n, suggestions: TERRAINS, count: 1 });
+        if (hasFeatureKind(n, 'enemy', edition)) groups.push({ id: 'enemy' + i++, kind: 'text', label: 'Избранный враг', hint: 'Тип существ', feature: n, suggestions: ENEMY_TYPES, count: 1 });
+        else if (hasFeatureKind(n, 'terrain', edition)) groups.push({ id: 'terrain' + i++, kind: 'text', label: 'Природный исследователь', hint: 'Тип местности', feature: n, suggestions: TERRAINS, count: 1 });
       }
     }
     return { groups, hidden };
@@ -209,10 +220,10 @@ window.LevelUp = (() => {
     const slug = slugOf(entry), castMod = modOf(sheet.abilities?.[sheet.spells?.ability || d.spellcasting || 'int']);
     const before = spellStats(entry, edition, from, castMod), after = spellStats(entry, edition, to, castMod);
     const { groups, hidden } = optionGroups(entry, edition, from, to, sheet, prog);
-    const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : RE_ASI.test(f.name) ? 'asi' : RE_EPIC.test(f.name) ? 'epic' : RE_EXPERT.test(f.name) ? 'expertise' : RE_MANUAL.test(f.name) ? 'manual' : '' }));
+    const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
     const expertiseFrom = edition === '2024' && slug === 'wizard' && to === 2 ? (d.skills?.from || []).map(skillKeyFromName).filter(Boolean) : null;
-    if (expertise && !feats.some(f => RE_EXPERT.test(f.name) || /экспертиз/i.test(f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
+    if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition) || /экспертиз/i.test(f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
     const subLevel = subclassLevel(entry), subclass = subclassOf(entry, row?.subclass || opts.subclass?.name);
     const needSubclass = !subclass && subLevel !== null && to >= subLevel && (d.subclasses || []).length > 0;
     const subFeatures = subclassFeaturesAt(subclass, to, row?.subclass_choices || {}).map(f => ({ ...f, source: subclass.name, tag: '' }));
@@ -230,7 +241,7 @@ window.LevelUp = (() => {
       else if (window.ClassRules.startMode(entry, edition) === 'book') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
       else if (after.prepared !== null) spells.mode = 'prepared';
       if (spells.mode === 'known' && from > 0 && after.maxSpellLevel > 0) spells.swap = 1;
-      if (feats.some(f => RE_SECRETS.test(f.name))) spells.secrets = 2;
+      if (feats.some(f => hasFeatureKind(f.name, 'secrets', edition))) spells.secrets = 2;
     }
     const resolve = opts.resolve || (() => null);
     const nextClasses = isNew ? [...classes.filter(c => c.name), { name: entry.name, level: 1, subclass: '' }] : classes.map(c => c === row || sameClass(c.name, entry) ? { ...c, level: to } : c);
@@ -511,7 +522,8 @@ window.LevelUp = (() => {
   /// Полоса уровней класса 1–20: пройденные, текущий и вехи (улучшение характеристик, подкласс).
   function levelTrack(entry, from, to) {
     const ms = {}, sub = subclassLevel(entry);
-    for (let l = 1; l <= MAX_LEVEL; l++) { const names = classFeaturesAt(entry, l).map(f => f.name); if (names.some(n => RE_ASI.test(n) || RE_EPIC.test(n))) ms[l] = 'asi'; }
+    const edition = entry?.data?.edition || '2014';
+    for (let l = 1; l <= MAX_LEVEL; l++) { const names = classFeaturesAt(entry, l).map(f => f.name); if (names.some(n => hasFeatureKind(n, 'asi', edition) || hasFeatureKind(n, 'epic', edition))) ms[l] = 'asi'; }
     if (sub && !ms[sub]) ms[sub] = 'sub'; else if (sub) ms[sub] = 'both';
     return h('div', 'lu-track', ...Array.from({ length: MAX_LEVEL }, (_, i) => { const l = i + 1;
       return h('span', 'lu-tick' + (l <= from ? ' done' : '') + (l === to ? ' now' : '') + (ms[l] ? ' ms' : ''), ms[l] ? h('i', '', ms[l] === 'sub' ? '✦' : '★') : null, h('b', '', String(l))); }));
