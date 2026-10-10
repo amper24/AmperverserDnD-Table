@@ -16,16 +16,28 @@
 
 ### Прогрессия класса из узла
 - SRD-классы 2014 и 2024 несут узел `rule.class_progression` с таблицей (`tools/srd/add_class_progression_nodes.cjs`, идемпотентно). `Mechanics.classProgression` отдаёт таблицу целиком; мастер уровней берёт её из узла.
-- Запасной вариант `static/class-progression.js` — для записей без узла (старые снимки и базы с правками).
+- Запасной путь — набор `class_progression` (`static/presets/`) для записей без узла (старые снимки и базы с правками).
 - Тесты: `tests/class-progression-seed.test.cjs`.
 
-### Данные вместо кода
-- `GRAPH_STARTERS`, `ITEM_PRESETS`, `SPELL_PRESETS` вынесены в `static/presets-data.js` (`window.PRESET_DATA`).
-- Браузерные тесты: `node-editor` (ПКМ-меню и отвод провода на пустое место — точки подбираются по DOM), `forms-create` (5 стартовых графов).
+### Наборы данных вместо кода
+- Стартовые графы, основы предметов и заклинаний, таблицы развития классов и ячейки мультикласса — JSON-наборы в `static/presets/` (`index.json` перечисляет файлы). Реестр `static/presets.js` (`window.Presets`) читает их, проверяет форму и отдаёт потребителям. `static/presets-data.js` и `static/class-progression.js` удалены.
+- Свой набор: диалог «Наборы данных…» в редакторе механик (импорт файлом или текстом, удаление своих наборов; хранится в браузере) или файл в `static/presets/`. Формат и правила перекрытия — `docs/presets.md`.
+- Мультикласс заклинателей читается из набора `multiclass_slots`, а не из таблицы волшебника.
+- Генератор `tools/srd/build_progression.py` пишет наборы; миграция узлов `tools/srd/add_class_progression_nodes.cjs` читает их через реестр. Общий загрузчик для node: `tools/presets/node-loader.cjs`.
+- Браузерный тест `tests/presets-manager.browser.cjs`: свой набор импортируется, появляется в редакторе, удаляется; встроенный набор защищён.
+- Редактор перерисовывает стартовые графы при импорте или удалении набора (событие `presets:changed`).
+
+### Тесты и CI
+- Браузерные тесты запускаются в CI (job `browser`, Playwright 1.64.0, Chromium из Playwright). Локально по-прежнему нужны `SPARTICUZ=1` и `LD_LIBRARY_PATH` в этой среде.
+- `tests/presets.test.cjs`, `tests/class-progression-seed.test.cjs`: проверка наборов и узлов прогрессии.
+- Исправлено: кнопка всей цепочки с ветвлением по попаданию не скрывалась (пара «атака + урон» с `when`). Поля карточки не перехватывают колесо.
 
 ### Не сделано
-- Строки SRD, уже сохранённые в базе с правками, не получают узел прогрессии; до переустановки им служит `class-progression.js`.
+- Таблицы классов в коде (`RU_NAMES`, `SRD_CASTER`, `MC_REQ`, `PICKERS`, `CLASS_COLOR`, `weaponMasteryCount`, `LEGACY_UNARMORED`) ещё не переведены в наборы; список — `docs/hardcode-audit.md`.
+- Строки SRD с правками в базе не получают узел прогрессии: нужна миграция legacy-хешей в `seed.rs` (Rust, не проверяется локально). Работает запасной набор.
 - `static/builder-dialog.js` не менялся (по запросу).
+- `tests/equipment.browser.cjs` падает и на main (ожидание переключателя «Автоматически расходовать ресурс»); в CI не включён.
+- Rust не собирается локально: изменения в `src/mechanics.rs`, `src/mechanics_graph.rs` проверит CI.
 
 ## 0.6.2 — 2026-10-10
 
