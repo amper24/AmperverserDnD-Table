@@ -12,12 +12,6 @@
 // `sheet.class` и `sheet.subclass` — строки для показа. У листов без `classes` класс берётся из `sheet.class`.
 window.LevelUp = (() => {
   const KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-  const SLUG_RU = { 'Варвар': 'barbarian', 'Бард': 'bard', 'Жрец': 'cleric', 'Друид': 'druid', 'Воин': 'fighter', 'Монах': 'monk', 'Паладин': 'paladin',
-    'Следопыт': 'ranger', 'Плут': 'rogue', 'Чародей': 'sorcerer', 'Колдун': 'warlock', 'Волшебник': 'wizard' };
-  const SLUGS = Object.values(SLUG_RU);
-  // Классы, у которых список заклинаний ограничен и выбирается при повышении уровня.
-  const PICKERS = ['bard', 'sorcerer', 'warlock', 'ranger'];
-  const FULL_CASTERS = ['bard', 'cleric', 'druid', 'sorcerer', 'wizard'], HALF_CASTERS = ['paladin', 'ranger'];
   const MAX_LEVEL = 20;
   const RE_ASI = /увеличение характеристик/i, RE_EPIC = /эпическ(ое благо|ий дар)/i, RE_EXPERT = /компетентност|экспертиз/i, RE_SECRETS = /магические секреты|тайны магии/i;
   const RE_MANUAL = /боевой стиль|воззвани|метамагия|дар договора|избранный враг|исследователь|мастерство оружия|тактическое мастерство|стиль боя/i;
@@ -43,10 +37,7 @@ window.LevelUp = (() => {
   const isStyleFeat = e => STYLE_FEATS_EN.includes(String(e?.data?.name_en || '').toLowerCase()) || /fighting|боев(ой|ые) стил/i.test(String(e?.data?.category || ''));
 
   // ---------- Чистая логика: классы, подклассы, таблицы развития ----------
-  function slugOf(entry) {
-    const en = String(entry?.data?.name_en || entry?.name_en || '').toLowerCase();
-    return SLUGS.includes(en) ? en : SLUG_RU[entry?.name] || '';
-  }
+  const slugOf = entry => window.ClassRules.slugOf(entry);
   /// Совпадает ли название класса на листе с записью справочника (по русскому и английскому названию).
   function sameClass(name, entry) {
     const n = String(name || '').trim().toLowerCase(); if (!n || !entry) return false;
@@ -90,8 +81,9 @@ window.LevelUp = (() => {
     const slug = slugOf(entry);
     let prepared = row.prepared ?? null;
     if (prepared === null && edition === '2014') {
-      if (['cleric', 'druid', 'wizard'].includes(slug)) prepared = Math.max(1, level + castMod);
-      else if (slug === 'paladin') prepared = Math.max(1, Math.floor(level / 2) + castMod);
+      const rule = window.ClassRules.preparedFormula(entry, edition);
+      if (rule === 'level') prepared = Math.max(1, level + castMod);
+      else if (rule === 'half') prepared = Math.max(1, Math.floor(level / 2) + castMod);
     }
     const slots = Array.from({ length: 9 }, (_, i) => Number(row.slots?.[i]) || 0);
     const pact = row.pact_slots ? { count: Number(row.pact_slots), level: Number(row.pact_level) || 1 } : null;
@@ -115,7 +107,7 @@ window.LevelUp = (() => {
       combined = true;
       for (const x of casters) {
         const third = /eldritch knight|arcane trickster|мистический рыцарь|мастер иллюзий|ловкач/i.test(`${x.c.subclass} ${x.entry.data?.subclasses?.find?.(s => s.name === x.c.subclass)?.name_en || ''}`);
-        casterLevel += FULL_CASTERS.includes(x.slug) ? x.c.level : HALF_CASTERS.includes(x.slug) ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
+        casterLevel += window.ClassRules.casterLevel(x.entry) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
       }
       // Общая таблица мультикласса заклинателей (SRD), не таблица отдельного класса.
       const wiz = typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.wizard : null;
@@ -234,8 +226,8 @@ window.LevelUp = (() => {
     if (after) {
       spells.cantrips = Math.max(0, after.cantrips - (before?.cantrips || 0));
       if (after.known !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.known - (before?.known || 0)); }
-      else if (edition === '2024' && PICKERS.concat('paladin').includes(slug) && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
-      else if (slug === 'wizard') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
+      else if (edition === '2024' && (window.ClassRules.isPicker(entry) || window.ClassRules.casterLevel(entry) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
+      else if (window.ClassRules.startMode(entry, edition) === 'book') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
       else if (after.prepared !== null) spells.mode = 'prepared';
       if (spells.mode === 'known' && from > 0 && after.maxSpellLevel > 0) spells.swap = 1;
       if (feats.some(f => RE_SECRETS.test(f.name))) spells.secrets = 2;

@@ -85,11 +85,15 @@
 
 ## Что остаётся (пункт «атаки, урон, состояния, прогрессия» ещё не закрыт полностью)
 
-- `static/levelup.js`: правила подготовленных заклинаний по классам (`spellStats`, ~88–93), триггеры подклассов (круг земли, коллегия знаний), боевой стиль, метамагия, пакт, expertise.
-- `static/character-builder.js`: режимы заклинаний по классам (~556–568), фильтр оружия монаха, языки и владения классов, `CLASS_SLUGS_RU`.
+- `static/class-rules.js` (`window.ClassRules`) — единый слой правил классов-заклинателей: RU-имена, `slugOf`, `casterLevel`, `isPicker`, `startMode`, `preparedFormula`. Приоритет у блока `data.caster` записи класса, запас — таблица `SRD_CASTER`. `levelup.js` и `character-builder.js` переведены на него (`CLASS_SLUGS_RU`, `spellLimits`, `preparedCount`, книга волшебника, мультикласс). Тесты: `tests/class-rules.test.cjs`.
+- Остаток в мастерах (не переведено, ~85 строк в `levelup.js`, `character-builder.js`, `builder-dialog.js`):
+  - расы: имена `dragonborn`, `high elf`, `half-elf`, корень расы `elf`/`gnome`/`tiefling`/`human`, выборы навыков, заклинаний и языков по расе (`character-builder.js` ~673–776, `builder-dialog.js` ~118–128, ~525–546);
+  - особенности классов: боевой стиль, метамагия, пакт, expertise, подклассы (круг земли, коллегия знаний, жизнь), орден жреца/друида 2024, alwaysPrepared (`levelup.js` ~141–242, `character-builder.js` ~60, ~680–750, `builder-dialog.js` ~134–461);
+  - `multiclassReq`, `MC_REQ`, `CLASS_COLOR`, `weaponMasteryCount` (таблица по slug);
+  - списки заклинаний-алиасов в `builder-dialog.js` ~266–299 (`'жрец'`, `'cleric'` и т. д.).
+- Монах: фильтр оружия (`character-builder.js` ~545) и тексты предысторий-классов остаются литералами.
 - `static/mechanics.js`: умолчания блоков атаки/урона (`1d20+@atk`, `1d6`) и состояния (`Отравленный`, `Испуганный`) зашиты в конструкторе блоков; нужно перенести в реестр узлов.
 - Данные: таблицы `CLASS_PROGRESSION` всё ещё генерируются из OmnisGM и хранятся как запасной вариант. Чтобы убрать их, таблицы надо записать узлами `rule.class_progression` в записи классов SRD. Это изменение данных, которое не доходит до уже созданных баз (правка сохраняется, см. `seed.rs`).
-- `src/seed.rs`: лимиты для встроенных картинок (2048/512) не используют конфиг.
 
 ## Что остаётся
 

@@ -2,12 +2,17 @@
 
 ## Unreleased
 
+### Ассеты и мастера без хардкода
+- Типы ассетов: `static/asset-kinds.js` (`window.AssetKinds`) — роли использования (`forUsage`), умолчание и `kindForLayer`; `src/assets.rs` и `src/config.rs` (`KIND_SIZE_CLASS`) — одна строка на новый тип. Клиентские экраны (`app.js`, `table.js`, `sheet.js`, `packs.js`, `modules.js`) переведены на реестр.
+- Классы-заклинатели: `static/class-rules.js` (`window.ClassRules`) — RU-имена, заклинатель, режим старта и подготовки по редакции. Блок `data.caster` в записи класса задаёт правило без JS; без него действует таблица SRD. `levelup.js`, `character-builder.js`, `builder-dialog.js` используют слой.
+- Не сделано: расы, особенности классов, подклассы, `multiclassReq`, `CLASS_COLOR` остаются в коде (см. `docs/hardcode-audit.md`). Rust не собирался в этой среде.
+
 ### Хардкод: лимиты, переменные модулей, прогрессия из узла
 - `config.rs`: `KIND_SIZE_CLASS` задаёт лимит размера по типу ассета; новый тип — строка в таблице и в `ASSET_KINDS`.
 - `modules.js`: производные переменные (`@atk`, `@dc`, …) заданы формулами в `DERIVED_VARS`; `Formulas.evaluate` принимает набор имён (`allowed`).
 - Прогрессия класса читается из узла `rule.class_progression` (таблица по редакции через `condition.edition`); `Mechanics.classProgression`.
 - Редактор: провод, брошенный подключённым входом на пустое место, удаляется; в статусной строке показывается незавершённость графа (не блокирует связи).
-- Не сделано: правила подготовленных заклинаний, подклассов и боевых стилей в `levelup.js`/`character-builder.js` — см. `docs/hardcode-audit.md`.
+- Не сделано: подклассы и боевые стили в `levelup.js`/`character-builder.js` — см. `docs/hardcode-audit.md`. Правила заклинателей вынесены в `class-rules.js` (см. ниже).
 
 ### Редактор нод: холст и связи (blender-like)
 - Реестр узлов вынесен в `static/node-registry.js` (`window.NodeRegistry`): типы, входы/выходы, настройки по умолчанию, категории меню и `sameType`. Новый узел — строка в `NODE_DEFS` и обработчик движка.

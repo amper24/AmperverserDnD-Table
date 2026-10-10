@@ -23,6 +23,7 @@ ctx.window.SKILLS = [
 ];
 ctx.SKILLS = ctx.window.SKILLS;
 ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
+vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 // Значения приходят из песочницы vm — сравниваем структуру, а не прототипы другого контекста.
