@@ -239,7 +239,7 @@ window.LevelUp = (() => {
       spells.cantrips = Math.max(0, after.cantrips - (before?.cantrips || 0));
       if (after.known !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.known - (before?.known || 0)); }
       else if (edition === '2024' && (window.ClassRules.isPicker(entry, edition) || window.ClassRules.casterLevel(entry, edition) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
-      else if (window.ClassRules.startMode(entry, edition) === 'book') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
+      else if (window.ClassRules.startMode(entry, edition) === 'book') { const book = window.ClassRules.startBook(entry, edition); spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (Number(isNew ? book?.start : book?.per_level) || 0) : 0; }
       else if (after.prepared !== null) spells.mode = 'prepared';
       if (spells.mode === 'known' && from > 0 && after.maxSpellLevel > 0) spells.swap = 1;
       if (feats.some(f => hasFeatureKind(f.name, 'secrets', edition))) spells.secrets = 2;

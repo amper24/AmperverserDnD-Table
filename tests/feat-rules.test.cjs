@@ -17,7 +17,7 @@ const at = (to, features = []) => ({ total: { to }, features });
 
 test('наборы черт есть для обеих редакций, правила читаются по редакции записи', () => {
   assert.equal(ctx.window.Presets.items('feat_rules', '2014').length, 1);
-  assert.equal(ctx.window.Presets.items('feat_rules', '2024').length, 13);
+  assert.equal(ctx.window.Presets.items('feat_rules', '2024').length, 14);
 });
 
 test('группы стилей боя и эпических даров совпадают с набором', () => {

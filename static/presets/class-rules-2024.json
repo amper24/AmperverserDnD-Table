@@ -90,7 +90,8 @@
         "color": "#e5c76b",
         "caster": {
           "level": "full",
-          "start": "prepared"
+          "start": "prepared",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -139,7 +140,8 @@
         "color": "#6fae4a",
         "caster": {
           "level": "full",
-          "start": "prepared"
+          "start": "prepared",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -288,7 +290,8 @@
         "color": "#e2b84a",
         "caster": {
           "level": "half",
-          "start": "prepared"
+          "start": "prepared",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -337,7 +340,8 @@
         "caster": {
           "level": "half",
           "picker": true,
-          "start": "prepared"
+          "start": "prepared",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -471,7 +475,12 @@
         "color": "#4c7be0",
         "caster": {
           "level": "full",
-          "start": "book"
+          "start": "book",
+          "book": {
+            "start": 6,
+            "per_level": 2
+          },
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [

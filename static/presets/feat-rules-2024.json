@@ -269,6 +269,47 @@
           "level": 19
         }
       }
+    },
+    {
+      "id": "magic-initiate",
+      "table": {
+        "name_en": "Magic Initiate",
+        "spell_choice": {
+          "cantrips": 2,
+          "first_level": 1,
+          "abilities": [
+            "int",
+            "wis",
+            "cha"
+          ],
+          "lists": [
+            {
+              "id": "cleric",
+              "ru": "Жрец",
+              "aliases": [
+                "жрец",
+                "cleric"
+              ]
+            },
+            {
+              "id": "druid",
+              "ru": "Друид",
+              "aliases": [
+                "друид",
+                "druid"
+              ]
+            },
+            {
+              "id": "wizard",
+              "ru": "Волшебник",
+              "aliases": [
+                "волшебник",
+                "wizard"
+              ]
+            }
+          ]
+        }
+      }
     }
   ]
 }

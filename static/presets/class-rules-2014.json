@@ -65,7 +65,8 @@
         "caster": {
           "level": "full",
           "start": "prepared",
-          "prepared": "level"
+          "prepared": "level",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -74,7 +75,16 @@
             ]
           ],
           "proficiencies": "лёгкие и средние доспехи, щиты"
-        }
+        },
+        "subclass_grants": [
+          {
+            "subclass": "Life",
+            "label": "Домен жизни",
+            "proficiencies": [
+              "Тяжёлые доспехи"
+            ]
+          }
+        ]
       }
     },
     {
@@ -85,7 +95,8 @@
         "caster": {
           "level": "full",
           "start": "prepared",
-          "prepared": "level"
+          "prepared": "level",
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [
@@ -459,7 +470,12 @@
         "caster": {
           "level": "full",
           "start": "book",
-          "prepared": "level"
+          "prepared": "level",
+          "book": {
+            "start": 6,
+            "per_level": 2
+          },
+          "start_prepared": "level"
         },
         "multiclass": {
           "requirements": [

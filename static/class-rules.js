@@ -47,5 +47,9 @@ window.ClassRules = (() => {
     startMode: (entry, edition) => byEdition(casterOf(entry, edition).start, edition),
     // 'level' | 'half' | '' — формула числа подготовленных заклинаний в данной редакции.
     preparedFormula: (entry, edition) => byEdition(casterOf(entry, edition).prepared, edition),
+    // Книга заклинаний: { start, per_level } — заклинаний при создании и за повышение уровня (набор уже по редакции).
+    startBook: (entry, edition) => casterOf(entry, edition).book || null,
+    // Формула подготовленных заклинаний на 1 уровне ('level' — уровень + модификатор, не меньше 1), набор по редакции.
+    startPrepared: (entry, edition) => casterOf(entry, edition).start_prepared || '',
   };
 })();

@@ -560,8 +560,11 @@ window.CharacterBuilder = (() => {
     const mod = modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10);
     let spells = 0, mode = 'none';
     const start = window.ClassRules.startMode(classEntry, edition);
-    if (start === 'book') { spells = 6; mode = 'book'; } // стартовая книга заклинаний
-    else if (start === 'prepared') { spells = Math.max(1, 1 + mod); mode = 'prepared'; }
+    // Размер книги и формула подготовки — из набора class_rules (caster.book, caster.start_prepared).
+    const book = window.ClassRules.startBook(classEntry, edition);
+    const startPrepared = window.ClassRules.startPrepared(classEntry, edition) === 'level' ? Math.max(1, 1 + mod) : 0;
+    if (start === 'book') { spells = Number(book?.start) || 0; mode = 'book'; } // стартовая книга заклинаний
+    else if (start === 'prepared') { spells = startPrepared; mode = 'prepared'; }
     else if (row.known !== null && row.known !== undefined) { spells = Math.max(0, Number(row.known) || 0); mode = spells ? 'known' : 'none'; }
     else if (row.prepared !== null && row.prepared !== undefined) { spells = Math.max(0, Number(row.prepared) || 0); mode = spells ? 'known' : 'none'; }
     const slots = {};
@@ -571,7 +574,7 @@ window.CharacterBuilder = (() => {
       slots[level] = { max: current + Number(row.pact_slots), used: 0 };
     }
     const extraCantrip = edition === '2024' ? classExtraCantrips(edition, slug, ruleChoices) : 0;
-    const preparedCount = window.ClassRules.startMode(classEntry, edition) === 'book' ? Math.max(1, 1 + modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10)) : null;
+    const preparedCount = start === 'book' && startPrepared ? startPrepared : null;
     return { cantrips: Math.max(0, Number(row.cantrips) || 0) + extraCantrip, spells, mode, preparedCount, slots, maxLevel: Math.max(0, ...(row.slots || []).map((n, i) => Number(n) > 0 ? i + 1 : 0), Number(row.pact_level) || 0) };
   }
   /// Навыки, которые дают модули, и выбор класса: сколько выбрать и что уже занято.
@@ -616,6 +619,14 @@ window.CharacterBuilder = (() => {
   // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт
   // берутся из справочника по фильтру набора, поэтому кастомная раса описывается только данными.
   // Выборы класса — набор class_rules (поле choices) по редакции. Ключи совпадают с draft.ruleChoices.
+  // Черта с выбором заклинаний (Посвящённый в магию): правило spell_choice из набора feat_rules, по name_en.
+  function spellChoiceOf(feat, edition) {
+    const name = normalizeName(feat?.data?.name_en || '');
+    if (!name) return null;
+    const item = (window.Presets?.items('feat_rules', String(edition || '2014')) || [])
+      .find(r => r.table?.spell_choice && normalizeName(r.table.name_en || '') === name);
+    return item ? item.table.spell_choice : null;
+  }
   function classChoiceRules(edition, slug) { return window.Presets?.classRules(edition, slug)?.choices || []; }
   function classChoices(draft, available) {
     const entry = draft.selected?.class;
@@ -836,8 +847,10 @@ window.CharacterBuilder = (() => {
       }
     }
     applyClassChoices(s, draft, classEntry);
-    if (s.edition === '2014' && classSlug === 'cleric' && /life/i.test(String(draft.selected.subclass?.data?.name_en || '')))
-      appendProficiency(s, 'Домен жизни', ['Тяжёлые доспехи']);
+    // Владения подкласса задаёт набор class_rules (subclass_grants): подкласс по name_en, без проверки имени в коде.
+    const subclassEn = String(draft.selected.subclass?.data?.name_en || '').toLowerCase();
+    for (const grant of window.Presets?.classRules(s.edition, classSlug)?.subclass_grants || [])
+      if (subclassEn && subclassEn === String(grant.subclass || '').toLowerCase()) appendProficiency(s, grant.label, grant.proficiencies || []);
     if (classSlug === 'rogue') appendProficiency(s, 'Инструменты класса', ['Воровские инструменты']);
     const featName = String(draft.selected.background?.data?.feat || '').trim();
     if (featName && !draft.selected.feat) feature(s, featName, 'Черта предыстории указана текстом; запись черты не найдена в справочнике.', draft.selected.background.name);
@@ -1008,5 +1021,5 @@ window.CharacterBuilder = (() => {
   }
   return { register, build, raceChoices, raceChoiceProblem, classChoices, classChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
     parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, startingInventory, packContents, skillsState, passiveSkills, itemKind, PICK_FILTERS, SKILL_SOURCES, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
-    normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, CLASS_SLUGS_RU, POINT_BUY_COST };
+    normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, spellChoiceOf, CLASS_SLUGS_RU, POINT_BUY_COST };
 })();

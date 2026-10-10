@@ -244,30 +244,31 @@ window.newCharacterDialog = async function (defaults = {}) {
     const raceFeatIds = B.raceChoices(draft).filter(c => c.kind === 'feat').map(c => draft.ruleChoices?.[c.key]);
     const extra = (draft.catalog || []).find(entry => entry.category === 'feat' && raceFeatIds.includes(entry.id));
     const candidates = [draft.selected.feat, extra].filter(Boolean);
-    return candidates.find(feat => normalizeName(feat.name || '') === normalizeName('Посвящённый в магию')
-      || normalizeName(feat.data?.name_en || '') === normalizeName('Magic Initiate')) || null;
+    return candidates.find(feat => B.spellChoiceOf(feat, draft.edition)) || null;
   }
   function magicInitiateListRestriction(feat) {
     const suffix = String(feat?.data?.background_feat || '').match(/\(([^()]*)\)\s*$/)?.[1] || '';
-    const normalized = normalizeName(suffix);
-    return ({ 'жрец': 'cleric', 'cleric': 'cleric', 'друид': 'druid', 'druid': 'druid', 'волшебник': 'wizard', 'wizard': 'wizard' })[normalized] || '';
+    const normalized = normalizeName(suffix), rule = B.spellChoiceOf(feat, draft.edition);
+    return rule?.lists?.find(item => (item.aliases || []).map(normalizeName).includes(normalized))?.id || '';
   }
   function magicInitiateProblem() {
     const feat = magicInitiateFeat();
     if (!feat) return '';
     const choice = draft.ruleChoices?.magicInitiate || {}, spells = draft.catalog || [];
+    const rule = B.spellChoiceOf(feat, draft.edition), need = Number(rule.cantrips) || 0;
     const requiredList = magicInitiateListRestriction(feat);
-    const list = requiredList || (['cleric', 'druid', 'wizard'].includes(choice.list) ? choice.list : '');
+    const list = requiredList || (rule.lists.some(item => item.id === choice.list) ? choice.list : '');
     const cantrips = (choice.cantrips || []).filter(id => spells.some(e => e.id === id && e.category === 'spell' && Number(e.data?.level) === 0 && spellAllowedForList(e, list)));
     const first = spells.some(e => e.id === choice.firstLevel && e.category === 'spell' && Number(e.data?.level) === 1 && spellAllowedForList(e, list));
-    return !list || !['int', 'wis', 'cha'].includes(choice.ability) || cantrips.length !== 2 || new Set(cantrips).size !== 2 || !first
-      ? '«Посвящённый в магию»: выберите список, заклинательную характеристику, два заговора и одно заклинание 1-го уровня.' : '';
+    return !list || !(rule.abilities || []).includes(choice.ability) || cantrips.length !== need || new Set(cantrips).size !== need || !first
+      ? `«${feat.name}»: выберите список, заклинательную характеристику, ${need} заговора и заклинание 1-го уровня.` : '';
   }
   function magicInitiateSection() {
     const feat = magicInitiateFeat();
     if (!feat) return null;
     const choice = draft.ruleChoices.magicInitiate || (draft.ruleChoices.magicInitiate = {});
-    const lists = [{ id: 'cleric', name: 'Жрец' }, { id: 'druid', name: 'Друид' }, { id: 'wizard', name: 'Волшебник' }];
+    const rule = B.spellChoiceOf(feat, draft.edition), need = Number(rule.cantrips) || 0;
+    const lists = rule.lists.map(item => ({ id: item.id, name: item.ru }));
     const requiredList = magicInitiateListRestriction(feat);
     if (requiredList && choice.list !== requiredList) { choice.list = requiredList; choice.cantrips = []; choice.firstLevel = ''; }
     const list = lists.some(x => x.id === choice.list) ? choice.list : '';
@@ -275,20 +276,20 @@ window.newCharacterDialog = async function (defaults = {}) {
     const available = (level) => entries.filter(e => e.category === 'spell' && Number(e.data?.level) === level && spellAllowedForList(e, list));
     const cantrips = available(0), firstLevels = available(1), picked = choice.cantrips || [];
     return el('section', { class: 'builder-panel builder-magic-initiate' },
-      el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, 'Посвящённый в магию · выборы черты'), el('small', { class: 'muted' }, requiredList ? `Список задан предысторией: ${lists.find(item => item.id === requiredList)?.name}. Выберите два заговора, заклинание 1-го уровня и характеристику.` : 'Выберите один список, два заговора, заклинание 1-го уровня и характеристику черты.')),
+      el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, 'Посвящённый в магию · выборы черты'), el('small', { class: 'muted' }, requiredList ? `Список задан предысторией: ${lists.find(item => item.id === requiredList)?.name}. Выберите ${need} заговора, заклинание 1-го уровня и характеристику.` : `Выберите один список, ${need} заговора, заклинание 1-го уровня и характеристику черты.`)),
         el('span', { class: 'builder-counter' + (!magicInitiateProblem() ? ' ok' : ' flag') }, !magicInitiateProblem() ? 'готово' : 'нужно выбрать')),
       el('div', { class: 'builder-choice-options' }, ...listOptions.map(item => el('label', { class: 'builder-choice-option' + (choice.list === item.id ? ' on' : '') },
         el('input', { type: 'radio', name: 'magic-initiate-list', checked: choice.list === item.id ? '' : null, onchange: () => { choice.list = item.id; choice.cantrips = []; choice.firstLevel = ''; render(); } }), el('span', {}, item.name)))),
       field('Заклинательная характеристика', el('select', { onchange: e => { choice.ability = e.target.value; render(); } },
-        el('option', { value: '' }, 'Выберите…'), ...[['int','Интеллект'],['wis','Мудрость'],['cha','Харизма']].map(([id,name]) => el('option', { value: id, selected: choice.ability === id ? '' : null }, name)))),
+        el('option', { value: '' }, 'Выберите…'), ...[['int','Интеллект'],['wis','Мудрость'],['cha','Харизма']].filter(([id]) => (rule.abilities || []).includes(id)).map(([id,name]) => el('option', { value: id, selected: choice.ability === id ? '' : null }, name)))),
       list ? el('div', {},
-        el('div', { class: 'builder-panel-head' }, el('b', {}, 'Заговоры'), el('span', { class: 'builder-counter' + (picked.length === 2 ? ' ok' : ' flag') }, `${picked.length} из 2`)),
+        el('div', { class: 'builder-panel-head' }, el('b', {}, 'Заговоры'), el('span', { class: 'builder-counter' + (picked.length === need ? ' ok' : ' flag') }, `${picked.length} из ${need}`)),
         el('div', { class: 'builder-choice-options' }, ...cantrips.map(e => {
           const on = picked.includes(e.id);
           return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
-            el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && picked.length >= 2 ? '' : null, onchange: ev => {
+            el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && picked.length >= need ? '' : null, onchange: ev => {
               const next = picked.filter(id => id !== e.id); if (ev.target.checked) next.push(e.id);
-              choice.cantrips = next.slice(0, 2); render();
+              choice.cantrips = next.slice(0, need); render();
             } }), el('span', {}, el('b', {}, e.name), el('small', { class: 'muted' }, e.source)));
         })),
         field('Заклинание 1-го уровня', el('select', { onchange: e => { choice.firstLevel = e.target.value; render(); } },

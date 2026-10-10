@@ -87,3 +87,28 @@ test('мастерство оружия 2024 и экспертиза плута 
   assert.equal(B.classChoiceProblem(rogue, avail), null);
   assert.match(B.classChoiceProblem({ ...rogue, ruleChoices: { expertise: ['acrobatics'] } }, avail), /экспертиз/i);
 });
+
+test('домен жизни 2014: тяжёлые доспехи из subclass_grants набора, другой домен — нет', () => {
+  const cleric = seed('2014').find(e => e.category === 'class' && e.slug === 'srd14-cleric');
+  const life = cleric.data.subclasses.find(s => s.name_en === 'Life');
+  const war = { name: 'Домен Обмана', name_en: 'Trickery' };
+  assert.ok(life, 'домен жизни есть в сиде');
+  const build = sub => {
+    const d = draft('2014', 'cleric');
+    d.selected.subclass = { name: sub.name, data: sub };
+    return B.build(d);
+  };
+  assert.match(build(life).proficiencies, /Тяжёлые доспехи/);
+  assert.doesNotMatch(build(war).proficiencies, /Тяжёлые доспехи/);
+});
+
+test('Посвящённый в магию: правило выбора заклинаний из набора feat_rules (2024)', () => {
+  const feat = { name: 'Посвящённый в магию', data: { name_en: 'Magic Initiate' } };
+  const rule = B.spellChoiceOf(feat, '2024');
+  assert.equal(rule.cantrips, 2);
+  assert.equal(rule.first_level, 1);
+  assert.deepEqual(rule.abilities, ['int', 'wis', 'cha']);
+  assert.deepEqual(rule.lists.map(l => l.id), ['cleric', 'druid', 'wizard']);
+  assert.equal(B.spellChoiceOf({ name: 'Бдительность', data: { name_en: 'Alert' } }, '2024'), null);
+  assert.equal(B.spellChoiceOf(feat, '2014'), null);
+});
