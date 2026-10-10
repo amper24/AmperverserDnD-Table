@@ -7,7 +7,7 @@
 - Новый тип узла `rule.class_rules` (таблица без `ru`, `color`, `legacy_unarmored`); `Mechanics.classRules(mechanics, edition)`. SRD-классы несут узел (`tools/srd/add_class_progression_nodes.cjs`, идемпотентно).
 - Потребители: `static/class-rules.js`, `static/levelup.js`, `static/character-builder.js`, `static/formulas.js` (`legacyUnarmored(slug)`). Удалены `MC_REQ`, `MC_PROF`, `CLASS_COLOR`, `SRD_CASTER`, `LEGACY_UNARMORED`, `weaponMasteryCount` с таблицей.
 - Тесты: `tests/class-rules-node.test.cjs`; `class-rules`, `levelup`, `formulas`, `character-builder-equipment` загружают наборы.
-- Ограничение: в уже установленных базах узел `rule.class_rules` не появляется сам (seed не обновляет записи с правками); наборы работают как запас.
+- Миграция уже установленных баз: записи классов, не менявшиеся с прежней сборки, получают новые узлы при запуске (`data_seed/previous_shipped.json`, `tools/srd/previous_shipped.py`, `seed.rs`: `ReplaceShipped`). Записи с правками не трогаются; для них работает набор.
 
 ### Параметры узлов на карточке
 - Число, выбор, текст, кость и характеристика редактируются прямо на карточке узла на холсте (`static/node-params-form.js`). Pointer-события полей не двигают узел и не рвут провода; боковая панель остаётся для деталей и ошибок.
