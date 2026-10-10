@@ -105,6 +105,9 @@ def main():
             e['data']['mechanics'] = tmp['data']['mechanics']
             print(e['slug'], 'ok', len(new))
     open(a.file, 'w', encoding='utf-8').write(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
+    # MC.convert даёт блоки v1; переводим в граф v2 тем же конвертером, что и build_srd.py.
+    import subprocess
+    subprocess.run(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'graph_convert.cjs'), a.file, a.file], check=True)
 
 
 if __name__ == '__main__':

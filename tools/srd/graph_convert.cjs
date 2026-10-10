@@ -27,6 +27,7 @@ async function convert(rows) {
         const v2 = Mechanics.migrate({ mechanics: clone(v1) }, category);
         const problem = Mechanics.validate(v2);
         if (problem) stats.invalid.push(`${slug} ${label}: ${problem}`);
+        if (v2.origin === 'srd-blocks-v1') v2.origin = 'srd-graph-v2';
         const before = (v1.programs || []).map(p => (p.blocks || []).length).reduce((a, b) => a + b, 0);
         const after = (Mechanics.toLegacy(v2).programs || []).map(p => (p.blocks || []).length).reduce((a, b) => a + b, 0);
         if (before !== after) stats.lossy.push(`${slug} ${label}: блоков ${before} → ${after}`);
