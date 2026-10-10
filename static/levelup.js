@@ -78,8 +78,10 @@ window.LevelUp = (() => {
     return { ok: !missing.length, missing };
   }
 
+  // Порядок: данные записи → узел rule.class_progression в графе записи → встроенная таблица SRD (запасной вариант).
   function progression(entry, edition) {
-    return entry?.data?.progression || (typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.[slugOf(entry)] : null) || null;
+    return entry?.data?.progression || (typeof window !== 'undefined' ? window.Mechanics?.classProgression?.(entry?.data?.mechanics, edition) : null)
+      || (typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.[slugOf(entry)] : null) || null;
   }
   /// Заклинательные показатели класса на уровне класса: заговоры, известные/подготовленные, ячейки, магия договора.
   function spellStats(entry, edition, level, castMod = 0) {
@@ -115,6 +117,7 @@ window.LevelUp = (() => {
         const third = /eldritch knight|arcane trickster|мистический рыцарь|мастер иллюзий|ловкач/i.test(`${x.c.subclass} ${x.entry.data?.subclasses?.find?.(s => s.name === x.c.subclass)?.name_en || ''}`);
         casterLevel += FULL_CASTERS.includes(x.slug) ? x.c.level : HALF_CASTERS.includes(x.slug) ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
       }
+      // Общая таблица мультикласса заклинателей (SRD), не таблица отдельного класса.
       const wiz = typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.wizard : null;
       slots = Array.from({ length: 9 }, (_, i) => Number(wiz?.levels?.[String(Math.min(20, Math.max(1, casterLevel)))]?.slots?.[i]) || 0);
     }

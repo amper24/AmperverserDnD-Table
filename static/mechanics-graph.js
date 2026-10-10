@@ -878,6 +878,12 @@
     wouldCycle,
     graphPreview: previewGraph,
     evaluateGraph,
+    // Таблица развития класса из узла rule.class_progression (с учётом редакции); null, если узла нет.
+    classProgression(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.class_progression || null);
+    },
     applyGraphRules,
     normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },
     validate,

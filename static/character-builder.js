@@ -549,7 +549,8 @@ window.CharacterBuilder = (() => {
   // ---------- Заклинания: лимиты класса на 1 уровне ----------
   function spellLimits(classEntry, edition, abilities = {}, ruleChoices = {}) {
     const slug = String(classEntry?.data?.name_en || '').toLowerCase() || CLASS_SLUGS_RU[classEntry?.name] || '';
-    const row = window.CLASS_PROGRESSION?.[edition]?.[slug]?.levels?.['1'];
+    const prog = classEntry?.data?.progression || window.Mechanics?.classProgression?.(classEntry?.data?.mechanics, edition) || window.CLASS_PROGRESSION?.[edition]?.[slug];
+    const row = prog?.levels?.['1'];
     if (!row) return null; // homebrew-класс без таблицы развития остаётся решением мастера
     const mod = modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10);
     let spells = 0, mode = 'none';
