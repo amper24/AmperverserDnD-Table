@@ -56,7 +56,7 @@ const assert = require('node:assert/strict');
     // Existing entry points used by items, spells, monsters, races and classes all create the node editor.
     for (const category of ['spell', 'monster', 'race', 'class', 'background']) {
       await page.evaluate(cat => {
-        const pending = cat === 'spell' ? Modules.editSpell() : Modules.editGeneric(null, cat);
+        const pending = cat === 'spell' ? Modules.editSpell(null, { noPresets: true }) : Modules.editGeneric(null, cat);
         pending.then(value => { window.lastEditorResult = value; });
       }, category);
       await page.locator('.node-editor').waitFor();

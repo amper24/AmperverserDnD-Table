@@ -23,6 +23,22 @@ window.Modules = (function () {
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
   const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
+  // Основы для создания записи (шаг «Что создаём?»). Поля — стартовые значения, всё редактируется.
+  const ITEM_PRESETS = [
+    { id: 'weapon', name: 'Оружие', hint: 'Клинок, лук или посох: урон и тип атаки', fields: { type: 'weapon', name: 'Оружие' } },
+    { id: 'armor', name: 'Доспех или щит', hint: 'Защита и класс доспеха', fields: { type: 'armor', name: 'Доспех' } },
+    { id: 'consumable', name: 'Зелье или свиток', hint: 'Одноразовый эффект, расходуется при использовании', fields: { type: 'consumable', name: 'Зелье' } },
+    { id: 'magic', name: 'Магический предмет', hint: 'Требует настройки, часто с зарядами', fields: { type: 'magic', name: 'Магический предмет', attunement: true } },
+    { id: 'gear', name: 'Снаряжение', hint: 'Обычная вещь без механики: верёвка, факел, инструмент', fields: { type: 'gear', name: 'Снаряжение' } },
+    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
+  ];
+  const SPELL_PRESETS = [
+    { id: 'cantrip', name: 'Заговор', hint: 'Не тратит ячейки, работает на любом уровне', fields: { level: 0, cast_cost: 'free', name: 'Заговор' } },
+    { id: 'spell1', name: 'Заклинание 1 круга', hint: 'Тратит ячейку своего круга или выше', fields: { level: 1, name: 'Заклинание' } },
+    { id: 'spell3', name: 'Заклинание 3 круга', hint: 'Для средних по силе эффектов', fields: { level: 3, name: 'Заклинание' } },
+    { id: 'ritual', name: 'Ритуал', hint: 'Можно сотворить без ячейки за дополнительное время', fields: { level: 1, ritual: true, name: 'Ритуал' } },
+    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
+  ];
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
   // ---------- модель ----------
@@ -370,29 +386,48 @@ window.Modules = (function () {
   function descEditor(doc, key='desc') {
     return el('div', {}, el('textarea', {class:'description-only', rows:6, oninput:e=>doc[key]=e.target.value}, doc[key]||''), el('p',{class:'muted small'},'Художественное описание и пояснения. Броски, расходы и эффекты задаются отдельно — блоками ниже.'));
   }
-  function editItem(item, opts = {}) {
+  // Раздел формы: сворачиваемый блок. Пустые разделы по умолчанию можно свернуть, чтобы не мешать.
+  const section = (title, open, ...nodes) => el('details', { class: 'form-section', open: open ? '' : null }, el('summary', {}, title), el('div', { class: 'form-section-body' }, ...nodes));
+  // Выбор основы для новой записи: поля заполняются, всё можно поправить в форме.
+  function pickPreset(title, presets) {
+    let chosen = presets[0];
+    const group = 'preset-' + uid();
+    const tiles = el('div', { class: 'preset-grid', role: 'radiogroup' }, ...presets.map((p, i) => el('label', { class: 'preset-tile' },
+      el('input', { type: 'radio', name: group, value: p.id, checked: i === 0 ? '' : null, onchange: () => { chosen = p; } }),
+      el('b', {}, p.name), el('span', { class: 'muted small' }, p.hint))));
+    return modal(title, el('div', {}, el('p', { class: 'muted small' }, 'Выберите основу. Поля заполнятся сами, их можно поменять на следующем шаге.'), tiles),
+      [{ label: 'Далее', cls: 'primary', fn: () => chosen }], { wide: true });
+  }
+  async function editItem(item, opts = {}) {
+    const fresh = !item;
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', ITEM_PRESETS); if (!preset) return null; item = newItem(preset.fields); }
     const it = Equipment.normalize(JSON.parse(JSON.stringify(item || newItem())));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const form = el('div', { class: 'editor-form' },
-      el('div', { class: 'row' }, f('Название', el('input', { value: it.name, oninput: e => it.name = e.target.value })), f('Метка (1–2 символа)', el('input', { value: it.icon || '', placeholder: '—', maxlength: 2, style: 'width:70px', oninput: e => it.icon = e.target.value }))),
-      el('div', { class: 'row' },
-        f('Тип', el('select', { onchange: e => it.type = e.target.value }, ...Object.entries(ITEM_TYPES).map(([k, v]) => el('option', { value: k, selected: it.type === k ? '' : null }, v)))),
-        f('Редкость', el('select', { onchange: e => it.rarity = e.target.value }, ...RARITIES.map(r => el('option', { value: r, selected: it.rarity === r ? '' : null }, r)))),
-        f('Кол-во', el('input', { type: 'number', min:0,max:1000000,step:1, value: it.qty, oninput: e => it.qty = +e.target.value })),
-        f('Вес (фнт)', el('input', { type: 'number', step: '0.1', value: it.weight, oninput: e => it.weight = +e.target.value })),
-        f('Цена', el('input', { value: it.cost || '', placeholder: '15 зм', oninput: e => it.cost = e.target.value }))),
-      el('div', { class: 'row' },
-        f('Заряды стопки (макс)', el('input', { type: 'number', value: it.charges?.max ?? '', placeholder: '—', oninput: e => { const v = +e.target.value; it.charges = v > 0 ? { cur: Math.min(it.charges?.cur ?? v, v), max: v, recharge: it.charges?.recharge || '' } : null; } })),
-        f('Восстановление', el('input', { value: it.charges?.recharge || '', placeholder: 'на рассвете 1d6+1', oninput: e => { if (it.charges) it.charges.recharge = e.target.value; } })),
-        f('Теги', el('input', { value: (it.tags || []).join(', '), oninput: e => it.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean) })),
-        el('label', { style: 'align-self:end;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: it.attunement ? '' : null, onchange: e => it.attunement = e.target.checked }), ' Требует настройки')),
-      visualsRow(it, { tokenLabel: 'Токен на карте (лут / предмет на столе)' }),
-      f('Описание', descEditor(it)),
-      Equipment.editor(it, opts.inventory),
-      Mechanics.editor(it, { category: 'item', inventory: opts.inventory }));
-    return modal(opts.title || (item ? 'Редактировать предмет' : 'Новый предмет'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => { const error = Equipment.validate(it) || Mechanics.validate(it.mechanics); if (error) { toast(error); return false; } return it; } }], { wide: true });
+      section('Основное', true,
+        el('div', { class: 'row' }, f('Название', el('input', { value: it.name, oninput: e => it.name = e.target.value })), f('Метка (1–2 символа)', el('input', { value: it.icon || '', placeholder: '—', maxlength: 2, style: 'width:70px', oninput: e => it.icon = e.target.value }))),
+        el('div', { class: 'row' },
+          f('Тип', el('select', { onchange: e => it.type = e.target.value }, ...Object.entries(ITEM_TYPES).map(([k, v]) => el('option', { value: k, selected: it.type === k ? '' : null }, v)))),
+          f('Редкость', el('select', { onchange: e => it.rarity = e.target.value }, ...RARITIES.map(r => el('option', { value: r, selected: it.rarity === r ? '' : null }, r)))),
+          f('Кол-во', el('input', { type: 'number', min: 0, max: 1000000, step: 1, value: it.qty, oninput: e => it.qty = +e.target.value })),
+          f('Вес (фнт)', el('input', { type: 'number', step: '0.1', value: it.weight, oninput: e => it.weight = +e.target.value })),
+          f('Цена', el('input', { value: it.cost || '', placeholder: '15 зм', oninput: e => it.cost = e.target.value }))),
+        el('div', { class: 'row' },
+          f('Теги', el('input', { value: (it.tags || []).join(', '), placeholder: 'через запятую', oninput: e => it.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean) })),
+          el('label', { style: 'align-self:end;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: it.attunement ? '' : null, onchange: e => it.attunement = e.target.checked }), ' Требует настройки'))),
+      section('Заряды', !!it.charges, el('p', { class: 'muted small' }, 'Заряды на весь стак, например 5 зарядов у жезла. Восстановление — текстом, как в книге правил.'),
+        el('div', { class: 'row' },
+          f('Заряды стопки (макс)', el('input', { type: 'number', value: it.charges?.max ?? '', placeholder: '—', oninput: e => { const v = +e.target.value; it.charges = v > 0 ? { cur: Math.min(it.charges?.cur ?? v, v), max: v, recharge: it.charges?.recharge || '' } : null; } })),
+          f('Восстановление', el('input', { value: it.charges?.recharge || '', placeholder: 'на рассвете 1d6+1', oninput: e => { if (it.charges) it.charges.recharge = e.target.value; } })))),
+      section('Описание', true, f('Описание', descEditor(it))),
+      section('Внешний вид на карте', !!(it.asset_id || it.token_asset_id), visualsRow(it, { tokenLabel: 'Токен на карте (лут / предмет на столе)' })),
+      section('Снаряжение', true, Equipment.editor(it, opts.inventory)),
+      section('Механика', true, Mechanics.editor(it, { category: 'item', inventory: opts.inventory })));
+    return modal(opts.title || (fresh ? 'Новый предмет' : 'Редактировать предмет'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => { const error = Equipment.validate(it) || Mechanics.validate(it.mechanics); if (error) { toast(error); return false; } return it; } }], { wide: true });
   }
-  function editSpell(spell, opts = {}) {
+  async function editSpell(spell, opts = {}) {
+    const fresh = !spell;
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', SPELL_PRESETS); if (!preset) return null; spell = newSpell(preset.fields); }
     const sp = JSON.parse(JSON.stringify(spell || newSpell()));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const cost = el('select', {}, ...[['slot', 'Ячейка заклинания по уровню'], ['free', 'Без расхода'], ['uses', 'Заряды заклинания']].map(([value, label]) => el('option', { value, selected: (sp.cast_cost || (Number(sp.level) === 0 ? 'free' : 'slot')) === value ? '' : null }, label)));
@@ -402,17 +437,19 @@ window.Modules = (function () {
     const recharge = el('select', {}, ...[['', 'не восстанавливается'], ['short', 'короткий отдых'], ['long', 'долгий отдых'], ['dawn', 'на рассвете']].map(([value, label]) => el('option', { value, selected: (sp.uses?.recharge || '') === value ? '' : null }, label)));
     const level = el('select', { onchange: e => { const old = Number(sp.level), next = +e.target.value; sp.level = next; if (next === 0 && cost.value === 'slot') cost.value = 'free'; else if (old === 0 && next > 0 && cost.value === 'free') cost.value = 'slot'; } }, ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => el('option', { value: l, selected: sp.level === l ? '' : null }, l === 0 ? 'Заговор' : l)));
     const form = el('div', { class: 'editor-form' },
-      el('div', { class: 'row' }, f('Название', el('input', { value: sp.name, oninput: e => sp.name = e.target.value })), f('Круг', level),
-        f('Школа', el('select', { onchange: e => sp.school = e.target.value }, ...SCHOOLS.map(s => el('option', { value: s, selected: sp.school === s ? '' : null }, s))))),
-      el('div', { class: 'row' }, f('Время', el('input', { value: sp.casting_time, oninput: e => sp.casting_time = e.target.value })), f('Дистанция', el('input', { value: sp.range, oninput: e => sp.range = e.target.value })), f('Компоненты', el('input', { value: sp.components, oninput: e => sp.components = e.target.value })), f('Длительность', el('input', { value: sp.duration, oninput: e => sp.duration = e.target.value }))),
-      el('div', { class: 'row' }, f('Расход при сотворении', cost), f('Расход зарядов', useCost), f('Заряды макс.', usesMax), f('Текущие заряды', usesCur), f('Восстановление', recharge)),
-      el('p', { class: 'muted small' }, 'Обычное заклинание тратит одну ячейку не ниже своего круга; заговоры не тратят ячейки. Заряды — для собственных исключений или особых ресурсов.'),
-      el('div', { class: 'row' }, el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.concentration ? '' : null, onchange: e => sp.concentration = e.target.checked }), ' Концентрация'), el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.ritual ? '' : null, onchange: e => sp.ritual = e.target.checked }), ' Ритуал'),
-        f('Классы', el('input', { value: (sp.classes || []).join(', '), oninput: e => sp.classes = e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))),
-      el('div', { class: 'row' }, visualsRow(sp, { icon: 'star', tokenLabel: 'Токен эффекта на карте (область, призыв)' }), f('Размер эффекта (клеток)', el('input', { type: 'number', min: 1, max: 20, step: 1, value: sp.effect_size || 1, style: 'width:90px', oninput: e => sp.effect_size = Math.max(1, +e.target.value || 1) }))),
-      f('Описание', descEditor(sp)),
-      Mechanics.editor(sp, {category:'spell',inventory:opts.inventory}));
-    return modal(opts.title || (spell ? 'Редактировать заклинание' : 'Новое заклинание'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => {
+      section('Основное', true,
+        el('div', { class: 'row' }, f('Название', el('input', { value: sp.name, oninput: e => sp.name = e.target.value })), f('Круг', level),
+          f('Школа', el('select', { onchange: e => sp.school = e.target.value }, ...SCHOOLS.map(s => el('option', { value: s, selected: sp.school === s ? '' : null }, s))))),
+        el('div', { class: 'row' }, f('Время', el('input', { value: sp.casting_time, oninput: e => sp.casting_time = e.target.value })), f('Дистанция', el('input', { value: sp.range, oninput: e => sp.range = e.target.value })), f('Компоненты', el('input', { value: sp.components, oninput: e => sp.components = e.target.value })), f('Длительность', el('input', { value: sp.duration, oninput: e => sp.duration = e.target.value }))),
+        el('div', { class: 'row' }, el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.concentration ? '' : null, onchange: e => sp.concentration = e.target.checked }), ' Концентрация'), el('label', {}, el('input', { type: 'checkbox', style: 'width:auto', checked: sp.ritual ? '' : null, onchange: e => sp.ritual = e.target.checked }), ' Ритуал'),
+          f('Классы', el('input', { value: (sp.classes || []).join(', '), placeholder: 'через запятую', oninput: e => sp.classes = e.target.value.split(',').map(s => s.trim()).filter(Boolean) })))),
+      section('Расход', true,
+        el('div', { class: 'row' }, f('Расход при сотворении', cost), f('Расход зарядов', useCost), f('Заряды макс.', usesMax), f('Текущие заряды', usesCur), f('Восстановление', recharge)),
+        el('p', { class: 'muted small' }, 'Обычное заклинание тратит одну ячейку не ниже своего круга; заговоры не тратят ячейки. Заряды — для собственных исключений или особых ресурсов.')),
+      section('Описание', true, f('Описание', descEditor(sp))),
+      section('Внешний вид и эффект', !!(sp.asset_id || sp.token_asset_id) || sp.effect_size > 1, el('div', { class: 'row' }, visualsRow(sp, { icon: 'star', tokenLabel: 'Токен эффекта на карте (область, призыв)' }), f('Размер эффекта (клеток)', el('input', { type: 'number', min: 1, max: 20, step: 1, value: sp.effect_size || 1, style: 'width:90px', oninput: e => sp.effect_size = Math.max(1, +e.target.value || 1) })))),
+      section('Механика', true, Mechanics.editor(sp, { category: 'spell', inventory: opts.inventory })));
+    return modal(opts.title || (fresh ? 'Новое заклинание' : 'Редактировать заклинание'), form, [{ label: 'Сохранить', cls: 'primary', fn: () => {
       const error = Mechanics.validate(sp.mechanics); if (error) { toast(error); return false; }
       const max = Number(usesMax.value), current = usesCur.value.trim() === '' ? max : Number(usesCur.value), amount = Number(useCost.value) || 1;
       if (cost.value === 'uses' && (!Number.isInteger(max) || max < 1 || !Number.isInteger(current) || current < 0 || current > max || !Number.isInteger(amount) || amount < 1 || amount > max)) { toast('Для расхода заряда укажите корректные текущие и максимальные значения, а также стоимость применения.'); return false; }

@@ -16,7 +16,7 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
  const saved=await page.evaluate(()=>window.saved);assert.equal(saved.qty,3);const potion=saved.mechanics.programs.find(p=>p.name==='Выпить зелье');assert.deepEqual(potion.blocks.map(b=>b.kind),['consume','heal','grant_item']);assert.equal(potion.blocks[2].amount,2);
  // All constructors share the same canvas, including non-item resource categories.
  for(const category of ['spell','feature','race','class','background','monster','condition','feat','npc','lore']){
-  await page.evaluate(cat=>{const p=cat==='spell'?Modules.editSpell():cat==='feature'?Modules.editFeature():Modules.editGeneric(null,cat);p.then(x=>window.generic=x);},category);
+  await page.evaluate(cat=>{const p=cat==='spell'?Modules.editSpell(null,{noPresets:true}):cat==='feature'?Modules.editFeature():Modules.editGeneric(null,cat);p.then(x=>window.generic=x);},category);
   assert.ok(await page.locator('.mechanics-editor').isVisible(),category);
   await page.getByRole('button',{name:'+ Действие',exact:true}).click();await page.getByRole('button',{name:'+ Ручное правило',exact:true}).click();
   assert.equal(await page.locator('.mechanic-block').count(),1,category);

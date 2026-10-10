@@ -544,6 +544,20 @@
     return after.find(problem => !before.includes(problem)) || '';
   }
 
+  // Готовые стартовые графы для пустого редактора: узлы с относительными позициями и связи по ключам.
+  const GRAPH_STARTERS = [
+    { id: 'speed-level', name: 'Скорость с уровня', hint: 'Скорость 35 фт, если уровень персонажа от 5 до 20',
+      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 5, max: 20 }, x: 0, y: 0 }, { key: 'spd', type: 'rule.speed', params: { value: 35 }, x: 260, y: 0 }],
+      links: [['lvl', 'value', 'spd', 'enabled']] },
+    { id: 'hp-bonus', name: 'Бонус к хитам', hint: '+2 к максимуму хитов, всегда',
+      nodes: [{ key: 'amt', type: 'data.number', params: { value: 2 }, x: 0, y: 0 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 2 }, x: 260, y: 0 }],
+      links: [['amt', 'value', 'hp', 'amount']] },
+    { id: 'hp-bonus-level', name: 'Хиты с 3 уровня', hint: '+1 к хитам, начиная с 3 уровня персонажа',
+      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 3, max: 20 }, x: 0, y: 0 }, { key: 'amt', type: 'data.number', params: { value: 1 }, x: 0, y: 120 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 1 }, x: 260, y: 60 }],
+      links: [['lvl', 'value', 'hp', 'enabled'], ['amt', 'value', 'hp', 'amount']] },
+  ];
+  // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
+  const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
   function graphEditor(doc, options = {}) {
     const category = options.category || 'feature';
     const seed = doc.mechanics || Base.migrate(doc, category);
@@ -574,6 +588,17 @@
       const id = mkId('node'), count = graph.nodes.length;
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 } });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
+    }
+    // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
+    function insertStarter(starter) {
+      if (!isBlankGraph(graph)) return;
+      const ids = new Map(), origin = { x: 60, y: 70 };
+      for (const n of starter.nodes) {
+        const id = mkId('node'); ids.set(n.key, id);
+        graph.nodes.push({ id, type: n.type, params: clone(n.params), position: { x: origin.x + n.x, y: origin.y + n.y } });
+      }
+      for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
+      checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
     }
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
@@ -861,6 +886,11 @@
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
+      // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
+      const starters = !isBlankGraph(graph) ? null : el('div', { class: 'node-starters' },
+        el('b', {}, 'Начните с готового графа'),
+        el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
+        ...GRAPH_STARTERS.map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
       const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(Boolean); if (!members.length) return null;
@@ -883,7 +913,7 @@
       const pending = graphProblems(graph, graph.groups || []);
       const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
       // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
-      root.append(...[toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
+      root.append(...[toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
       // Keep status reference in a closure-safe property for JSON validation errors.
