@@ -8,8 +8,8 @@ before(async () => { await presetsReady; });
 
 test('наборы feature_rules есть для обеих редакций и читаются по редакции', () => {
   const P = ctx.window.Presets;
-  assert.equal(P.items('feature_rules', '2014').length, 11);
-  assert.equal(P.items('feature_rules', '2024').length, 11);
+  assert.equal(P.items('feature_rules', '2014').length, 13);
+  assert.equal(P.items('feature_rules', '2024').length, 13);
   const kinds = P.items('feature_rules', '2014').map(i => i.table.kind).sort();
   assert.ok(kinds.includes('invocation') && kinds.includes('enemy') && kinds.includes('terrain'));
 });
