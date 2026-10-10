@@ -23,14 +23,10 @@ window.LevelUp = (() => {
   const modOf = n => Math.floor(((Number(n) || 10) - 10) / 2);
   const profBonus = lvl => Math.ceil(1 + lvl / 4);
   const dieOf = cls => Number(String(cls?.data?.hit_die || 'd8').replace(/\D/g, '')) || 8;
-  // Требования к характеристикам для мультиклассирования (SRD): для каждой группы нужна хотя бы одна характеристика от 13.
-  const MC_REQ = { barbarian: [['str']], bard: [['cha']], cleric: [['wis']], druid: [['wis']], fighter: [['str', 'dex']], monk: [['dex'], ['wis']], paladin: [['str'], ['cha']],
-    ranger: [['dex'], ['wis']], rogue: [['dex']], sorcerer: [['cha']], warlock: [['cha']], wizard: [['int']] };
-  // Владения, которые даёт первый уровень нового класса при мультиклассировании (SRD 5.1, «Владения»).
-  const MC_PROF = { barbarian: 'щиты, простое и воинское оружие', bard: 'лёгкие доспехи, один навык, один музыкальный инструмент', cleric: 'лёгкие и средние доспехи, щиты',
-    druid: 'лёгкие и средние доспехи, щиты', fighter: 'лёгкие и средние доспехи, щиты, простое и воинское оружие', monk: 'простое оружие, короткие мечи',
-    paladin: 'лёгкие и средние доспехи, щиты, простое и воинское оружие', ranger: 'лёгкие и средние доспехи, щиты, простое и воинское оружие, один навык из списка класса',
-    rogue: 'лёгкие доспехи, один навык из списка класса, воровские инструменты', sorcerer: '', warlock: 'лёгкие доспехи, простое оружие', wizard: '' };
+  // Правила мультикласса и цвет класса — из набора class_rules (static/presets/) по slug и редакции.
+  const classRulesOf = (slug, edition) => window.Presets?.classRules(String(edition || '2014'), slug) || {};
+  const mcRequirements = (slug, edition) => classRulesOf(slug, edition).multiclass?.requirements || [];
+  const mcProficiency = (slug, edition) => classRulesOf(slug, edition).multiclass?.proficiencies || '';
   const ENEMY_TYPES = ['Аберрации', 'Звери', 'Небожители', 'Конструкты', 'Драконы', 'Элементали', 'Феи', 'Исчадия', 'Великаны', 'Чудовища', 'Слизи', 'Растения', 'Нежить', 'Гуманоиды (две расы)'];
   const TERRAINS = ['Арктика', 'Побережье', 'Пустыня', 'Лес', 'Луг', 'Горы', 'Болото', 'Подземье'];
   const STYLE_FEATS_EN = ['archery', 'defense', 'great weapon fighting', 'two weapon fighting', 'two-weapon fighting', 'dueling', 'protection'];
@@ -63,8 +59,8 @@ window.LevelUp = (() => {
   const classLabel = list => list.length > 1 ? list.map(c => `${c.name} ${c.level}`).join(' / ') : list[0]?.name || '';
   const subclassLabel = list => list.map(c => c.subclass).filter(Boolean).join(' / ');
   /// Проверка требований мультиклассирования к характеристикам: { ok, missing:[текст] }.
-  function multiclassReq(abilities, slug) {
-    const groups = MC_REQ[slug] || [], missing = [];
+  function multiclassReq(abilities, slug, edition) {
+    const groups = mcRequirements(slug, edition), missing = [];
     for (const g of groups) if (!g.some(k => (Number(abilities?.[k]) || 10) >= 13)) missing.push(g.map(k => (typeof ABIL !== 'undefined' && ABIL[k]) || k).join(' или ') + ' 13');
     return { ok: !missing.length, missing };
   }
@@ -107,7 +103,7 @@ window.LevelUp = (() => {
       combined = true;
       for (const x of casters) {
         const third = /eldritch knight|arcane trickster|мистический рыцарь|мастер иллюзий|ловкач/i.test(`${x.c.subclass} ${x.entry.data?.subclasses?.find?.(s => s.name === x.c.subclass)?.name_en || ''}`);
-        casterLevel += window.ClassRules.casterLevel(x.entry) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
+        casterLevel += window.ClassRules.casterLevel(x.entry, edition) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry, edition) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
       }
       // Общая таблица мультикласса заклинателей (SRD), не таблица отдельного класса.
       const wiz = typeof window !== 'undefined' ? window.Presets?.multiclassSlots(edition) : null;
@@ -226,7 +222,7 @@ window.LevelUp = (() => {
     if (after) {
       spells.cantrips = Math.max(0, after.cantrips - (before?.cantrips || 0));
       if (after.known !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.known - (before?.known || 0)); }
-      else if (edition === '2024' && (window.ClassRules.isPicker(entry) || window.ClassRules.casterLevel(entry) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
+      else if (edition === '2024' && (window.ClassRules.isPicker(entry, edition) || window.ClassRules.casterLevel(entry, edition) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
       else if (window.ClassRules.startMode(entry, edition) === 'book') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
       else if (after.prepared !== null) spells.mode = 'prepared';
       if (spells.mode === 'known' && from > 0 && after.maxSpellLevel > 0) spells.swap = 1;
@@ -237,14 +233,14 @@ window.LevelUp = (() => {
     const cur = castingSummary(edition, classes.filter(c => c.name), n => sameClass(n, entry) ? entry : resolve(n));
     const nxt = castingSummary(edition, nextClasses, n => sameClass(n, entry) ? entry : resolve(n));
     const multi = isNew ? classes.some(c => c.name) : classes.filter(c => c.name).length > 1;
-    const req = isNew ? multiclassReq(sheet.abilities, slug) : null;
-    const reqCurrent = isNew ? classes.filter(c => c.name).map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolve(c.name))) })).filter(r => !r.ok) : [];
+    const req = isNew ? multiclassReq(sheet.abilities, slug, sheet.edition) : null;
+    const reqCurrent = isNew ? classes.filter(c => c.name).map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolve(c.name)), sheet.edition) })).filter(r => !r.ok) : [];
     const skillRule = isNew && multi && ['bard', 'ranger', 'rogue'].includes(slug) ? { count: 1, any: slug === 'bard', from: d.skills?.from || [] } : null;
     return { from, to, entry, slug, edition, isNew, multi, hitDie: dieOf(entry), pb: { from: pbFrom, to: pbTo }, total: { from: totalFrom, to: totalTo }, columns: changes, features: feats, subclass, subclassChoices: row?.subclass_choices || {}, subclassFeatures: subFeatures,
       needSubclass, subclassLevel: subLevel, asi: feats.some(f => f.tag === 'asi'), epic: feats.some(f => f.tag === 'epic'), expertise, expertiseFrom,
       groups, spells, slotsFrom: (multi || cur.combined ? cur.slots : before?.slots) || null, slotsTo: multi || nxt.combined ? nxt.slots : (after?.slots || null), combined: nxt.combined, casterLevel: nxt.casterLevel,
       pactFrom: cur.pact, pactTo: nxt.pact, castingFrom: cur, castingTo: nxt, nextClasses,
-      multiclass: isNew && multi ? { req, reqCurrent, proficiency: MC_PROF[slug] || '', skill: skillRule } : null };
+      multiclass: isNew && multi ? { req, reqCurrent, proficiency: mcProficiency(slug, sheet.edition), skill: skillRule } : null };
   }
   const hpAverage = die => Math.floor(die / 2) + 1;
   const hpChoiceValid = (die, choice) => choice?.mode === 'avg' || (['roll', 'manual'].includes(choice?.mode) && Number.isInteger(Number(choice.mode === 'roll' ? choice.roll : choice.manual)) && Number(choice.mode === 'roll' ? choice.roll : choice.manual) >= 1 && Number(choice.mode === 'roll' ? choice.roll : choice.manual) <= Number(die));
@@ -454,9 +450,8 @@ window.LevelUp = (() => {
   const abilName = k => (typeof ABIL !== 'undefined' && ABIL[k]) || k;
 
   // Цвета классов и школ магии: акцент мастера подстраивается под класс.
-  const CLASS_COLOR = { barbarian: '#e0533d', bard: '#b76fd1', cleric: '#e5c76b', druid: '#6fae4a', fighter: '#c9803a', monk: '#3fa9c7', paladin: '#e2b84a', ranger: '#4fa373', rogue: '#7d8794', sorcerer: '#d94a6a', warlock: '#8a54d6', wizard: '#4c7be0' };
   const SCHOOL_COLOR = { 'Воплощение': '#e2604d', 'Вызов': '#d6a83c', 'Прорицание': '#63b3d8', 'Очарование': '#e07bb0', 'Иллюзия': '#a47be0', 'Некромантия': '#4fae7c', 'Ограждение': '#3fb8b8', 'Преобразование': '#e29246' };
-  const classColor = e => CLASS_COLOR[slugOf(e)] || '#8fa8d0';
+  const classColor = e => window.Presets?.item('class_rules', slugOf(e))?.table?.color || '#8fa8d0';
   const monogram = e => String(e?.name || '?').trim().charAt(0).toUpperCase();
   const hexRgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(', ');
   const savesOf = e => [].concat(e?.data?.saves || []).map(k => (KEYS.includes(k) ? abilName(k) : String(k))).filter(Boolean);
@@ -767,7 +762,7 @@ window.LevelUp = (() => {
       };
       const classStep = () => {
         const p = st.p, cur = classesOf(sheet).filter(c => c.name), total = cur.reduce((n, c) => n + c.level, 0) || clampLevel(sheet.level);
-        const reqChips = slug => (MC_REQ[slug] || []).map(g => { const v = Math.max(...g.map(k => Number(sheet.abilities?.[k]) || 10)), ok = v >= 13; return chip(`${ok ? '✓' : '✗'} ${g.map(abilName).join(' / ')} 13 (${v})`, ok ? 'ok' : 'bad'); });
+        const reqChips = slug => mcRequirements(slug, sheet.edition).map(g => { const v = Math.max(...g.map(k => Number(sheet.abilities?.[k]) || 10)), ok = v >= 13; return chip(`${ok ? '✓' : '✗'} ${g.map(abilName).join(' / ')} 13 (${v})`, ok ? 'ok' : 'bad'); });
         const card = (e, { head, sub, on, disabled, note, chips = [], level }) => {
           const col = classColor(e || p.entry), c = h('div', 'lu-cls' + (on ? ' on' : '') + (disabled ? ' off' : ''), crest(monogram(e || { name: head }), 'md'),
             h('div', 'lu-cls-b', h('div', 'lu-cls-h', h('b', '', head), on ? h('span', 'lu-check', '✓') : null), h('small', 'muted', sub), chips.length ? h('div', 'lu-cls-chips', ...chips) : null, note ? h('p', 'lu-cls-note', note) : null,
@@ -783,11 +778,11 @@ window.LevelUp = (() => {
             note: e ? '' : 'Класса нет в справочнике этой редакции — повысить его мастером нельзя.' }); })));
         const others = st.classes.filter(e => !cur.some(c => sameClass(c.name, e)));
         if (cur.length && others.length) {
-          const curFail = cur.map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolveEntry(c.name))) })).filter(r => !r.ok);
+          const curFail = cur.map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolveEntry(c.name)), sheet.edition) })).filter(r => !r.ok);
           out.push(h('h3', 'lu-h', 'Мультикласс: новый класс'), h('p', 'muted small', 'Нужно 13 в основных характеристиках и нынешних классов, и нового. Первый уровень нового класса даёт ограниченные владения.'),
             curFail.length ? h('p', 'lu-note', `Не хватает у текущих классов: ${curFail.map(r => `${r.name} — ${r.missing.join(', ')}`).join('; ')}.`) : null,
             h('label', 'lu-check-row', el('input', { type: 'checkbox', checked: st.ignoreReq ? '' : null, onchange: e => { st.ignoreReq = e.target.checked; render(); } }), ' Игнорировать требования (решение мастера)'),
-            h('div', 'lu-cards', ...others.map(e => { const r = multiclassReq(sheet.abilities, slugOf(e)), blocked = (!r.ok || curFail.length) && !st.ignoreReq;
+            h('div', 'lu-cards', ...others.map(e => { const r = multiclassReq(sheet.abilities, slugOf(e), sheet.edition), blocked = (!r.ok || curFail.length) && !st.ignoreReq;
               return card(e, { head: e.name, sub: `Начать с 1 уровня · d${dieOf(e)}`, on: p.isNew && st.entry === e, disabled: blocked || total >= 20, chips: [...reqChips(slugOf(e)), ...(e.data?.primary ? [chip('★ ' + e.data.primary, 'gold')] : [])] }); })));
         }
         return out;

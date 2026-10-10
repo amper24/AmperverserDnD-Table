@@ -33,7 +33,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("options".into(), "list".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("spells".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hp_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -129,7 +129,7 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "rule.spell_list" => {
             if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); }
         }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
         "rule.armor_formula" => {
             let formula = p["formula"].as_str().unwrap_or("");
             if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); }
@@ -234,7 +234,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "flow.if",
-    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
+    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 

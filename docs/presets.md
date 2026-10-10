@@ -13,6 +13,7 @@
 | `static/presets/spell-presets.json` | `spell_preset` | основы «Что создаём?» для заклинания |
 | `static/presets/class-progression-2014.json`, `…-2024.json` | `class_progression` | таблица развития каждого класса (ключ — slug) |
 | `static/presets/multiclass-slots-2014.json`, `…-2024.json` | `multiclass_slots` | общие ячейки заклинателей по уровню (элемент `multiclass`) |
+| `static/presets/class-rules-2014.json`, `…-2024.json` | `class_rules` | правила класса (ключ — slug): `ru`, `color`, `caster`, `multiclass`, `weapon_mastery` (2024), `legacy_unarmored` |
 
 Таблицы развития генерирует `tools/srd/build_progression.py` (из OmnisGM-Rules, CC BY 4.0).
 
@@ -28,11 +29,11 @@
 ```
 
 - `kind` — один из видов таблицы выше; `id` набора уникален; `name` обязательно.
-- `edition` (`"2014"` / `"2024"`) обязательна для `class_progression` и `multiclass_slots`; у остальных видов не нужна.
+- `edition` (`"2014"` / `"2024"`) обязательна для `class_progression`, `multiclass_slots` и `class_rules`; у остальных видов не нужна.
 - У каждого элемента обязательны `id` (уникален внутри набора) и поля вида:
   - `graph_starter`: `name`, `nodes` (`{key, type, params, x, y}`), `links` (`[из, сокет, в, сокет]`), необязательные `hint`, `attach`;
   - `item_preset` / `spell_preset`: `name`, `fields` (значения полей формы), необязательный `hint`;
-  - `class_progression` / `multiclass_slots`: `table`.
+  - `class_progression` / `multiclass_slots` / `class_rules`: `table`.
 - Проверка (`Presets.problemOf`) отбрасывает неверный набор и называет причину: нет поля, повтор id, связь на неизвестный узел, нет редакции.
 
 Повтор `id` элемента в двух наборах одного вида: побеждает набор, загруженный позже. Пользовательский набор
@@ -58,4 +59,5 @@
 
 У записей классов SRD таблица также записана в узел `rule.class_progression` (`tools/srd/add_class_progression_nodes.cjs`).
 Мастер уровней берёт таблицу в порядке: данные записи → узел графа → набор `class_progression`.
+Правила класса (`class_rules`) тоже записаны в узел `rule.class_rules` той же записи (без полей `ru`, `color`, `legacy_unarmored`). Порядок чтения: блок `data.caster` (старые записи) → узел графа → набор `class_rules`.
 Набор нужен записям без узла: старым снимкам и базам, где правка сохранена (`seed.rs` не перезаписывает изменённые строки).

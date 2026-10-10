@@ -536,7 +536,8 @@ window.CharacterBuilder = (() => {
   }
   const CLASS_SLUGS_RU = window.ClassRules.RU_NAMES;
   const classSlugOf = entry => window.ClassRules.slugOf(entry);
-  const weaponMasteryCount = (edition, slug) => edition === '2024' ? ({ barbarian: 2, fighter: 3, monk: 2, paladin: 2, ranger: 2, rogue: 2 }[slug] || 0) : 0;
+  // Число мастерств оружия по набору class_rules (только редакция 2024 задаёт поле weapon_mastery).
+  const weaponMasteryCount = (edition, slug) => Number(window.Presets?.classRules(String(edition || '2014'), slug)?.weapon_mastery) || 0;
   function weaponMasteryOptions(classEntry, catalog) {
     const slug = classSlugOf(classEntry), prof = String(classEntry?.data?.weapons || '').toLocaleLowerCase();
     return (catalog || []).filter(e => {

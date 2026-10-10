@@ -25,6 +25,7 @@
     spell_preset: { fields: ['name', 'fields'], optional: ['hint'] },
     class_progression: { fields: ['table'], needsEdition: true },
     multiclass_slots: { fields: ['table'], needsEdition: true },
+    class_rules: { fields: ['table'], needsEdition: true },
   };
   const STORE_KEY = 'et-presets-user';
   const MANIFEST = 'index.json';
@@ -91,6 +92,7 @@
       state.user = readUser();
       state.loaded = true;
       resolveReady(api);
+      changed();
     } catch (e) {
       rejectReady(e);
       throw e;
@@ -117,6 +119,8 @@
   }
   function item(kind, id, edition) { return items(kind, edition).find(i => i.id === id) || null; }
 
+  // Правила класса по редакции и slug (кастеры, мультикласс, мастерства, цвет) — вид class_rules.
+  function classRules(edition, slug) { return item('class_rules', slug, edition)?.table || null; }
   // Таблица развития класса по редакции и slug (ключ — slug класса, как у ClassRules.slugOf).
   function classProgression(edition, slug) {
     const t = item('class_progression', slug, edition);
@@ -184,7 +188,7 @@
   const api = {
     KINDS: Object.keys(KINDS),
     ready,
-    load, sets, items, item, classProgression, multiclassSlots,
+    load, sets, items, item, classProgression, multiclassSlots, classRules,
     userSets, importUser, removeUser, problemOf, openManager,
     get loaded() { return state.loaded; },
   };

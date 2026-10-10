@@ -1,0 +1,242 @@
+{
+  "kind": "class_rules",
+  "id": "builtin.class-rules.2014",
+  "name": "Правила классов SRD 2014",
+  "edition": "2014",
+  "items": [
+    {
+      "id": "barbarian",
+      "table": {
+        "ru": "Варвар",
+        "color": "#e0533d",
+        "multiclass": {
+          "requirements": [
+            [
+              "str"
+            ]
+          ],
+          "proficiencies": "щиты, простое и воинское оружие"
+        },
+        "legacy_unarmored": {
+          "formula": "10 + @dex + @con",
+          "name": "Защита без доспехов (варвар)",
+          "no_shield": false
+        }
+      }
+    },
+    {
+      "id": "bard",
+      "table": {
+        "ru": "Бард",
+        "color": "#b76fd1",
+        "caster": {
+          "level": "full",
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, один навык, один музыкальный инструмент"
+        }
+      }
+    },
+    {
+      "id": "cleric",
+      "table": {
+        "ru": "Жрец",
+        "color": "#e5c76b",
+        "caster": {
+          "level": "full",
+          "start": "prepared",
+          "prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты"
+        }
+      }
+    },
+    {
+      "id": "druid",
+      "table": {
+        "ru": "Друид",
+        "color": "#6fae4a",
+        "caster": {
+          "level": "full",
+          "start": "prepared",
+          "prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты"
+        }
+      }
+    },
+    {
+      "id": "fighter",
+      "table": {
+        "ru": "Воин",
+        "color": "#c9803a",
+        "multiclass": {
+          "requirements": [
+            [
+              "str",
+              "dex"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие"
+        }
+      }
+    },
+    {
+      "id": "monk",
+      "table": {
+        "ru": "Монах",
+        "color": "#3fa9c7",
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ],
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "простое оружие, короткие мечи"
+        },
+        "legacy_unarmored": {
+          "formula": "10 + @dex + @wis",
+          "name": "Защита без доспехов (монах)",
+          "no_shield": true
+        }
+      }
+    },
+    {
+      "id": "paladin",
+      "table": {
+        "ru": "Паладин",
+        "color": "#e2b84a",
+        "caster": {
+          "level": "half",
+          "prepared": "half"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "str"
+            ],
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие"
+        }
+      }
+    },
+    {
+      "id": "ranger",
+      "table": {
+        "ru": "Следопыт",
+        "color": "#4fa373",
+        "caster": {
+          "level": "half",
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ],
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие, один навык из списка класса"
+        }
+      }
+    },
+    {
+      "id": "rogue",
+      "table": {
+        "ru": "Плут",
+        "color": "#7d8794",
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, один навык из списка класса, воровские инструменты"
+        }
+      }
+    },
+    {
+      "id": "sorcerer",
+      "table": {
+        "ru": "Чародей",
+        "color": "#d94a6a",
+        "caster": {
+          "level": "full",
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": ""
+        }
+      }
+    },
+    {
+      "id": "warlock",
+      "table": {
+        "ru": "Колдун",
+        "color": "#8a54d6",
+        "caster": {
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, простое оружие"
+        }
+      }
+    },
+    {
+      "id": "wizard",
+      "table": {
+        "ru": "Волшебник",
+        "color": "#4c7be0",
+        "caster": {
+          "level": "full",
+          "start": "book",
+          "prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "int"
+            ]
+          ],
+          "proficiencies": ""
+        }
+      }
+    }
+  ]
+}

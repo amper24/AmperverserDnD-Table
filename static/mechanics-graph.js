@@ -388,7 +388,7 @@
     if (type === 'rule.feature' && (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || (p.text !== undefined && (typeof p.text !== 'string' || p.text.length > 4000)))) return 'Умение: название до 120 и текст до 4000 символов.';
     if (type === 'rule.skills' && (!idText(p.id, 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
     if (type === 'rule.spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
-    if (['rule.spell_slots', 'rule.asi', 'rule.class_progression'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
+    if (['rule.spell_slots', 'rule.asi', 'rule.class_progression', 'rule.class_rules'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
     if (type === 'rule.armor_formula') {
       const formulaError = typeof p.formula === 'string' && p.formula.length <= 100 ? Formulas.validate(p.formula) : 'Формула защиты: строка до 100 символов.';
       if (formulaError) return `Формула защиты без доспехов: ${formulaError}`;
@@ -491,6 +491,8 @@
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.asi_rules.push(clone(table)); emit('asi', { table }); }
     } else if (type === 'rule.class_progression') {
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_progression = clone(table); emit('class_progression', { table }); }
+    } else if (type === 'rule.class_rules') {
+      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_rules = clone(table); emit('class_rules', { table }); }
     } else if (type === 'rule.armor_formula') { const rule = { formula: String(n('formula') ?? p.formula ?? ''), name: String(p.name || 'Защита без доспехов').slice(0, 120), no_shield: Boolean(p.no_shield) }; sheet.unarmored_defense = clone(rule); emit('unarmored_defense', rule);
     } else if (type === 'rule.hp_bonus') { const amount = Number(n('amount') ?? p.amount) || 0; sheet.hp.max += amount; sheet.hp.current += amount; emit('hp_bonus', { amount });
     } else if (type === 'rule.manual') { const text = String(n('text') ?? p.text ?? ''); sheet.manual_rules.push(text); emit('manual', { text }); }
@@ -507,7 +509,7 @@
     const edition = String(options.edition || '2014');
     const level = Math.max(1, Math.min(20, Math.trunc(Number(options.level) || 1)));
     const sheet = { edition, level, abilities: Object.fromEntries(ABILITIES.map(k => [k, 10])), race: '', class: '', subclass: '', speed: 30, hp: { max: 0, current: 0, temp: 0 },
-      features: [], saving_throws: [], skills: [], skill_choices: [], languages: [], proficiencies: '', spells: { ability: '', slots: {}, known: [] }, spell_rules: [], spell_progression: { slots: {} }, asi_rules: [], class_progression: null, armor_formula: '', manual_rules: [] };
+      features: [], saving_throws: [], skills: [], skill_choices: [], languages: [], proficiencies: '', spells: { ability: '', slots: {}, known: [] }, spell_rules: [], spell_progression: { slots: {} }, asi_rules: [], class_progression: null, class_rules: null, armor_formula: '', manual_rules: [] };
     const { ordered, linksByTarget } = orderedNodes(graphOf(graphMechanics), new Map((graphMechanics.graph.groups || []).map(g => [g.id, g])));
     const values = { linksByTarget, outputs: new Map() };
     const context = { edition, level, subclass: options.subclass || '', choices: options.choices || {}, source: options.source || '', nodeId: '', effects: [] };
@@ -1023,6 +1025,12 @@
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_progression || null);
+    },
+    // Правила класса из узла rule.class_rules (кастеры, мультикласс, мастерства оружия); null, если узла нет.
+    classRules(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.class_rules || null);
     },
     applyGraphRules,
     normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },
