@@ -593,8 +593,8 @@
     return after.find(problem => !before.includes(problem)) || '';
   }
 
-  // Стартовые графы для пустого редактора — данные в static/presets-data.js (window.PRESET_DATA.graphStarters).
-  const graphStarters = () => window.PRESET_DATA?.graphStarters || [];
+  // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
+  const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
   const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
   function graphEditor(doc, options = {}) {
@@ -608,6 +608,9 @@
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
+    // Наборы стартов могли измениться (импорт или удаление набора): перерисовываем, пока редактор на странице.
+    const onPresets = () => { if (root.isConnected) render(); else window.removeEventListener('presets:changed', onPresets); };
+    window.addEventListener('presets:changed', onPresets);
     // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
     root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
@@ -941,6 +944,7 @@
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        el('button', { class: 'small', 'data-action': 'presets', onclick: () => window.Presets?.openManager() }, 'Наборы данных…'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
       const starters = !isBlankGraph(graph) || !graphStarters().length ? null : el('div', { class: 'node-starters' },

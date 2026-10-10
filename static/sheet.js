@@ -8,6 +8,8 @@
 // Лист персонажа. Работает и в iframe поверх стола (embed=1), и как отдельная страница/окно.
 // Предметы и заклинания — модули (Modules.*): их можно перетаскивать между окнами, на стол и другим игрокам.
 (async function () {
+  // Наборы данных до первого рендера; при ошибке загрузки — пустые наборы.
+  await window.Presets?.ready.catch(() => {});
   const M = window.Modules;
   const app = document.getElementById('app');
   const id = location.pathname.split('/').pop();

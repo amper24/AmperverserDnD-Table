@@ -2,12 +2,12 @@
 // levelup.js — повышение уровня: чистая логика (план, расчёт, применение
 // к листу, отмена) плюс мастер в стиле D&D Beyond.
 // Даёт: window.LevelUp.
-// Зависимости: common.js; лениво: CLASS_PROGRESSION (таблицы развития),
+// Зависимости: common.js; лениво: Presets (таблицы развития, ячейки мультикласса),
 // Mechanics, Modules, DiceEngine. Загружается только в sheet.html (слой 5).
 // ---------------------------------------------------------------------------
 // Повышение уровня: чистая логика (план, расчёт, применение к листу, отмена) + мастер в стиле D&D Beyond.
 // Данные берутся из записи класса справочника (features по уровням, subclasses, hit_die, spellcasting)
-// и из таблиц развития static/class-progression.js (бонус мастерства, заговоры, заклинания, ячейки, столбцы классов).
+// и из наборов таблиц развития (static/presets/, реестр Presets; бонус мастерства, заговоры, заклинания, ячейки, столбцы классов).
 // Лист хранит классы в `sheet.classes = [{name, level, subclass, hit_die}]`; `sheet.level` — суммарный уровень,
 // `sheet.class` и `sheet.subclass` — строки для показа. У листов без `classes` класс берётся из `sheet.class`.
 window.LevelUp = (() => {
@@ -72,7 +72,7 @@ window.LevelUp = (() => {
   // Порядок: данные записи → узел rule.class_progression в графе записи → встроенная таблица SRD (запасной вариант).
   function progression(entry, edition) {
     return entry?.data?.progression || (typeof window !== 'undefined' ? window.Mechanics?.classProgression?.(entry?.data?.mechanics, edition) : null)
-      || (typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.[slugOf(entry)] : null) || null;
+      || (typeof window !== 'undefined' ? window.Presets?.classProgression(edition, slugOf(entry)) : null) || null;
   }
   /// Заклинательные показатели класса на уровне класса: заговоры, известные/подготовленные, ячейки, магия договора.
   function spellStats(entry, edition, level, castMod = 0) {
@@ -110,7 +110,7 @@ window.LevelUp = (() => {
         casterLevel += window.ClassRules.casterLevel(x.entry) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
       }
       // Общая таблица мультикласса заклинателей (SRD), не таблица отдельного класса.
-      const wiz = typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.wizard : null;
+      const wiz = typeof window !== 'undefined' ? window.Presets?.multiclassSlots(edition) : null;
       slots = Array.from({ length: 9 }, (_, i) => Number(wiz?.levels?.[String(Math.min(20, Math.max(1, casterLevel)))]?.slots?.[i]) || 0);
     }
     return { slots, pact, combined, casterLevel };

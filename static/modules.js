@@ -23,9 +23,9 @@ window.Modules = (function () {
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
   const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
-  // Основы для создания записи (шаг «Что создаём?») — данные в static/presets-data.js (window.PRESET_DATA).
-  const itemPresets = () => window.PRESET_DATA?.itemPresets || [];
-  const spellPresets = () => window.PRESET_DATA?.spellPresets || [];
+  // Основы для создания записи (шаг «Что создаём?») — наборы данных item_preset / spell_preset (реестр Presets).
+  const itemPresets = () => window.Presets?.items('item_preset') || [];
+  const spellPresets = () => window.Presets?.items('spell_preset') || [];
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
   // ---------- модель ----------

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Таблицы развития классов (SRD 5.1 → «2014», SRD 5.2 → «2024») из markdown OmnisGM-Rules (CC BY 4.0)
-в static/class-progression.js. Нужны мастеру повышения уровня: бонус мастерства, заговоры, известные и
+в наборы static/presets/class-progression-<редакция>.json (и multiclass-slots-<редакция>.json). Нужны мастеру повышения уровня: бонус мастерства, заговоры, известные и
 подготовленные заклинания, ячейки, столбцы классов (ярости, скрытая атака, очки ки…).
 
     python3 tools/srd/build_progression.py --src /path/to/OmnisGM-Rules/src/dnd
+
+Индекс static/presets/index.json не трогается: новые файлы наборов добавляются в него вручную.
 """
 import argparse, json, re, pathlib
 
@@ -37,7 +39,7 @@ def num(v):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--src', required=True); ap.add_argument('--out', default='static/class-progression.js')
+    ap = argparse.ArgumentParser(); ap.add_argument('--src', required=True); ap.add_argument('--out-dir', default='static/presets')
     a = ap.parse_args(); src = pathlib.Path(a.src); out = {}
     for ed, (book, folder) in EDITIONS.items():
         out[ed] = {}
@@ -60,8 +62,18 @@ def main():
                 if slots_idx: lv['slots'] = [num(row[i]) for _, i in sorted(slots_idx)]
                 levels[row[0]] = lv
             out[ed][slug] = {'columns': [{'key': k, 'ru': ru, 'en': en} for k, _, ru, en in cols if k.startswith('x:')], 'levels': levels}
-    js = '// Сгенерировано tools/srd/build_progression.py из OmnisGM-Rules (CC BY 4.0, SRD 5.1 / 5.2). Не править вручную.\nwindow.CLASS_PROGRESSION = ' + json.dumps(out, ensure_ascii=False, separators=(',', ':')) + ';\n'
-    pathlib.Path(a.out).write_text(js, encoding='utf-8'); print(a.out, len(js), 'байт')
+    outdir = pathlib.Path(a.out_dir); outdir.mkdir(parents=True, exist_ok=True)
+    for ed, tables in out.items():
+        # Таблицы классов: один набор на редакцию, элемент — класс (id = slug, как у ClassRules.slugOf).
+        cls = {'kind': 'class_progression', 'id': f'builtin.class-progression.{ed}', 'name': f'Таблицы развития SRD {ed}', 'edition': ed,
+               'items': [{'id': slug, 'table': t} for slug, t in tables.items()]}
+        # Мультикласс заклинателей: общие ячейки по уровню колдуна — таблица волшебника, только слоты.
+        slots = {lvl: {'slots': row['slots']} for lvl, row in tables['wizard']['levels'].items() if 'slots' in row}
+        mc = {'kind': 'multiclass_slots', 'id': f'builtin.multiclass-slots.{ed}', 'name': f'Ячейки мультикласса SRD {ed}', 'edition': ed,
+              'items': [{'id': 'multiclass', 'table': {'levels': slots}}]}
+        for name, obj in ((f'class-progression-{ed}.json', cls), (f'multiclass-slots-{ed}.json', mc)):
+            text = json.dumps(obj, ensure_ascii=False, indent=2) + '\n'
+            (outdir / name).write_text(text, encoding='utf-8'); print(outdir / name, len(text), 'байт')
 
 
 if __name__ == '__main__':
