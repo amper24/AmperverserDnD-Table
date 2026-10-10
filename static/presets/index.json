@@ -16,6 +16,8 @@
     "mechanic-templates.json",
     "mechanic-starters.json",
     "race-rules-2014.json",
-    "race-rules-2024.json"
+    "race-rules-2024.json",
+    "feat-rules-2014.json",
+    "feat-rules-2024.json"
   ]
 }

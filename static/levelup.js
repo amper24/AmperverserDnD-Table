@@ -28,8 +28,13 @@ window.LevelUp = (() => {
   const mcRequirements = (slug, edition) => classRulesOf(slug, edition).multiclass?.requirements || [];
   const mcProficiency = (slug, edition) => classRulesOf(slug, edition).multiclass?.proficiencies || '';
   const TERRAINS = ['Арктика', 'Побережье', 'Пустыня', 'Лес', 'Луг', 'Горы', 'Болото', 'Подземье'];
-  const STYLE_FEATS_EN = ['archery', 'defense', 'great weapon fighting', 'two weapon fighting', 'two-weapon fighting', 'dueling', 'protection'];
-  const isStyleFeat = e => STYLE_FEATS_EN.includes(String(e?.data?.name_en || '').toLowerCase()) || /fighting|боев(ой|ые) стил/i.test(String(e?.data?.category || ''));
+  // Правила черт — набор feat_rules (по редакции записи): группы (style, epic, asi), прибавка характеристики, требования.
+  const featRuleOf = feat => {
+    const edition = String(feat?.data?.edition || ''), nameEn = String(feat?.data?.name_en || '').toLowerCase();
+    const found = (window.Presets?.items('feat_rules', edition || undefined) || []).find(i => String(i.table?.name_en || '').toLowerCase() === nameEn);
+    return found?.table || {};
+  };
+  const isStyleFeat = e => (featRuleOf(e).groups || []).includes('style');
 
   // ---------- Чистая логика: классы, подклассы, таблицы развития ----------
   const slugOf = entry => window.ClassRules.slugOf(entry);
@@ -462,25 +467,19 @@ window.LevelUp = (() => {
   const shortTime = t => String(t || '').replace(/^1\s+(действие|бонусное)/i, (m, w) => w.charAt(0).toUpperCase() + w.slice(1)).replace(/^Бонусное действие.*/i, 'Бонусное действие').replace(/^Реакция.*/i, 'Реакция');
   const hasPrereq = v => typeof v === 'string' && v.trim() && !/^[a-z_,\s]+$/.test(v);
   const featAbilityRule = feat => {
-    const text = String(feat?.data?.desc || ''), increase = text.match(/Увеличьте[^.\n]*/i)?.[0] || '';
-    if (!increase) return null;
-    const amount = Number(increase.match(/на\s+(\d+)/i)?.[1]) || 0;
-    if (!amount) return null;
-    const max = Number(increase.match(/максимума\s+(\d+)/i)?.[1]) || 20;
-    const all = /одну характеристику на ваш выбор/i.test(increase);
-    const names = { str: /силу|сила/i, dex: /ловкость/i, con: /телосложение/i, int: /интеллект/i, wis: /мудрость/i, cha: /харизму|харизма/i };
-    const allowed = all ? KEYS.slice() : KEYS.filter(key => names[key].test(increase));
-    return allowed.length ? { amount, max, allowed } : null;
+    const inc = featRuleOf(feat).ability_increase;
+    if (!inc || !inc.abilities?.length || !(Number(inc.amount) > 0)) return null;
+    return { amount: Number(inc.amount), max: Number(inc.max) || 20, allowed: inc.abilities.slice() };
   };
   function featPrerequisitesMet(feat, p, sheet) {
-    const values = String(feat?.data?.prerequisites || '').split(',').map(x => x.trim()).filter(Boolean);
-    return values.every(value => {
-      if (value === 'minimum_level') return (/^дар\s/i.test(feat?.name || '') || /^boon\s/i.test(feat?.data?.name_en || '') ? p.total.to >= 19 : p.total.to >= 4);
-      if (value === 'feature_named') return [...(sheet.features || []), ...(p.features || [])].some(f => /боевой стиль|fighting style/i.test(f.name));
-      const strength = value.match(/(?:СИЛ|Сила)\s*(\d+)/i);
-      if (strength) return Number(sheet.abilities?.str || 10) >= Number(strength[1]);
-      return false;
-    });
+    const req = featRuleOf(feat).requires || {};
+    if (req.level && !(p.total.to >= req.level)) return false;
+    if (req.feature_contains) {
+      const features = [...(sheet.features || []), ...(p.features || [])];
+      if (!features.some(f => { const name = String(f.name || '').toLowerCase(); return req.feature_contains.some(part => name.includes(part)); })) return false;
+    }
+    for (const [key, min] of Object.entries(req.ability || {})) if (Number(sheet.abilities?.[key] || 10) < min) return false;
+    return true;
   }
 
   /// Простое оформление текста записей справочника: абзацы, маркированные списки и таблицы.
@@ -729,7 +728,7 @@ window.LevelUp = (() => {
       };
       const featList = (filter, sel = () => st.asi.feat, setSel = e => { st.asi.feat = e; st.asi.ability = ''; }) => {
         const have = new Set((sheet.features || []).map(f => f.name)), fq = st.featQ.toLowerCase();
-        const rows = (st.catalogs.feat || []).filter(e => !RE_ASI.test(e.name) && !have.has(e.name) && filter(e) && featPrerequisitesMet(e, st.p, sheet) && (!fq || (e.name + ' ' + (e.data?.desc || '')).toLowerCase().includes(fq)));
+        const rows = (st.catalogs.feat || []).filter(e => !(featRuleOf(e).groups || []).includes('asi') && !have.has(e.name) && filter(e) && featPrerequisitesMet(e, st.p, sheet) && (!fq || (e.name + ' ' + (e.data?.desc || '')).toLowerCase().includes(fq)));
         const search = el('input', { type: 'search', placeholder: 'Поиск по чертам…', value: st.featQ, 'aria-label': 'Поиск', class: 'lu-search', oninput: e => { st.featQ = e.target.value; const pos = e.target.selectionStart; render(); const i = shell.querySelector('.lu-search'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } } });
         return [search, rows.length ? h('div', 'lu-cards', ...rows.map(e => {
           const on = sel()?.id === e.id && sel()?.name === e.name, key = 'ft' + e.name, isOpen = st.open.has(key), d = e.data || {}, long = String(d.desc || '').length > 240;
@@ -749,7 +748,7 @@ window.LevelUp = (() => {
       };
       const asiStep = () => {
         const tabs = h('div', 'lu-tabs', ...[['asi', 'Повысить характеристики'], ['feat', '★ Взять черту']].map(([m, t]) => el('button', { type: 'button', class: st.asi.mode === m ? 'on' : '', onclick: () => { st.asi.mode = m; render(); } }, t)));
-        if (st.asi.mode === 'feat') return [tabs, ...featList(e => !/^дар(\s|$)/i.test(e.name)), ...featAbilityChoice()];
+        if (st.asi.mode === 'feat') return [tabs, ...featList(e => !(featRuleOf(e).groups || []).includes('epic')), ...featAbilityChoice()];
         const used = KEYS.reduce((n, k) => n + (st.asi.plus[k] || 0), 0), room = KEYS.reduce((n, k) => n + Math.min(2, Math.max(0, 20 - sheet.abilities[k])), 0), need = Math.min(2, room);
         const prim = primaryKeys(st.p.entry), saves = st.p.entry.data?.saves || [];
         return [tabs, h('p', 'lu-lead', `Распределите ${need} ${plural(need, 'очко', 'очка', 'очков')}: +2 к одной характеристике или +1 к двум. Максимум — 20.`),
@@ -980,5 +979,5 @@ window.LevelUp = (() => {
       })();
     });
   }
-  return { slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
+  return { featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
 })();

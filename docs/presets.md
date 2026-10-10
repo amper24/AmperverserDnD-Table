@@ -14,6 +14,7 @@
 | `static/presets/class-progression-2014.json`, `…-2024.json` | `class_progression` | таблица развития каждого класса (ключ — slug) |
 | `static/presets/multiclass-slots-2014.json`, `…-2024.json` | `multiclass_slots` | общие ячейки заклинателей по уровню (элемент `multiclass`) |
 | `static/presets/class-rules-2014.json`, `…-2024.json` | `class_rules` | правила класса (ключ — slug): `ru`, `color`, `caster`, `multiclass`, `weapon_mastery` (2024), `legacy_unarmored` |
+| `static/presets/feat-rules-2014.json`, `…-2024.json` | `feat_rules` | правила черт по названию `name_en`: `groups` (`style` — боевой стиль, `asi` — служебная «Увеличение характеристик», `epic` — эпический дар), `ability_increase` (`amount`, `max`, `abilities`), `requires` (`level`, `feature_contains`, `ability`) |
 
 Таблицы развития генерирует `tools/srd/build_progression.py` (из OmnisGM-Rules, CC BY 4.0).
 
