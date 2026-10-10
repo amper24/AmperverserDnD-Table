@@ -1,0 +1,808 @@
+{
+  "kind": "mechanic_templates",
+  "id": "mechanic_templates",
+  "name": "Шаблоны механик (SRD)",
+  "items": [
+    {
+      "id": "weapon",
+      "table": {
+        "group": "Бой",
+        "name": "Атака → урон",
+        "hint": "Оружейная атака и урон с модификатором Силы/Ловкости",
+        "chain": [
+          "attack",
+          "damage"
+        ],
+        "program": {
+          "name": "Атака",
+          "blocks": [
+            {
+              "kind": "attack"
+            },
+            {
+              "kind": "damage"
+            }
+          ]
+        },
+        "quick": {
+          "item": 2,
+          "monster": 1,
+          "default": 1
+        }
+      }
+    },
+    {
+      "id": "spell_attack",
+      "table": {
+        "group": "Бой",
+        "name": "Атака заклинанием → урон",
+        "hint": "Бонус атаки заклинанием, урон, сравнение с КД цели",
+        "chain": [
+          "attack",
+          "damage"
+        ],
+        "program": {
+          "name": "Атака заклинанием",
+          "blocks": [
+            {
+              "kind": "attack",
+              "dice": "1d20+@spell"
+            },
+            {
+              "kind": "damage",
+              "dice": "1d10+@spell_mod"
+            }
+          ]
+        },
+        "quick": {
+          "spell": 2
+        }
+      }
+    },
+    {
+      "id": "area_damage",
+      "table": {
+        "group": "Бой",
+        "name": "Своё действие: урон",
+        "hint": "Правило области, спасбросок и условия описываете вы — блок только бросает урон, применяет результат ДМ",
+        "chain": [
+          "manual",
+          "damage"
+        ],
+        "program": {
+          "name": "Урон по площади",
+          "blocks": [
+            {
+              "kind": "manual",
+              "text": "Опишите область, условия и спасбросок цели: что именно и в каком порядке применяет ДМ."
+            },
+            {
+              "kind": "damage"
+            }
+          ]
+        },
+        "quick": {
+          "item": 3,
+          "spell": 3,
+          "monster": 2,
+          "default": 3
+        }
+      }
+    },
+    {
+      "id": "ammo_attack",
+      "table": {
+        "group": "Бой",
+        "name": "Патрон → атака → урон",
+        "hint": "Расход боеприпаса перед каждой атакой",
+        "chain": [
+          "consume",
+          "attack",
+          "damage"
+        ],
+        "program": {
+          "name": "Выстрел",
+          "blocks": [
+            {
+              "kind": "consume",
+              "source": "tag",
+              "tag": "стрела",
+              "trigger": "attack"
+            },
+            {
+              "kind": "attack"
+            },
+            {
+              "kind": "damage"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "double_attack",
+      "table": {
+        "group": "Бой",
+        "name": "Две атаки",
+        "hint": "Два удара: урон каждого бросается отдельно",
+        "chain": [
+          "attack",
+          "damage",
+          "attack",
+          "damage"
+        ],
+        "program": {
+          "name": "Две атаки",
+          "blocks": [
+            {
+              "kind": "attack"
+            },
+            {
+              "kind": "damage"
+            },
+            {
+              "kind": "attack"
+            },
+            {
+              "kind": "damage"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "potion",
+      "table": {
+        "group": "Лечение",
+        "name": "Зелье → хиты → флакон",
+        "hint": "Расход предмета, лечение, выдача пустого флакона",
+        "chain": [
+          "consume",
+          "heal",
+          "grant_item"
+        ],
+        "program": {
+          "name": "Выпить зелье",
+          "blocks": [
+            {
+              "kind": "consume"
+            },
+            {
+              "kind": "heal",
+              "dice": "2d4+2"
+            },
+            {
+              "kind": "grant_item"
+            }
+          ]
+        },
+        "quick": {
+          "item": 1,
+          "default": 2
+        }
+      }
+    },
+    {
+      "id": "spell",
+      "table": {
+        "group": "Лечение",
+        "name": "Ячейка → лечение",
+        "hint": "Расход ячейки и лечение цели",
+        "chain": [
+          "consume",
+          "heal"
+        ],
+        "program": {
+          "name": "Сотворить",
+          "blocks": [
+            {
+              "kind": "consume",
+              "resource": "slot",
+              "source": "self",
+              "slot_level": 1
+            },
+            {
+              "kind": "heal",
+              "dice": "1d8+@spell_mod"
+            }
+          ]
+        },
+        "quick": {
+          "spell": 1
+        }
+      }
+    },
+    {
+      "id": "temp_hp",
+      "table": {
+        "group": "Лечение",
+        "name": "Временные хиты",
+        "hint": "Берутся максимумом, не суммируются",
+        "chain": [
+          "temp_hp"
+        ],
+        "program": {
+          "name": "Временные хиты",
+          "blocks": [
+            {
+              "kind": "temp_hp",
+              "dice": "1d6+2"
+            }
+          ]
+        },
+        "quick": {
+          "spell": 4
+        }
+      }
+    },
+    {
+      "id": "heal_temp",
+      "table": {
+        "group": "Лечение",
+        "name": "Лечение + временные хиты",
+        "hint": "Сначала лечение, затем запас сверху",
+        "chain": [
+          "heal",
+          "temp_hp"
+        ],
+        "program": {
+          "name": "Лечение с запасом",
+          "blocks": [
+            {
+              "kind": "heal",
+              "dice": "1d8+3"
+            },
+            {
+              "kind": "temp_hp",
+              "dice": "1d6"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "heal_charge",
+      "table": {
+        "group": "Лечение",
+        "name": "Заряд → лечение",
+        "hint": "Тратит заряд предмета, а не количество",
+        "chain": [
+          "consume",
+          "heal"
+        ],
+        "program": {
+          "name": "Использовать заряд",
+          "blocks": [
+            {
+              "kind": "consume",
+              "resource": "charges",
+              "source": "self"
+            },
+            {
+              "kind": "heal",
+              "dice": "2d4+2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "craft",
+      "table": {
+        "group": "Предметы",
+        "name": "Сырьё → предмет",
+        "hint": "Расход по метке и выдача нового предмета",
+        "chain": [
+          "consume",
+          "grant_item"
+        ],
+        "program": {
+          "name": "Изготовить",
+          "blocks": [
+            {
+              "kind": "consume",
+              "source": "tag",
+              "tag": "ingredient"
+            },
+            {
+              "kind": "grant_item"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "grant_ammo",
+      "table": {
+        "group": "Предметы",
+        "name": "Выдать боеприпасы",
+        "hint": "Выдача пачки с меткой ресурса",
+        "chain": [
+          "grant_item"
+        ],
+        "program": {
+          "name": "Выдать",
+          "blocks": [
+            {
+              "kind": "grant_item",
+              "amount": 20,
+              "item": {
+                "name": "Стрелы",
+                "type": "ammo",
+                "ammo_tag": "стрела"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "consume_only",
+      "table": {
+        "group": "Предметы",
+        "name": "Расход заряда",
+        "hint": "Только списание ресурса, без эффектов",
+        "chain": [
+          "consume"
+        ],
+        "program": {
+          "name": "Потратить заряд",
+          "blocks": [
+            {
+              "kind": "consume",
+              "resource": "charges",
+              "source": "self"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "condition_on",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Наложить состояние",
+        "hint": "Добавляет состояние владельцу или цели",
+        "chain": [
+          "condition"
+        ],
+        "program": {
+          "name": "Наложить",
+          "blocks": [
+            {
+              "kind": "condition",
+              "condition_key": "poisoned"
+            }
+          ]
+        },
+        "quick": {
+          "feature": 2,
+          "monster": 3
+        }
+      }
+    },
+    {
+      "id": "condition_off",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Снять состояние",
+        "hint": "Убирает состояние, например яд или страх",
+        "chain": [
+          "condition"
+        ],
+        "program": {
+          "name": "Снять",
+          "blocks": [
+            {
+              "kind": "condition",
+              "condition_key": "frightened",
+              "operation": "remove"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "buff",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Изменить показатель",
+        "hint": "Скорость, хиты, инициатива, характеристика",
+        "chain": [
+          "adjust"
+        ],
+        "program": {
+          "name": "Усиление",
+          "blocks": [
+            {
+              "kind": "adjust",
+              "field": "speed",
+              "amount": 10
+            }
+          ]
+        },
+        "quick": {
+          "feature": 3
+        }
+      }
+    },
+    {
+      "id": "check",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Проверка характеристики",
+        "hint": "Отдельный бросок d20 с модификатором",
+        "chain": [
+          "roll"
+        ],
+        "program": {
+          "name": "Проверка",
+          "blocks": [
+            {
+              "kind": "roll",
+              "dice": "1d20+@str"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "uses_effect",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Умение с запасом использований",
+        "hint": "Списание использования и ручное правило",
+        "chain": [
+          "consume",
+          "manual"
+        ],
+        "program": {
+          "name": "Применить",
+          "blocks": [
+            {
+              "kind": "consume",
+              "resource": "uses",
+              "source": "self"
+            },
+            {
+              "kind": "manual",
+              "text": "Опишите, что делает умение и когда применяется."
+            }
+          ]
+        },
+        "quick": {
+          "feature": 1
+        }
+      }
+    },
+    {
+      "id": "require_effect",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Условие → эффект",
+        "hint": "Проверка показателя перед изменением",
+        "chain": [
+          "require",
+          "adjust"
+        ],
+        "program": {
+          "name": "Под условием",
+          "blocks": [
+            {
+              "kind": "require",
+              "field": "hp.current",
+              "minimum": 1
+            },
+            {
+              "kind": "adjust",
+              "field": "speed",
+              "amount": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "table": {
+        "group": "Умения и эффекты",
+        "name": "Ручное правило",
+        "hint": "Не исполняется: требует подтверждения перед цепочкой",
+        "chain": [
+          "manual"
+        ],
+        "program": {
+          "name": "Правило",
+          "blocks": [
+            {
+              "kind": "manual",
+              "text": "Опишите правило, которое мастер применяет вручную."
+            }
+          ]
+        },
+        "quick": {
+          "item": 4,
+          "feature": 4,
+          "monster": 4,
+          "default": 4
+        }
+      }
+    },
+    {
+      "id": "asi",
+      "table": {
+        "group": "Персонаж",
+        "name": "Бонус характеристики",
+        "hint": "+2 или +1 к одной-двум характеристикам",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Характеристики",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "asi.str",
+              "value": 2
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true,
+        "quick": {
+          "race": 1,
+          "background": 1
+        }
+      }
+    },
+    {
+      "id": "skills",
+      "table": {
+        "group": "Персонаж",
+        "name": "Навыки на выбор",
+        "hint": "Игрок выбирает указанное число навыков",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Навыки",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "skills",
+              "value": {
+                "choose": 2,
+                "from": []
+              }
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true,
+        "quick": {
+          "race": 2,
+          "class": 2,
+          "background": 2
+        }
+      }
+    },
+    {
+      "id": "saves",
+      "table": {
+        "group": "Персонаж",
+        "name": "Владение спасбросками",
+        "hint": "Владение выбранными спасбросками",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Спасброски",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "saves",
+              "value": []
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "hit_die",
+      "table": {
+        "group": "Персонаж",
+        "name": "Кость хитов класса",
+        "hint": "d6, d8, d10 или d12 — максимум на первом уровне",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Хиты",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "hit_die",
+              "value": "d8"
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true,
+        "quick": {
+          "class": 1
+        }
+      }
+    },
+    {
+      "id": "spellcasting",
+      "table": {
+        "group": "Персонаж",
+        "name": "Характеристика заклинателя",
+        "hint": "От чего считаются СЛ и бонус атаки",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Заклинания",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "spellcasting",
+              "value": "int"
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "armor",
+      "table": {
+        "group": "Персонаж",
+        "name": "Владение доспехами",
+        "hint": "Строка владения доспехами и щитами",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Доспехи",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "armor",
+              "value": ""
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "weapons_prof",
+      "table": {
+        "group": "Персонаж",
+        "name": "Владение оружием",
+        "hint": "Строка владения оружием и инструментами",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Оружие",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "weapons",
+              "value": ""
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "languages",
+      "table": {
+        "group": "Персонаж",
+        "name": "Языки",
+        "hint": "Список языков или число языков на выбор",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Языки",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "languages",
+              "value": []
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "speed",
+      "table": {
+        "group": "Персонаж",
+        "name": "Скорость",
+        "hint": "Скорость персонажа в футах",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Скорость",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "speed",
+              "value": 30
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true
+      }
+    },
+    {
+      "id": "feature",
+      "table": {
+        "group": "Персонаж",
+        "name": "Умение",
+        "hint": "Особенность расы, класса или предыстории",
+        "chain": [
+          "manual"
+        ],
+        "program": {
+          "name": "Умение",
+          "blocks": [
+            {
+              "kind": "manual",
+              "text": "Опишите умение: что оно даёт и когда применяется."
+            }
+          ]
+        },
+        "creation": true,
+        "quick": {
+          "race": 3,
+          "class": 3,
+          "background": 3
+        }
+      }
+    },
+    {
+      "id": "proficiency",
+      "table": {
+        "group": "Персонаж",
+        "name": "Владение",
+        "hint": "Произвольная строка владения",
+        "chain": [
+          "passive"
+        ],
+        "program": {
+          "name": "Владения",
+          "blocks": [
+            {
+              "kind": "passive",
+              "field": "armor",
+              "value": ""
+            }
+          ],
+          "trigger": "passive"
+        },
+        "creation": true,
+        "quick": {
+          "race": 4,
+          "class": 4,
+          "background": 4
+        }
+      }
+    }
+  ]
+}

@@ -38,106 +38,44 @@ window.Mechanics = (() => {
     if(kind==='passive') Object.assign(b,{field:'speed',value:30});
     return b;
   }
-  /// Стартовый набор блоков для **новой** записи создания персонажа: влияет на характеристики,
-  /// владения и даёт заготовку умения. Только для расы, класса и предыстории; правится как обычные блоки.
-  const STARTERS = {
-    race: () => ({ version: VERSION, origin: 'starter', programs: [
-      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
-        { ...block('passive'), field: 'speed', value: 30 },
-        { ...block('passive'), field: 'asi.str', value: 2 },
-        { ...block('passive'), field: 'languages', value: ['Общий'] } ] },
-      { id: uid(), name: 'Умение расы', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите особенность расы: что она даёт и когда применяется.' }] } ] }),
-    class: () => ({ version: VERSION, origin: 'starter', programs: [
-      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
-        { ...block('passive'), field: 'hit_die', value: 'd8' },
-        { ...block('passive'), field: 'saves', value: ['str'] },
-        { ...block('passive'), field: 'skills', value: { choose: 2, from: [] } } ] },
-      { id: uid(), name: 'Умение класса', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите умение 1 уровня: что оно даёт и когда применяется.' }] } ] }),
-    background: () => ({ version: VERSION, origin: 'starter', programs: [
-      { id: uid(), name: 'Параметры при создании', trigger: 'passive', blocks: [
-        { ...block('passive'), field: 'skills', value: [] },
-        { ...block('passive'), field: 'languages', value: [] } ] },
-      { id: uid(), name: 'Умение предыстории', trigger: 'use', blocks: [{ ...block('manual'), text: 'Опишите умение предыстории.' }] } ] }),
-  };
-  function starter(category) { const make = STARTERS[category]; return make ? make() : undefined; }
-  /// Библиотека шаблонов: готовые цепочки блоков. build() собирает новую программу.
-  /// creation — шаблоны для расы, класса и предыстории (параметры создания персонажа).
-  const TEMPLATES = [
-    { id:'weapon', group:'Бой', name:'Атака → урон', hint:'Оружейная атака и урон с модификатором Силы/Ловкости', chain:['attack','damage'],
-      build:()=>({name:'Атака',blocks:[block('attack'),block('damage')]}) },
-    { id:'spell_attack', group:'Бой', name:'Атака заклинанием → урон', hint:'Бонус атаки заклинанием, урон, сравнение с КД цели', chain:['attack','damage'],
-      build:()=>({name:'Атака заклинанием',blocks:[{...block('attack'),dice:dice('1d20+@spell')},{...block('damage'),dice:dice('1d10+@spell_mod')}]}) },
-    { id:'area_damage', group:'Бой', name:'Своё действие: урон', hint:'Правило области, спасбросок и условия описываете вы — блок только бросает урон, применяет результат ДМ', chain:['manual','damage'],
-      build:()=>({name:'Урон по площади',blocks:[{...block('manual'),text:'Опишите область, условия и спасбросок цели: что именно и в каком порядке применяет ДМ.'},block('damage')]}) },
-    { id:'ammo_attack', group:'Бой', name:'Патрон → атака → урон', hint:'Расход боеприпаса перед каждой атакой', chain:['consume','attack','damage'],
-      build:()=>({name:'Выстрел',blocks:[{...block('consume'),source:'tag',tag:'стрела',trigger:'attack'},block('attack'),block('damage')]}) },
-    { id:'double_attack', group:'Бой', name:'Две атаки', hint:'Два удара: урон каждого бросается отдельно', chain:['attack','damage','attack','damage'],
-      build:()=>({name:'Две атаки',blocks:[block('attack'),block('damage'),block('attack'),block('damage')]}) },
-    { id:'potion', group:'Лечение', name:'Зелье → хиты → флакон', hint:'Расход предмета, лечение, выдача пустого флакона', chain:['consume','heal','grant_item'],
-      build:()=>({name:'Выпить зелье',blocks:[block('consume'),{...block('heal'),dice:dice('2d4+2')},block('grant_item')]}) },
-    { id:'spell', group:'Лечение', name:'Ячейка → лечение', hint:'Расход ячейки и лечение цели', chain:['consume','heal'],
-      build:()=>({name:'Сотворить',blocks:[{...block('consume'),resource:'slot',source:'self',slot_level:1},{...block('heal'),dice:dice('1d8+@spell_mod')}]}) },
-    { id:'temp_hp', group:'Лечение', name:'Временные хиты', hint:'Берутся максимумом, не суммируются', chain:['temp_hp'],
-      build:()=>({name:'Временные хиты',blocks:[{...block('temp_hp'),dice:dice('1d6+2')}]}) },
-    { id:'heal_temp', group:'Лечение', name:'Лечение + временные хиты', hint:'Сначала лечение, затем запас сверху', chain:['heal','temp_hp'],
-      build:()=>({name:'Лечение с запасом',blocks:[{...block('heal'),dice:dice('1d8+3')},{...block('temp_hp'),dice:dice('1d6')}]}) },
-    { id:'heal_charge', group:'Лечение', name:'Заряд → лечение', hint:'Тратит заряд предмета, а не количество', chain:['consume','heal'],
-      build:()=>({name:'Использовать заряд',blocks:[{...block('consume'),resource:'charges',source:'self'},{...block('heal'),dice:dice('2d4+2')}]}) },
-    { id:'craft', group:'Предметы', name:'Сырьё → предмет', hint:'Расход по метке и выдача нового предмета', chain:['consume','grant_item'],
-      build:()=>({name:'Изготовить',blocks:[{...block('consume'),source:'tag',tag:'ingredient'},block('grant_item')]}) },
-    { id:'grant_ammo', group:'Предметы', name:'Выдать боеприпасы', hint:'Выдача пачки с меткой ресурса', chain:['grant_item'],
-      build:()=>({name:'Выдать',blocks:[{...block('grant_item'),amount:20,item:{...block('grant_item').item,name:'Стрелы',type:'ammo',ammo_tag:'стрела'}}]}) },
-    { id:'consume_only', group:'Предметы', name:'Расход заряда', hint:'Только списание ресурса, без эффектов', chain:['consume'],
-      build:()=>({name:'Потратить заряд',blocks:[{...block('consume'),resource:'charges',source:'self'}]}) },
-    { id:'condition_on', group:'Умения и эффекты', name:'Наложить состояние', hint:'Добавляет состояние владельцу или цели', chain:['condition'],
-      build:()=>({name:'Наложить',blocks:[{...block('condition'),condition:conditionName('poisoned')}]}) },
-    { id:'condition_off', group:'Умения и эффекты', name:'Снять состояние', hint:'Убирает состояние, например яд или страх', chain:['condition'],
-      build:()=>({name:'Снять',blocks:[{...block('condition'),condition:conditionName('frightened'),operation:'remove'}]}) },
-    { id:'buff', group:'Умения и эффекты', name:'Изменить показатель', hint:'Скорость, хиты, инициатива, характеристика', chain:['adjust'],
-      build:()=>({name:'Усиление',blocks:[{...block('adjust'),field:'speed',amount:10}]}) },
-    { id:'check', group:'Умения и эффекты', name:'Проверка характеристики', hint:'Отдельный бросок d20 с модификатором', chain:['roll'],
-      build:()=>({name:'Проверка',blocks:[{...block('roll'),dice:dice('1d20+@str')}]}) },
-    { id:'uses_effect', group:'Умения и эффекты', name:'Умение с запасом использований', hint:'Списание использования и ручное правило', chain:['consume','manual'],
-      build:()=>({name:'Применить',blocks:[{...block('consume'),resource:'uses',source:'self'},{...block('manual'),text:'Опишите, что делает умение и когда применяется.'}]}) },
-    { id:'require_effect', group:'Умения и эффекты', name:'Условие → эффект', hint:'Проверка показателя перед изменением', chain:['require','adjust'],
-      build:()=>({name:'Под условием',blocks:[{...block('require'),field:'hp.current',minimum:1},{...block('adjust'),field:'speed',amount:10}]}) },
-    { id:'manual', group:'Умения и эффекты', name:'Ручное правило', hint:'Не исполняется: требует подтверждения перед цепочкой', chain:['manual'],
-      build:()=>({name:'Правило',blocks:[{...block('manual'),text:'Опишите правило, которое мастер применяет вручную.'}]}) },
-    { id:'asi', creation:true, group:'Персонаж', name:'Бонус характеристики', hint:'+2 или +1 к одной-двум характеристикам', chain:['passive'],
-      build:()=>({name:'Характеристики',trigger:'passive',blocks:[{...block('passive'),field:'asi.str',value:2}]}) },
-    { id:'skills', creation:true, group:'Персонаж', name:'Навыки на выбор', hint:'Игрок выбирает указанное число навыков', chain:['passive'],
-      build:()=>({name:'Навыки',trigger:'passive',blocks:[{...block('passive'),field:'skills',value:{choose:2,from:[]}}]}) },
-    { id:'saves', creation:true, group:'Персонаж', name:'Владение спасбросками', hint:'Владение выбранными спасбросками', chain:['passive'],
-      build:()=>({name:'Спасброски',trigger:'passive',blocks:[{...block('passive'),field:'saves',value:[]}]}) },
-    { id:'hit_die', creation:true, group:'Персонаж', name:'Кость хитов класса', hint:'d6, d8, d10 или d12 — максимум на первом уровне', chain:['passive'],
-      build:()=>({name:'Хиты',trigger:'passive',blocks:[{...block('passive'),field:'hit_die',value:'d8'}]}) },
-    { id:'spellcasting', creation:true, group:'Персонаж', name:'Характеристика заклинателя', hint:'От чего считаются СЛ и бонус атаки', chain:['passive'],
-      build:()=>({name:'Заклинания',trigger:'passive',blocks:[{...block('passive'),field:'spellcasting',value:'int'}]}) },
-    { id:'armor', creation:true, group:'Персонаж', name:'Владение доспехами', hint:'Строка владения доспехами и щитами', chain:['passive'],
-      build:()=>({name:'Доспехи',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}) },
-    { id:'weapons_prof', creation:true, group:'Персонаж', name:'Владение оружием', hint:'Строка владения оружием и инструментами', chain:['passive'],
-      build:()=>({name:'Оружие',trigger:'passive',blocks:[{...block('passive'),field:'weapons',value:''}]}) },
-    { id:'languages', creation:true, group:'Персонаж', name:'Языки', hint:'Список языков или число языков на выбор', chain:['passive'],
-      build:()=>({name:'Языки',trigger:'passive',blocks:[{...block('passive'),field:'languages',value:[]}]}) },
-    { id:'speed', creation:true, group:'Персонаж', name:'Скорость', hint:'Скорость персонажа в футах', chain:['passive'],
-      build:()=>({name:'Скорость',trigger:'passive',blocks:[{...block('passive'),field:'speed',value:30}]}) },
-    { id:'feature', creation:true, group:'Персонаж', name:'Умение', hint:'Особенность расы, класса или предыстории', chain:['manual'],
-      build:()=>({name:'Умение',blocks:[{...block('manual'),text:'Опишите умение: что оно даёт и когда применяется.'}]}) },
-    { id:'proficiency', creation:true, group:'Персонаж', name:'Владение', hint:'Произвольная строка владения', chain:['passive'],
-      build:()=>({name:'Владения',trigger:'passive',blocks:[{...block('passive'),field:'armor',value:''}]}) },
-  ];
-  /// Быстрые шаблоны по категории: самые ходовые цепочки — одним нажатием.
-  const QUICK = {
-    item: ['potion','weapon','area_damage','manual'],
-    spell: ['spell','spell_attack','area_damage','temp_hp'],
-    feature: ['uses_effect','condition_on','buff','manual'],
-    monster: ['weapon','area_damage','condition_on','manual'],
-    race: ['asi','skills','feature','proficiency'],
-    class: ['hit_die','skills','feature','proficiency'],
-    background: ['asi','skills','feature','proficiency'],
-  };
-  QUICK.default = ['weapon','potion','area_damage','manual'];
-  const templates = (category) => TEMPLATES.filter(t => ['race','class','background'].includes(category) ? !!t.creation : !t.creation);
+  // Библиотека шаблонов и стартовые программы — наборы mechanic_templates и mechanic_starters (static/presets/).
+  // Описание блока в наборе: вид (kind) и поля; dice — строка формулы, condition_key — ключ состояния
+  // (русское название берётся из набора conditions), item — поля предмета поверх умолчаний вида.
+  const libraryOf = kind => window.Presets?.items(kind) || [];
+  function blockFromSpec(spec) {
+    const { kind, dice: formula, condition_key: key, item, ...rest } = spec;
+    const b = block(kind);
+    if (formula !== undefined) b.dice = dice(formula);
+    if (key !== undefined) b.condition = conditionName(key);
+    if (item !== undefined) b.item = { ...(b.item || {}), ...clone(item) };
+    return Object.assign(b, clone(rest));
+  }
+  function programFromSpec(program) {
+    const out = { name: program.name, blocks: program.blocks.map(blockFromSpec) };
+    if (program.trigger) out.trigger = program.trigger;
+    return out;
+  }
+  /// Стартовый набор блоков для новой записи создания персонажа (раса, класс, предыстория): влияет на характеристики,
+  /// владения и даёт заготовку умения. Правится как обычные блоки.
+  function starter(category) {
+    const item = libraryOf('mechanic_starters').find(i => i.id === category);
+    if (!item) return undefined;
+    return { version: VERSION, origin: 'starter', programs: item.table.programs.map(p => ({ id: uid(), ...programFromSpec(p) })) };
+  }
+  /// Шаблоны: готовые цепочки блоков из набора mechanic_templates. build() собирает новую программу.
+  function templateList() {
+    return libraryOf('mechanic_templates').map(item => {
+      const t = item.table;
+      return { id: item.id, group: t.group, name: t.name, hint: t.hint, chain: t.chain || [], creation: Boolean(t.creation), build: () => programFromSpec(t.program) };
+    });
+  }
+  /// Быстрые шаблоны по категории: порядок задаёт число quick[категория] в наборе; нет — шаблоны «default».
+  function quickFor(category) {
+    const pick = cat => libraryOf('mechanic_templates').filter(i => i.table.quick?.[cat] !== undefined).sort((x, y) => x.table.quick[cat] - y.table.quick[cat]).map(i => i.id);
+    const ids = pick(category);
+    return ids.length ? ids : pick('default');
+  }
+  const templates = (category) => templateList().filter(t => ['race','class','background'].includes(category) ? !!t.creation : !t.creation);
   /// Галерея шаблонов: группы, описание и цепочка блоков — вместо плоского списка кнопок.
   function templatePicker(category = 'item') {
     const all = templates(category), query = el('input', { placeholder: 'Найти шаблон…', 'aria-label': 'Поиск шаблона' });
@@ -290,9 +228,9 @@ window.Mechanics = (() => {
       const nav=el('div',{class:'mechanics-programs'},...m.programs.map((p,i)=>el('button',{class:i===selected?'active':'',onclick:()=>{selected=i;render();}},p.name)),el('button',{onclick:()=>{m.programs.push(makeProgram());selected=m.programs.length-1;render();}},'+ Действие'));
       root.append(el('div',{class:'mechanics-heading'},el('div',{},el('h3',{},'Конструктор механик'),el('p',{class:'muted small'},'Соберите действие из блоков. Описание ничего не исполняет. Порядок — сверху вниз; при ошибке откатывается вся цепочка.')),el('span',{class:'badge'},'BLOCKS · v1')),nav);
       if(!p) { root.append(el('p',{class:'muted'},'Добавьте действие или начните с рецепта ниже.')); }
-      const pick=(id)=>TEMPLATES.find(t=>t.id===id);
+      const pick=(id)=>templateList().find(t=>t.id===id);
       const addTemplate=(t)=>{const prog=makeProgram(),made=t.build();prog.name=made.name;prog.blocks=made.blocks;if(made.trigger)prog.trigger=made.trigger;m.programs.push(prog);selected=m.programs.length-1;render();};
-      const quickIds=QUICK[options.category||'item']||QUICK.default;
+      const quickIds=quickFor(options.category||'item');
       const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Шаблоны:'),
         ...quickIds.map(id=>{const t=pick(id);return t?el('button',{class:'small',title:t.hint,onclick:()=>addTemplate(t)},t.name):null;}),
         el('button',{class:'small primary',title:'Все шаблоны по группам с описанием',onclick:async()=>{const t=await templatePicker(options.category||'item');if(t)addTemplate(t);}},'Все шаблоны ▸'));

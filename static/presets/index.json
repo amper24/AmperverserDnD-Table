@@ -12,6 +12,8 @@
     "conditions.json",
     "spell-schools.json",
     "languages.json",
-    "enemy-types.json"
+    "enemy-types.json",
+    "mechanic-templates.json",
+    "mechanic-starters.json"
   ]
 }

@@ -31,6 +31,9 @@
     spell_schools: { fields: ['table'] },
     languages: { fields: ['table'] },
     enemy_types: { fields: ['table'] },
+    // Библиотека механик: шаблоны блоков и стартовые программы создания (описание в docs/presets.md).
+    mechanic_templates: { fields: ['table'] },
+    mechanic_starters: { fields: ['table'] },
   };
   const STORE_KEY = 'et-presets-user';
   const MANIFEST = 'index.json';
