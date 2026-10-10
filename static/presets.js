@@ -26,6 +26,7 @@
     class_progression: { fields: ['table'], needsEdition: true },
     multiclass_slots: { fields: ['table'], needsEdition: true },
     class_rules: { fields: ['table'], needsEdition: true },
+    race_rules: { fields: ['table'], needsEdition: true },
     // Словари правил: каждый элемент — table с полями, которые читают потребители (см. docs/presets.md).
     conditions: { fields: ['table'] },
     spell_schools: { fields: ['table'] },

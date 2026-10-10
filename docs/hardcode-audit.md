@@ -92,7 +92,7 @@
 
 - `static/class-rules.js` (`window.ClassRules`) — единый слой правил классов-заклинателей: читает правила из записи (блок `data.caster`, узел `rule.class_rules`) и из набора `class_rules`. Конструкторы `slugOf`, `casterLevel`, `isPicker`, `startMode`, `preparedFormula` принимают редакцию.
 - Остаток в мастерах (не переведено, ~85 строк в `levelup.js`, `character-builder.js`, `builder-dialog.js`):
-  - расы: имена `dragonborn`, `high elf`, `half-elf`, корень расы `elf`/`gnome`/`tiefling`/`human`, выборы навыков, заклинаний и языков по расе (`character-builder.js` ~673–776, `builder-dialog.js` ~118–128, ~525–546);
+  - расы — **сборка перенесена** в набор `race_rules` (`static/presets/race-rules-2014.json`, `race-rules-2024.json`): скорость линии, владения оружием корня, инструменты дварфа, драконье наследие, заговоры, всегда подготовленные заклинания, бонус хитов дварфа 2024. `character-builder.js` больше не сравнивает имена рас. Остаток: варианты выборов и проверки в `builder-dialog.js` (~118–128, ~511–547) — файл не меняется без отдельного запроса;
   - особенности классов: боевой стиль, метамагия, пакт, expertise, подклассы (круг земли, коллегия знаний, жизнь), орден жреца/друида 2024, alwaysPrepared (`levelup.js` ~141–242, `character-builder.js` ~60, ~680–750, `builder-dialog.js` ~134–461);
   - списки заклинаний-алиасов в `builder-dialog.js` ~266–299 (`'жрец'`, `'cleric'` и т. д.).
 - Монах: фильтр оружия (`character-builder.js` ~545) и тексты предысторий-классов остаются литералами.
@@ -100,6 +100,11 @@
 - **Таблицы развития SRD — узлами.** Каждый класс SRD 2014/2024 в `data_seed` несёт узел `rule.class_progression` с таблицей (перенос: `node tools/srd/add_class_progression_nodes.cjs`, идемпотентно; тест `tests/class-progression-seed.test.cjs`). Английский вид — оверлей узла с подписями колонок.
 - **Таблицы развития и пресеты — наборы данных.** Таблицы классов, ячейки мультикласса, стартовые графы, основы предметов и заклинаний лежат в `static/presets/*.json` и читаются реестром `static/presets.js`. Пользователь добавляет свой набор через диалог «Наборы данных…» или файлом в репозиторий (`docs/presets.md`). `class-progression.js` и `presets-data.js` удалены.
 - Браузерные тесты запускаются в CI (job `browser`): dice, forms-create, mechanics-graph, mechanics, node-card, node-editor, presets-manager. `equipment.browser.cjs` не включён — падает и на main.
+
+## Расы — перенос сборки (`race_rules`)
+- Набор `race_rules` по редакции: запись на расу или линию (`name_en`), линия переопределяет поля корня, остальное наследуется. Поля: `speed`, `weapons`, `tool_choice` (ключ выбора), `damage_choice` (ключ выбора и таблица урона), `origin_feat`, `cantrips` (`ability: 'choice'` — выбранная характеристика расы), `cantrip_choice`, `always_prepared`, `hp_bonus`.
+- Проверка: эталон сборки листа по всем 138 случаям (расы, линии, три набора выборов, обе редакции) до и после перевода совпадает. Тест `tests/race-rules.test.cjs`.
+- Вне сборки (нужен отдельный запрос): `builder-dialog.js` — проверки обязательных выборов и панели выбора; списки вариантов выборов там же.
 
 ## Что остаётся
 
