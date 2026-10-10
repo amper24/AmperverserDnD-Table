@@ -145,7 +145,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
     }
     Ok(())
 }
-fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>) -> ApiResult<()> {
+// Смысловые проблемы связей пишутся в problems (сохранение их не блокирует, исполнение пропускает граф).
+fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>, problems: &mut Vec<String>) -> ApiResult<()> {
     if !graph.is_object() { return Err(bad("Граф должен быть объектом.")); }
     let nodes = graph["nodes"].as_array().filter(|a| a.len() <= 500).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
     let links = graph["links"].as_array().filter(|a| a.len() <= 2000).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
@@ -174,23 +175,25 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         let from = &link["from"]; let to = &link["to"];
         let source = from["node"].as_str().unwrap_or(""); let target = to["node"].as_str().unwrap_or("");
         let out_socket = from["socket"].as_str().unwrap_or(""); let in_socket = to["socket"].as_str().unwrap_or("");
-        if !node_ids.contains(source) || !node_ids.contains(target) { return Err(bad("Провод указывает на отсутствующий узел.")); }
+        if !node_ids.contains(source) || !node_ids.contains(target) { problems.push("Провод указывает на отсутствующий узел.".to_string()); continue; }
         let from_node = nodes.iter().find(|n| n["id"] == source).unwrap(); let to_node = nodes.iter().find(|n| n["id"] == target).unwrap();
         let (_, outs) = ports_for(from_node["type"].as_str().unwrap_or(""), &from_node["params"], groups, owner_group);
         let (ins, _) = ports_for(to_node["type"].as_str().unwrap_or(""), &to_node["params"], groups, owner_group);
-        let out_type = outs.get(out_socket).ok_or_else(|| bad("Провод подключён к отсутствующему сокету."))?;
-        let in_type = ins.get(in_socket).ok_or_else(|| bad("Провод подключён к отсутствующему сокету."))?;
-        if out_type != in_type { return Err(bad("Типы сокетов провода не совпадают.")); }
+        let (out_type, in_type) = match (outs.get(out_socket), ins.get(in_socket)) {
+            (Some(out), Some(input)) => (out, input),
+            _ => { problems.push("Провод подключён к отсутствующему сокету.".to_string()); continue; }
+        };
+        if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
         let key = format!("{target}:{in_socket}");
-        if !incoming.insert(key) { return Err(bad("К каждому входному сокету подключается только один провод.")); }
+        if !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
         let edge_key = format!("{source}:{out_socket}>{target}:{in_socket}");
-        if !edge_ids.insert(edge_key) { return Err(bad("Повторяющийся провод.")); }
+        if !edge_ids.insert(edge_key) { problems.push("Повторяющийся провод.".to_string()); continue; }
         adjacency.get_mut(source).unwrap().push(target.to_string()); *indegree.get_mut(target).unwrap() += 1;
     }
-    for node in nodes { if node["type"] == "flow.if" && !incoming.contains(&format!("{}:condition", node["id"].as_str().unwrap_or(""))) { return Err(bad("Условному узлу требуется типизированное логическое условие.")); } }
+    for node in nodes { if node["type"] == "flow.if" && !incoming.contains(&format!("{}:condition", node["id"].as_str().unwrap_or(""))) { problems.push("Условному узлу требуется типизированное логическое условие.".to_string()); } }
     let mut queue: VecDeque<String> = indegree.iter().filter(|(_, d)| **d == 0).map(|(id, _)| id.clone()).collect(); let mut visited = 0;
     while let Some(current) = queue.pop_front() { visited += 1; for target in adjacency.get(&current).into_iter().flatten() { let d = indegree.get_mut(target).unwrap(); *d -= 1; if *d == 0 { queue.push_back(target.clone()); } } }
-    if visited != node_ids.len() { return Err(bad("Цикл в графе запрещён.")); }
+    if visited != node_ids.len() { problems.push("Цикл в графе запрещён.".to_string()); }
     let mut frame_ids = HashSet::new(); let mut framed_nodes = HashSet::new();
     for frame in frames {
         let id = frame["id"].as_str().unwrap_or(""); let title = frame["title"].as_str().unwrap_or("");
@@ -234,7 +237,12 @@ fn group_cycle(groups: &[Value]) -> bool {
     refs.keys().all(|id| visit(id, &refs, &mut visiting, &mut done))
 }
 
-pub fn validate(mechanics: &Value) -> ApiResult<()> {
+/// Сохранение: проверяется только структура; смысловые проблемы связей сюда не входят.
+pub fn validate(mechanics: &Value) -> ApiResult<()> { check(mechanics, &mut Vec::new()) }
+/// Все проблемы графа (структура с ошибкой вернётся через Err). Пустой список значит, что граф исполняется.
+pub fn problems(mechanics: &Value) -> ApiResult<Vec<String>> { let mut list = Vec::new(); check(mechanics, &mut list)?; Ok(list) }
+pub fn is_executable(mechanics: &Value) -> bool { matches!(problems(mechanics), Ok(list) if list.is_empty()) }
+fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
     if mechanics["version"] != 2 || utf16_len(&mechanics.to_string()) > 1_000_000 { return Err(bad("Неподдерживаемая или слишком большая схема механик.")); }
     let graph = &mechanics["graph"];
     let groups = graph["groups"].as_array().filter(|a| a.len() <= 50).ok_or_else(|| bad("Не более 50 групп повторного использования."))?;
@@ -246,11 +254,11 @@ pub fn validate(mechanics: &Value) -> ApiResult<()> {
         if !g["nodes"].is_array() || !g["links"].is_array() { return Err(bad("У группы должны быть свои nodes и links.")); }
         let mut inner = json!({"nodes":g["nodes"],"links":g["links"],"frames":g.get("frames").cloned().unwrap_or(json!([]))});
         if inner["frames"].is_null() { inner["frames"] = json!([]); }
-        validate_graph(&inner, groups, true, Some(g))?;
+        validate_graph(&inner, groups, true, Some(g), problems)?;
         if !group_boundaries_match(g) { return Err(bad("Порты группы должны иметь по одному соответствующему узлу входа/выхода.")); }
     }
     if !group_cycle(groups) { return Err(bad("Рекурсивная ссылка или цикл между группами запрещён.")); }
-    validate_graph(graph, groups, false, None)
+    validate_graph(graph, groups, false, None, problems)
 }
 
 struct GraphContext {
@@ -450,7 +458,8 @@ mod tests {
         let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
         for case in fixture["cases"].as_array().unwrap() {
             let actual = validate(&case["mechanics"]).is_ok();
-            assert_eq!(actual, case["valid"].as_bool().unwrap(), "{}", case["name"].as_str().unwrap());
+            assert_eq!(actual, case["valid"].as_bool().unwrap(), "saves: {}", case["name"].as_str().unwrap());
+            assert_eq!(is_executable(&case["mechanics"]), case["executable"].as_bool().unwrap(), "executes: {}", case["name"].as_str().unwrap());
         }
     }
     #[test]

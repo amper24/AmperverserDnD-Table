@@ -11,7 +11,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": true
     },
     {
       "name": "typed-number-to-speed",
@@ -50,11 +51,12 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": true
     },
     {
       "name": "socket-type-mismatch",
-      "valid": false,
+      "valid": true,
       "mechanics": {
         "version": 2,
         "graph": {
@@ -89,11 +91,12 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "directed-cycle",
-      "valid": false,
+      "valid": true,
       "mechanics": {
         "version": 2,
         "graph": {
@@ -140,7 +143,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "fractional-dice-count",
@@ -164,7 +168,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "numeric-string-speed",
@@ -185,7 +190,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "numeric-edition-token",
@@ -208,7 +214,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "group-boundary-outside-definition",
@@ -229,7 +236,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "reusable-group-boundary",
@@ -359,7 +367,8 @@
             }
           ]
         }
-      }
+      },
+      "executable": true
     },
     {
       "name": "group-interface-without-boundary-node",
@@ -387,7 +396,8 @@
             }
           ]
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "recursive-group-reference",
@@ -433,11 +443,12 @@
             }
           ]
         }
-      }
+      },
+      "executable": false
     },
     {
       "name": "conditional-needs-bool-input",
-      "valid": false,
+      "valid": true,
       "mechanics": {
         "version": 2,
         "graph": {
@@ -452,7 +463,8 @@
           "frames": [],
           "groups": []
         }
-      }
+      },
+      "executable": false
     }
   ]
 }

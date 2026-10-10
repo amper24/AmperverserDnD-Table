@@ -220,7 +220,10 @@
     }
     return '';
   }
-  function validateGraph(graph, groups = [], nested = false, ownerGroup = null) {
+  // Смысловые проблемы связей (сокеты, типы, цикл, незавершённость) собираются в список problems:
+  // сохранение их не блокирует, исполнение пропускает граф. Без списка функция работает строго (первая ошибка).
+  function soft(problems, message) { if (!problems) return fail(message); problems.push(message); return ''; }
+  function validateGraph(graph, groups = [], nested = false, ownerGroup = null, problems = null) {
     if (!graph || typeof graph !== 'object' || Array.isArray(graph)) return fail('Граф должен быть объектом.');
     const nodes = graph.nodes, links = graph.links, frames = graph.frames || [];
     if (!nested && !Array.isArray(groups)) return fail('Не более 50 групп повторного использования.');
@@ -252,23 +255,23 @@
     const linkKeys = new Set();
     for (const link of links) {
       const source = link?.from, target = link?.to;
-      if (!source || !target || !nodeIds.has(source.node) || !nodeIds.has(target.node)) return fail('Провод указывает на отсутствующий узел.');
+      if (!source || !target || !nodeIds.has(source.node) || !nodeIds.has(target.node)) { const e = soft(problems, 'Провод указывает на отсутствующий узел.'); if (e) return e; continue; }
       const fromNode = nodes.find(n => n.id === source.node), toNode = nodes.find(n => n.id === target.node);
       const fromSockets = socketMap(fromNode, groupMap, ownerGroup).outputs, toSockets = socketMap(toNode, groupMap, ownerGroup).inputs;
-      if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) return fail('Провод подключён к отсутствующему сокету.');
-      if (fromSockets[source.socket] !== toSockets[target.socket]) return fail('Типы сокетов провода не совпадают.');
+      if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
+      if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
       const targetKey = `${target.node}:${target.socket}`;
-      if (incoming.has(targetKey)) return fail('К каждому входному сокету подключается только один провод.');
+      if (incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
       incoming.add(targetKey);
       const linkKey = `${source.node}:${source.socket}>${target.node}:${target.socket}`;
-      if (linkKeys.has(linkKey)) return fail('Повторяющийся провод.');
+      if (linkKeys.has(linkKey)) { const e = soft(problems, 'Повторяющийся провод.'); if (e) return e; continue; }
       linkKeys.add(linkKey);
       adjacency.get(source.node).push(target.node); indegree.set(target.node, indegree.get(target.node) + 1);
     }
-    for (const node of nodes) if (node.type === 'flow.if' && !incoming.has(`${node.id}:condition`)) return fail('Условному узлу требуется типизированное логическое условие.');
+    for (const node of nodes) if (node.type === 'flow.if' && !incoming.has(`${node.id}:condition`)) { const e = soft(problems, 'Условному узлу требуется типизированное логическое условие.'); if (e) return e; }
     const queue = [...nodeIds].filter(id => indegree.get(id) === 0); let visited = 0;
     while (queue.length) { const current = queue.pop(); visited++; for (const target of adjacency.get(current)) { indegree.set(target, indegree.get(target) - 1); if (indegree.get(target) === 0) queue.push(target); } }
-    if (visited !== nodeIds.size) return fail('Цикл в графе запрещён.');
+    if (visited !== nodeIds.size) { const e = soft(problems, 'Цикл в графе запрещён.'); if (e) return e; }
     const frameIds = new Set(), framedNodes = new Set();
     for (const frame of frames) {
       if (!frame || !idText(frame.id, 64) || frameIds.has(frame.id) || typeof frame.title !== 'string' || !frame.title.trim() || frame.title.length > 120 || !Array.isArray(frame.nodes) || frame.nodes.length > 100) return fail('Некорректная рамка графа.');
@@ -290,7 +293,7 @@
       };
       for (const id of refs.keys()) if (!walk(id)) return fail('Рекурсивная ссылка или цикл между группами запрещён.');
       for (const group of groups) {
-        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group);
+        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group, problems);
         if (error) return `Группа «${group.name}»: ${error}`;
         const boundaryInputs = (group.nodes || []).filter(n => n.type === 'group.input').map(n => n.params?.socket_id);
         const boundaryOutputs = (group.nodes || []).filter(n => n.type === 'group.output').map(n => n.params?.socket_id);
@@ -348,15 +351,18 @@
     return '';
   }
   function toGraph(mechanics) { return v1ToV2(mechanics); }
+  // Сохранение: блокируют только структурные ошибки (размер, ID, типы узлов, параметры, интерфейс групп).
+  // Смысловые проблемы связей сохраняются и показываются списком; исполнение их пропускает (см. problems).
   function validate(mechanics) {
     if (!mechanics || ![1, GRAPH_VERSION].includes(mechanics.version)) return 'Неподдерживаемая схема механик.';
     if (mechanics.version === 1) return Base.validate(mechanics);
     if (!mechanics.graph || !Array.isArray(mechanics.graph.groups)) return 'Не более 50 групп повторного использования.';
     if (JSON.stringify(mechanics).length > 1_000_000) return 'Неподдерживаемая или слишком большая схема механик.';
-    const error = validateGraph(mechanics.graph, mechanics.graph.groups);
+    const list = [];
+    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list);
     if (error) return error;
-    const legacy = v2ToV1(mechanics);
-    const legacyError = Base.validate(legacy);
+    if (list.length) return '';
+    const legacyError = Base.validate(v2ToV1(mechanics));
     if (legacyError) return legacyError;
     const allNodes = [...(mechanics.graph.nodes || []), ...(mechanics.graph.groups || []).flatMap(g => g.nodes || [])];
     for (const n of allNodes) {
@@ -364,6 +370,21 @@
       if (e) return e;
     }
     return '';
+  }
+  // Список проблем графа без сохранения: пустой список значит, что граф можно исполнять.
+  function graphProblems(graph, groups = graph?.groups || []) {
+    const list = [];
+    const error = validateGraph(graph, groups, false, null, list);
+    return error ? [error] : list;
+  }
+  function problems(mechanics) {
+    const structural = validate(mechanics);
+    if (structural) return [structural];
+    if (mechanics.version === 1) return [];
+    const list = graphProblems(mechanics.graph, mechanics.graph.groups);
+    if (list.length) return list;
+    const legacyError = Base.validate(v2ToV1(mechanics));
+    return legacyError ? [legacyError] : [];
   }
 
   function valueForInput(node, socket, values) {
@@ -432,8 +453,8 @@
   }
   function evaluateGraph(mechanics, options = {}) {
     const graphMechanics = toGraph(mechanics);
-    const validation = validate(graphMechanics);
-    if (validation) return { error: validation, sheet: null };
+    const blocking = problems(graphMechanics);
+    if (blocking.length) return { error: `Граф не исполняется: ${blocking[0]}`, sheet: null };
     const edition = String(options.edition || '2014');
     const level = Math.max(1, Math.min(20, Math.trunc(Number(options.level) || 1)));
     const sheet = { edition, level, abilities: Object.fromEntries(ABILITIES.map(k => [k, 10])), race: '', class: '', subclass: '', speed: 30, hp: { max: 0, current: 0, temp: 0 },
@@ -519,8 +540,8 @@
     // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
     // отклоняется только ошибка, которую добавила именно эта связь. Полная проверка — при сохранении.
     const groupsList = graph.groups || [];
-    const before = validateGraph(graph, groupsList), after = validateGraph({ ...graph, links: [...rest, link] }, groupsList);
-    return after && after !== before ? after : '';
+    const before = graphProblems(graph, groupsList), after = graphProblems({ ...graph, links: [...rest, link] }, groupsList);
+    return after.find(problem => !before.includes(problem)) || '';
   }
 
   function graphEditor(doc, options = {}) {
@@ -859,8 +880,8 @@
       const inspector = renderProperties();
       // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
       // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
-      const pending = validateGraph(graph, graph.groups || []);
-      const statusLine = el('div', { class: 'node-status' + (pending && !status ? ' warn' : ''), role: 'status' }, status || (pending ? `Граф ещё не завершён: ${pending}` : ''));
+      const pending = graphProblems(graph, graph.groups || []);
+      const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
       // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
       root.append(...[toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
@@ -901,6 +922,8 @@
     toGraph,
     toLegacy: v2ToV1,
     validateGraph,
+    problems,
+    graphProblems,
     connectionError,
     wouldCycle,
     graphPreview: previewGraph,

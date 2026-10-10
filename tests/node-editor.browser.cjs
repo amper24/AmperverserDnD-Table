@@ -168,7 +168,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     // 11. Неполный граф не блокирует связи; статус показывает незавершённость.
     await page.locator('.node-editor').focus();
     await page.keyboard.press('Escape'); // сбрасывает одноразовое сообщение, остаётся статус незавершённости
-    assert.match(await statusText(), /не завершён/i, 'незавершённый граф показан в статусе');
+    assert.match(await statusText(), /не исполняется/i, 'незавершённый граф показан списком в статусе');
     assert.deepEqual(errors, [], 'нет ошибок страницы');
     console.log('PASS node editor browser: zoom, middle pan, context search menu, marquee, group move, typed wires, reconnect, detach, wire anchors, view not saved');
   } finally {

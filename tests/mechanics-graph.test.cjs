@@ -13,8 +13,11 @@ const M = ctx.window.Mechanics;
 const plain = value => JSON.parse(JSON.stringify(value));
 const fixture = JSON.parse(fs.readFileSync('tests/fixtures/mechanics-graph.json', 'utf8'));
 
-test('client graph validation matches the shared Rust fixture contract', () => {
-  for (const entry of fixture.cases) assert.equal(M.validate(entry.mechanics) === '', entry.valid, entry.name);
+test('client graph validation matches the shared Rust fixture contract (saves and executes)', () => {
+  for (const entry of fixture.cases) {
+    assert.equal(M.validate(entry.mechanics) === '', entry.valid, `saves: ${entry.name}`);
+    assert.equal(M.problems(entry.mechanics).length === 0, entry.executable, `executes: ${entry.name}`);
+  }
 });
 
 test('v1 reads through stable v2 IDs and v2 saves compile back without mutating stored copies', () => {
