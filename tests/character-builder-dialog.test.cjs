@@ -2,7 +2,7 @@
 // открыться, отрисовать все шаги и довести персонажа до готового листа без ошибок.
 // Запускаем настоящие скрипты фронта в vm с минимальным DOM-стабом и реальными
 // записями справочника из data_seed.
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -75,6 +75,9 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.confirm = () => true; // диалог подтверждения: по умолчанию «да», тест переопределяет
 vm.createContext(sandbox);
+// Наборы данных (языки, состояния) — первыми: модули читают их списки при загрузке.
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(sandbox);
+before(() => presetsReady);
 for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'])
   vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), sandbox, { filename: f });
 

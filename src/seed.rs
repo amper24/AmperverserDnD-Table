@@ -24,6 +24,11 @@ const SEED_FILES: &[(&str, &str, &str)] = &[("srd_2014.json", "SRD 2014", "2014"
 /// (tools/srd/legacy_hashes.py). По ним при обновлении находим строки БД, которые никто не менял, и переводим их на новую версию.
 type LegacyHashes = std::collections::HashMap<String, std::collections::HashMap<String, (String, String)>>;
 
+/// Прежние поставочные версии записей с механикой (tools/srd/previous_shipped.py):
+/// `{"2014": {"категория/slug": [[хеш data, хеш mechanics], ...]}}`. Нужны, чтобы обновить узлы механики в базах,
+/// где запись не менялась с прежней сборки, не трогая правки пользователя.
+type ShippedHashes = std::collections::HashMap<String, std::collections::HashMap<String, Vec<(String, String)>>>;
+
 /// Каноническая форма JSON: ключи по возрастанию, без пробелов, UTF-8 — совпадает с `canon()` в tools/srd/legacy_hashes.py.
 pub fn canon(v: &serde_json::Value) -> String {
     match v {
@@ -60,7 +65,7 @@ fn entry_hashes(name: &str, data: &serde_json::Value) -> (String, String) {
 
 /// Что делать с уже существующей строкой справочника при обновлении.
 #[derive(Debug, PartialEq)]
-enum Upgrade { Keep, AddMechanics, ReplaceLegacy }
+enum Upgrade { Keep, AddMechanics, ReplaceLegacy, ReplaceShipped }
 
 /// * строка совпадает с новой версией, но без механики — дописываем механику (как раньше);
 /// * строка — нетронутая запись старой (до локализации) сборки: имя и data, а механика либо отсутствует, либо тоже старая — заменяем целиком;
@@ -76,8 +81,16 @@ fn classify(current: &serde_json::Value, row_name: &str, new_data: &serde_json::
     Upgrade::Keep
 }
 
+/// Строка совпадает с одним из прежних поставочных снимков (имя + data + механика), и в новой версии есть механика.
+/// Такую строку заменяем целиком: правок пользователя в ней нет, иначе хеши бы не совпали.
+fn matches_shipped(current: &serde_json::Value, row_name: &str, shipped: &[(String, String)]) -> bool {
+    let (cd, cm) = entry_hashes(row_name, current);
+    !cm.is_empty() && shipped.iter().any(|(d, m)| *d == cd && *m == cm)
+}
+
 pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
     let legacy: LegacyHashes = SeedFiles::get("legacy_hashes.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
+    let shipped_all: ShippedHashes = SeedFiles::get("previous_shipped.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
     for (file, source, edition) in SEED_FILES {
         let Some(raw) = SeedFiles::get(file) else { tracing::warn!("{} не вшит", file); continue };
         let entries: Vec<Entry> = serde_json::from_slice(&raw.data)?;
@@ -90,20 +103,26 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
             if let Some(m)=e.data.get("mechanics") {crate::mechanics::validate(m).map_err(|err|anyhow::anyhow!("Некорректная механика {}: {:?}",e.slug,err))?;}
             let existing=stored.remove(&(e.category.clone(),e.slug.clone())).unwrap_or_default();
             if !existing.is_empty() {
-                let legacy_hash = legacy.get(*edition).and_then(|m| m.get(&format!("{}/{}", e.category, e.slug)));
+                let key = format!("{}/{}", e.category, e.slug);
+                let legacy_hash = legacy.get(*edition).and_then(|m| m.get(&key));
+                let shipped: &[(String, String)] = shipped_all.get(*edition).and_then(|m| m.get(&key)).map(|v| v.as_slice()).unwrap_or(&[]);
                 for row in existing {
                     let raw=util::text(&row,"data");let current=util::json_value(&raw);
                     let row_name=row.get::<String,_>("name");
                     // Only upgrade byte-semantically matching shipped definitions. Customized rows
                     // and previously edited blocks are never replaced by a later seed boot.
-                    match classify(&current,&row_name,&e.data,&e.name,legacy_hash) {
+                    let mut upgrade = classify(&current,&row_name,&e.data,&e.name,legacy_hash);
+                    if upgrade == Upgrade::Keep && e.data.get("mechanics").is_some() && matches_shipped(&current,&row_name,shipped) {
+                        upgrade = Upgrade::ReplaceShipped;
+                    }
+                    match upgrade {
                         Upgrade::AddMechanics => {
                             let mut next=current;
                             next["mechanics"]=e.data["mechanics"].clone();
                             sqlx::query("UPDATE compendium SET data = ? WHERE id = ? AND data = ?")
                                 .bind(next.to_string()).bind(row.get::<String,_>("id")).bind(raw).execute(&mut *tx).await?;
                         }
-                        Upgrade::ReplaceLegacy => {
+                        Upgrade::ReplaceLegacy | Upgrade::ReplaceShipped => {
                             // запись старой сборки без правок пользователя: русский текст, слой en, название и ключ поиска
                             sqlx::query("UPDATE compendium SET name = ?, name_lc = ?, data = ? WHERE id = ? AND data = ?")
                                 .bind(util::truncate(&e.name,128)).bind(i18n::search_key(&e.name,&e.data)).bind(e.data.to_string()).bind(row.get::<String,_>("id")).bind(raw).execute(&mut *tx).await?;
@@ -190,6 +209,17 @@ mod tests {
         assert_eq!(classify(&mech_edit, "Дротик", &new_data, "Дротик", Some(&legacy)), Upgrade::Keep);
         // без записи в таблице хешей ничего не заменяем
         assert_eq!(classify(&legacy_dart(), "Дротик", &new_data, "Дротик", None), Upgrade::Keep);
+    }
+
+    #[test]
+    fn rows_of_an_earlier_shipped_version_match_and_edited_rows_do_not() {
+        let shipped = vec![entry_hashes("Дротик", &legacy_dart())];
+        assert!(matches_shipped(&legacy_dart(), "Дротик", &shipped));
+        let mut edited = legacy_dart(); edited["desc"] = json!("моя правка");
+        assert!(!matches_shipped(&edited, "Дротик", &shipped));
+        assert!(!matches_shipped(&legacy_dart(), "Мой дротик", &shipped));
+        let mut no_mech = legacy_dart(); no_mech.as_object_mut().unwrap().remove("mechanics");
+        assert!(!matches_shipped(&no_mech, "Дротик", &shipped), "без механики снимок не совпадает");
     }
 
     #[test]

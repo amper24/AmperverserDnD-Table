@@ -1,4 +1,4 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -9,7 +9,9 @@ const ctx = { crypto: require('node:crypto').webcrypto, window: {}, Modules: { n
     ['sleight', 'Ловкость рук', 'dex'], ['stealth', 'Скрытность', 'dex'], ['survival', 'Выживание', 'wis']] };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/class-progression.js', 'utf8'), ctx);
+// Наборы данных (таблицы развития) — реестр Presets, читается с диска.
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady);
 ctx.DiceEngine = { ...ctx.window.DiceEngine, present() {} };
 vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
@@ -29,7 +31,7 @@ test('2024 creation grants Common and requires the two additional standard langu
   const sheet = B.build(d);
   assert.match(sheet.proficiencies, /Языки: Общий, Драконий, Эльфийский/);
   assert.equal(sheet.hp.max, 9, '2024 dwarven toughness adds 1 hit point at level 1');
-  assert.deepEqual(Array.from(B.LANGUAGES_2024_STANDARD), ['Общий жестовый язык', 'Драконий', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий']);
+  assert.deepEqual(Array.from(B.LANGUAGES_2024_STANDARD), ['Общий жестовый язык', 'Дварфийский', 'Эльфийский', 'Великаний', 'Гномий', 'Гоблинский', 'Полуросличий', 'Орочий', 'Драконий']);
 });
 
 test('origin selections project into starting proficiencies and 2024 lineage spells', () => {

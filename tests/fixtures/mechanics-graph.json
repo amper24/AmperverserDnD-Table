@@ -465,6 +465,226 @@
         }
       },
       "executable": false
+    },
+    {
+      "name": "hit-branch-damage",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Удар",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "action.attack",
+              "params": {
+                "block_id": "atk",
+                "enabled": true,
+                "dice": {
+                  "count": 0,
+                  "sides": 20,
+                  "bonus": 5,
+                  "stat": ""
+                },
+                "dc": 3
+              }
+            },
+            {
+              "id": "h",
+              "type": "condition.hit",
+              "params": {}
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "dmg",
+              "type": "action.damage",
+              "params": {
+                "block_id": "dmg",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "hit-condition-not-into-if",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture-misuse",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Удар",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "action.attack",
+              "params": {
+                "block_id": "atk",
+                "enabled": true,
+                "dice": {
+                  "count": 0,
+                  "sides": 20,
+                  "bonus": 5,
+                  "stat": ""
+                },
+                "dc": 3
+              }
+            },
+            {
+              "id": "h",
+              "type": "condition.hit",
+              "params": {}
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "dmg",
+              "type": "action.damage",
+              "params": {
+                "block_id": "dmg",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "enabled"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
     }
   ]
 }

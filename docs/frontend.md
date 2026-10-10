@@ -35,7 +35,7 @@
 | `compendium.js` | справочник | `Compendium` |
 | `character-builder.js` | правила создания персонажа | `CharacterBuilder` |
 | `builder-dialog.js` | мастер создания (8 шагов) | `newCharacterDialog` |
-| `class-progression.js` | таблицы развития (генерация `tools/srd`) | `CLASS_PROGRESSION` |
+| `presets.js` | реестр наборов данных: стартовые графы, основы, таблицы развития (JSON в `static/presets/`) | `Presets` |
 | `spell-rules.js` | учёт ячеек заклинаний | `SpellRules` |
 | `levelup.js` | повышение уровня | `LevelUp` |
 | `packs.js` | наборы | `Packs` |

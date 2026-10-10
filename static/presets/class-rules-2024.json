@@ -1,0 +1,535 @@
+{
+  "kind": "class_rules",
+  "id": "builtin.class-rules.2024",
+  "name": "Правила классов SRD 2024",
+  "edition": "2024",
+  "items": [
+    {
+      "id": "barbarian",
+      "table": {
+        "ru": "Варвар",
+        "color": "#e0533d",
+        "multiclass": {
+          "requirements": [
+            [
+              "str"
+            ]
+          ],
+          "proficiencies": "щиты, простое и воинское оружие"
+        },
+        "weapon_mastery": 2,
+        "legacy_unarmored": {
+          "formula": "10 + @dex + @con",
+          "name": "Защита без доспехов (варвар)",
+          "no_shield": false
+        },
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
+      }
+    },
+    {
+      "id": "bard",
+      "table": {
+        "ru": "Бард",
+        "color": "#b76fd1",
+        "caster": {
+          "level": "full",
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, один навык, один музыкальный инструмент"
+        },
+        "choices": [
+          {
+            "key": "bardInstruments",
+            "kind": "items",
+            "title": "Музыкальные инструменты",
+            "count": 3,
+            "hint": "Бард выбирает владение тремя музыкальными инструментами из справочника.",
+            "filter": {
+              "category": "Музыкальные инструменты"
+            },
+            "grant": "Музыкальные инструменты",
+            "problem": "Бард должен выбрать три разных музыкальных инструмента из справочника."
+          }
+        ],
+        "subclass_rules": [
+          {
+            "effect": "skills",
+            "subclass": "College of Lore",
+            "level": 3,
+            "feature": "дополнительные владения|bonus proficiencies",
+            "text": "три навык|трем[яи]\\s+навы|three skills",
+            "count": 3,
+            "any": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "cleric",
+      "table": {
+        "ru": "Жрец",
+        "color": "#e5c76b",
+        "caster": {
+          "level": "full",
+          "start": "prepared",
+          "start_prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты"
+        },
+        "choices": [
+          {
+            "key": "clericOrder",
+            "kind": "options",
+            "title": "Божественный орден",
+            "hint": "Выберите одну роль жреца на 1 уровне.",
+            "feature_name": "Божественный орден",
+            "problem": "Выберите Божественный орден жреца.",
+            "options": [
+              {
+                "value": "protector",
+                "name": "Защитник",
+                "text": "Владение воинским оружием и тяжёлыми доспехами.",
+                "feature_text": "Получено владение воинским оружием и тяжёлыми доспехами.",
+                "grant": "Божественный орден",
+                "proficiencies": [
+                  "Воинское оружие",
+                  "Тяжёлые доспехи"
+                ]
+              },
+              {
+                "value": "thaumaturge",
+                "name": "Чудотворец",
+                "text": "Один дополнительный заговор жреца.",
+                "feature_text": "Получен один дополнительный заговор из списка жреца; примените выбранную характеристику и бонус к проверкам Магии или Религии согласно правилам.",
+                "extra_cantrips": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "druid",
+      "table": {
+        "ru": "Друид",
+        "color": "#6fae4a",
+        "caster": {
+          "level": "full",
+          "start": "prepared",
+          "start_prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты"
+        },
+        "choices": [
+          {
+            "key": "druidOrder",
+            "kind": "options",
+            "title": "Первобытный орден",
+            "hint": "Выберите одну роль друида на 1 уровне.",
+            "feature_name": "Первобытный орден",
+            "problem": "Выберите Первобытный орден друида.",
+            "options": [
+              {
+                "value": "magician",
+                "name": "Маг",
+                "text": "Один дополнительный заговор друида.",
+                "feature_text": "Получен один дополнительный заговор друида; примените бонус к проверкам Магии или Природы согласно правилам.",
+                "extra_cantrips": 1
+              },
+              {
+                "value": "warden",
+                "name": "Страж",
+                "text": "Владение воинским оружием и средними доспехами.",
+                "feature_text": "Получено владение воинским оружием и средними доспехами.",
+                "grant": "Первобытный орден",
+                "proficiencies": [
+                  "Воинское оружие",
+                  "Средние доспехи"
+                ]
+              }
+            ]
+          }
+        ],
+        "class_proficiencies": [
+          {
+            "title": "Язык класса",
+            "items": [
+              "Друидический"
+            ]
+          }
+        ],
+        "always_prepared": [
+          "Разговор с животными"
+        ]
+      }
+    },
+    {
+      "id": "fighter",
+      "table": {
+        "ru": "Воин",
+        "color": "#c9803a",
+        "multiclass": {
+          "requirements": [
+            [
+              "str",
+              "dex"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие"
+        },
+        "weapon_mastery": 3,
+        "choices": [
+          {
+            "key": "fightingStyleFeat",
+            "kind": "feat",
+            "title": "Черта «Боевой стиль»",
+            "hint": "Выберите одну черту боевого стиля воина 2024.",
+            "filter": {
+              "group": "style"
+            },
+            "problem": "Выберите черту Боевого стиля воина 2024."
+          },
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 3",
+            "count": 3,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 3 разных вида оружия для мастерства."
+          }
+        ],
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ]
+      }
+    },
+    {
+      "id": "monk",
+      "table": {
+        "ru": "Монах",
+        "color": "#3fa9c7",
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ],
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "простое оружие, короткие мечи"
+        },
+        "weapon_mastery": 2,
+        "legacy_unarmored": {
+          "formula": "10 + @dex + @wis",
+          "name": "Защита без доспехов (монах)",
+          "no_shield": true
+        },
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое рукопашное"
+          },
+          {
+            "category": "Воинское рукопашное",
+            "property": "лёгкое"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
+      }
+    },
+    {
+      "id": "paladin",
+      "table": {
+        "ru": "Паладин",
+        "color": "#e2b84a",
+        "caster": {
+          "level": "half",
+          "start": "prepared",
+          "start_prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "str"
+            ],
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие"
+        },
+        "weapon_mastery": 2,
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
+      }
+    },
+    {
+      "id": "ranger",
+      "table": {
+        "ru": "Следопыт",
+        "color": "#4fa373",
+        "caster": {
+          "level": "half",
+          "picker": true,
+          "start": "prepared",
+          "start_prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ],
+            [
+              "wis"
+            ]
+          ],
+          "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие, один навык из списка класса"
+        },
+        "weapon_mastery": 2,
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ],
+        "always_prepared": [
+          "Метка охотника"
+        ]
+      }
+    },
+    {
+      "id": "rogue",
+      "table": {
+        "ru": "Плут",
+        "color": "#7d8794",
+        "multiclass": {
+          "requirements": [
+            [
+              "dex"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, один навык из списка класса, воровские инструменты"
+        },
+        "weapon_mastery": 2,
+        "choices": [
+          {
+            "key": "expertise",
+            "kind": "expertise",
+            "title": "Экспертиза плута",
+            "count": 2,
+            "hint": "Выберите два уже полученных владения.",
+            "problem": "Экспертиза плута: выберите два разных владения, которыми уже владеете."
+          },
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ],
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "class_proficiencies": [
+          {
+            "title": "Инструменты класса",
+            "items": [
+              "Воровские инструменты"
+            ]
+          },
+          {
+            "title": "Язык класса",
+            "items": [
+              "Воровской жаргон"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "sorcerer",
+      "table": {
+        "ru": "Чародей",
+        "color": "#d94a6a",
+        "caster": {
+          "level": "full",
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": ""
+        }
+      }
+    },
+    {
+      "id": "warlock",
+      "table": {
+        "ru": "Колдун",
+        "color": "#8a54d6",
+        "caster": {
+          "picker": true
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "cha"
+            ]
+          ],
+          "proficiencies": "лёгкие доспехи, простое оружие"
+        }
+      }
+    },
+    {
+      "id": "wizard",
+      "table": {
+        "ru": "Волшебник",
+        "color": "#4c7be0",
+        "caster": {
+          "level": "full",
+          "start": "book",
+          "book": {
+            "start": 6,
+            "per_level": 2
+          },
+          "start_prepared": "level"
+        },
+        "multiclass": {
+          "requirements": [
+            [
+              "int"
+            ]
+          ],
+          "proficiencies": ""
+        }
+      }
+    }
+  ]
+}

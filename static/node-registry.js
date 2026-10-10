@@ -22,6 +22,8 @@
     'condition.level': { label: 'Если уровень', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { min: 1, max: 20 } },
     'condition.subclass': { label: 'Если подкласс', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '' } },
     'condition.choice': { label: 'Если выбран вариант', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '', value: '' } },
+    // Попадание последней атаки в цепочке. Подключается только ко входу «condition» узла «Если»: ветви «да»/«нет» задают гейт действий.
+    'condition.hit': { label: 'Попадание атаки', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: {} },
     'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
     'rule.ability_bonus': { label: 'Бонус характеристики', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { ability: 'str', amount: 1 } },
     'rule.speed': { label: 'Скорость', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'number' }, outputs: { effect: 'effect' }, defaults: { value: 30 } },
@@ -35,6 +37,7 @@
     'rule.spell_slots': { label: 'Ячейки заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
     'rule.asi': { label: 'Улучшение характеристик', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
     'rule.class_progression': { label: 'Прогрессия класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
+    'rule.class_rules': { label: 'Правила класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
     'rule.armor_formula': { label: 'Защита без доспехов', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex + @con', name: 'Защита без доспехов', no_shield: false } },
     'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
     'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
@@ -50,12 +53,13 @@
     };
   }
   function actionDefaults(kind) {
-    const base = { enabled: true, when: 'always' };
+    // Условие «попал / не попал» не хранится в действии: его задаёт узел condition.hit через flow.if.
+    const base = { enabled: true };
     if (['attack', 'damage', 'heal', 'temp_hp', 'roll'].includes(kind)) base.dice = Base.dice(kind === 'attack' ? '1d20+@atk' : '1d6');
     if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
-    if (kind === 'condition') Object.assign(base, { condition: 'Отравленный', operation: 'add' });
+    if (kind === 'condition') Object.assign(base, { condition: window.Presets?.item('conditions', 'poisoned')?.table?.ru || 'poisoned', operation: 'add' });
     if (kind === 'adjust') Object.assign(base, { field: 'speed', amount: 5 });
     if (kind === 'require') Object.assign(base, { field: 'hp.current', minimum: 1 });
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });

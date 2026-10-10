@@ -22,23 +22,13 @@ window.Modules = (function () {
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
-  const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
-  // Основы для создания записи (шаг «Что создаём?»). Поля — стартовые значения, всё редактируется.
-  const ITEM_PRESETS = [
-    { id: 'weapon', name: 'Оружие', hint: 'Клинок, лук или посох: урон и тип атаки', fields: { type: 'weapon', name: 'Оружие' } },
-    { id: 'armor', name: 'Доспех или щит', hint: 'Защита и класс доспеха', fields: { type: 'armor', name: 'Доспех' } },
-    { id: 'consumable', name: 'Зелье или свиток', hint: 'Одноразовый эффект, расходуется при использовании', fields: { type: 'consumable', name: 'Зелье' } },
-    { id: 'magic', name: 'Магический предмет', hint: 'Требует настройки, часто с зарядами', fields: { type: 'magic', name: 'Магический предмет', attunement: true } },
-    { id: 'gear', name: 'Снаряжение', hint: 'Обычная вещь без механики: верёвка, факел, инструмент', fields: { type: 'gear', name: 'Снаряжение' } },
-    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
-  ];
-  const SPELL_PRESETS = [
-    { id: 'cantrip', name: 'Заговор', hint: 'Не тратит ячейки, работает на любом уровне', fields: { level: 0, cast_cost: 'free', name: 'Заговор' } },
-    { id: 'spell1', name: 'Заклинание 1 круга', hint: 'Тратит ячейку своего круга или выше', fields: { level: 1, name: 'Заклинание' } },
-    { id: 'spell3', name: 'Заклинание 3 круга', hint: 'Для средних по силе эффектов', fields: { level: 3, name: 'Заклинание' } },
-    { id: 'ritual', name: 'Ритуал', hint: 'Можно сотворить без ячейки за дополнительное время', fields: { level: 1, ritual: true, name: 'Ритуал' } },
-    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
-  ];
+  // Школы магии — из набора spell_schools (порядок набора; список обновляется при загрузке наборов).
+  const SCHOOLS = window.Presets?.liveList('spell_schools') || [];
+  // Школа по ключу набора (запасом — сам ключ).
+  const schoolName = key => window.Presets?.item('spell_schools', key)?.table?.ru || key;
+  // Основы для создания записи (шаг «Что создаём?») — наборы данных item_preset / spell_preset (реестр Presets).
+  const itemPresets = () => window.Presets?.items('item_preset') || [];
+  const spellPresets = () => window.Presets?.items('spell_preset') || [];
 
   const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
   // ---------- модель ----------
@@ -57,7 +47,7 @@ window.Modules = (function () {
   }
   function newSpell(o = {}) {
     o = defined(o);
-    return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
+    return { uid: uid(), name: 'Заклинание', level: 1, school: schoolName('evocation'), casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
       concentration: false, ritual: false, desc: '', prepared: false, cast_cost: null, use_cost: 1, uses: null, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
   }
   /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.
@@ -400,7 +390,7 @@ window.Modules = (function () {
   }
   async function editItem(item, opts = {}) {
     const fresh = !item;
-    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', ITEM_PRESETS); if (!preset) return null; item = newItem(preset.fields); }
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', itemPresets()); if (!preset) return null; item = newItem(preset.fields); }
     const it = Equipment.normalize(JSON.parse(JSON.stringify(item || newItem())));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const form = el('div', { class: 'editor-form' },
@@ -427,7 +417,7 @@ window.Modules = (function () {
   }
   async function editSpell(spell, opts = {}) {
     const fresh = !spell;
-    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', SPELL_PRESETS); if (!preset) return null; spell = newSpell(preset.fields); }
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', spellPresets()); if (!preset) return null; spell = newSpell(preset.fields); }
     const sp = JSON.parse(JSON.stringify(spell || newSpell()));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const cost = el('select', {}, ...[['slot', 'Ячейка заклинания по уровню'], ['free', 'Без расхода'], ['uses', 'Заряды заклинания']].map(([value, label]) => el('option', { value, selected: (sp.cast_cost || (Number(sp.level) === 0 ? 'free' : 'slot')) === value ? '' : null }, label)));

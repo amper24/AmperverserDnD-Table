@@ -1,0 +1,123 @@
+{
+  "kind": "mechanic_starters",
+  "id": "mechanic_starters",
+  "name": "Стартовые программы создания (SRD)",
+  "items": [
+    {
+      "id": "race",
+      "table": {
+        "programs": [
+          {
+            "name": "Параметры при создании",
+            "trigger": "passive",
+            "blocks": [
+              {
+                "kind": "passive",
+                "field": "speed",
+                "value": 30
+              },
+              {
+                "kind": "passive",
+                "field": "asi.str",
+                "value": 2
+              },
+              {
+                "kind": "passive",
+                "field": "languages",
+                "value": [
+                  "Общий"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Умение расы",
+            "trigger": "use",
+            "blocks": [
+              {
+                "kind": "manual",
+                "text": "Опишите особенность расы: что она даёт и когда применяется."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "class",
+      "table": {
+        "programs": [
+          {
+            "name": "Параметры при создании",
+            "trigger": "passive",
+            "blocks": [
+              {
+                "kind": "passive",
+                "field": "hit_die",
+                "value": "d8"
+              },
+              {
+                "kind": "passive",
+                "field": "saves",
+                "value": [
+                  "str"
+                ]
+              },
+              {
+                "kind": "passive",
+                "field": "skills",
+                "value": {
+                  "choose": 2,
+                  "from": []
+                }
+              }
+            ]
+          },
+          {
+            "name": "Умение класса",
+            "trigger": "use",
+            "blocks": [
+              {
+                "kind": "manual",
+                "text": "Опишите умение 1 уровня: что оно даёт и когда применяется."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "background",
+      "table": {
+        "programs": [
+          {
+            "name": "Параметры при создании",
+            "trigger": "passive",
+            "blocks": [
+              {
+                "kind": "passive",
+                "field": "skills",
+                "value": []
+              },
+              {
+                "kind": "passive",
+                "field": "languages",
+                "value": []
+              }
+            ]
+          },
+          {
+            "name": "Умение предыстории",
+            "trigger": "use",
+            "blocks": [
+              {
+                "kind": "manual",
+                "text": "Опишите умение предыстории."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

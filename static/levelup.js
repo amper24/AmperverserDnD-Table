@@ -2,19 +2,30 @@
 // levelup.js — повышение уровня: чистая логика (план, расчёт, применение
 // к листу, отмена) плюс мастер в стиле D&D Beyond.
 // Даёт: window.LevelUp.
-// Зависимости: common.js; лениво: CLASS_PROGRESSION (таблицы развития),
+// Зависимости: common.js; лениво: Presets (таблицы развития, ячейки мультикласса),
 // Mechanics, Modules, DiceEngine. Загружается только в sheet.html (слой 5).
 // ---------------------------------------------------------------------------
 // Повышение уровня: чистая логика (план, расчёт, применение к листу, отмена) + мастер в стиле D&D Beyond.
 // Данные берутся из записи класса справочника (features по уровням, subclasses, hit_die, spellcasting)
-// и из таблиц развития static/class-progression.js (бонус мастерства, заговоры, заклинания, ячейки, столбцы классов).
+// и из наборов таблиц развития (static/presets/, реестр Presets; бонус мастерства, заговоры, заклинания, ячейки, столбцы классов).
 // Лист хранит классы в `sheet.classes = [{name, level, subclass, hit_die}]`; `sheet.level` — суммарный уровень,
 // `sheet.class` и `sheet.subclass` — строки для показа. У листов без `classes` класс берётся из `sheet.class`.
 window.LevelUp = (() => {
   const KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   const MAX_LEVEL = 20;
-  const RE_ASI = /увеличение характеристик/i, RE_EPIC = /эпическ(ое благо|ий дар)/i, RE_EXPERT = /компетентност|экспертиз/i, RE_SECRETS = /магические секреты|тайны магии/i;
-  const RE_MANUAL = /боевой стиль|воззвани|метамагия|дар договора|избранный враг|исследователь|мастерство оружия|тактическое мастерство|стиль боя/i;
+  // Классификация особенностей класса — набор feature_rules (вид + шаблон) по редакции. Правила проверяются по порядку набора.
+  const featureRulesOf = edition => window.Presets?.items('feature_rules', edition) || [];
+  const featureRuleMatch = (rule, name, text) => {
+    const t = rule.table || {}, p = String(t.pattern || '');
+    if (t.match === 'text') return new RegExp(p, String(t.flags || '')).test(String(text || ''));
+    if (t.match === 'exact') return name === p;
+    if (t.match === 'prefix') return name.startsWith(p);
+    return new RegExp(p, String(t.flags || '')).test(name);
+  };
+  const featureKinds = (name, edition, text) => featureRulesOf(edition).filter(r => featureRuleMatch(r, name, text)).map(r => r.table.kind);
+  const hasFeatureKind = (name, kind, edition, text) => featureKinds(name, edition, text).includes(kind);
+  const featureRuleOf = (kind, edition) => featureRulesOf(edition).find(r => r.table.kind === kind)?.table || null;
+  const featureTagOf = (name, edition) => featureRulesOf(edition).find(r => r.table.tag && featureRuleMatch(r, name))?.table.tag || '';
   const EXPERTISE_GAINS = { '2014': { bard: { 3: 2, 10: 2 }, rogue: { 1: 2, 6: 2 } }, '2024': { bard: { 2: 2, 9: 2 }, rogue: { 1: 2, 6: 2 }, ranger: { 2: 1, 9: 2 }, wizard: { 2: 1 } } };
   const expertiseGain = (edition, slug, level) => Number(EXPERTISE_GAINS[edition]?.[slug]?.[level]) || 0;
   const SKILL_KEYS_RU = { Акробатика: 'acrobatics', 'Уход за животными': 'animal_handling', Магия: 'arcana', Атлетика: 'athletics', Обман: 'deception', История: 'history', Проницательность: 'insight', Запугивание: 'intimidation', Анализ: 'investigation', Медицина: 'medicine', Природа: 'nature', Восприятие: 'perception', Выступление: 'performance', Убеждение: 'persuasion', Религия: 'religion', 'Ловкость рук': 'sleight_of_hand', Скрытность: 'stealth', Выживание: 'survival' };
@@ -23,18 +34,18 @@ window.LevelUp = (() => {
   const modOf = n => Math.floor(((Number(n) || 10) - 10) / 2);
   const profBonus = lvl => Math.ceil(1 + lvl / 4);
   const dieOf = cls => Number(String(cls?.data?.hit_die || 'd8').replace(/\D/g, '')) || 8;
-  // Требования к характеристикам для мультиклассирования (SRD): для каждой группы нужна хотя бы одна характеристика от 13.
-  const MC_REQ = { barbarian: [['str']], bard: [['cha']], cleric: [['wis']], druid: [['wis']], fighter: [['str', 'dex']], monk: [['dex'], ['wis']], paladin: [['str'], ['cha']],
-    ranger: [['dex'], ['wis']], rogue: [['dex']], sorcerer: [['cha']], warlock: [['cha']], wizard: [['int']] };
-  // Владения, которые даёт первый уровень нового класса при мультиклассировании (SRD 5.1, «Владения»).
-  const MC_PROF = { barbarian: 'щиты, простое и воинское оружие', bard: 'лёгкие доспехи, один навык, один музыкальный инструмент', cleric: 'лёгкие и средние доспехи, щиты',
-    druid: 'лёгкие и средние доспехи, щиты', fighter: 'лёгкие и средние доспехи, щиты, простое и воинское оружие', monk: 'простое оружие, короткие мечи',
-    paladin: 'лёгкие и средние доспехи, щиты, простое и воинское оружие', ranger: 'лёгкие и средние доспехи, щиты, простое и воинское оружие, один навык из списка класса',
-    rogue: 'лёгкие доспехи, один навык из списка класса, воровские инструменты', sorcerer: '', warlock: 'лёгкие доспехи, простое оружие', wizard: '' };
-  const ENEMY_TYPES = ['Аберрации', 'Звери', 'Небожители', 'Конструкты', 'Драконы', 'Элементали', 'Феи', 'Исчадия', 'Великаны', 'Чудовища', 'Слизи', 'Растения', 'Нежить', 'Гуманоиды (две расы)'];
+  // Правила мультикласса и цвет класса — из набора class_rules (static/presets/) по slug и редакции.
+  const classRulesOf = (slug, edition) => window.Presets?.classRules(String(edition || '2014'), slug) || {};
+  const mcRequirements = (slug, edition) => classRulesOf(slug, edition).multiclass?.requirements || [];
+  const mcProficiency = (slug, edition) => classRulesOf(slug, edition).multiclass?.proficiencies || '';
   const TERRAINS = ['Арктика', 'Побережье', 'Пустыня', 'Лес', 'Луг', 'Горы', 'Болото', 'Подземье'];
-  const STYLE_FEATS_EN = ['archery', 'defense', 'great weapon fighting', 'two weapon fighting', 'two-weapon fighting', 'dueling', 'protection'];
-  const isStyleFeat = e => STYLE_FEATS_EN.includes(String(e?.data?.name_en || '').toLowerCase()) || /fighting|боев(ой|ые) стил/i.test(String(e?.data?.category || ''));
+  // Правила черт — набор feat_rules (по редакции записи): группы (style, epic, asi), прибавка характеристики, требования.
+  const featRuleOf = feat => {
+    const edition = String(feat?.data?.edition || ''), nameEn = String(feat?.data?.name_en || '').toLowerCase();
+    const found = (window.Presets?.items('feat_rules', edition || undefined) || []).find(i => String(i.table?.name_en || '').toLowerCase() === nameEn);
+    return found?.table || {};
+  };
+  const isStyleFeat = e => (featRuleOf(e).groups || []).includes('style');
 
   // ---------- Чистая логика: классы, подклассы, таблицы развития ----------
   const slugOf = entry => window.ClassRules.slugOf(entry);
@@ -63,8 +74,8 @@ window.LevelUp = (() => {
   const classLabel = list => list.length > 1 ? list.map(c => `${c.name} ${c.level}`).join(' / ') : list[0]?.name || '';
   const subclassLabel = list => list.map(c => c.subclass).filter(Boolean).join(' / ');
   /// Проверка требований мультиклассирования к характеристикам: { ok, missing:[текст] }.
-  function multiclassReq(abilities, slug) {
-    const groups = MC_REQ[slug] || [], missing = [];
+  function multiclassReq(abilities, slug, edition) {
+    const groups = mcRequirements(slug, edition), missing = [];
     for (const g of groups) if (!g.some(k => (Number(abilities?.[k]) || 10) >= 13)) missing.push(g.map(k => (typeof ABIL !== 'undefined' && ABIL[k]) || k).join(' или ') + ' 13');
     return { ok: !missing.length, missing };
   }
@@ -72,7 +83,7 @@ window.LevelUp = (() => {
   // Порядок: данные записи → узел rule.class_progression в графе записи → встроенная таблица SRD (запасной вариант).
   function progression(entry, edition) {
     return entry?.data?.progression || (typeof window !== 'undefined' ? window.Mechanics?.classProgression?.(entry?.data?.mechanics, edition) : null)
-      || (typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.[slugOf(entry)] : null) || null;
+      || (typeof window !== 'undefined' ? window.Presets?.classProgression(edition, slugOf(entry)) : null) || null;
   }
   /// Заклинательные показатели класса на уровне класса: заговоры, известные/подготовленные, ячейки, магия договора.
   function spellStats(entry, edition, level, castMod = 0) {
@@ -107,10 +118,10 @@ window.LevelUp = (() => {
       combined = true;
       for (const x of casters) {
         const third = /eldritch knight|arcane trickster|мистический рыцарь|мастер иллюзий|ловкач/i.test(`${x.c.subclass} ${x.entry.data?.subclasses?.find?.(s => s.name === x.c.subclass)?.name_en || ''}`);
-        casterLevel += window.ClassRules.casterLevel(x.entry) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
+        casterLevel += window.ClassRules.casterLevel(x.entry, edition) === 'full' ? x.c.level : window.ClassRules.casterLevel(x.entry, edition) === 'half' ? (edition === '2024' ? Math.ceil(x.c.level / 2) : Math.floor(x.c.level / 2)) : third ? Math.floor(x.c.level / 3) : x.c.level;
       }
       // Общая таблица мультикласса заклинателей (SRD), не таблица отдельного класса.
-      const wiz = typeof window !== 'undefined' ? window.CLASS_PROGRESSION?.[edition]?.wizard : null;
+      const wiz = typeof window !== 'undefined' ? window.Presets?.multiclassSlots(edition) : null;
       slots = Array.from({ length: 9 }, (_, i) => Number(wiz?.levels?.[String(Math.min(20, Math.max(1, casterLevel)))]?.slots?.[i]) || 0);
     }
     return { slots, pact, combined, casterLevel };
@@ -137,15 +148,23 @@ window.LevelUp = (() => {
   const subclassFeaturesAt = (sub, level, choices = {}) => sub ? [...new Set((sub.features?.[String(level)] || []).filter(n => typeof n === 'string' && !n.startsWith('|')))]
     .filter(name => { const group = subclassVariantGroups(sub, level).find(g => g.options.includes(name)); return !group || choices[group.base] === name; })
     .map(name => ({ name, text: sub.feature_texts?.[name] || '' })) : [];
-  function subclassCantripGain(entry, sub, edition, level) {
-    return edition === '2014' && slugOf(entry) === 'druid' && Number(level) === 2 && /круг земли/i.test(sub?.name || '')
-      && subclassFeaturesAt(sub, 2).some(feature => /дополнительный заговор/i.test(feature.name)) ? 1 : 0;
+  // Правила подклассов из набора class_rules (subclass_rules): эффект, уровень, подкласс по name_en.
+  function subclassRulesOf(entry, sub, edition, effect, level) {
+    const en = String(sub?.name_en || '').toLowerCase();
+    if (!en) return [];
+    return (window.Presets?.classRules(String(edition || entry?.data?.edition || '2014'), slugOf(entry))?.subclass_rules || [])
+      .filter(r => r.effect === effect && Number(r.level) === Number(level) && String(r.subclass || '').toLowerCase() === en);
   }
-  function subclassSkillChoices(entry, sub, level) {
+  function subclassCantripGain(entry, sub, edition, level) {
+    const rule = subclassRulesOf(entry, sub, edition, 'extra_cantrip', level)[0];
+    return rule && subclassFeaturesAt(sub, level).some(feature => new RegExp(rule.feature, 'i').test(feature.name)) ? (Number(rule.count) || 1) : 0;
+  }
+  function subclassSkillChoices(entry, sub, level, edition) {
+    const rule = subclassRulesOf(entry, sub, edition, 'skills', level)[0];
+    if (!rule) return null;
     const features = subclassFeaturesAt(sub, level);
-    return slugOf(entry) === 'bard' && Number(level) === 3 && /коллегия знаний|college of lore/i.test(`${sub?.name || ''} ${sub?.name_en || ''}`)
-      && features.some(feature => /дополнительные владения|bonus proficiencies/i.test(feature.name) && /три навык|трем[яи]\s+навы|three skills/i.test(feature.text))
-      ? { count: 3, any: true } : null;
+    return features.some(feature => new RegExp(rule.feature, 'i').test(feature.name) && new RegExp(rule.text, 'i').test(feature.text))
+      ? { count: Number(rule.count) || 1, any: rule.any === true } : null;
   }
   /// Уровень выбора подкласса: первый уровень, на котором у подклассов есть умения.
   function subclassLevel(entry) {
@@ -177,23 +196,24 @@ window.LevelUp = (() => {
       if (options.length) { groups.push({ id: 'meta', kind: 'feature', label: 'Метамагия', hint: to === first ? 'Два варианта метамагии' : 'Ещё один вариант метамагии', count: to === first ? 2 : 1, options }); hide(['Метамагия', ...all]); }
     }
     if (edition === '2014' && slug === 'warlock') {
-      const prefix = 'Таинственные воззвания ';
+      const prefix = featureRuleOf('invocation', edition)?.pattern || '';
       const pool = Object.keys(d.features || {}).map(Number).filter(l => l <= to).sort((a, b) => a - b).flatMap(l => listed(l)).filter(n => n.startsWith(prefix));
       const nb = Number(prog?.levels?.[String(to)]?.['x:invocations_known']) || 0, na = Number(prog?.levels?.[String(from)]?.['x:invocations_known']) || 0;
       const options = [...new Set(pool)].filter(n => !owned.has(n)).map(opt), known = (sheet.features || []).filter(f => f.name.startsWith(prefix));
       if (nb > na && options.length) groups.push({ id: 'inv', kind: 'feature', label: 'Таинственные воззвания', hint: `Новых воззваний: ${nb - na}`, count: nb - na, options, swap: known.length ? known.map(f => ({ uid: f.uid, name: f.name })) : null });
       else if (from > 0 && known.length && options.length) groups.push({ id: 'inv', kind: 'feature', label: 'Таинственные воззвания', hint: 'Можно заменить одно воззвание', count: 0, options, swap: known.map(f => ({ uid: f.uid, name: f.name })) });
-      hide(listed(to).filter(n => n.startsWith(prefix) || n === 'Таинственные воззвания'));
-      if (names.includes('Дар договора')) {
-        const boons = names.filter(n => /^договор /i.test(n) && !owned.has(n)).map(opt);
-        if (boons.length) { groups.push({ id: 'pact', kind: 'feature', label: 'Дар договора', hint: 'Выберите договор', count: 1, options: boons }); hide(['Дар договора', ...names.filter(n => /^договор /i.test(n))]); }
+      hide(listed(to).filter(n => n.startsWith(prefix) || hasFeatureKind(n, 'invocation', edition)));
+      const choice = names.find(n => hasFeatureKind(n, 'pact_choice', edition));
+      if (choice) {
+        const boons = names.filter(n => hasFeatureKind(n, 'pact_boon', edition) && !owned.has(n)).map(opt);
+        if (boons.length) { groups.push({ id: 'pact', kind: 'feature', label: choice, hint: 'Выберите договор', count: 1, options: boons }); hide([choice, ...names.filter(n => hasFeatureKind(n, 'pact_boon', edition))]); }
       }
     }
     if (edition === '2014' && slug === 'ranger') {
       let i = 0;
       for (const n of names) {
-        if (/^избранный враг \(/i.test(n)) groups.push({ id: 'enemy' + i++, kind: 'text', label: 'Избранный враг', hint: 'Тип существ', feature: n, suggestions: ENEMY_TYPES, count: 1 });
-        else if (/^природный исследователь \(/i.test(n)) groups.push({ id: 'terrain' + i++, kind: 'text', label: 'Природный исследователь', hint: 'Тип местности', feature: n, suggestions: TERRAINS, count: 1 });
+        if (hasFeatureKind(n, 'enemy', edition)) groups.push({ id: 'enemy' + i++, kind: 'text', label: 'Избранный враг', hint: 'Тип существ', feature: n, suggestions: ENEMY_TYPES, count: 1 });
+        else if (hasFeatureKind(n, 'terrain', edition)) groups.push({ id: 'terrain' + i++, kind: 'text', label: 'Природный исследователь', hint: 'Тип местности', feature: n, suggestions: TERRAINS, count: 1 });
       }
     }
     return { groups, hidden };
@@ -209,10 +229,10 @@ window.LevelUp = (() => {
     const slug = slugOf(entry), castMod = modOf(sheet.abilities?.[sheet.spells?.ability || d.spellcasting || 'int']);
     const before = spellStats(entry, edition, from, castMod), after = spellStats(entry, edition, to, castMod);
     const { groups, hidden } = optionGroups(entry, edition, from, to, sheet, prog);
-    const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : RE_ASI.test(f.name) ? 'asi' : RE_EPIC.test(f.name) ? 'epic' : RE_EXPERT.test(f.name) ? 'expertise' : RE_MANUAL.test(f.name) ? 'manual' : '' }));
+    const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
     const expertiseFrom = edition === '2024' && slug === 'wizard' && to === 2 ? (d.skills?.from || []).map(skillKeyFromName).filter(Boolean) : null;
-    if (expertise && !feats.some(f => RE_EXPERT.test(f.name) || /экспертиз/i.test(f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
+    if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition, f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
     const subLevel = subclassLevel(entry), subclass = subclassOf(entry, row?.subclass || opts.subclass?.name);
     const needSubclass = !subclass && subLevel !== null && to >= subLevel && (d.subclasses || []).length > 0;
     const subFeatures = subclassFeaturesAt(subclass, to, row?.subclass_choices || {}).map(f => ({ ...f, source: subclass.name, tag: '' }));
@@ -220,31 +240,31 @@ window.LevelUp = (() => {
     const pbFrom = profBonus(totalFrom), pbTo = profBonus(totalTo);
     for (const col of prog?.columns || []) {
       const a = columnValue(prog, col, from), b = columnValue(prog, col, to);
-      if (b !== undefined && a !== b) changes.push({ label: col.ru, from: a, to: b });
+      if (b !== undefined && a !== b) changes.push({ label: col.ru || col.en, from: a, to: b });
     }
     const spells = { cantrips: 0, spells: 0, mode: null, swap: 0, maxLevel: after?.maxSpellLevel || 0, prepared: after?.prepared ?? null, book: 0, secrets: 0 };
     if (after) {
       spells.cantrips = Math.max(0, after.cantrips - (before?.cantrips || 0));
       if (after.known !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.known - (before?.known || 0)); }
-      else if (edition === '2024' && (window.ClassRules.isPicker(entry) || window.ClassRules.casterLevel(entry) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
-      else if (window.ClassRules.startMode(entry, edition) === 'book') { spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (isNew ? 6 : 2) : 0; }
+      else if (edition === '2024' && (window.ClassRules.isPicker(entry, edition) || window.ClassRules.casterLevel(entry, edition) === 'half') && after.prepared !== null) { spells.mode = 'known'; spells.spells = Math.max(0, after.prepared - (before?.prepared || 0)); }
+      else if (window.ClassRules.startMode(entry, edition) === 'book') { const book = window.ClassRules.startBook(entry, edition); spells.mode = 'book'; spells.spells = after.maxSpellLevel > 0 ? (Number(isNew ? book?.start : book?.per_level) || 0) : 0; }
       else if (after.prepared !== null) spells.mode = 'prepared';
       if (spells.mode === 'known' && from > 0 && after.maxSpellLevel > 0) spells.swap = 1;
-      if (feats.some(f => RE_SECRETS.test(f.name))) spells.secrets = 2;
+      if (feats.some(f => hasFeatureKind(f.name, 'secrets', edition))) spells.secrets = 2;
     }
     const resolve = opts.resolve || (() => null);
     const nextClasses = isNew ? [...classes.filter(c => c.name), { name: entry.name, level: 1, subclass: '' }] : classes.map(c => c === row || sameClass(c.name, entry) ? { ...c, level: to } : c);
     const cur = castingSummary(edition, classes.filter(c => c.name), n => sameClass(n, entry) ? entry : resolve(n));
     const nxt = castingSummary(edition, nextClasses, n => sameClass(n, entry) ? entry : resolve(n));
     const multi = isNew ? classes.some(c => c.name) : classes.filter(c => c.name).length > 1;
-    const req = isNew ? multiclassReq(sheet.abilities, slug) : null;
-    const reqCurrent = isNew ? classes.filter(c => c.name).map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolve(c.name))) })).filter(r => !r.ok) : [];
+    const req = isNew ? multiclassReq(sheet.abilities, slug, sheet.edition) : null;
+    const reqCurrent = isNew ? classes.filter(c => c.name).map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolve(c.name)), sheet.edition) })).filter(r => !r.ok) : [];
     const skillRule = isNew && multi && ['bard', 'ranger', 'rogue'].includes(slug) ? { count: 1, any: slug === 'bard', from: d.skills?.from || [] } : null;
     return { from, to, entry, slug, edition, isNew, multi, hitDie: dieOf(entry), pb: { from: pbFrom, to: pbTo }, total: { from: totalFrom, to: totalTo }, columns: changes, features: feats, subclass, subclassChoices: row?.subclass_choices || {}, subclassFeatures: subFeatures,
       needSubclass, subclassLevel: subLevel, asi: feats.some(f => f.tag === 'asi'), epic: feats.some(f => f.tag === 'epic'), expertise, expertiseFrom,
       groups, spells, slotsFrom: (multi || cur.combined ? cur.slots : before?.slots) || null, slotsTo: multi || nxt.combined ? nxt.slots : (after?.slots || null), combined: nxt.combined, casterLevel: nxt.casterLevel,
       pactFrom: cur.pact, pactTo: nxt.pact, castingFrom: cur, castingTo: nxt, nextClasses,
-      multiclass: isNew && multi ? { req, reqCurrent, proficiency: MC_PROF[slug] || '', skill: skillRule } : null };
+      multiclass: isNew && multi ? { req, reqCurrent, proficiency: mcProficiency(slug, sheet.edition), skill: skillRule } : null };
   }
   const hpAverage = die => Math.floor(die / 2) + 1;
   const hpChoiceValid = (die, choice) => choice?.mode === 'avg' || (['roll', 'manual'].includes(choice?.mode) && Number.isInteger(Number(choice.mode === 'roll' ? choice.roll : choice.manual)) && Number(choice.mode === 'roll' ? choice.roll : choice.manual) >= 1 && Number(choice.mode === 'roll' ? choice.roll : choice.manual) <= Number(die));
@@ -454,9 +474,11 @@ window.LevelUp = (() => {
   const abilName = k => (typeof ABIL !== 'undefined' && ABIL[k]) || k;
 
   // Цвета классов и школ магии: акцент мастера подстраивается под класс.
-  const CLASS_COLOR = { barbarian: '#e0533d', bard: '#b76fd1', cleric: '#e5c76b', druid: '#6fae4a', fighter: '#c9803a', monk: '#3fa9c7', paladin: '#e2b84a', ranger: '#4fa373', rogue: '#7d8794', sorcerer: '#d94a6a', warlock: '#8a54d6', wizard: '#4c7be0' };
-  const SCHOOL_COLOR = { 'Воплощение': '#e2604d', 'Вызов': '#d6a83c', 'Прорицание': '#63b3d8', 'Очарование': '#e07bb0', 'Иллюзия': '#a47be0', 'Некромантия': '#4fae7c', 'Ограждение': '#3fb8b8', 'Преобразование': '#e29246' };
-  const classColor = e => CLASS_COLOR[slugOf(e)] || '#8fa8d0';
+  // Типы врагов для избранного врага следопыта — из набора enemy_types (список обновляется при загрузке наборов).
+  const ENEMY_TYPES = window.Presets?.liveList('enemy_types') || [];
+  // Цвет школы магии из набора spell_schools (поле color).
+  const schoolColor = name => window.Presets?.items('spell_schools').find(i => i.table.ru === name)?.table.color || '';
+  const classColor = e => window.Presets?.item('class_rules', slugOf(e))?.table?.color || '#8fa8d0';
   const monogram = e => String(e?.name || '?').trim().charAt(0).toUpperCase();
   const hexRgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(', ');
   const savesOf = e => [].concat(e?.data?.saves || []).map(k => (KEYS.includes(k) ? abilName(k) : String(k))).filter(Boolean);
@@ -465,25 +487,19 @@ window.LevelUp = (() => {
   const shortTime = t => String(t || '').replace(/^1\s+(действие|бонусное)/i, (m, w) => w.charAt(0).toUpperCase() + w.slice(1)).replace(/^Бонусное действие.*/i, 'Бонусное действие').replace(/^Реакция.*/i, 'Реакция');
   const hasPrereq = v => typeof v === 'string' && v.trim() && !/^[a-z_,\s]+$/.test(v);
   const featAbilityRule = feat => {
-    const text = String(feat?.data?.desc || ''), increase = text.match(/Увеличьте[^.\n]*/i)?.[0] || '';
-    if (!increase) return null;
-    const amount = Number(increase.match(/на\s+(\d+)/i)?.[1]) || 0;
-    if (!amount) return null;
-    const max = Number(increase.match(/максимума\s+(\d+)/i)?.[1]) || 20;
-    const all = /одну характеристику на ваш выбор/i.test(increase);
-    const names = { str: /силу|сила/i, dex: /ловкость/i, con: /телосложение/i, int: /интеллект/i, wis: /мудрость/i, cha: /харизму|харизма/i };
-    const allowed = all ? KEYS.slice() : KEYS.filter(key => names[key].test(increase));
-    return allowed.length ? { amount, max, allowed } : null;
+    const inc = featRuleOf(feat).ability_increase;
+    if (!inc || !inc.abilities?.length || !(Number(inc.amount) > 0)) return null;
+    return { amount: Number(inc.amount), max: Number(inc.max) || 20, allowed: inc.abilities.slice() };
   };
   function featPrerequisitesMet(feat, p, sheet) {
-    const values = String(feat?.data?.prerequisites || '').split(',').map(x => x.trim()).filter(Boolean);
-    return values.every(value => {
-      if (value === 'minimum_level') return (/^дар\s/i.test(feat?.name || '') || /^boon\s/i.test(feat?.data?.name_en || '') ? p.total.to >= 19 : p.total.to >= 4);
-      if (value === 'feature_named') return [...(sheet.features || []), ...(p.features || [])].some(f => /боевой стиль|fighting style/i.test(f.name));
-      const strength = value.match(/(?:СИЛ|Сила)\s*(\d+)/i);
-      if (strength) return Number(sheet.abilities?.str || 10) >= Number(strength[1]);
-      return false;
-    });
+    const req = featRuleOf(feat).requires || {};
+    if (req.level && !(p.total.to >= req.level)) return false;
+    if (req.feature_contains) {
+      const features = [...(sheet.features || []), ...(p.features || [])];
+      if (!features.some(f => { const name = String(f.name || '').toLowerCase(); return req.feature_contains.some(part => name.includes(part)); })) return false;
+    }
+    for (const [key, min] of Object.entries(req.ability || {})) if (Number(sheet.abilities?.[key] || 10) < min) return false;
+    return true;
   }
 
   /// Простое оформление текста записей справочника: абзацы, маркированные списки и таблицы.
@@ -515,7 +531,8 @@ window.LevelUp = (() => {
   /// Полоса уровней класса 1–20: пройденные, текущий и вехи (улучшение характеристик, подкласс).
   function levelTrack(entry, from, to) {
     const ms = {}, sub = subclassLevel(entry);
-    for (let l = 1; l <= MAX_LEVEL; l++) { const names = classFeaturesAt(entry, l).map(f => f.name); if (names.some(n => RE_ASI.test(n) || RE_EPIC.test(n))) ms[l] = 'asi'; }
+    const edition = entry?.data?.edition || '2014';
+    for (let l = 1; l <= MAX_LEVEL; l++) { const names = classFeaturesAt(entry, l).map(f => f.name); if (names.some(n => hasFeatureKind(n, 'asi', edition) || hasFeatureKind(n, 'epic', edition))) ms[l] = 'asi'; }
     if (sub && !ms[sub]) ms[sub] = 'sub'; else if (sub) ms[sub] = 'both';
     return h('div', 'lu-track', ...Array.from({ length: MAX_LEVEL }, (_, i) => { const l = i + 1;
       return h('span', 'lu-tick' + (l <= from ? ' done' : '') + (l === to ? ' now' : '') + (ms[l] ? ' ms' : ''), ms[l] ? h('i', '', ms[l] === 'sub' ? '✦' : '★') : null, h('b', '', String(l))); }));
@@ -596,7 +613,7 @@ window.LevelUp = (() => {
         const four = ['Бард', 'Жрец', 'Друид', 'Волшебник', 'Bard', 'Cleric', 'Druid', 'Wizard'];
         return (st.catalogs.spell || []).filter(e => (e.data?.level || 0) <= p.spells.maxLevel && !have.has(e.name) && (p.edition !== '2024' || (e.data?.classes || []).some(c => four.includes(c))));
       };
-      const subclassSkillRule = () => subclassSkillChoices(st.p.entry, st.subclass || st.p.subclass, st.p.to);
+      const subclassSkillRule = () => subclassSkillChoices(st.p.entry, st.subclass || st.p.subclass, st.p.to, st.p.edition);
       const subclassVariantRules = () => subclassVariantGroups(st.subclass || st.p.subclass, st.p.to);
       const subclassCantripChoices = () => {
         const sub = st.subclass || st.p.subclass;
@@ -651,7 +668,7 @@ window.LevelUp = (() => {
         return h('dl', 'lu-facts', ...rows.flatMap(([a, b]) => [h('dt', '', a), h('dd', '', b)]));
       };
       const upcoming = p => {
-        const rows = [], sub = st.subclass || p.subclass, skip = n => /^(Таинственные воззвания |Договор |Боевой стиль: )/.test(n);
+        const rows = [], sub = st.subclass || p.subclass, skip = n => hasFeatureKind(n, 'invocation', edition) || hasFeatureKind(n, 'pact_boon', edition) || hasFeatureKind(n, 'style_option', edition);
         for (let l = p.to + 1; l <= MAX_LEVEL && rows.length < 4; l++) {
           const names = [...classFeaturesAt(p.entry, l).map(f => f.name).filter(n => !skip(n)).map(n => [n, false]), ...subclassFeaturesAt(sub, l).map(f => [f.name, true])];
           if (names.length) rows.push(h('div', 'lu-up-row', h('span', 'lu-up-lv', h('small', '', 'ур.'), h('b', '', String(l))), h('div', 'lu-up-names', ...names.slice(0, 5).map(([n, s]) => chip((s ? '✦ ' : '') + n, s ? 'sub' : '')), names.length > 5 ? chip(`+${names.length - 5}`, 'muted') : null)));
@@ -722,7 +739,7 @@ window.LevelUp = (() => {
       const subclassVariantsStep = () => {
         const sub = st.subclass || st.p.subclass, selected = { ...(st.p.subclassChoices || {}), ...(st.subclassVariants || {}) };
         return subclassVariantRules().map(group => h('section', 'lu-panel', h('h3', 'lu-h', group.base),
-          h('p', 'lu-lead', group.base === 'Круг Земли' ? 'Выберите тип местности, от которого зависят умения и заклинания круга.' : 'Выберите один вариант умения подкласса.'),
+          h('p', 'lu-lead', subclassRulesOf(st.p.entry, sub, st.p.edition, 'variant_hint', st.p.to).find(r => r.base === group.base)?.text || 'Выберите один вариант умения подкласса.'),
           h('div', 'lu-cards', ...group.options.map(name => {
             const feature = sub.feature_texts?.[name] || '', option = name.slice(group.base.length + 1).trim(), on = selected[group.base] === name;
             const card = h('div', 'lu-pick' + (on ? ' on' : ''), h('div', 'lu-pick-head', crest('✦', 'sm'), h('div', 'lu-pick-t', h('b', '', option)), on ? h('span', 'lu-check', '✓') : null),
@@ -732,7 +749,7 @@ window.LevelUp = (() => {
       };
       const featList = (filter, sel = () => st.asi.feat, setSel = e => { st.asi.feat = e; st.asi.ability = ''; }) => {
         const have = new Set((sheet.features || []).map(f => f.name)), fq = st.featQ.toLowerCase();
-        const rows = (st.catalogs.feat || []).filter(e => !RE_ASI.test(e.name) && !have.has(e.name) && filter(e) && featPrerequisitesMet(e, st.p, sheet) && (!fq || (e.name + ' ' + (e.data?.desc || '')).toLowerCase().includes(fq)));
+        const rows = (st.catalogs.feat || []).filter(e => !(featRuleOf(e).groups || []).includes('asi') && !have.has(e.name) && filter(e) && featPrerequisitesMet(e, st.p, sheet) && (!fq || (e.name + ' ' + (e.data?.desc || '')).toLowerCase().includes(fq)));
         const search = el('input', { type: 'search', placeholder: 'Поиск по чертам…', value: st.featQ, 'aria-label': 'Поиск', class: 'lu-search', oninput: e => { st.featQ = e.target.value; const pos = e.target.selectionStart; render(); const i = shell.querySelector('.lu-search'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } } });
         return [search, rows.length ? h('div', 'lu-cards', ...rows.map(e => {
           const on = sel()?.id === e.id && sel()?.name === e.name, key = 'ft' + e.name, isOpen = st.open.has(key), d = e.data || {}, long = String(d.desc || '').length > 240;
@@ -752,7 +769,7 @@ window.LevelUp = (() => {
       };
       const asiStep = () => {
         const tabs = h('div', 'lu-tabs', ...[['asi', 'Повысить характеристики'], ['feat', '★ Взять черту']].map(([m, t]) => el('button', { type: 'button', class: st.asi.mode === m ? 'on' : '', onclick: () => { st.asi.mode = m; render(); } }, t)));
-        if (st.asi.mode === 'feat') return [tabs, ...featList(e => !/^дар(\s|$)/i.test(e.name)), ...featAbilityChoice()];
+        if (st.asi.mode === 'feat') return [tabs, ...featList(e => !(featRuleOf(e).groups || []).includes('epic')), ...featAbilityChoice()];
         const used = KEYS.reduce((n, k) => n + (st.asi.plus[k] || 0), 0), room = KEYS.reduce((n, k) => n + Math.min(2, Math.max(0, 20 - sheet.abilities[k])), 0), need = Math.min(2, room);
         const prim = primaryKeys(st.p.entry), saves = st.p.entry.data?.saves || [];
         return [tabs, h('p', 'lu-lead', `Распределите ${need} ${plural(need, 'очко', 'очка', 'очков')}: +2 к одной характеристике или +1 к двум. Максимум — 20.`),
@@ -767,7 +784,7 @@ window.LevelUp = (() => {
       };
       const classStep = () => {
         const p = st.p, cur = classesOf(sheet).filter(c => c.name), total = cur.reduce((n, c) => n + c.level, 0) || clampLevel(sheet.level);
-        const reqChips = slug => (MC_REQ[slug] || []).map(g => { const v = Math.max(...g.map(k => Number(sheet.abilities?.[k]) || 10)), ok = v >= 13; return chip(`${ok ? '✓' : '✗'} ${g.map(abilName).join(' / ')} 13 (${v})`, ok ? 'ok' : 'bad'); });
+        const reqChips = slug => mcRequirements(slug, sheet.edition).map(g => { const v = Math.max(...g.map(k => Number(sheet.abilities?.[k]) || 10)), ok = v >= 13; return chip(`${ok ? '✓' : '✗'} ${g.map(abilName).join(' / ')} 13 (${v})`, ok ? 'ok' : 'bad'); });
         const card = (e, { head, sub, on, disabled, note, chips = [], level }) => {
           const col = classColor(e || p.entry), c = h('div', 'lu-cls' + (on ? ' on' : '') + (disabled ? ' off' : ''), crest(monogram(e || { name: head }), 'md'),
             h('div', 'lu-cls-b', h('div', 'lu-cls-h', h('b', '', head), on ? h('span', 'lu-check', '✓') : null), h('small', 'muted', sub), chips.length ? h('div', 'lu-cls-chips', ...chips) : null, note ? h('p', 'lu-cls-note', note) : null,
@@ -783,11 +800,11 @@ window.LevelUp = (() => {
             note: e ? '' : 'Класса нет в справочнике этой редакции — повысить его мастером нельзя.' }); })));
         const others = st.classes.filter(e => !cur.some(c => sameClass(c.name, e)));
         if (cur.length && others.length) {
-          const curFail = cur.map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolveEntry(c.name))) })).filter(r => !r.ok);
+          const curFail = cur.map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolveEntry(c.name)), sheet.edition) })).filter(r => !r.ok);
           out.push(h('h3', 'lu-h', 'Мультикласс: новый класс'), h('p', 'muted small', 'Нужно 13 в основных характеристиках и нынешних классов, и нового. Первый уровень нового класса даёт ограниченные владения.'),
             curFail.length ? h('p', 'lu-note', `Не хватает у текущих классов: ${curFail.map(r => `${r.name} — ${r.missing.join(', ')}`).join('; ')}.`) : null,
             h('label', 'lu-check-row', el('input', { type: 'checkbox', checked: st.ignoreReq ? '' : null, onchange: e => { st.ignoreReq = e.target.checked; render(); } }), ' Игнорировать требования (решение мастера)'),
-            h('div', 'lu-cards', ...others.map(e => { const r = multiclassReq(sheet.abilities, slugOf(e)), blocked = (!r.ok || curFail.length) && !st.ignoreReq;
+            h('div', 'lu-cards', ...others.map(e => { const r = multiclassReq(sheet.abilities, slugOf(e), sheet.edition), blocked = (!r.ok || curFail.length) && !st.ignoreReq;
               return card(e, { head: e.name, sub: `Начать с 1 уровня · d${dieOf(e)}`, on: p.isNew && st.entry === e, disabled: blocked || total >= 20, chips: [...reqChips(slugOf(e)), ...(e.data?.primary ? [chip('★ ' + e.data.primary, 'gold')] : [])] }); })));
         }
         return out;
@@ -851,7 +868,7 @@ window.LevelUp = (() => {
         const newCantrips = p.spells.cantrips + subclassCantripChoices();
         const needSp = Math.min(p.spells.spells + st.drop.length, leveled.length), needC = Math.min(newCantrips, cant.length), q = st.q.toLowerCase();
         const card = (e, list, cap) => {
-          const d = e.data || {}, on = list.includes(e), full = !on && list.length >= cap, open = st.open.has('sp' + e.name), col = SCHOOL_COLOR[school(e)] || '#8b919c';
+          const d = e.data || {}, on = list.includes(e), full = !on && list.length >= cap, open = st.open.has('sp' + e.name), col = schoolColor(school(e)) || '#8b919c';
           const meta = [school(e), shortTime(d.casting_time)].filter(Boolean);
           const c = h('article', 'lu-sp' + (on ? ' on' : '') + (full ? ' full' : '') + (open ? ' open' : ''),
             el('button', { type: 'button', class: 'lu-sp-main', 'aria-pressed': String(on), disabled: full ? '' : null, onclick: () => { const i = list.indexOf(e); if (i >= 0) list.splice(i, 1); else list.push(e); render(); } },
@@ -983,5 +1000,5 @@ window.LevelUp = (() => {
       })();
     });
   }
-  return { slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
+  return { featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
 })();

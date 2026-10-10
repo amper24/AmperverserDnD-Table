@@ -13,9 +13,10 @@ const assert = require('node:assert/strict');
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://mechanics-graph.test/');
+    await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
       window.legacy = { version: 1, origin: 'test', programs: [{ id: 'potion', name: 'Выпить зелье', trigger: 'use', blocks: [
         { id: 'consume', kind: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always' },

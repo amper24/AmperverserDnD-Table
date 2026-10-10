@@ -1,0 +1,25 @@
+{
+  "sets": [
+    "graph-starters.json",
+    "item-presets.json",
+    "spell-presets.json",
+    "class-progression-2014.json",
+    "multiclass-slots-2014.json",
+    "class-progression-2024.json",
+    "multiclass-slots-2024.json",
+    "class-rules-2014.json",
+    "class-rules-2024.json",
+    "conditions.json",
+    "spell-schools.json",
+    "languages.json",
+    "enemy-types.json",
+    "mechanic-templates.json",
+    "mechanic-starters.json",
+    "race-rules-2014.json",
+    "race-rules-2024.json",
+    "feat-rules-2014.json",
+    "feat-rules-2024.json",
+    "feature-rules-2014.json",
+    "feature-rules-2024.json"
+  ]
+}

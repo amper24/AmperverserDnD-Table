@@ -1,0 +1,211 @@
+{
+  "kind": "graph_starter",
+  "id": "builtin.graph-starters",
+  "name": "Стартовые графы",
+  "items": [
+    {
+      "id": "speed-level",
+      "name": "Скорость с уровня",
+      "hint": "Скорость 35 фт, если уровень персонажа от 5 до 20",
+      "nodes": [
+        {
+          "key": "lvl",
+          "type": "condition.level",
+          "params": {
+            "min": 5,
+            "max": 20
+          },
+          "x": 0,
+          "y": 0
+        },
+        {
+          "key": "spd",
+          "type": "rule.speed",
+          "params": {
+            "value": 35
+          },
+          "x": 260,
+          "y": 0
+        }
+      ],
+      "links": [
+        [
+          "lvl",
+          "value",
+          "spd",
+          "enabled"
+        ]
+      ]
+    },
+    {
+      "id": "hp-bonus",
+      "name": "Бонус к хитам",
+      "hint": "+2 к максимуму хитов, всегда",
+      "nodes": [
+        {
+          "key": "amt",
+          "type": "data.number",
+          "params": {
+            "value": 2
+          },
+          "x": 0,
+          "y": 0
+        },
+        {
+          "key": "hp",
+          "type": "rule.hp_bonus",
+          "params": {
+            "amount": 2
+          },
+          "x": 260,
+          "y": 0
+        }
+      ],
+      "links": [
+        [
+          "amt",
+          "value",
+          "hp",
+          "amount"
+        ]
+      ]
+    },
+    {
+      "id": "hp-bonus-level",
+      "name": "Хиты с 3 уровня",
+      "hint": "+1 к хитам, начиная с 3 уровня персонажа",
+      "nodes": [
+        {
+          "key": "lvl",
+          "type": "condition.level",
+          "params": {
+            "min": 3,
+            "max": 20
+          },
+          "x": 0,
+          "y": 0
+        },
+        {
+          "key": "amt",
+          "type": "data.number",
+          "params": {
+            "value": 1
+          },
+          "x": 0,
+          "y": 120
+        },
+        {
+          "key": "hp",
+          "type": "rule.hp_bonus",
+          "params": {
+            "amount": 1
+          },
+          "x": 260,
+          "y": 60
+        }
+      ],
+      "links": [
+        [
+          "lvl",
+          "value",
+          "hp",
+          "enabled"
+        ],
+        [
+          "amt",
+          "value",
+          "hp",
+          "amount"
+        ]
+      ]
+    },
+    {
+      "id": "attack-hit-damage",
+      "name": "Атака → попадание → урон",
+      "hint": "Бросок атаки; урон только при попадании (ветка «Если» по условию «Попадание атаки»)",
+      "attach": true,
+      "nodes": [
+        {
+          "key": "atk",
+          "type": "action.attack",
+          "params": {
+            "dc": 12
+          },
+          "x": 0,
+          "y": 0
+        },
+        {
+          "key": "hit",
+          "type": "condition.hit",
+          "params": {},
+          "x": 260,
+          "y": 120
+        },
+        {
+          "key": "if",
+          "type": "flow.if",
+          "params": {},
+          "x": 260,
+          "y": 0
+        },
+        {
+          "key": "dmg",
+          "type": "action.damage",
+          "params": {
+            "dice": {
+              "count": 1,
+              "sides": 8,
+              "bonus": 0,
+              "stat": ""
+            }
+          },
+          "x": 520,
+          "y": 0
+        }
+      ],
+      "links": [
+        [
+          "atk",
+          "exec",
+          "if",
+          "exec"
+        ],
+        [
+          "hit",
+          "value",
+          "if",
+          "condition"
+        ],
+        [
+          "if",
+          "then",
+          "dmg",
+          "exec"
+        ]
+      ]
+    },
+    {
+      "id": "damage-only",
+      "name": "Урон",
+      "hint": "Самостоятельное действие: урон без броска, всегда",
+      "attach": true,
+      "nodes": [
+        {
+          "key": "dmg",
+          "type": "action.damage",
+          "params": {
+            "dice": {
+              "count": 2,
+              "sides": 6,
+              "bonus": 0,
+              "stat": ""
+            }
+          },
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "links": []
+    }
+  ]
+}

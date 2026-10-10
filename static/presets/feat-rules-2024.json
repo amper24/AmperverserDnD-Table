@@ -1,0 +1,315 @@
+{
+  "kind": "feat_rules",
+  "id": "builtin.feat-rules.2024",
+  "name": "Правила черт SRD 2024",
+  "edition": "2024",
+  "items": [
+    {
+      "id": "ability-score-improvement",
+      "table": {
+        "name_en": "Ability Score Improvement",
+        "groups": [
+          "asi"
+        ],
+        "ability_increase": {
+          "amount": 2,
+          "max": 20,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 4
+        }
+      }
+    },
+    {
+      "id": "grappler",
+      "table": {
+        "name_en": "Grappler",
+        "ability_increase": {
+          "amount": 1,
+          "max": 20,
+          "abilities": [
+            "str",
+            "dex"
+          ]
+        },
+        "requires": {
+          "level": 4
+        }
+      }
+    },
+    {
+      "id": "archery",
+      "table": {
+        "name_en": "Archery",
+        "groups": [
+          "style"
+        ],
+        "requires": {
+          "feature_contains": [
+            "боевой стиль",
+            "fighting style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "defense",
+      "table": {
+        "name_en": "Defense",
+        "groups": [
+          "style"
+        ],
+        "requires": {
+          "feature_contains": [
+            "боевой стиль",
+            "fighting style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "great-weapon-fighting",
+      "table": {
+        "name_en": "Great Weapon Fighting",
+        "groups": [
+          "style"
+        ],
+        "requires": {
+          "feature_contains": [
+            "боевой стиль",
+            "fighting style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "two-weapon-fighting",
+      "table": {
+        "name_en": "Two Weapon Fighting",
+        "groups": [
+          "style"
+        ],
+        "requires": {
+          "feature_contains": [
+            "боевой стиль",
+            "fighting style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "boon-of-combat-prowess",
+      "table": {
+        "name_en": "Boon of Combat Prowess",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "boon-of-dimensional-travel",
+      "table": {
+        "name_en": "Boon of Dimensional Travel",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "boon-of-fate",
+      "table": {
+        "name_en": "Boon of Fate",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "boon-of-irresistible-offense",
+      "table": {
+        "name_en": "Boon of Irresistible Offense",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "boon-of-spell-recall",
+      "table": {
+        "name_en": "Boon of Spell Recall",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19,
+          "feature_contains": [
+            "боевой стиль",
+            "fighting style"
+          ]
+        }
+      }
+    },
+    {
+      "id": "boon-of-the-night-spirit",
+      "table": {
+        "name_en": "Boon of the Night Spirit",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "boon-of-truesight",
+      "table": {
+        "name_en": "Boon of Truesight",
+        "groups": [
+          "epic"
+        ],
+        "ability_increase": {
+          "amount": 1,
+          "max": 30,
+          "abilities": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ]
+        },
+        "requires": {
+          "level": 19
+        }
+      }
+    },
+    {
+      "id": "magic-initiate",
+      "table": {
+        "name_en": "Magic Initiate",
+        "spell_choice": {
+          "cantrips": 2,
+          "first_level": 1,
+          "abilities": [
+            "int",
+            "wis",
+            "cha"
+          ],
+          "lists": [
+            {
+              "id": "cleric",
+              "ru": "Жрец",
+              "aliases": [
+                "жрец",
+                "cleric"
+              ]
+            },
+            {
+              "id": "druid",
+              "ru": "Друид",
+              "aliases": [
+                "друид",
+                "druid"
+              ]
+            },
+            {
+              "id": "wizard",
+              "ru": "Волшебник",
+              "aliases": [
+                "волшебник",
+                "wizard"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

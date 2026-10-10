@@ -23,6 +23,20 @@
   };
   // Служебные идентификаторы: видны, но не редактируются вручную.
   const READ_ONLY = new Set(['block_id', 'program_id']);
+  // Поле «Когда» у действий больше не редактируется: условие задаёт узел condition.hit через «Если».
+  const HIDDEN = new Set(['when']);
+  // Режим карточки на холсте: только короткие скалярные поля (число, флаг, строка, список чисел/строк, кость).
+  // Таблицы, списки объектов, длинный текст и служебные ID остаются в боковой панели.
+  function shownField(key, value, inline) {
+    if (HIDDEN.has(key)) return false;
+    if (!inline) return true;
+    if (READ_ONLY.has(key)) return false;
+    if (typeof value === 'number' || typeof value === 'boolean') return true;
+    if (typeof value === 'string') return value.length <= 120 && key !== 'text' && key !== 'description';
+    if (Array.isArray(value)) return value.every(item => item === null || typeof item !== 'object');
+    if (value && typeof value === 'object' && !Array.isArray(value)) return key === 'dice';
+    return false;
+  }
   // Ключи, у которых вложенный объект — это таблица «ключ → значение» (строки можно добавлять и удалять).
   const MAP_KEYS = new Set(['table', 'choices', 'by_level']);
   const LABELS = {
@@ -79,7 +93,7 @@
     const removeValue = path => emit(removeAt(current, path));
 
     function paint() {
-      const rows = isPlainObject(current) ? Object.entries(current).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
+      const rows = isPlainObject(current) ? Object.entries(current).filter(([key, value]) => shownField(key, value, !!options.inline)).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
       root.replaceChildren(...rows, isPlainObject(current) && options.map ? addKeyRow([]) : null);
     }
 
@@ -180,7 +194,7 @@
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
       const enums = TYPE_ENUMS[node?.type] || {};
-      return mount(node?.params || {}, { ...options, enums, ariaLabel: 'Параметры узла' });
+      return mount(node?.params || {}, { ...options, enums, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
     },
     // Редактор произвольного значения (например, выборы для предпросмотра).
     valueEditor(value, options = {}) {

@@ -2,12 +2,16 @@
 // Модули и правила берутся настоящие (equipment.js + modules.js), справочник — компактная фикстура,
 // а отдельный тест проверяет реальные записи data_seed.
 const { test } = require('node:test');
+const { before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
 const ctx = { window: {}, console, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
+// Наборы (правила классов, защита без доспехов по данным) грузятся до тестов.
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
@@ -26,6 +30,7 @@ ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложе�
 vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
+before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 // Значения приходят из песочницы vm — сравниваем структуру, а не прототипы другого контекста.
 const plain = value => JSON.parse(JSON.stringify(value));
 

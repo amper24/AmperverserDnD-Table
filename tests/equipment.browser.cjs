@@ -86,7 +86,9 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('Escape');
     await page.locator('[data-uid="bow"] .mcard-head').click();
     await page.locator('[data-uid="bow"]').getByRole('button',{name:'Изменить',exact:true}).click();
-    await page.getByLabel('Автоматически расходовать ресурс').uncheck();
+    // Расход ресурса — узел action.consume на карточке графа (поле «Ресурс»); выключаем его «Включено».
+    const consumeCard = page.locator('.graph-node').filter({ has: page.getByLabel('Ресурс', { exact: true }) });
+    await consumeCard.getByLabel('Включено', { exact: true }).uncheck();
     await page.getByRole('button',{name:'Сохранить',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('выключен'));
     assert.ok(await page.locator('.equipment-hands').count());

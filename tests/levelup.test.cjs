@@ -1,9 +1,11 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
-for (const f of ['static/class-progression.js', 'static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
 const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).filter(e => e.category === 'class');
@@ -14,10 +16,13 @@ const sheet = (o = {}) => ({ edition: '2014', level: 1, class: '', subclass: '',
 const stubs = { newFeature: f => ({ uid: 'f' + Math.random(), ...f }), spellFromCompendium: e => ({ uid: 's' + Math.random(), name: e.name, level: e.data.level, prepared: false }) };
 
 test('таблицы развития есть для всех 12 классов обеих редакций и 20 уровней', () => {
-  const P = ctx.window.CLASS_PROGRESSION;
-  for (const ed of ['2014', '2024']) { assert.equal(Object.keys(P[ed]).length, 12); for (const c of Object.values(P[ed])) assert.equal(Object.keys(c.levels).length, 20); }
-  assert.deepEqual(plain(P['2014'].wizard.levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
-  assert.equal(P['2024'].wizard.levels['5'].prepared, 9);
+  const Presets = ctx.window.Presets;
+  for (const ed of ['2014', '2024']) {
+    assert.equal(Presets.items('class_progression', ed).length, 12);
+    for (const slug of Presets.items('class_progression', ed).map(i => i.id)) assert.equal(Object.keys(Presets.classProgression(ed, slug).levels).length, 20, slug);
+  }
+  assert.deepEqual(plain(Presets.multiclassSlots('2014').levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
+  assert.equal(Presets.classProgression('2024', 'wizard').levels['5'].prepared, 9);
 });
 test('slugOf распознаёт класс по английскому и русскому названию', () => {
   assert.equal(L.slugOf(cls('2014', 'wizard')), 'wizard'); assert.equal(L.slugOf({ name: 'Колдун', data: {} }), 'warlock'); assert.equal(L.slugOf({ name: 'Свой класс', data: {} }), '');
@@ -298,4 +303,25 @@ test('данные: варианты умений не попадают в «Н�
     for (const f of p.features) assert.ok(!/^(Боевой стиль: |Таинственные воззвания )/.test(f.name), `${e.slug} ${lv}: ${f.name}`);
     for (const g of p.groups) if (g.kind === 'feature') { assert.ok(g.options.length >= g.count, `${e.slug} ${lv} ${g.id}`); assert.ok(g.options.every(o => o.text.length > 5), `${e.slug} ${lv} ${g.id}`); }
   }
+});
+
+test('подклассы друида и барда: правила из набора subclass_rules, в коде имён подклассов нет', async () => {
+  await presetsReady;
+  const druid = cls('2014', 'druid'), land = druid.data.subclasses.find(s => s.name_en === 'Land');
+  assert.equal(L.subclassCantripGain(druid, land, '2014', 2), 1, 'Круг Земли 2014: дополнительный заговор на 2 уровне');
+  assert.equal(L.subclassCantripGain(druid, land, '2014', 3), 0);
+  const land24 = cls('2024', 'druid').data.subclasses.find(s => s.name_en === 'Circle of the Land');
+  assert.equal(L.subclassCantripGain(cls('2024', 'druid'), land24, '2024', 2), 0, 'в 2024 правила нет');
+  const src = fs.readFileSync('static/levelup.js', 'utf8');
+  assert.doesNotMatch(src, /Круг Земли|Коллегия знаний|college of lore|круг земли/i, 'имена подклассов не зашиты в код');
+});
+
+test('пользовательский подкласс со своим правилом заклинаний из своего набора класса', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'class_rules', id: 'user.homebrew-rules', name: 'Своё', edition: '2014',
+    items: [{ id: 'homebrew', table: { subclass_rules: [{ effect: 'extra_cantrip', subclass: 'Custom', level: 2, feature: 'лишний заговор', count: 2 }] } }] });
+  const entry = { name: 'Своя', data: { name_en: 'homebrew', edition: '2014' } };
+  const sub = { name: 'Свой путь', name_en: 'Custom', features: { 2: ['Лишний заговор'] }, feature_texts: {} };
+  assert.equal(L.subclassCantripGain(entry, sub, '2014', 2), 2);
+  assert.equal(L.subclassCantripGain(entry, { ...sub, name_en: 'Other' }, '2014', 2), 0, 'другой подкласс правило не получает');
 });

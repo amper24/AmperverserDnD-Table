@@ -56,7 +56,47 @@
     }
     const metadata = {};
     for (const key of ['origin', 'item_defaults']) if (mechanics[key] !== undefined) metadata[key] = clone(mechanics[key]);
-    return graphEnvelope({ nodes, links, frames: [], groups: [] }, metadata);
+    const converted = { nodes, links, frames: [], groups: [] };
+    liftWhenGates(converted);
+    return graphEnvelope(converted, metadata);
+  }
+  // Старое поле when у действия (hit/miss) переносится в узлы: condition.hit → flow.if → выход «да»/«нет».
+  // Меняет граф на месте; семантика та же (гейт только на сам узел). Без входа в цепочку поле не переносится.
+  function liftWhenGates(graph) {
+    let changed = false;
+    for (const node of [...graph.nodes]) {
+      if (!actionType(node.type)) continue;
+      const when = node.params?.when;
+      if (when !== 'hit' && when !== 'miss') continue;
+      const index = graph.links.findIndex(l => l.to.node === node.id && l.to.socket === 'exec');
+      if (index < 0) continue;
+      const pos = node.position || { x: 0, y: 0 };
+      const hit = { id: mkId('node'), type: 'condition.hit', params: {}, position: { x: pos.x, y: pos.y + 130 } };
+      const branch = { id: mkId('node'), type: 'flow.if', params: {}, position: { x: pos.x, y: pos.y } };
+      node.position = { x: pos.x + 260, y: pos.y };
+      node.params = { ...node.params, when: 'always' };
+      graph.links[index] = { from: clone(graph.links[index].from), to: { node: branch.id, socket: 'exec' } };
+      graph.links.push({ from: { node: hit.id, socket: 'value' }, to: { node: branch.id, socket: 'condition' } });
+      graph.links.push({ from: { node: branch.id, socket: when === 'hit' ? 'then' : 'else' }, to: { node: node.id, socket: 'exec' } });
+      graph.nodes.push(hit, branch);
+      changed = true;
+    }
+    return changed;
+  }
+  // Ветвление по попаданию действует на ветвь; вложенное ветвление по попаданию внутри такой ветви не поддерживается.
+  function gatedHitNesting(nodes, links) {
+    const types = new Map(nodes.map(n => [n.id, n.type]));
+    const branchTargets = (id, sockets) => links.filter(l => l.from.node === id && sockets.includes(l.from.socket)).map(l => l.to.node);
+    const hitFlows = new Set(nodes.filter(n => n.type === 'flow.if' && links.some(l => l.to.node === n.id && l.to.socket === 'condition' && types.get(l.from.node) === 'condition.hit')).map(n => n.id));
+    for (const id of hitFlows) {
+      const stack = branchTargets(id, ['then', 'else']), seen = new Set();
+      while (stack.length) {
+        const current = stack.pop(); if (seen.has(current)) continue; seen.add(current);
+        if (hitFlows.has(current)) return true;
+        if (types.get(current) === 'flow.if') stack.push(...branchTargets(current, ['then', 'else']));
+      }
+    }
+    return false;
   }
   function expandGroups(graph, groupsById = new Map(), prefix = '') {
     const boundaryTypes = new Set(['group.input', 'group.output']);
@@ -164,25 +204,32 @@
       const params = n.params || {}, programId = String(params.program_id || n.id);
       const p = { id: programId, name: String(params.name || 'Действие'), trigger: params.trigger === 'passive' ? 'passive' : 'use', blocks: [] };
       for (const key of ['feature_name', 'group', 'roll_only']) if (params[key] !== undefined) p[key] = clone(params[key]);
-      const pending = [...(outgoing.get(`${n.id}:exec`) || [])].reverse(), visited = new Set();
+      // Очередь хранит [узел, гейт]. Гейт «hit»/«miss» ставит ветка «Если» по условию «Попадание атаки»
+      // и действует только на узел, подключённый к выходу ветки (его when в v1). Продолжение цепочки — без гейта.
+      const pending = [...(outgoing.get(`${n.id}:exec`) || [])].reverse().map(id => [id, null]), visited = new Set();
       while (pending.length) {
-        const nodeId = pending.pop(); if (visited.has(nodeId)) continue; visited.add(nodeId);
+        const [nodeId, gate] = pending.pop(); if (visited.has(nodeId)) continue; visited.add(nodeId);
         const node = byId.get(nodeId); if (!node) continue;
         if (node.type === 'flow.if') {
-          const condition = inputValue(node, 'condition', undefined);
+          const source = incoming.get(`${node.id}:condition`), hitGate = byId.get(source?.node)?.type === 'condition.hit';
+          const condition = hitGate ? undefined : inputValue(node, 'condition', undefined);
           const sockets = condition === undefined ? ['else', 'then'] : [condition ? 'then' : 'else'];
-          for (const socket of sockets) for (const target of [...(outgoing.get(`${node.id}:${socket}`) || [])].reverse()) pending.push(target);
+          for (const socket of sockets) {
+            const branch = hitGate ? (socket === 'then' ? 'hit' : 'miss') : gate;
+            for (const target of [...(outgoing.get(`${node.id}:${socket}`) || [])].reverse()) pending.push([target, branch]);
+          }
           continue;
         }
         if (!actionType(node.type)) continue;
         const kind = node.type.slice(7), ap = clone(node.params || {}), blockId = ap.block_id || node.id;
+        if (gate && (ap.when === undefined || ap.when === 'always')) ap.when = gate;
         const enabled = inputValue(node, 'enabled', ap.enabled);
         if (enabled !== false) {
           if (enabled !== undefined) ap.enabled = enabled;
           delete ap.block_id; delete ap.enabled_input;
           p.blocks.push({ ...ap, id: blockId, kind });
         }
-        for (const target of [...(outgoing.get(`${node.id}:exec`) || [])].reverse()) pending.push(target);
+        for (const target of [...(outgoing.get(`${node.id}:exec`) || [])].reverse()) pending.push([target, null]);
       }
       programs.push(p);
     }
@@ -260,6 +307,7 @@
       const fromSockets = socketMap(fromNode, groupMap, ownerGroup).outputs, toSockets = socketMap(toNode, groupMap, ownerGroup).inputs;
       if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
       if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
+      if (fromNode.type === 'condition.hit' && !(toNode.type === 'flow.if' && target.socket === 'condition')) { const e = soft(problems, 'Условие попадания подключается только ко входу «Если».'); if (e) return e; continue; }
       const targetKey = `${target.node}:${target.socket}`;
       if (incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
       incoming.add(targetKey);
@@ -272,6 +320,7 @@
     const queue = [...nodeIds].filter(id => indegree.get(id) === 0); let visited = 0;
     while (queue.length) { const current = queue.pop(); visited++; for (const target of adjacency.get(current)) { indegree.set(target, indegree.get(target) - 1); if (indegree.get(target) === 0) queue.push(target); } }
     if (visited !== nodeIds.size) { const e = soft(problems, 'Цикл в графе запрещён.'); if (e) return e; }
+    if (gatedHitNesting(nodes, links.filter(l => nodeIds.has(l.from?.node) && nodeIds.has(l.to?.node)))) { const e = soft(problems, 'Ветвление по попаданию нельзя вкладывать в другое ветвление по попаданию.'); if (e) return e; }
     const frameIds = new Set(), framedNodes = new Set();
     for (const frame of frames) {
       if (!frame || !idText(frame.id, 64) || frameIds.has(frame.id) || typeof frame.title !== 'string' || !frame.title.trim() || frame.title.length > 120 || !Array.isArray(frame.nodes) || frame.nodes.length > 100) return fail('Некорректная рамка графа.');
@@ -339,7 +388,7 @@
     if (type === 'rule.feature' && (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || (p.text !== undefined && (typeof p.text !== 'string' || p.text.length > 4000)))) return 'Умение: название до 120 и текст до 4000 символов.';
     if (type === 'rule.skills' && (!idText(p.id, 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
     if (type === 'rule.spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
-    if (['rule.spell_slots', 'rule.asi', 'rule.class_progression'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
+    if (['rule.spell_slots', 'rule.asi', 'rule.class_progression', 'rule.class_rules'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
     if (type === 'rule.armor_formula') {
       const formulaError = typeof p.formula === 'string' && p.formula.length <= 100 ? Formulas.validate(p.formula) : 'Формула защиты: строка до 100 символов.';
       if (formulaError) return `Формула защиты без доспехов: ${formulaError}`;
@@ -442,6 +491,8 @@
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.asi_rules.push(clone(table)); emit('asi', { table }); }
     } else if (type === 'rule.class_progression') {
       const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_progression = clone(table); emit('class_progression', { table }); }
+    } else if (type === 'rule.class_rules') {
+      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_rules = clone(table); emit('class_rules', { table }); }
     } else if (type === 'rule.armor_formula') { const rule = { formula: String(n('formula') ?? p.formula ?? ''), name: String(p.name || 'Защита без доспехов').slice(0, 120), no_shield: Boolean(p.no_shield) }; sheet.unarmored_defense = clone(rule); emit('unarmored_defense', rule);
     } else if (type === 'rule.hp_bonus') { const amount = Number(n('amount') ?? p.amount) || 0; sheet.hp.max += amount; sheet.hp.current += amount; emit('hp_bonus', { amount });
     } else if (type === 'rule.manual') { const text = String(n('text') ?? p.text ?? ''); sheet.manual_rules.push(text); emit('manual', { text }); }
@@ -458,7 +509,7 @@
     const edition = String(options.edition || '2014');
     const level = Math.max(1, Math.min(20, Math.trunc(Number(options.level) || 1)));
     const sheet = { edition, level, abilities: Object.fromEntries(ABILITIES.map(k => [k, 10])), race: '', class: '', subclass: '', speed: 30, hp: { max: 0, current: 0, temp: 0 },
-      features: [], saving_throws: [], skills: [], skill_choices: [], languages: [], proficiencies: '', spells: { ability: '', slots: {}, known: [] }, spell_rules: [], spell_progression: { slots: {} }, asi_rules: [], class_progression: null, armor_formula: '', manual_rules: [] };
+      features: [], saving_throws: [], skills: [], skill_choices: [], languages: [], proficiencies: '', spells: { ability: '', slots: {}, known: [] }, spell_rules: [], spell_progression: { slots: {} }, asi_rules: [], class_progression: null, class_rules: null, armor_formula: '', manual_rules: [] };
     const { ordered, linksByTarget } = orderedNodes(graphOf(graphMechanics), new Map((graphMechanics.graph.groups || []).map(g => [g.id, g])));
     const values = { linksByTarget, outputs: new Map() };
     const context = { edition, level, subclass: options.subclass || '', choices: options.choices || {}, source: options.source || '', nodeId: '', effects: [] };
@@ -544,18 +595,8 @@
     return after.find(problem => !before.includes(problem)) || '';
   }
 
-  // Готовые стартовые графы для пустого редактора: узлы с относительными позициями и связи по ключам.
-  const GRAPH_STARTERS = [
-    { id: 'speed-level', name: 'Скорость с уровня', hint: 'Скорость 35 фт, если уровень персонажа от 5 до 20',
-      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 5, max: 20 }, x: 0, y: 0 }, { key: 'spd', type: 'rule.speed', params: { value: 35 }, x: 260, y: 0 }],
-      links: [['lvl', 'value', 'spd', 'enabled']] },
-    { id: 'hp-bonus', name: 'Бонус к хитам', hint: '+2 к максимуму хитов, всегда',
-      nodes: [{ key: 'amt', type: 'data.number', params: { value: 2 }, x: 0, y: 0 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 2 }, x: 260, y: 0 }],
-      links: [['amt', 'value', 'hp', 'amount']] },
-    { id: 'hp-bonus-level', name: 'Хиты с 3 уровня', hint: '+1 к хитам, начиная с 3 уровня персонажа',
-      nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 3, max: 20 }, x: 0, y: 0 }, { key: 'amt', type: 'data.number', params: { value: 1 }, x: 0, y: 120 }, { key: 'hp', type: 'rule.hp_bonus', params: { amount: 1 }, x: 260, y: 60 }],
-      links: [['lvl', 'value', 'hp', 'enabled'], ['amt', 'value', 'hp', 'amount']] },
-  ];
+  // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
+  const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
   const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
   function graphEditor(doc, options = {}) {
@@ -563,13 +604,18 @@
     const seed = doc.mechanics || Base.migrate(doc, category);
     let mechanics = adaptForRead(seed);
     if (mechanics.version !== GRAPH_VERSION) mechanics = v1ToV2(seed);
+    // Записи, сохранённые с полем «Когда», переводятся в узлы при открытии (см. liftWhenGates).
+    const liftedWhen = liftWhenGates(mechanics.graph);
     // Форма вызывается с копией записи; исходник не отправляется на сервер до внешнего «Сохранить».
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
+    // Наборы стартов могли измениться (импорт или удаление набора): перерисовываем, пока редактор на странице.
+    const onPresets = () => { if (root.isConnected) render(); else window.removeEventListener('presets:changed', onPresets); };
+    window.addEventListener('presets:changed', onPresets);
     // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
     root.getGraph = () => graph;
-    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
+    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     const snapshot = () => JSON.stringify(graph);
     function checkpoint() {
@@ -589,15 +635,34 @@
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 } });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
     }
+    // Копии выделенных узлов со сдвигом; связи не копируются. block_id действия создаётся заново (уникален в графе).
+    function duplicateNodes(ids) {
+      const source = graph.nodes.filter(n => ids.includes(n.id));
+      if (!source.length) return;
+      const copies = source.map(n => {
+        const params = clone(n.params || {});
+        if (actionType(n.type)) params.block_id = mkId('b');
+        return { id: mkId('node'), type: n.type, params, position: { x: n.position.x + 40, y: n.position.y + 40 } };
+      });
+      graph.nodes.push(...copies);
+      checkpoint(); selected = new Set(copies.map(n => n.id)); activeNode = copies[0].id; render();
+    }
     // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
     function insertStarter(starter) {
       if (!isBlankGraph(graph)) return;
       const ids = new Map(), origin = { x: 60, y: 70 };
       for (const n of starter.nodes) {
         const id = mkId('node'); ids.set(n.key, id);
-        graph.nodes.push({ id, type: n.type, params: clone(n.params), position: { x: origin.x + n.x, y: origin.y + n.y } });
+        // Значения по умолчанию реестра + отличия из пресета; block_id действия создаётся заново (уникален в графе).
+        const params = { ...clone(NODE_DEFS[n.type]?.defaults || {}), ...clone(n.params || {}) };
+        if (actionType(n.type)) params.block_id = mkId('b');
+        graph.nodes.push({ id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y } });
       }
       for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
+      // Вариант «с подключением»: первый узел без входящих связей пресета встаёт после программы «Использовать».
+      const program = graph.nodes.find(n => n.type === 'action.program');
+      const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
+      if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
     }
     function portType(node, direction, socket) {
@@ -784,6 +849,14 @@
       if (!container || !window.NodeMenu) return;
       menuHandle = window.NodeMenu.open({ container, x: clientX - rect.left, y: clientY - rect.top, onClose: () => { menuHandle = null; }, ...options });
     }
+    // Короткие параметры узла прямо на карточке. Жесты полей изолированы: pointer и click не доходят до карточки
+    // (нет перетаскивания, нет повторной отрисовки при фокусе), сокеты и провода — отдельные элементы вне этой панели.
+    // Значение записывается в граф на change (уход из поля или Enter), как и в боковой панели.
+    function inlineParams(node) {
+      const groups = graph.groups.map(item => ({ value: item.id, label: item.name }));
+      const form = NodeForm.nodeParams(node, { inline: true, groups, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      return el('div', { class: 'node-inline', 'data-inline-params': node.id, onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, form);
+    }
     function nodeCard(node) {
       const pos = node.position || { x: 0, y: 0 }, group = node.type === 'group.instance' ? graph.groups.find(g => g.id === node.params?.group_id) : null;
       const groups = new Map(graph.groups.map(g => [g.id, g]));
@@ -798,12 +871,19 @@
         // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
-        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { sections: [{ title: 'Узел', items: [
-          { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }, { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) }, { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] }],
-          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else addFrame(); } }); } },
+        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { categories: true, sections: [
+          { title: 'Узел', items: [
+            { label: 'Дублировать', run: () => ({ action: 'duplicate' }) },
+            { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }] },
+          { title: 'Группа', items: [
+            { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) },
+            { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] },
+          { title: 'Добавить рядом', items: window.NodeMenu.catalogCategories().map(cat => ({ label: cat.label, children: cat.children.map(c => ({ ...c, run: () => ({ action: 'add', type: c.hint, at: { x: node.position.x + 280, y: node.position.y } }) })) })) },
+        ],
+          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
-        el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), sockets);
+        el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), sockets);
       return card;
     }
     // Точка провода в мировых координатах: центр точки сокета из DOM (зум и панорама учитываются),
@@ -885,12 +965,13 @@
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        el('button', { class: 'small', 'data-action': 'presets', onclick: () => window.Presets?.openManager() }, 'Наборы данных…'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
-      const starters = !isBlankGraph(graph) ? null : el('div', { class: 'node-starters' },
+      const starters = !isBlankGraph(graph) || !graphStarters().length ? null : el('div', { class: 'node-starters' },
         el('b', {}, 'Начните с готового графа'),
         el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
-        ...GRAPH_STARTERS.map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
+        ...graphStarters().map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
       const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(Boolean); if (!members.length) return null;
@@ -906,7 +987,7 @@
           startMarquee(e);
         },
         onauxclick: e => e.preventDefault(),
-        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
+        oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, categories: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
       const inspector = renderProperties();
       // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
       // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
@@ -963,6 +1044,12 @@
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_progression || null);
+    },
+    // Правила класса из узла rule.class_rules (кастеры, мультикласс, мастерства оружия); null, если узла нет.
+    classRules(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.class_rules || null);
     },
     applyGraphRules,
     normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },

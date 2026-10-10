@@ -114,11 +114,9 @@ window.Lang = (() => {
       'рубящий': 'Slashing', 'колющий': 'Piercing', 'дробящий': 'Bludgeoning', 'кислота': 'Acid', 'холод': 'Cold', 'огонь': 'Fire', 'силовое поле': 'Force',
       'электричество': 'Lightning', 'некротический': 'Necrotic', 'яд': 'Poison', 'психический': 'Psychic', 'излучение': 'Radiant', 'звук': 'Thunder',
       'СИЛ': 'STR', 'ЛОВ': 'DEX', 'ТЕЛ': 'CON', 'ИНТ': 'INT', 'МДР': 'WIS', 'ХАР': 'CHA',
-      'Ослеплённый': 'Blinded', 'Очарованный': 'Charmed', 'Оглохший': 'Deafened', 'Истощение': 'Exhaustion', 'Испуганный': 'Frightened', 'Схваченный': 'Grappled',
-      'Недееспособный': 'Incapacitated', 'Невидимый': 'Invisible', 'Парализованный': 'Paralyzed', 'Окаменевший': 'Petrified', 'Отравленный': 'Poisoned',
-      'Сбитый с ног': 'Prone', 'Опутанный': 'Restrained', 'Ошеломлённый': 'Stunned', 'Бессознательный': 'Unconscious',
     },
-    term(v) { return api.get() === 'en' ? (api.TERMS_EN[v] || v) : v; },
+    // Состояния переводятся из набора conditions (поле en); остальные термины — таблица выше.
+    term(v) { return api.get() === 'en' ? (api.TERMS_EN[v] || window.Presets?.items('conditions').find(c => c.table.ru === v)?.table.en || v) : v; },
     // Перевод набора: у набора есть базовый язык (locale) и переводы i18n = { en: { name, description } }.
     pack(p, field) {
       const l = api.get(), base = p?.locale || 'ru';
