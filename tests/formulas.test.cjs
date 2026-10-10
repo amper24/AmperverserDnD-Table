@@ -8,6 +8,12 @@ const ctx = { window: {} };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
 const F = ctx.window.Formulas;
+// Механики SRD хранятся в графе v2: читаем v1-представление (toLegacy), как редактор.
+const mctx = { window: {}, el: (tag, attrs = {}, ...children) => ({ tag, attrs, children }), toast() {}, crypto: require('node:crypto').webcrypto };
+vm.createContext(mctx);
+for (const f of ['static/dice.js', 'static/formulas.js', 'static/mechanics.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), mctx);
+const G = mctx.window.Mechanics;
+const srd = f => JSON.parse(fs.readFileSync(f, 'utf8')).map(e => e.data?.mechanics?.version === 2 ? { ...e, data: { ...e.data, mechanics: JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics))) } } : e);
 
 const sheet = { abilities: { str: 8, dex: 14, con: 16, int: 10, wis: 16, cha: 12 }, proficiency_bonus: 2, level: 5 };
 const vars = F.sheetVars(sheet);
@@ -91,7 +97,7 @@ test('SRD data: barbarian and monk in both editions carry the rule as data', () 
   const expect = { 'srd14-barbarian': [15, false], 'srd14-monk': [15, true], 'srd24-barbarian': [15, false], 'srd24-monk': [15, true] };
   const seen = new Set();
   for (const file of ['data_seed/srd_2014.json', 'data_seed/srd_2024.json']) {
-    for (const entry of JSON.parse(fs.readFileSync(file, 'utf8'))) {
+    for (const entry of srd(file)) {
       if (!expect[entry.slug]) continue;
       seen.add(entry.slug);
       const block = (entry.data.mechanics.programs || []).find(p => p.trigger === 'passive')?.blocks.find(b => b.field === 'unarmored_defense');

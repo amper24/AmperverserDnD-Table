@@ -324,6 +324,10 @@ if __name__ == '__main__':
         data = build(ed)
         p = os.path.join(OUT, f'srd_{ed}.json')
         json.dump(data, open(p, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+        # Механики переводятся из блоков v1 в граф v2 тем же конвертером, что использует редактор (Mechanics.migrate).
+        import subprocess
+        subprocess.run(['node', os.path.join(os.path.dirname(__file__), 'graph_convert.cjs'), p, p], check=True)
+        data = json.load(open(p, encoding='utf-8'))
         from collections import Counter
         c = Counter(e['category'] for e in data)
         untr = sum(1 for e in data if e['name'] == e['data']['name_en'])
