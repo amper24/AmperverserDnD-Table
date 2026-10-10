@@ -119,12 +119,7 @@ window.newCharacterDialog = async function (defaults = {}) {
       for (const group of subclassVariantGroups(draft.selected.subclass, 1))
         if (!group.options.includes(draft.ruleChoices?.subclassVariants?.[group.base])) return `Выберите вариант «${group.base}» подкласса.`;
       const slug = classSlugOf(draft.selected.class);
-      if (draft.edition === '2014' && slug === 'fighter'
-        && Object.keys(draft.selected.class.data?.feature_texts || {}).some(name => /^Боевой стиль:\s*/.test(name))
-        && !draft.ruleChoices?.fightingStyle) return 'Выберите один боевой стиль в соответствии с правилами 2014.';
-      if (draft.edition === '2024' && slug === 'cleric' && !draft.ruleChoices?.clericOrder) return 'Выберите Божественный орден жреца.';
-      if (draft.edition === '2024' && slug === 'druid' && !draft.ruleChoices?.druidOrder) return 'Выберите Первобытный орден друида.';
-      if (draft.edition === '2024' && slug === 'fighter' && entries.some(e => e.category === 'feat' && e.data?.prerequisites === 'feature_named') && !draft.ruleChoices?.fightingStyleFeat) return 'Выберите черту Боевого стиля воина.';
+      const classProblem = B.classChoiceProblem(draft); if (classProblem) return classProblem;
       if (['2014', '2024'].includes(draft.edition) && slug === 'bard') {
         const selected = draft.ruleChoices?.bardInstruments || [], allowed = new Set(entries.filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты').map(e => e.name));
         if (selected.length !== 3 || new Set(selected).size !== 3 || selected.some(name => !allowed.has(name))) return 'Бард должен выбрать три разных музыкальных инструмента из справочника.';
@@ -416,21 +411,10 @@ window.newCharacterDialog = async function (defaults = {}) {
             el('span', {}, el('b', {}, o.name), o.text ? el('small', { class: 'muted' }, o.text) : null));
         }))));
     };
-    if (draft.edition === '2014' && slug === 'fighter') {
-      const styles = Object.keys(klass.data?.feature_texts || {}).filter(name => /^Боевой стиль:\s*/.test(name));
-      if (styles.length) radioPanel('fightingStyle', 'Боевой стиль', 'Правило D&D 2014: выберите один стиль.', styles.map(name => ({ value: name, name: name.replace(/^Боевой стиль:\s*/, ''), text: klass.data.feature_texts[name] })));
-    }
-    if (draft.edition === '2024' && slug === 'cleric') radioPanel('clericOrder', 'Божественный орден', 'Выберите одну роль жреца на 1 уровне.', [
-      { value: 'protector', name: 'Защитник', text: 'Владение воинским оружием и тяжёлыми доспехами.' },
-      { value: 'thaumaturge', name: 'Чудотворец', text: 'Один дополнительный заговор жреца.' },
-    ]);
-    if (draft.edition === '2024' && slug === 'druid') radioPanel('druidOrder', 'Первобытный орден', 'Выберите одну роль друида на 1 уровне.', [
-      { value: 'magician', name: 'Маг', text: 'Один дополнительный заговор друида.' },
-      { value: 'warden', name: 'Страж', text: 'Владение воинским оружием и средними доспехами.' },
-    ]);
-    if (draft.edition === '2024' && slug === 'fighter') {
-      const styles = entries.filter(e => e.category === 'feat' && e.data?.prerequisites === 'feature_named');
-      if (styles.length) radioPanel('fightingStyleFeat', 'Черта «Боевой стиль»', 'Выберите одну черту боевого стиля воина 2024.', styles.map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' })));
+    // Выборы класса (боевой стиль, ордена, черта стиля) рисуются по набору class_rules (B.classChoices).
+    for (const c of B.classChoices(draft)) {
+      if ((c.kind === 'options' || c.kind === 'feat') && (c.options || []).length)
+        radioPanel(c.key, c.title, c.hint, c.options.map(o => ({ value: o.value, name: o.name, text: o.text })));
     }
     if (['2014', '2024'].includes(draft.edition) && slug === 'bard') {
       const instruments = entries.filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты');

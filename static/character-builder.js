@@ -568,7 +568,7 @@ window.CharacterBuilder = (() => {
       const level = Number(row.pact_level), current = slots[level]?.max || 0;
       slots[level] = { max: current + Number(row.pact_slots), used: 0 };
     }
-    const extraCantrip = edition === '2024' && ((slug === 'cleric' && ruleChoices.clericOrder === 'thaumaturge') || (slug === 'druid' && ruleChoices.druidOrder === 'magician')) ? 1 : 0;
+    const extraCantrip = edition === '2024' ? classExtraCantrips(edition, slug, ruleChoices) : 0;
     const preparedCount = window.ClassRules.startMode(classEntry, edition) === 'book' ? Math.max(1, 1 + modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10)) : null;
     return { cantrips: Math.max(0, Number(row.cantrips) || 0) + extraCantrip, spells, mode, preparedCount, slots, maxLevel: Math.max(0, ...(row.slots || []).map((n, i) => Number(n) > 0 ? i + 1 : 0), Number(row.pact_level) || 0) };
   }
@@ -613,6 +613,60 @@ window.CharacterBuilder = (() => {
   }
   // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт
   // берутся из справочника по фильтру набора, поэтому кастомная раса описывается только данными.
+  // Выборы класса — набор class_rules (поле choices) по редакции. Ключи совпадают с draft.ruleChoices.
+  function classChoiceRules(edition, slug) { return window.Presets?.classRules(edition, slug)?.choices || []; }
+  function classChoices(draft) {
+    const entry = draft.selected?.class;
+    if (!entry) return [];
+    const edition = draft.edition || '2014', slug = classSlugOf(entry), catalog = draft.catalog || [];
+    return classChoiceRules(edition, slug).map(c => {
+      const choice = { ...JSON.parse(JSON.stringify(c)), required: c.optional !== true };
+      if (c.kind === 'feat') {
+        const names = new Set((window.Presets?.items('feat_rules', edition) || [])
+          .filter(r => (r.table.groups || []).includes(c.filter?.group)).map(r => String(r.table.name_en || '').toLowerCase()));
+        choice.options = catalog.filter(e => e.category === 'feat' && names.has(String(e.data?.name_en || '').toLowerCase()))
+          .map(e => ({ value: e.id, name: e.name, text: e.data?.desc || '' }));
+      }
+      return choice;
+    });
+  }
+  function classChoiceProblem(draft) {
+    for (const c of classChoices(draft)) {
+      if (c.required === false || !(c.options || []).length) continue;
+      const picked = draft.ruleChoices?.[c.key];
+      if (!picked) return c.problem || `Выберите: ${c.title}.`;
+      if (!c.options.some(o => o.value === picked)) return `Вариант «${c.title}» не найден в наборе.`;
+    }
+    return null;
+  }
+  // Бонусные заговоры из выбранных вариантов (поле extra_cantrips на варианте набора).
+  function classExtraCantrips(edition, slug, ruleChoices = {}) {
+    let n = 0;
+    for (const c of classChoiceRules(edition, slug)) {
+      const option = (c.options || []).find(o => o.value === ruleChoices[c.key]);
+      n += Number(option?.extra_cantrips) || 0;
+    }
+    return n;
+  }
+  // Применение выбранных вариантов класса к листу: особенности, владения, черты.
+  function applyClassChoices(s, draft, classEntry) {
+    for (const c of classChoices(draft)) {
+      const picked = draft.ruleChoices?.[c.key];
+      if (!picked) continue;
+      if (c.kind === 'feat') {
+        const feat = (draft.catalog || []).find(e => e.category === 'feat' && e.id === picked);
+        if (!feat) continue;
+        feature(s, feat.name, feat.data?.desc || '', classEntry.name, feat.data?.mechanics);
+        s.modules.push({ schema_version: 1, entry_id: feat.id, category: 'feat', source: feat.source, pack_id: feat.pack_id || null, snapshot: JSON.parse(JSON.stringify(feat)) });
+        continue;
+      }
+      if (c.kind !== 'options') continue;
+      const option = (c.options || []).find(o => o.value === picked);
+      if (!option) continue;
+      if (option.feature_text) feature(s, c.feature_name ? `${c.feature_name}: ${option.name}` : option.value, option.feature_text, classEntry.name);
+      if ((option.proficiencies || []).length) appendProficiency(s, option.grant || c.feature_name || c.title, option.proficiencies);
+    }
+  }
   function raceChoices(draft) {
     const race = draft.selected?.race;
     if (!race) return [];
@@ -749,29 +803,9 @@ window.CharacterBuilder = (() => {
         }
       }
     }
-    if (s.edition === '2014' && classSlug === 'fighter') {
-      const style = draft.ruleChoices?.fightingStyle;
-      if (style && classEntry.data?.feature_texts?.[style]) feature(s, style, classEntry.data.feature_texts[style], classEntry.name);
-    }
-    if (s.edition === '2024' && classSlug === 'fighter') {
-      const style = (draft.catalog || []).find(e => e.category === 'feat' && e.id === draft.ruleChoices?.fightingStyleFeat);
-      if (style) {
-        feature(s, style.name, style.data?.desc || '', classEntry.name, style.data?.mechanics);
-        s.modules.push({ schema_version: 1, entry_id: style.id, category: 'feat', source: style.source, pack_id: style.pack_id || null, snapshot: JSON.parse(JSON.stringify(style)) });
-      }
-    }
-    if (s.edition === '2024' && classSlug === 'cleric' && draft.ruleChoices?.clericOrder) {
-      if (draft.ruleChoices.clericOrder === 'protector') appendProficiency(s, 'Божественный орден', ['Воинское оружие', 'Тяжёлые доспехи']);
-      feature(s, 'Божественный орден: ' + (draft.ruleChoices.clericOrder === 'protector' ? 'Защитник' : 'Чудотворец'),
-        draft.ruleChoices.clericOrder === 'protector' ? 'Получено владение воинским оружием и тяжёлыми доспехами.' : 'Получен один дополнительный заговор из списка жреца; примените выбранную характеристику и бонус к проверкам Магии или Религии согласно правилам.', classEntry.name);
-    }
+    applyClassChoices(s, draft, classEntry);
     if (s.edition === '2014' && classSlug === 'cleric' && /life/i.test(String(draft.selected.subclass?.data?.name_en || '')))
       appendProficiency(s, 'Домен жизни', ['Тяжёлые доспехи']);
-    if (s.edition === '2024' && classSlug === 'druid' && draft.ruleChoices?.druidOrder) {
-      if (draft.ruleChoices.druidOrder === 'warden') appendProficiency(s, 'Первобытный орден', ['Воинское оружие', 'Средние доспехи']);
-      feature(s, 'Первобытный орден: ' + (draft.ruleChoices.druidOrder === 'magician' ? 'Маг' : 'Страж'),
-        draft.ruleChoices.druidOrder === 'magician' ? 'Получен один дополнительный заговор друида; примените бонус к проверкам Магии или Природы согласно правилам.' : 'Получено владение воинским оружием и средними доспехами.', classEntry.name);
-    }
     if (classSlug === 'rogue') appendProficiency(s, 'Инструменты класса', ['Воровские инструменты']);
     const featName = String(draft.selected.background?.data?.feat || '').trim();
     if (featName && !draft.selected.feat) feature(s, featName, 'Черта предыстории указана текстом; запись черты не найдена в справочнике.', draft.selected.background.name);
@@ -940,7 +974,7 @@ window.CharacterBuilder = (() => {
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 6 × 1d20 (вариант стола)', rolls: results.map((r, i) => ({ ...r, name: `${ABIL[keys[i]] || keys[i]}` })) }, { local: true });
     return results.map(r => ({ dice: r.parts[0].rolls, dropped: -1, total: r.total }));
   }
-  return { register, build, raceChoices, raceChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
+  return { register, build, raceChoices, raceChoiceProblem, classChoices, classChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
     parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, startingInventory, packContents, skillsState, passiveSkills, itemKind, PICK_FILTERS, SKILL_SOURCES, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
     normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, CLASS_SLUGS_RU, POINT_BUY_COST };
 })();
