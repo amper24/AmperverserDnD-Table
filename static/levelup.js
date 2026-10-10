@@ -220,7 +220,7 @@ window.LevelUp = (() => {
     const pbFrom = profBonus(totalFrom), pbTo = profBonus(totalTo);
     for (const col of prog?.columns || []) {
       const a = columnValue(prog, col, from), b = columnValue(prog, col, to);
-      if (b !== undefined && a !== b) changes.push({ label: col.ru, from: a, to: b });
+      if (b !== undefined && a !== b) changes.push({ label: col.ru || col.en, from: a, to: b });
     }
     const spells = { cantrips: 0, spells: 0, mode: null, swap: 0, maxLevel: after?.maxSpellLevel || 0, prepared: after?.prepared ?? null, book: 0, secrets: 0 };
     if (after) {
