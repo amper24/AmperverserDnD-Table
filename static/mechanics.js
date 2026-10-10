@@ -295,6 +295,9 @@ window.Mechanics = (() => {
       if(!p.blocks.length)stack.append(el('div',{class:'block-empty'},'Добавьте первый блок из палитры слева.'));
       const check=el('div',{class:'mechanics-validation',role:'status'});root.append(el('button',{class:'small',onclick:()=>check.textContent=validate(m)||'✓ Структура корректна. Проверка ничего не расходует и не бросает.'},'Проверить цепочку'),check);
     }
+    // Шаблоны берутся из наборов: при загрузке или импорте набора список перерисовывается.
+    const onPresets = () => { if (root.isConnected) render(); else window.removeEventListener('presets:changed', onPresets); };
+    window.addEventListener?.('presets:changed', onPresets);
     render(); return root;
   }
   function passiveData(entry) {
