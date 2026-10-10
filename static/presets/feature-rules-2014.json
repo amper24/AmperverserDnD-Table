@@ -49,6 +49,15 @@
       }
     },
     {
+      "id": "style-option",
+      "table": {
+        "kind": "style_option",
+        "match": "prefix",
+        "pattern": "Боевой стиль: ",
+        "label": "Вариант боевого стиля"
+      }
+    },
+    {
       "id": "secrets",
       "table": {
         "kind": "secrets",
@@ -113,6 +122,16 @@
         "pattern": "^природный исследователь \\(",
         "flags": "i",
         "label": "Природный исследователь"
+      }
+    },
+    {
+      "id": "expertise-text",
+      "table": {
+        "kind": "expertise",
+        "match": "text",
+        "pattern": "экспертиз",
+        "flags": "i",
+        "label": "Экспертиза по описанию"
       }
     }
   ]

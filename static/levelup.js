@@ -15,14 +15,15 @@ window.LevelUp = (() => {
   const MAX_LEVEL = 20;
   // Классификация особенностей класса — набор feature_rules (вид + шаблон) по редакции. Правила проверяются по порядку набора.
   const featureRulesOf = edition => window.Presets?.items('feature_rules', edition) || [];
-  const featureRuleMatch = (rule, name) => {
+  const featureRuleMatch = (rule, name, text) => {
     const t = rule.table || {}, p = String(t.pattern || '');
+    if (t.match === 'text') return new RegExp(p, String(t.flags || '')).test(String(text || ''));
     if (t.match === 'exact') return name === p;
     if (t.match === 'prefix') return name.startsWith(p);
     return new RegExp(p, String(t.flags || '')).test(name);
   };
-  const featureKinds = (name, edition) => featureRulesOf(edition).filter(r => featureRuleMatch(r, name)).map(r => r.table.kind);
-  const hasFeatureKind = (name, kind, edition) => featureKinds(name, edition).includes(kind);
+  const featureKinds = (name, edition, text) => featureRulesOf(edition).filter(r => featureRuleMatch(r, name, text)).map(r => r.table.kind);
+  const hasFeatureKind = (name, kind, edition, text) => featureKinds(name, edition, text).includes(kind);
   const featureRuleOf = (kind, edition) => featureRulesOf(edition).find(r => r.table.kind === kind)?.table || null;
   const featureTagOf = (name, edition) => featureRulesOf(edition).find(r => r.table.tag && featureRuleMatch(r, name))?.table.tag || '';
   const EXPERTISE_GAINS = { '2014': { bard: { 3: 2, 10: 2 }, rogue: { 1: 2, 6: 2 } }, '2024': { bard: { 2: 2, 9: 2 }, rogue: { 1: 2, 6: 2 }, ranger: { 2: 1, 9: 2 }, wizard: { 2: 1 } } };
@@ -223,7 +224,7 @@ window.LevelUp = (() => {
     const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
     const expertiseFrom = edition === '2024' && slug === 'wizard' && to === 2 ? (d.skills?.from || []).map(skillKeyFromName).filter(Boolean) : null;
-    if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition) || /экспертиз/i.test(f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
+    if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition, f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
     const subLevel = subclassLevel(entry), subclass = subclassOf(entry, row?.subclass || opts.subclass?.name);
     const needSubclass = !subclass && subLevel !== null && to >= subLevel && (d.subclasses || []).length > 0;
     const subFeatures = subclassFeaturesAt(subclass, to, row?.subclass_choices || {}).map(f => ({ ...f, source: subclass.name, tag: '' }));
@@ -659,7 +660,7 @@ window.LevelUp = (() => {
         return h('dl', 'lu-facts', ...rows.flatMap(([a, b]) => [h('dt', '', a), h('dd', '', b)]));
       };
       const upcoming = p => {
-        const rows = [], sub = st.subclass || p.subclass, skip = n => /^(Таинственные воззвания |Договор |Боевой стиль: )/.test(n);
+        const rows = [], sub = st.subclass || p.subclass, skip = n => hasFeatureKind(n, 'invocation', edition) || hasFeatureKind(n, 'pact_boon', edition) || hasFeatureKind(n, 'style_option', edition);
         for (let l = p.to + 1; l <= MAX_LEVEL && rows.length < 4; l++) {
           const names = [...classFeaturesAt(p.entry, l).map(f => f.name).filter(n => !skip(n)).map(n => [n, false]), ...subclassFeaturesAt(sub, l).map(f => [f.name, true])];
           if (names.length) rows.push(h('div', 'lu-up-row', h('span', 'lu-up-lv', h('small', '', 'ур.'), h('b', '', String(l))), h('div', 'lu-up-names', ...names.slice(0, 5).map(([n, s]) => chip((s ? '✦ ' : '') + n, s ? 'sub' : '')), names.length > 5 ? chip(`+${names.length - 5}`, 'muted') : null)));
