@@ -8,7 +8,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const ORIGIN = 'https://node-card.test';
-const EDITOR_MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets-data', 'mechanics-graph', 'asset-kinds', 'modules'];
+const EDITOR_MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
 
 // Программа «Удар жезлом»: атака (КД 12) → «Если» по условию «Попадание атаки» → урон 1d8 только при попадании.
 const WAND = {
@@ -59,6 +59,7 @@ const WAND = {
 
     // ---- 1. Параметр меняется на карточке узла --------------------------------------------------
     await page.goto(`${ORIGIN}/`);
+    await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
       window.doc = Modules.newItem({ name: 'Карточка', type: 'feature', mechanics: { version: 2, origin: 'test', graph: {
         nodes: [

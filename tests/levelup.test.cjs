@@ -1,9 +1,11 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
-for (const f of ['static/class-progression.js', 'static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady);
+for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
 const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).filter(e => e.category === 'class');
@@ -14,10 +16,13 @@ const sheet = (o = {}) => ({ edition: '2014', level: 1, class: '', subclass: '',
 const stubs = { newFeature: f => ({ uid: 'f' + Math.random(), ...f }), spellFromCompendium: e => ({ uid: 's' + Math.random(), name: e.name, level: e.data.level, prepared: false }) };
 
 test('таблицы развития есть для всех 12 классов обеих редакций и 20 уровней', () => {
-  const P = ctx.window.CLASS_PROGRESSION;
-  for (const ed of ['2014', '2024']) { assert.equal(Object.keys(P[ed]).length, 12); for (const c of Object.values(P[ed])) assert.equal(Object.keys(c.levels).length, 20); }
-  assert.deepEqual(plain(P['2014'].wizard.levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
-  assert.equal(P['2024'].wizard.levels['5'].prepared, 9);
+  const Presets = ctx.window.Presets;
+  for (const ed of ['2014', '2024']) {
+    assert.equal(Presets.items('class_progression', ed).length, 12);
+    for (const slug of Presets.items('class_progression', ed).map(i => i.id)) assert.equal(Object.keys(Presets.classProgression(ed, slug).levels).length, 20, slug);
+  }
+  assert.deepEqual(plain(Presets.multiclassSlots('2014').levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
+  assert.equal(Presets.classProgression('2024', 'wizard').levels['5'].prepared, 9);
 });
 test('slugOf распознаёт класс по английскому и русскому названию', () => {
   assert.equal(L.slugOf(cls('2014', 'wizard')), 'wizard'); assert.equal(L.slugOf({ name: 'Колдун', data: {} }), 'warlock'); assert.equal(L.slugOf({ name: 'Свой класс', data: {} }), '');

@@ -1,4 +1,4 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -9,7 +9,9 @@ function el(tag, attrs = {}, ...children) {
 }
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/presets-data.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady);
+for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -88,7 +90,7 @@ test('sequential hit branches (after a gated block) are allowed', () => {
 });
 
 test('starter presets are data: every starter saves, the attached ones execute', () => {
-  const starters = ctx.window.PRESET_DATA.graphStarters;
+  const starters = ctx.window.Presets.items('graph_starter');
   assert.ok(starters.length >= 4, 'starters are present in the data file');
   const ids = starters.map(s => s.id);
   assert.equal(new Set(ids).size, ids.length, 'starter ids are unique');
@@ -115,14 +117,14 @@ test('starter presets are data: every starter saves, the attached ones execute',
 });
 
 test('the attack-hit-damage starter compiles to an attack, then damage only on a hit', () => {
-  const starter = ctx.window.PRESET_DATA.graphStarters.find(s => s.id === 'attack-hit-damage');
+  const starter = ctx.window.Presets.item('graph_starter', 'attack-hit-damage');
   assert.ok(starter, 'the starter exists');
   assert.ok(starter.nodes.some(n => n.type === 'condition.hit') && starter.nodes.some(n => n.type === 'flow.if'));
 });
 
 test('preset lists for items and spells are data with the same shape as before', () => {
-  const data = ctx.window.PRESET_DATA;
-  assert.deepEqual(plain(data.itemPresets).map(p => p.id), ['weapon', 'armor', 'consumable', 'magic', 'gear', 'blank']);
-  assert.deepEqual(plain(data.spellPresets).map(p => p.id), ['cantrip', 'spell1', 'spell3', 'ritual', 'blank']);
-  assert.deepEqual(plain(data.spellPresets.find(p => p.id === 'cantrip').fields), { level: 0, cast_cost: 'free', name: 'Заговор' });
+  const P = ctx.window.Presets;
+  assert.deepEqual(plain(P.items('item_preset').map(p => p.id)), ['weapon', 'armor', 'consumable', 'magic', 'gear', 'blank']);
+  assert.deepEqual(plain(P.items('spell_preset').map(p => p.id)), ['cantrip', 'spell1', 'spell3', 'ritual', 'blank']);
+  assert.deepEqual(plain(P.item('spell_preset', 'cantrip').fields), { level: 0, cast_cost: 'free', name: 'Заговор' });
 });

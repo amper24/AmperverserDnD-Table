@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets-data', 'mechanics-graph', 'asset-kinds', 'modules'];
+const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -18,6 +18,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' + MODULES.map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://node-editor.test/');
+    await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
       window.doc = Modules.newItem({ name: 'Холст', type: 'feature', mechanics: { version: 2, origin: 'test', graph: {
         nodes: [
