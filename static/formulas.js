@@ -54,7 +54,8 @@
     return tokens;
   }
 
-  function parse(text) {
+  // allowed — допустимые имена переменных (по умолчанию переменные листа; модули передают свой набор).
+  function parse(text, allowed = VARIABLES) {
     if (typeof text !== 'string' || !text.trim()) throw new Error('Формула пустая.');
     if (text.length > MAX_LENGTH) throw new Error(`Формула длиннее ${MAX_LENGTH} символов.`);
     const tokens = tokenize(text);
@@ -102,7 +103,7 @@
         if (args.length < FUNCTIONS[fn].min) throw new Error(`Функция «${fn}» требует аргументы.`);
         node = { fn, args };
       } else if (token.t === 'id') {
-        if (!own(VARIABLES, token.v)) throw new Error(`Неизвестная переменная «${token.v}».`);
+        if (!own(allowed, token.v)) throw new Error(`Неизвестная переменная «${token.v}».`);
         node = { name: token.v };
       } else throw new Error('Неверный фрагмент формулы.');
       leave();
@@ -141,8 +142,8 @@
 
   // Вычисляет формулу; vars — объект «имя → число» (по умолчанию переменные листа).
   // Возвращает null при ошибке, если не передан throwOnError.
-  function evaluate(text, vars, { throwOnError = false } = {}) {
-    try { return run(parse(text), vars); } catch (error) { if (throwOnError) throw error; return null; }
+  function evaluate(text, vars, { throwOnError = false, allowed = VARIABLES } = {}) {
+    try { return run(parse(text, allowed), vars); } catch (error) { if (throwOnError) throw error; return null; }
   }
 
   // Старый синтаксис предметов: «14 + dex max 2» → «14+min(dex,2)».

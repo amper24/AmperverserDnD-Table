@@ -1567,3 +1567,5 @@ body.lu-open { overflow: hidden; }
 .node-menu-item:hover,.node-menu-item:focus{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .node-menu-item small{opacity:.55;font-size:10px}
 .node-menu-empty{opacity:.6;padding:8px}
+
+.node-status.warn{color:var(--warn,#b7791f)}

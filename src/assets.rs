@@ -8,7 +8,7 @@ use axum::{
 };
 
 /// Допустимые типы ассетов. Клиентский реестр — static/asset-kinds.js; tests/asset-kinds.test.cjs сверяет списки.
-const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item"];
+pub const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item"];
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;

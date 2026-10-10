@@ -86,6 +86,24 @@ window.Modules = (function () {
   }
 
   // ---------- макросы ----------
+  // Производные переменные модуля — данные: формулы грамматики Formulas, вычисляются по порядку,
+  // каждая видит базовые переменные и уже вычисленные выше. Новая переменная — строка здесь, код менять не нужно.
+  const DERIVED_VARS = [
+    ['best', 'max(@str, @dex)'], ['atk', '@best + @prof'], ['atk_str', '@str + @prof'], ['atk_dex', '@dex + @prof'],
+    ['spell', '@spell_mod + @prof'], ['dc', '8 + @prof + @spell_mod'], ['spell_dc', '8 + @prof + @spell_mod'], ['init', '@dex + @init_bonus'],
+  ];
+  // Допустимые имена — базовые переменные и уже вычисленные выше (не более).
+  function derivedVars(base) {
+    const F = window.Formulas;
+    if (!F) throw new Error('formulas.js должен быть загружен до modules.js');
+    const out = {};
+    for (const [name, formula] of DERIVED_VARS) {
+      const known = { ...base, ...out }, allowed = Object.fromEntries(Object.keys(known).map(k => [k, true]));
+      const value = F.evaluate(formula, known, { allowed });
+      out[name] = Number.isFinite(value) ? value : 0;
+    }
+    return out;
+  }
   function ctxFromSheet(s) {
     if (!s) return {};
     const mod = v => Math.floor(((v ?? 10) - 10) / 2);
@@ -93,11 +111,11 @@ window.Modules = (function () {
     const prof = s.proficiency_bonus || Math.ceil(1 + (s.level || 1) / 4);
     const ab = { str: mod(a.str), dex: mod(a.dex), con: mod(a.con), int: mod(a.int), wis: mod(a.wis), cha: mod(a.cha) };
     const spAb = s.spells?.ability || 'int';
-    const best = Math.max(ab.str, ab.dex);
     const asList = v => Array.isArray(v) ? v : v && typeof v === 'object' ? Object.keys(v).filter(k => v[k]) : [];
     const skillList = asList(s.skills), expList = asList(s.expertise);
-    const ctx = { ...ab, prof, level: s.level || 1, best, atk: best + prof, atk_str: ab.str + prof, atk_dex: ab.dex + prof, spell_mod: ab[spAb], spell: ab[spAb] + prof, dc: 8 + prof + ab[spAb], spell_dc: 8 + prof + ab[spAb],
-      ac: s.ac || 10, hp: s.hp?.current || 0, hp_max: s.hp?.max || 0, init: ab.dex + (s.initiative_bonus || 0), speed: s.speed || 30, passive: 10 + ab.wis + (skillList.includes('perception') ? prof : 0) * (expList.includes('perception') ? 2 : 1),
+    const base = { ...ab, prof, level: s.level || 1, spell_mod: ab[spAb], init_bonus: s.initiative_bonus || 0 };
+    const ctx = { ...base, ...derivedVars(base),
+      ac: s.ac || 10, hp: s.hp?.current || 0, hp_max: s.hp?.max || 0, speed: s.speed || 30, passive: 10 + ab.wis + (skillList.includes('perception') ? prof : 0) * (expList.includes('perception') ? 2 : 1),
       name: s.name || '', class: s.class || '', race: s.race || '', half_level: Math.floor((s.level || 1) / 2) };
     for (const k of Object.keys(ab)) ctx['save_' + k] = ab[k] + ((s.saving_throws || []).includes(k) ? prof : 0);
     for (const [k, , a] of (window.SKILLS || [])) ctx[k] = ab[a] + (expList.includes(k) ? 2 : skillList.includes(k) ? 1 : 0) * prof;

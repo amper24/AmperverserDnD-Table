@@ -167,11 +167,34 @@ impl SmtpCfg {
     }
 }
 
+/// Класс лимита размера картинки: карты и токены настраиваются отдельно (images.*_max_side в config.yml).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizeClass {
+    Map,
+    Token,
+}
+
+/// Тип ассета → класс лимита. Новый тип — одна строка здесь и одна в `ASSET_KINDS` (src/assets.rs).
+/// Неизвестный тип получает лимит токенов. Тест `kind_size_table_covers_asset_kinds` сверяет списки.
+pub const KIND_SIZE_CLASS: &[(&str, SizeClass)] = &[
+    ("map", SizeClass::Map),
+    ("token", SizeClass::Token),
+    ("prop", SizeClass::Token),
+    ("portrait", SizeClass::Token),
+    ("item", SizeClass::Token),
+];
+
 impl ImagesCfg {
     /// Максимальный размер загружаемого файла в байтах.
     pub fn max_upload_bytes(&self) -> usize { self.max_upload_mb.saturating_mul(1024 * 1024) }
     /// Максимальная сторона картинки после сжатия для данного типа ассета.
-    pub fn max_side(&self, kind: &str) -> u32 { if kind == "map" { self.map_max_side } else { self.token_max_side } }
+    pub fn max_side(&self, kind: &str) -> u32 {
+        let class = KIND_SIZE_CLASS.iter().find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(SizeClass::Token);
+        match class {
+            SizeClass::Map => self.map_max_side,
+            SizeClass::Token => self.token_max_side,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -824,5 +847,27 @@ mod tests {
         assert_eq!(s.security(), SmtpSecurity::Tls);
         s.encryption = "none".into();
         assert_eq!(s.security(), SmtpSecurity::None);
+    }
+}
+
+#[cfg(test)]
+mod size_limit_tests {
+    use super::*;
+
+    #[test]
+    fn kind_size_table_covers_asset_kinds() {
+        for kind in crate::assets::ASSET_KINDS {
+            assert!(KIND_SIZE_CLASS.iter().any(|(k, _)| k == kind), "нет лимита для типа {kind}");
+        }
+    }
+
+    #[test]
+    fn max_side_follows_the_kind_table() {
+        let mut cfg = ImagesCfg::default();
+        cfg.map_max_side = 3000;
+        cfg.token_max_side = 500;
+        assert_eq!(cfg.max_side("map"), 3000);
+        assert_eq!(cfg.max_side("prop"), 500);
+        assert_eq!(cfg.max_side("unknown-kind"), 500);
     }
 }

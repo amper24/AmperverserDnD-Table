@@ -643,7 +643,13 @@
           const other = { node: hit.dataset.node, socket: hit.dataset.socket }, mine = { node: w.node, socket: w.socket };
           const out = w.direction === 'outputs' ? mine : other, inp = w.direction === 'outputs' ? other : mine;
           applyLink({ from: { node: out.node, socket: out.socket }, to: { node: inp.node, socket: inp.socket } }, 'Провод соединён.', restore);
-        } else { restore(); status = detached ? 'Провод отменён и возвращён.' : ''; render(); }
+        } else if (hit) {
+          // Бросили на сокет того же направления: связь возвращается, это не удаление.
+          restore(); status = 'Соединять можно только входы с выходами.'; render();
+        } else {
+          // Подключённый вход перетащили на пустое место: связь удаляется (без отката).
+          status = detached ? 'Провод удалён.' : ''; render();
+        }
       });
     }
     // Связь через клик: сначала выход, затем вход. Проверка и откат — в applyLink.
@@ -830,7 +836,10 @@
         oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
       drawWires(world);
       const inspector = renderProperties();
-      const statusLine = el('div', { class: 'node-status', role: 'status' }, status);
+      // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
+      // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
+      const pending = validateGraph(graph, graph.groups || []);
+      const statusLine = el('div', { class: 'node-status' + (pending && !status ? ' warn' : ''), role: 'status' }, status || (pending ? `Граф ещё не завершён: ${pending}` : ''));
       root.append(toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview());
       // Keep status reference in a closure-safe property for JSON validation errors.
       root._statusNode = statusLine;

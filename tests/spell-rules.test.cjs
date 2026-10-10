@@ -7,6 +7,7 @@ vm.runInContext(fs.readFileSync('static/spell-rules.js', 'utf8'), ctx);
 const R = ctx.window.SpellRules;
 const plain = value => JSON.parse(JSON.stringify(value));
 const modulesCtx = { window: {} }; vm.createContext(modulesCtx);
+vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), modulesCtx);
 vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), modulesCtx);
 const Modules = modulesCtx.window.Modules;
 
