@@ -131,7 +131,8 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
         for a in list {
             let Some(file) = SeedFiles::get(&format!("builtin/{}", a.file)) else { continue };
             let bytes = file.data.into_owned();
-            let max_side = if a.kind == "map" { 2048 } else { 512 };
+            // Размеры встроенных картинок по классу лимита (таблица KIND_SIZE_CLASS в config.rs).
+            let max_side = match crate::config::size_class(&a.kind) { crate::config::SizeClass::Map => 2048, crate::config::SizeClass::Token => 512 };
             let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, 85)).await??;
             sqlx::query("INSERT INTO assets (id, campaign_id, owner_id, name, kind, mime, width, height, encoding, data_b64, builtin, created_at) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
                 .bind(util::uid()).bind(&a.name).bind(&a.kind).bind(&info.mime).bind(info.width).bind(info.height).bind(&info.encoding).bind(&info.data_b64).bind(util::now())

@@ -427,7 +427,7 @@ window.Table = (function () {
       if (e.dataTransfer.files?.length) {
         for (const f of e.dataTransfer.files) {
           if (!f.type.startsWith('image/')) continue;
-          const fd = new FormData(); fd.append('file', f); fd.append('name', f.name.replace(/\.[^.]+$/, '')); fd.append('kind', S.activeLayer === 'map' ? 'map' : 'token'); fd.append('campaign_id', S.campaign.id);
+          const fd = new FormData(); fd.append('file', f); fd.append('name', f.name.replace(/\.[^.]+$/, '')); fd.append('kind', window.AssetKinds.kindForLayer(S.activeLayer)); fd.append('campaign_id', S.campaign.id);
           toast('Загрузка ' + f.name + '…');
           const a = await API.upload('/api/assets', fd); placeAsset(a, w); S.onAssetsChanged && S.onAssetsChanged();
         }

@@ -174,6 +174,11 @@ pub enum SizeClass {
     Token,
 }
 
+/// Класс лимита для типа ассета; неизвестный тип — токен.
+pub fn size_class(kind: &str) -> SizeClass {
+    KIND_SIZE_CLASS.iter().find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(SizeClass::Token)
+}
+
 /// Тип ассета → класс лимита. Новый тип — одна строка здесь и одна в `ASSET_KINDS` (src/assets.rs).
 /// Неизвестный тип получает лимит токенов. Тест `kind_size_table_covers_asset_kinds` сверяет списки.
 pub const KIND_SIZE_CLASS: &[(&str, SizeClass)] = &[
@@ -189,8 +194,7 @@ impl ImagesCfg {
     pub fn max_upload_bytes(&self) -> usize { self.max_upload_mb.saturating_mul(1024 * 1024) }
     /// Максимальная сторона картинки после сжатия для данного типа ассета.
     pub fn max_side(&self, kind: &str) -> u32 {
-        let class = KIND_SIZE_CLASS.iter().find(|(k, _)| *k == kind).map(|(_, c)| *c).unwrap_or(SizeClass::Token);
-        match class {
+        match size_class(kind) {
             SizeClass::Map => self.map_max_side,
             SizeClass::Token => self.token_max_side,
         }

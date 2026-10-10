@@ -341,14 +341,14 @@ window.Modules = (function () {
   // ---------- выбор изображения (инвентарь) и токена (карта) для модуля ----------
   /// imagePicker(doc, 'asset_id', { kind: 'item', label: 'Изображение' }) — превью + загрузка / из библиотеки / убрать.
   function imagePicker(doc, key, o = {}) {
-    const kind = o.kind || 'item';
+    const kind = o.kind || window.AssetKinds.forUsage('item'), tokenKind = window.AssetKinds.forUsage('token');
     const box = el('div', { class: 'imgpick' + (o.compact ? ' compact' : '') });
     const prev = el('div', { class: 'imgpick-prev' });
     const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     const draw = () => { prev.innerHTML = ''; if (doc[key]) assetURL(doc[key]).then(u => prev.append(el('img', { src: u }))).catch(() => prev.append(icon('image'))); else prev.append(icon(o.icon || 'image', 22)); };
-    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + (kind === 'token' ? ' (токен)' : '')); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
+    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + (kind === tokenKind ? ' (токен)' : '')); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
     const fromLib = async () => {
-      const list = await API.get('/api/assets' + (kind === 'token' ? '?kind=token' : ''));
+      const list = await API.get('/api/assets' + (kind === tokenKind ? '?kind=' + tokenKind : ''));
       const grid = el('div', { class: 'asset-grid pick' });
       let chosen = null;
       for (const a of list) { const t = el('div', { class: 'asset', onclick: () => { grid.querySelectorAll('.asset').forEach(x => x.classList.remove('active')); t.classList.add('active'); chosen = a.id; } }, el('div', { class: 'thumb' }), el('div', { class: 'small ellipsis', title: a.name }, a.name)); assetURL(a.id).then(u => t.querySelector('.thumb').append(el('img', { src: u }))); grid.append(t); }
@@ -362,7 +362,7 @@ window.Modules = (function () {
   }
   /// Пара «картинка для инвентаря + токен для карты».
   function visualsRow(doc, o = {}) {
-    return el('div', { class: 'row visuals' }, imagePicker(doc, 'asset_id', { kind: 'item', label: o.imageLabel || 'Изображение (карточка, инвентарь)', icon: o.icon }), o.noToken ? null : imagePicker(doc, 'token_asset_id', { kind: 'token', label: o.tokenLabel || 'Токен на карте', icon: 'map' }));
+    return el('div', { class: 'row visuals' }, imagePicker(doc, 'asset_id', { kind: window.AssetKinds.forUsage('item'), label: o.imageLabel || 'Изображение (карточка, инвентарь)', icon: o.icon }), o.noToken ? null : imagePicker(doc, 'token_asset_id', { kind: window.AssetKinds.forUsage('token'), label: o.tokenLabel || 'Токен на карте', icon: 'map' }));
   }
 
   // ---------- редактор действий (кнопок бросков) ----------

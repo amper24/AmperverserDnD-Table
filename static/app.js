@@ -233,7 +233,7 @@
     file.addEventListener('change', async () => {
       const f = file.files[0]; if (!f) return;
       try {
-        const fd = new FormData(); fd.append('file', f); fd.append('kind', 'portrait'); fd.append('name', 'Аватар ' + me.name);
+        const fd = new FormData(); fd.append('file', f); fd.append('kind', AssetKinds.forUsage('avatar')); fd.append('name', 'Аватар ' + me.name);
         const a = await API.upload('/api/assets', fd);
         await API.patch('/api/auth/me', { avatar_asset_id: a.id });
         me.avatar_asset_id = a.id; window.ME = me; okmsg('Аватар обновлён'); reloadPage();

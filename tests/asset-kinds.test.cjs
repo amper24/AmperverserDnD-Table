@@ -46,3 +46,18 @@ test('app.js and table.js no longer hard-code asset kind lists or routing', () =
   assert.ok(app.includes('AssetKinds.filterOptions()') && app.includes('AssetKinds.uploadOptions()'));
   assert.ok(table.includes('AssetKinds.layerOf(a.kind)'));
 });
+
+test('usage roles resolve to registry kinds, so call sites name no kind literals', () => {
+  assert.equal(AK.forUsage('token'), 'token');
+  assert.equal(AK.forUsage('avatar'), 'portrait');
+  assert.equal(AK.forUsage('item'), 'item');
+  assert.equal(AK.forUsage('unknown-usage'), AK.DEFAULT);
+  assert.equal(AK.DEFAULT, 'token');
+});
+
+test('table layer maps to the kind uploaded on that layer', () => {
+  assert.equal(AK.kindForLayer('map'), 'map');
+  assert.equal(AK.kindForLayer('character'), 'token');
+  assert.equal(AK.kindForLayer('prop'), 'prop');
+  assert.equal(AK.kindForLayer('no-such-layer'), AK.DEFAULT);
+});

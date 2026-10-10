@@ -382,13 +382,13 @@
       if (!pf.files[0] || readonly || inventoryBusy) return;
       inventoryBusy = true; render();
       try {
-        const fd = new FormData(); fd.append('file', pf.files[0]); fd.append('name', ch.name); fd.append('kind', 'portrait'); if (ch.campaign_id) fd.append('campaign_id', ch.campaign_id);
+        const fd = new FormData(); fd.append('file', pf.files[0]); fd.append('name', ch.name); fd.append('kind', AssetKinds.forUsage('avatar')); if (ch.campaign_id) fd.append('campaign_id', ch.campaign_id);
         const a = await API.upload('/api/assets', fd); await flush();
         ch = await API.patch('/api/characters/' + id, { portrait_asset_id: a.id }); s = ch.sheet; dirty = false; migrate();
       } catch (e) { toast(e.message); } finally { inventoryBusy = false; render(); }
     });
     if (!readonly) portrait.addEventListener('click', () => pf.click());
-    const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: 'token', label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
+    const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: AssetKinds.forUsage('token'), label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
     const inp = (key, ph, type = 'text') => el('input', { value: s[key] ?? '', placeholder: ph, type, disabled: dis(), onchange: e => { s[key] = type === 'number' ? +e.target.value : e.target.value; if (key === 'level') s.proficiency_bonus = Math.ceil(1 + s.level / 4); save(); if (['level', 'name'].includes(key)) render(); } });
     const moduleOf = category => (s.modules || []).slice().reverse().find(m => m.category === category && m.snapshot);
     /// Список или строка → массив строк: языки, инструменты и навыки в записях бывают в обоих видах.
