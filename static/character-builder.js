@@ -619,8 +619,13 @@ window.CharacterBuilder = (() => {
     const entry = draft.selected?.class;
     if (!entry) return [];
     const edition = draft.edition || '2014', slug = classSlugOf(entry), catalog = draft.catalog || [];
+    const chosen = draft.ruleChoices || {};
     return classChoiceRules(edition, slug).map(c => {
       const choice = { ...JSON.parse(JSON.stringify(c)), required: c.optional !== true };
+      if (c.requires && !chosen[c.requires]) choice.hidden = true;
+      if (c.kind === 'language') choice.options = LANGUAGES.filter(x => !(c.exclude || []).includes(x)).map(x => ({ value: x, name: x }));
+      if (c.kind === 'items') choice.options = catalog.filter(e => e.category === 'item' && e.data?.category === c.filter?.category)
+        .map(e => ({ value: e.name, name: e.name, text: e.data?.desc || '' }));
       if (c.kind === 'feat') {
         const names = new Set((window.Presets?.items('feat_rules', edition) || [])
           .filter(r => (r.table.groups || []).includes(c.filter?.group)).map(r => String(r.table.name_en || '').toLowerCase()));
@@ -631,13 +636,28 @@ window.CharacterBuilder = (() => {
     });
   }
   function classChoiceProblem(draft) {
+    const chosen = draft.ruleChoices || {};
     for (const c of classChoices(draft)) {
-      if (c.required === false || !(c.options || []).length) continue;
-      const picked = draft.ruleChoices?.[c.key];
+      if (c.hidden || c.required === false || !(c.options || []).length) continue;
+      if (c.kind === 'items') {
+        const list = chosen[c.key] || [];
+        if (list.length !== c.count || new Set(list).size !== c.count || list.some(v => !c.options.some(o => o.value === v)))
+          return c.problem || `Выберите ${c.count} разных варианта: ${c.title}.`;
+        continue;
+      }
+      const picked = chosen[c.key];
       if (!picked) return c.problem || `Выберите: ${c.title}.`;
-      if (!c.options.some(o => o.value === picked)) return `Вариант «${c.title}» не найден в наборе.`;
+      const option = c.options.find(o => o.value === picked);
+      if (!option) return `Вариант «${c.title}» не найден в наборе.`;
+      const fields = option.sub_fields || [];
+      if (fields.some(f => !String(chosen[f.key] || '').trim())) return `Заполните поля варианта «${option.name}».`;
+      if (fields.length > 1 && new Set(fields.map(f => normalizeName(chosen[f.key]))).size !== fields.length) return `Для варианта «${option.name}» укажите разные значения.`;
     }
     return null;
+  }
+  // Подстановка выбранных значений в текст варианта: {value} и {ключ подполя}.
+  function fillTemplate(text, picked, chosen) {
+    return String(text || '').replace(/\{(\w+)\}/g, (m, key) => key === 'value' ? picked : (chosen[key] ?? ''));
   }
   // Бонусные заговоры из выбранных вариантов (поле extra_cantrips на варианте набора).
   function classExtraCantrips(edition, slug, ruleChoices = {}) {
@@ -660,10 +680,19 @@ window.CharacterBuilder = (() => {
         s.modules.push({ schema_version: 1, entry_id: feat.id, category: 'feat', source: feat.source, pack_id: feat.pack_id || null, snapshot: JSON.parse(JSON.stringify(feat)) });
         continue;
       }
+      if (c.hidden) continue;
+      if (c.kind === 'items') {
+        if ((picked || []).length && c.grant) appendProficiency(s, c.grant, picked);
+        continue;
+      }
+      if (c.kind === 'language') {
+        if (picked && c.grant) appendProficiency(s, c.grant, [picked]);
+        continue;
+      }
       if (c.kind !== 'options') continue;
       const option = (c.options || []).find(o => o.value === picked);
       if (!option) continue;
-      if (option.feature_text) feature(s, c.feature_name ? `${c.feature_name}: ${option.name}` : option.value, option.feature_text, classEntry.name);
+      if (option.feature_text) feature(s, c.feature_name ? `${c.feature_name}: ${option.name}` : option.value, fillTemplate(option.feature_text, picked, draft.ruleChoices || {}), classEntry.name);
       if ((option.proficiencies || []).length) appendProficiency(s, option.grant || c.feature_name || c.title, option.proficiencies);
     }
   }
@@ -778,16 +807,6 @@ window.CharacterBuilder = (() => {
     if (rr.speed) s.speed = rr.speed;
     if (rr.weapons?.length) appendProficiency(s, 'Оружие расы', rr.weapons);
     for (const c of raceChoices(draft)) if (c.kind === 'options' && c.grant && ruleChoices[c.key]) appendProficiency(s, c.grant, [ruleChoices[c.key]]);
-    if (classSlug === 'bard' && (ruleChoices.bardInstruments || []).length)
-      appendProficiency(s, 'Музыкальные инструменты', ruleChoices.bardInstruments);
-    if (s.edition === '2014' && classSlug === 'ranger') {
-      if (ruleChoices.favoredEnemy) {
-        const favored = ruleChoices.favoredEnemy === 'Гуманоиды' ? `Гуманоиды: ${ruleChoices.favoredHumanoidOne}, ${ruleChoices.favoredHumanoidTwo}.` : `Тип существ: ${ruleChoices.favoredEnemy}.`;
-        feature(s, 'Избранный враг: ' + ruleChoices.favoredEnemy, favored, classEntry.name);
-        if (ruleChoices.favoredLanguage) appendProficiency(s, 'Язык класса', [ruleChoices.favoredLanguage]);
-      }
-      if (ruleChoices.favoredTerrain) feature(s, 'Природный исследователь: ' + ruleChoices.favoredTerrain, `Выбрана местность: ${ruleChoices.favoredTerrain}.`, classEntry.name);
-    }
     for (const c of raceChoices(draft)) {
       const picked = ruleChoices[c.key];
       if (!picked) continue;

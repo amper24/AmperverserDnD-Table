@@ -120,13 +120,6 @@ window.newCharacterDialog = async function (defaults = {}) {
         if (!group.options.includes(draft.ruleChoices?.subclassVariants?.[group.base])) return `Выберите вариант «${group.base}» подкласса.`;
       const slug = classSlugOf(draft.selected.class);
       const classProblem = B.classChoiceProblem(draft); if (classProblem) return classProblem;
-      if (['2014', '2024'].includes(draft.edition) && slug === 'bard') {
-        const selected = draft.ruleChoices?.bardInstruments || [], allowed = new Set(entries.filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты').map(e => e.name));
-        if (selected.length !== 3 || new Set(selected).size !== 3 || selected.some(name => !allowed.has(name))) return 'Бард должен выбрать три разных музыкальных инструмента из справочника.';
-      }
-      if (draft.edition === '2014' && slug === 'ranger' && (!draft.ruleChoices?.favoredEnemy || !draft.ruleChoices?.favoredTerrain)) return 'Следопыт должен выбрать избранного врага и местность природного исследователя.';
-      if (draft.edition === '2014' && slug === 'ranger' && draft.ruleChoices?.favoredEnemy === 'Гуманоиды'
-        && (!draft.ruleChoices.favoredHumanoidOne?.trim() || !draft.ruleChoices.favoredHumanoidTwo?.trim() || normalizeName(draft.ruleChoices.favoredHumanoidOne) === normalizeName(draft.ruleChoices.favoredHumanoidTwo))) return 'Для гуманоидов укажите два разных вида.';
       const masteryCount = weaponMasteryCount(draft.edition, slug), masteries = draft.ruleChoices?.weaponMasteries || [];
       if (masteryCount && (masteries.length !== masteryCount || new Set(masteries).size !== masteryCount || masteries.some(id => !weaponMasteryOptions(draft.selected.class, entries).some(e => e.id === id)))) return `Выберите ${masteryCount} разных вида оружия для Мастерства оружия.`;
       const pending = pendingChoices();
@@ -413,33 +406,31 @@ window.newCharacterDialog = async function (defaults = {}) {
     };
     // Выборы класса (боевой стиль, ордена, черта стиля) рисуются по набору class_rules (B.classChoices).
     for (const c of B.classChoices(draft)) {
-      if ((c.kind === 'options' || c.kind === 'feat') && (c.options || []).length)
+      if (c.hidden || !(c.options || []).length) continue;
+      if (c.kind === 'options' || c.kind === 'feat') {
         radioPanel(c.key, c.title, c.hint, c.options.map(o => ({ value: o.value, name: o.name, text: o.text })));
-    }
-    if (['2014', '2024'].includes(draft.edition) && slug === 'bard') {
-      const instruments = entries.filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты');
-      const selected = choices.bardInstruments || [], need = 3;
-      panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
-        el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, 'Музыкальные инструменты'), el('small', { class: 'muted' }, 'Бард выбирает владение тремя музыкальными инструментами.')),
-          el('span', { class: 'builder-counter' + (selected.length === need ? ' ok' : ' flag') }, `${selected.length} из ${need}`)),
-        el('div', { class: 'builder-choice-options' }, ...instruments.map(e => {
-          const on = selected.includes(e.name);
-          return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
-            el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && selected.length >= need ? '' : null, onchange: ev => {
-              const next = selected.filter(name => name !== e.name); if (ev.target.checked) next.push(e.name);
-              choices.bardInstruments = next.slice(0, need); render();
-            } }), el('span', {}, e.name));
-        }))));
-    }
-    if (draft.edition === '2014' && slug === 'ranger') {
-      radioPanel('favoredEnemy', 'Избранный враг · следопыт', 'Выберите тип существ, против которых вы особенно опытны.', ['Аберрации','Звери','Небожители','Конструкты','Драконы','Элементали','Феи','Исчадия','Великаны','Монстры','Слизи','Растения','Нежить','Гуманоиды'].map(name => ({ value: name, name })));
-      if (choices.favoredEnemy === 'Гуманоиды') panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
-        el('b', {}, 'Избранный враг · гуманоиды'),
-        field('Первый вид гуманоидов', el('input', { value: choices.favoredHumanoidOne || '', maxlength: 80, oninput: e => choices.favoredHumanoidOne = e.target.value })),
-        field('Второй вид гуманоидов', el('input', { value: choices.favoredHumanoidTwo || '', maxlength: 80, oninput: e => choices.favoredHumanoidTwo = e.target.value }))));
-      if (choices.favoredEnemy) panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
-        field('Дополнительный язык, распространённый среди избранных врагов (если применимо)', el('select', { onchange: e => { choices.favoredLanguage = e.target.value; render(); } }, el('option', { value: '' }, 'Не выбирать'), ...B.LANGUAGES.filter(x => x !== 'Общий').map(language => el('option', { value: language, selected: choices.favoredLanguage === language ? '' : null }, language))))));
-      radioPanel('favoredTerrain', 'Природный исследователь · следопыт', 'Выберите одну местность, знакомую вам особенно хорошо.', ['Арктика','Побережье','Пустыня','Лес','Луга','Горы','Болото','Подземье'].map(name => ({ value: name, name })));
+        const picked = c.options.find(o => o.value === choices[c.key]);
+        if (picked?.sub_fields?.length) panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
+          el('b', {}, `${c.title} · ${picked.name}`),
+          ...picked.sub_fields.map(f => field(f.title, el('input', { value: choices[f.key] || '', maxlength: 80, oninput: e => { choices[f.key] = e.target.value; } })))));
+      } else if (c.kind === 'language') {
+        panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
+          field(c.hint || c.title, el('select', { onchange: e => { choices[c.key] = e.target.value; render(); } },
+            el('option', { value: '' }, 'Не выбирать'), ...c.options.map(o => el('option', { value: o.value, selected: choices[c.key] === o.value ? '' : null }, o.name))))));
+      } else if (c.kind === 'items') {
+        const selected = choices[c.key] || [], need = c.count;
+        panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
+          el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, c.title), el('small', { class: 'muted' }, c.hint)),
+            el('span', { class: 'builder-counter' + (selected.length === need ? ' ok' : ' flag') }, `${selected.length} из ${need}`)),
+          el('div', { class: 'builder-choice-options' }, ...c.options.map(o => {
+            const on = selected.includes(o.value);
+            return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
+              el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && selected.length >= need ? '' : null, onchange: ev => {
+                const next = selected.filter(v => v !== o.value); if (ev.target.checked) next.push(o.value);
+                choices[c.key] = next.slice(0, need); render();
+              } }), el('span', {}, o.name));
+          }))));
+      }
     }
     const masteryCount = weaponMasteryCount(draft.edition, slug);
     if (masteryCount) {

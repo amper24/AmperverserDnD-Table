@@ -10,6 +10,7 @@ const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx
 for (const f of ['static/dice.js', 'static/formulas.js', 'static/equipment.js', 'static/modules.js', 'static/class-rules.js', 'static/character-builder.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 ctx.window.SKILLS = [['acrobatics', 'Акробатика', 'dex'], ['arcana', 'Магия', 'int'], ['religion', 'Религия', 'int'], ['nature', 'Природа', 'int'], ['athletics', 'Атлетика', 'str']];
 ctx.Modules = ctx.window.Modules;
+ctx.Equipment = ctx.window.Equipment;
 before(() => presetsReady);
 const B = ctx.window.CharacterBuilder || ctx.window.B;
 const catalog = ed => seed(ed).map((e, i) => ({ ...e, id: e.id || `c${ed}-${i}`, source: 'srd' }));
@@ -45,4 +46,28 @@ test('черта стиля воина 2024 берётся из наборов �
 test('в коде сборщика больше нет жёстких ключей выборов класса', () => {
   const src = fs.readFileSync('static/character-builder.js', 'utf8');
   for (const token of ["ruleChoices.clericOrder === 'thaumaturge'", "classSlug === 'fighter') {\n      const style", "ruleChoices.druidOrder === 'magician'"]) assert.ok(!src.includes(token), token);
+});
+
+test('рейнджер 2014: гуманоиды требуют два разных вида, язык только при избранном враге', () => {
+  const base = { favoredEnemy: 'Гуманоиды', favoredTerrain: 'Лес' };
+  assert.match(B.classChoiceProblem(draft('2014', 'ranger', base)), /Заполните поля варианта «Гуманоиды»/);
+  assert.match(B.classChoiceProblem(draft('2014', 'ranger', { ...base, favoredHumanoidOne: 'Орки', favoredHumanoidTwo: 'орки' })), /разные/);
+  const ok = draft('2014', 'ranger', { ...base, favoredHumanoidOne: 'Орки', favoredHumanoidTwo: 'Гоблины', favoredLanguage: 'Драконий' });
+  assert.equal(B.classChoiceProblem(ok), null);
+  const sheet = B.build(ok);
+  assert.ok(sheet.features.some(f => f.name === 'Избранный враг: Гуманоиды' && f.text.includes('Орки, Гоблины')));
+  assert.ok(sheet.features.some(f => f.name === 'Природный исследователь: Лес'));
+  assert.match(sheet.proficiencies, /Язык класса: Драконий/);
+  const noEnemy = draft('2014', 'ranger', { favoredLanguage: 'Драконий', favoredTerrain: 'Лес' });
+  assert.match(B.classChoiceProblem(noEnemy), /избранного врага|Выберите/);
+  assert.ok(!B.build(noEnemy).proficiencies.includes('Драконий'));
+});
+
+test('бард: три разных инструмента из справочника', () => {
+  const names = seed('2014').filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты').map(e => e.name);
+  assert.ok(names.length >= 3);
+  assert.match(B.classChoiceProblem(draft('2014', 'bard', { bardInstruments: names.slice(0, 2) })), /разных|Бард/);
+  const ok = draft('2014', 'bard', { bardInstruments: names.slice(0, 3) });
+  assert.equal(B.classChoiceProblem(ok), null);
+  assert.match(B.build(ok).proficiencies, /Музыкальные инструменты/);
 });
