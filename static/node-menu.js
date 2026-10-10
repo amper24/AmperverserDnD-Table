@@ -74,6 +74,13 @@ window.NodeMenu = (() => {
     menu.append(list);
     container.append(menu);
     render('');
+    // Меню не должно выходить за холст (он обрезает содержимое): сдвигаем внутрь у правого и нижнего края.
+    const fit = () => {
+      const maxX = Math.max(0, (container.clientWidth || 0) - menu.offsetWidth - 4), maxY = Math.max(0, (container.clientHeight || 0) - menu.offsetHeight - 4);
+      if (container.clientWidth) menu.style.left = `${Math.min(Math.max(0, x), maxX)}px`;
+      if (container.clientHeight) menu.style.top = `${Math.min(Math.max(0, y), maxY)}px`;
+    };
+    fit();
     menu._input?.focus();
     // Регистрация на следующем тике, чтобы текущее нажатие ПКМ не закрыло меню сразу.
     setTimeout(() => {

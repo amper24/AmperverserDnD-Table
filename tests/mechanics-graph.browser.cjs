@@ -5,12 +5,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 (async () => {
-  let launch = { headless: true };
-  if (process.env.SPARTICUZ) {
-    const pkg = require('@sparticuz/chromium'), bin = pkg.default || pkg;
-    launch = { ...launch, args: bin.args, executablePath: await bin.executablePath() };
-  }
-  const browser = await chromium.launch(launch);
+  const browser = await chromium.launch(await require('./browser-launch.cjs')());
   try {
     const page = await browser.newPage({ viewport: { width: 1360, height: 1000 } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -18,7 +13,7 @@ const assert = require('node:assert/strict');
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://mechanics-graph.test/');
     await page.evaluate(() => {

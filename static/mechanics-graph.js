@@ -532,6 +532,8 @@
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
+    // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
+    root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     const snapshot = () => JSON.stringify(graph);
@@ -565,7 +567,7 @@
     const canvasEl = () => root.querySelector?.('.node-canvas');
     const canvasRect = () => canvasEl()?.getBoundingClientRect?.() || { left: 0, top: 0 };
     const worldPoint = (clientX, clientY) => { const rect = canvasRect(); return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k }; };
-    function applyView() { const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; }
+    function applyView() { const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; canvasEl()?.setAttribute('data-zoom', view.k.toFixed(2)); }
     // Слушатели на document на время жеста (перетаскивание, панорама, рамка, провод); снимаются сами.
     function track(onMove, onUp) {
       const move = e => onMove(e);
@@ -585,8 +587,11 @@
     function startDrag(e, node) {
       if (e.button !== 0) return;
       e.preventDefault?.();
-      if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; }
-      const items = [...selected].map(id => nodeById(id)).filter(Boolean).map(n => ({ node: n, left: n.position?.x || 0, top: n.position?.y || 0 }));
+      // С Ctrl/Shift выбор меняет клик (см. onclick карточки), поэтому здесь выделение не трогаем.
+      const modifier = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (!selected.has(node.id) && !modifier) { selected = new Set([node.id]); activeNode = node.id; }
+      const ids = selected.has(node.id) ? [...selected] : [node.id];
+      const items = ids.map(id => nodeById(id)).filter(Boolean).map(n => ({ node: n, left: n.position?.x || 0, top: n.position?.y || 0 }));
       const start = { x: e.clientX, y: e.clientY }; let moved = false;
       track(m => {
         if (!moved && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 3) return;
@@ -744,15 +749,26 @@
       const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => socket('inputs', name, type))),
         el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => socket('outputs', name, type))));
       const card = el('article', { class: 'graph-node' + (selected.has(node.id) ? ' selected' : '') + (node.type.startsWith('action.') ? ' action-node' : node.type.startsWith('rule.') ? ' rule-node' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id,
-        onpointerdown: () => { suppressClick = false; },
+        // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
+        onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
         oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { sections: [{ title: 'Узел', items: [
           { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }, { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) }, { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] }],
           onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else addFrame(); } }); } },
-        el('header', { class: 'graph-node-head', onpointerdown: e => { if (e.target?.closest?.('button')) return; startDrag(e, node); } },
+        el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), sockets);
       return card;
+    }
+    // Точка провода в мировых координатах: центр точки сокета из DOM (зум и панорама учитываются),
+    // а если узел ещё не на экране (до первого показа) — оценка по позиции карточки.
+    function socketAnchor(nodeId, direction, socketName) {
+      const node = nodeById(nodeId), pos = node?.position || { x: 0, y: 0 };
+      const fallback = { x: pos.x + (direction === 'outputs' ? 224 : 0), y: pos.y + 56 };
+      const dot = root.querySelector?.(`.node-socket[data-node="${nodeId}"][data-dir="${direction}"][data-socket="${socketName}"] i`);
+      const rect = dot?.getBoundingClientRect?.();
+      if (!rect || !rect.width) return fallback;
+      return worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     }
     function drawWires(canvas) {
       if (!document.createElementNS) return;
@@ -764,15 +780,21 @@
       for (const link of graph.links) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
         const type = portType(a, 'outputs', link.from.socket) || 'any';
+        const from = socketAnchor(a.id, 'outputs', link.from.socket), to = socketAnchor(b.id, 'inputs', link.to.socket);
+        const d = curve(from.x, from.y, to.x, to.y), name = `${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`;
+        // Невидимая широкая зона попадания (клик удаляет провод) и тонкая видимая линия поверх неё.
+        const hit = document.createElementNS(NS, 'path');
+        hit.setAttribute('d', d); hit.setAttribute('class', 'node-wire-hit'); hit.setAttribute('data-link-hit', name);
+        hit.addEventListener('click', e => { e.stopPropagation(); removeLink(link); });
         const path = document.createElementNS(NS, 'path');
-        path.setAttribute('d', curve((a.position?.x || 0) + 224, (a.position?.y || 0) + 56, b.position?.x || 0, (b.position?.y || 0) + 56));
+        path.setAttribute('d', d);
+        path.setAttribute('data-link', name);
         path.setAttribute('class', `node-wire socket-${type}`);
-        path.addEventListener('click', e => { e.stopPropagation(); removeLink(link); });
-        svg.appendChild(path);
+        svg.append(hit, path);
       }
       if (wire) {
         const a = nodeById(wire.node); if (a) {
-          const sx = (a.position?.x || 0) + (wire.direction === 'outputs' ? 224 : 0), sy = (a.position?.y || 0) + 56;
+          const origin = socketAnchor(a.id, wire.direction, wire.socket), sx = origin.x, sy = origin.y;
           const path = document.createElementNS(NS, 'path');
           path.setAttribute('d', wire.direction === 'outputs' ? curve(sx, sy, wire.x, wire.y) : curve(wire.x, wire.y, sx, sy));
           path.setAttribute('class', `node-wire node-wire-preview socket-${wire.type}`);
@@ -816,7 +838,7 @@
       const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...palette.slice(0, 8).map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
-        el('button', { class: 'small', onclick: addFrame }, '＋ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
       const frames = graph.frames.map(f => {
@@ -829,20 +851,25 @@
         onwheel: e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1); },
         onpointerdown: e => {
           if (e.button === 1) { e.preventDefault(); startPan(e); return; }
-          if (e.button !== 0 || e.target.closest?.('.graph-node, button, input, select, textarea, .node-menu')) return;
+          if (e.button !== 0 || e.target.closest?.('.graph-node, button, input, select, textarea, .node-menu, .node-wires')) return;
           startMarquee(e);
         },
         onauxclick: e => e.preventDefault(),
         oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
-      drawWires(world);
       const inspector = renderProperties();
       // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
       // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
       const pending = validateGraph(graph, graph.groups || []);
       const statusLine = el('div', { class: 'node-status' + (pending && !status ? ' warn' : ''), role: 'status' }, status || (pending ? `Граф ещё не завершён: ${pending}` : ''));
-      root.append(toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview());
+      // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
+      root.append(...[toolbar, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
+      // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
+      drawWires(world);
       // Keep status reference in a closure-safe property for JSON validation errors.
       root._statusNode = statusLine;
+      // Сокеты измеряются по DOM. При первом показе редактор ещё не в документе: провода пересчитываются в следующем кадре.
+      // Если редактор уже на странице, провода измерены сразу (без отложенной перерисовки, которая могла бы заменить элемент под курсором).
+      if (!root.isConnected) requestAnimationFrame?.(() => refreshWires());
     }
     root.addEventListener('keydown', e => {
       const typing = e.target?.closest?.('input, textarea, select');

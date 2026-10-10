@@ -1554,8 +1554,9 @@ body.lu-open { overflow: hidden; }
 /* Холст редактора механик: бесконечное полотно (transform у .node-world), рамка, провода, меню ПКМ. */
 .node-world{position:absolute;left:0;top:0;transform-origin:0 0;width:0;height:0}
 .node-world .node-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
-.node-world .node-wire{pointer-events:stroke;cursor:pointer;stroke-width:2.5}
-.node-world .node-wire:hover{stroke-width:4;opacity:1}
+.node-world .node-wire{pointer-events:none;stroke-width:2.5}
+.node-world .node-wire-hit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
+.node-world .node-wire-hit:hover + .node-wire{stroke-width:4;opacity:1}
 .node-world .node-wire-preview{pointer-events:none;stroke-dasharray:6 4;opacity:.9}
 .node-marquee{position:absolute;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);pointer-events:none;z-index:3}
 .node-socket.compatible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
@@ -1569,3 +1570,8 @@ body.lu-open { overflow: hidden; }
 .node-menu-empty{opacity:.6;padding:8px}
 
 .node-status.warn{color:var(--warn,#b7791f)}
+/* Холст получает всю ширину, а панель параметров уходит под него, когда редактор узкий (модальное окно). */
+.node-editor{container-type:inline-size}
+@container (max-width: 980px){.node-workspace{grid-template-columns:minmax(0,1fr)}}
+/* Точки сокетов прижаты к своему краю карточки (входы слева, выходы справа). */
+.node-socket.in{justify-content:flex-start;text-align:left}.node-socket.out{justify-content:flex-end;text-align:right}
