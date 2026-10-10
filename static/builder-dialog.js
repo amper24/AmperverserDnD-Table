@@ -120,8 +120,6 @@ window.newCharacterDialog = async function (defaults = {}) {
         if (!group.options.includes(draft.ruleChoices?.subclassVariants?.[group.base])) return `Выберите вариант «${group.base}» подкласса.`;
       const slug = classSlugOf(draft.selected.class);
       const classProblem = B.classChoiceProblem(draft); if (classProblem) return classProblem;
-      const masteryCount = weaponMasteryCount(draft.edition, slug), masteries = draft.ruleChoices?.weaponMasteries || [];
-      if (masteryCount && (masteries.length !== masteryCount || new Set(masteries).size !== masteryCount || masteries.some(id => !weaponMasteryOptions(draft.selected.class, entries).some(e => e.id === id)))) return `Выберите ${masteryCount} разных вида оружия для Мастерства оружия.`;
       const pending = pendingChoices();
       return pending.length ? 'Сделайте выбор в модулях: ' + pending.map(x => x.group.name || 'вариант').join(', ') + '.' : '';
     }
@@ -161,11 +159,7 @@ window.newCharacterDialog = async function (defaults = {}) {
       const skills = B.skillsState(draft);
       if (skills.klass && skills.klass.picked.length !== skills.klass.choose) return `Навыки класса: выбрано ${skills.klass.picked.length} из ${skills.klass.choose}.`;
       if (skills.free && skills.free.picked.length !== skills.free.need) return `Совпавшие навыки: выберите ещё ${skills.free.need - skills.free.picked.length} — любое владение вместо уже полученного.`;
-      if (classSlugOf(draft.selected.class) === 'rogue') {
-        const expertise = draft.ruleChoices?.expertise || [], availableSkills = preview().skills || [];
-        const validExpertise = expertise.every(k => availableSkills.includes(k) || (draft.edition === '2014' && k === 'thieves_tools'));
-        if (expertise.length !== 2 || new Set(expertise).size !== 2 || !validExpertise) return 'Экспертиза плута: выберите два разных владения, которыми уже владеете.';
-      }
+      const expertiseProblem = B.classChoiceProblem(draft, preview().skills || []); if (expertiseProblem) return expertiseProblem;
       const needed = languageRule();
       if ((draft.languages || []).length !== needed) return `Языки: выбрано ${(draft.languages || []).length} из ${needed}.`;
       const chosenLanguages = draft.languages || [], known = new Set(raceKnownLanguages().map(normalizeName));
@@ -432,24 +426,6 @@ window.newCharacterDialog = async function (defaults = {}) {
           }))));
       }
     }
-    const masteryCount = weaponMasteryCount(draft.edition, slug);
-    if (masteryCount) {
-      const weaponOptions = weaponMasteryOptions(klass, entries);
-      const selected = choices.weaponMasteries || [];
-      panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },
-        el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, `Мастерство оружия · ${masteryCount}`), el('small', { class: 'muted' }, 'Выберите разные виды оружия, которыми владеет класс.')),
-          el('span', { class: 'builder-counter' + (selected.length === masteryCount ? ' ok' : ' flag') }, `${selected.length} из ${masteryCount}`)),
-        el('div', { class: 'builder-choice-options' }, ...weaponOptions.map(e => {
-          const on = selected.includes(e.id);
-          return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
-            el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && selected.length >= masteryCount ? '' : null, onchange: ev => {
-              const next = selected.filter(id => id !== e.id);
-              if (ev.target.checked) next.push(e.id);
-              choices.weaponMasteries = next.slice(0, masteryCount); render();
-            } }),
-            el('span', {}, el('b', {}, e.name), el('small', { class: 'muted' }, `${e.data.category} · мастерство: ${e.data.mastery}`)));
-        }))));
-    }
     return panels.length ? el('div', { class: 'builder-class-rule-choice-list' }, ...panels) : null;
   }
   // Выборы расы и родословной рисуются по набору race_rules (B.raceChoices): навыки, варианты, заговоры, черты.
@@ -595,21 +571,20 @@ window.newCharacterDialog = async function (defaults = {}) {
         render();
       } }));
     }
-    if (['rogue'].includes(classSlugOf(draft.selected.class)) && ['2014', '2024'].includes(draft.edition)) {
-      const selectedExpertise = draft.ruleChoices.expertise || [], required = 2;
-      const options = SKILLS.filter(([key]) => preview.skills.includes(key)).map(([key, name]) => ({ key, name }));
-      if (draft.edition === '2014') options.push({ key: 'thieves_tools', name: 'Воровские инструменты' });
+    for (const c of B.classChoices(draft, preview.skills || [])) {
+      if (c.kind !== 'expertise') continue;
+      const selectedExpertise = draft.ruleChoices?.[c.key] || [], required = c.count;
       const full = selectedExpertise.length >= required;
       box.append(el('section', { class: 'builder-panel builder-expertise' },
-        el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, 'Экспертиза плута'), el('small', { class: 'muted' }, `Выберите ${required} уже полученных владения${draft.edition === '2014' ? ' навыками или воровскими инструментами' : ' навыками'}.`)),
+        el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, c.title), el('small', { class: 'muted' }, c.hint)),
           el('span', { class: 'builder-counter' + (full ? ' ok' : ' flag') }, `${selectedExpertise.length} из ${required}`)),
-        el('div', { class: 'builder-choice-options' }, ...options.map(option => {
-          const on = selectedExpertise.includes(option.key);
+        el('div', { class: 'builder-choice-options' }, ...c.options.map(option => {
+          const on = selectedExpertise.includes(option.value);
           return el('label', { class: 'builder-choice-option' + (on ? ' on' : '') },
             el('input', { type: 'checkbox', checked: on ? '' : null, disabled: !on && full ? '' : null, onchange: e => {
-              const next = selectedExpertise.filter(k => k !== option.key);
-              if (e.target.checked) next.push(option.key);
-              draft.ruleChoices.expertise = next.slice(0, required); render();
+              const next = selectedExpertise.filter(k => k !== option.value);
+              if (e.target.checked) next.push(option.value);
+              draft.ruleChoices[c.key] = next.slice(0, required); render();
             } }), el('span', {}, option.name));
         }))));
     }

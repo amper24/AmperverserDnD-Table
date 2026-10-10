@@ -9,6 +9,7 @@ vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 for (const f of ['static/dice.js', 'static/formulas.js', 'static/equipment.js', 'static/modules.js', 'static/class-rules.js', 'static/character-builder.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 ctx.window.SKILLS = [['acrobatics', 'Акробатика', 'dex'], ['arcana', 'Магия', 'int'], ['religion', 'Религия', 'int'], ['nature', 'Природа', 'int'], ['athletics', 'Атлетика', 'str']];
+ctx.SKILLS = ctx.window.SKILLS;
 ctx.Modules = ctx.window.Modules;
 ctx.Equipment = ctx.window.Equipment;
 before(() => presetsReady);
@@ -70,4 +71,19 @@ test('бард: три разных инструмента из справочн
   const ok = draft('2014', 'bard', { bardInstruments: names.slice(0, 3) });
   assert.equal(B.classChoiceProblem(ok), null);
   assert.match(B.build(ok).proficiencies, /Музыкальные инструменты/);
+});
+
+test('мастерство оружия 2024 и экспертиза плута 2014: правила из наборов', () => {
+  const mastery = draft('2024', 'barbarian');
+  const opts = B.classChoices(mastery).find(c => c.key === 'weaponMasteries');
+  assert.ok(opts && opts.options.length > 2, 'варианты мастерства');
+  assert.match(B.classChoiceProblem(mastery), /мастерств|Выберите/i);
+  const ids = opts.options.slice(0, 2).map(o => o.value);
+  const ok = draft('2024', 'barbarian', { weaponMasteries: ids });
+  assert.equal(B.classChoiceProblem(ok), null);
+  assert.ok(B.build(ok).features.some(f => /мастерств/i.test(f.name)));
+  const rogue = { ...draft('2014', 'rogue', { expertise: ['acrobatics', 'arcana'] }), skills: ['acrobatics', 'arcana'] };
+  const avail = ['acrobatics', 'arcana'];
+  assert.equal(B.classChoiceProblem(rogue, avail), null);
+  assert.match(B.classChoiceProblem({ ...rogue, ruleChoices: { expertise: ['acrobatics'] } }, avail), /экспертиз/i);
 });

@@ -22,7 +22,32 @@
           "formula": "10 + @dex + @con",
           "name": "Защита без доспехов (варвар)",
           "no_shield": false
-        }
+        },
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
       }
     },
     {
@@ -181,6 +206,29 @@
               "group": "style"
             },
             "problem": "Выберите черту Боевого стиля воина 2024."
+          },
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 3",
+            "count": 3,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 3 разных вида оружия для мастерства."
+          }
+        ],
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
           }
         ]
       }
@@ -206,7 +254,31 @@
           "formula": "10 + @dex + @wis",
           "name": "Защита без доспехов (монах)",
           "no_shield": true
-        }
+        },
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое рукопашное"
+          },
+          {
+            "category": "Воинское рукопашное",
+            "property": "лёгкое"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
       }
     },
     {
@@ -229,7 +301,32 @@
           ],
           "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие"
         },
-        "weapon_mastery": 2
+        "weapon_mastery": 2,
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
       }
     },
     {
@@ -253,7 +350,32 @@
           ],
           "proficiencies": "лёгкие и средние доспехи, щиты, простое и воинское оружие, один навык из списка класса"
         },
-        "weapon_mastery": 2
+        "weapon_mastery": 2,
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ],
+        "choices": [
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ]
       }
     },
     {
@@ -269,7 +391,40 @@
           ],
           "proficiencies": "лёгкие доспехи, один навык из списка класса, воровские инструменты"
         },
-        "weapon_mastery": 2
+        "weapon_mastery": 2,
+        "choices": [
+          {
+            "key": "expertise",
+            "kind": "expertise",
+            "title": "Экспертиза плута",
+            "count": 2,
+            "hint": "Выберите два уже полученных владения.",
+            "problem": "Экспертиза плута: выберите два разных владения, которыми уже владеете."
+          },
+          {
+            "key": "weaponMasteries",
+            "kind": "items",
+            "title": "Мастерство оружия · 2",
+            "count": 2,
+            "hint": "Выберите разные виды оружия, которыми владеет класс.",
+            "filter": {
+              "weapon_mastery": true
+            },
+            "feature_name": "Выбранное мастерство оружия",
+            "feature_text": "Выбранные виды оружия: {names}.",
+            "problem": "Выберите 2 разных вида оружия для мастерства."
+          }
+        ],
+        "weapon_mastery_rules": [
+          {
+            "category": "Простое",
+            "proficiency": "простое оружие"
+          },
+          {
+            "category": "Воинское",
+            "proficiency": "воинское оружие"
+          }
+        ]
       }
     },
     {
