@@ -325,3 +325,18 @@ test('пользовательский подкласс со своим прав
   assert.equal(L.subclassCantripGain(entry, sub, '2014', 2), 2);
   assert.equal(L.subclassCantripGain(entry, { ...sub, name_en: 'Other' }, '2014', 2), 0, 'другой подкласс правило не получает');
 });
+
+test('пользовательский класс: выбор повышения уровня задаётся своим набором level_choices', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'class_rules', id: 'user.homebrew-levels', name: 'Свой', edition: '2014',
+    items: [{ id: 'homebrew2', table: { level_choices: [{ type: 'pick', id: 'style', feature: 'Особый стиль', kind: 'feature', prefix: 'Особый стиль: ', label: 'Особый стиль', hint: 'Один стиль', count: 1 }] } }] });
+  const entry = { name: 'Свой', data: { name_en: 'homebrew2', edition: '2014', features: { 1: ['Особый стиль'] }, feature_texts: {}, progression: null,
+    subclasses: [], features_text: {} } };
+  // Варианты стиля: в записи класса — особенности «Особый стиль: …» на уровне 1.
+  entry.data.features = { 1: ['Особый стиль', 'Особый стиль: Защита', 'Особый стиль: Дуэль'] };
+  const s = sheet({ edition: '2014', level: 0, class: '', classes: [] });
+  const p = L.plan(s, entry, '2014', {});
+  const style = p.groups.find(g => g.id === 'style');
+  assert.ok(style, 'группа выбора из своего набора есть в плане');
+  assert.deepEqual(plain(style.options.map(o => o.name)).sort(), ['Особый стиль: Дуэль', 'Особый стиль: Защита']);
+});

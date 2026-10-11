@@ -37,6 +37,8 @@
     // Библиотека механик: шаблоны блоков и стартовые программы создания (описание в docs/presets.md).
     mechanic_templates: { fields: ['table'] },
     mechanic_starters: { fields: ['table'] },
+    // Правила разбора текста снаряжения (колчан с N стрел и т. п.): table.pattern, flags, container, count_group, ammo_group.
+    equipment_text_rules: { fields: ['table'] },
   };
   const STORE_KEY = 'et-presets-user';
   const MANIFEST = 'index.json';

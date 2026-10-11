@@ -1,0 +1,19 @@
+{
+  "kind": "equipment_text_rules",
+  "id": "builtin.equipment-text-rules",
+  "name": "Правила разбора текста снаряжения",
+  "items": [
+    {
+      "id": "quiver",
+      "name": "Колчан с боеприпасами",
+      "hint": "«колчан с N стрел» → предмет-контейнер и предмет-боеприпас N штук",
+      "table": {
+        "pattern": "^(?:колчан|футляр)\\s+с\\s+(\\d{1,4})\\s+(\\S+)$",
+        "flags": "i",
+        "container": "Колчан",
+        "count_group": 1,
+        "ammo_group": 2
+      }
+    }
+  ]
+}
