@@ -27,10 +27,11 @@ window.Table = (function () {
     wrap.append(S.canvas);
     S.ctx2d = S.canvas.getContext('2d');
     S.fogCanvas = document.createElement('canvas');
-    buildTools(wrap);
+    // propsBox и hint создаём до buildTools: setTool() пишет в S.hint и вызывается из buildTools.
     S.propsBox = el('div', { class: 'props hidden' });
-    wrap.append(S.propsBox);
     S.hint = el('div', { class: 'hint' }, 'ЛКМ — выбрать/тащить, колесо — зум, ПКМ/пробел — панорама');
+    buildTools(wrap);
+    wrap.append(S.propsBox);
     wrap.append(S.hint);
     bindEvents();
     syncScale();
