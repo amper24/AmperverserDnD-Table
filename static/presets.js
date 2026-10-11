@@ -20,7 +20,7 @@
 (function () {
   // Вид набора: какие поля обязательны у элементов. Новый вид нужен только там, где появляется новый потребитель.
   const KINDS = {
-    graph_starter: { fields: ['name', 'nodes'], optional: ['hint', 'attach', 'links'] },
+    graph_starter: { fields: ['name', 'nodes'], optional: ['hint', 'attach', 'links', 'style'] },
     // Группа нод (определение группы повторного использования): входы, выходы, узлы и связи.
     graph_group: { fields: ['name', 'inputs', 'outputs', 'nodes', 'links'] },
     item_preset: { fields: ['name', 'fields'], optional: ['hint'] },

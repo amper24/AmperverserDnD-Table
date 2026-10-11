@@ -120,9 +120,10 @@
       ]
     },
     {
-      "id": "attack-hit-damage",
-      "name": "Атака → попадание → урон",
-      "hint": "Бросок атаки; урон только при попадании (ветка «Если» по условию «Попадание атаки»)",
+      "id": "attack-only",
+      "name": "Атака",
+      "hint": "Самостоятельное действие: бросок атаки. Урон — отдельным действием с кнопкой «Урон»",
+      "style": "attack",
       "attach": true,
       "nodes": [
         {
@@ -133,56 +134,9 @@
           },
           "x": 0,
           "y": 0
-        },
-        {
-          "key": "hit",
-          "type": "condition.hit",
-          "params": {},
-          "x": 260,
-          "y": 120
-        },
-        {
-          "key": "if",
-          "type": "flow.if",
-          "params": {},
-          "x": 260,
-          "y": 0
-        },
-        {
-          "key": "dmg",
-          "type": "action.damage",
-          "params": {
-            "dice": {
-              "count": 1,
-              "sides": 8,
-              "bonus": 0,
-              "stat": ""
-            }
-          },
-          "x": 520,
-          "y": 0
         }
       ],
-      "links": [
-        [
-          "atk",
-          "exec",
-          "if",
-          "exec"
-        ],
-        [
-          "hit",
-          "value",
-          "if",
-          "condition"
-        ],
-        [
-          "if",
-          "then",
-          "dmg",
-          "exec"
-        ]
-      ]
+      "links": []
     },
     {
       "id": "damage-only",
@@ -205,7 +159,8 @@
           "y": 0
         }
       ],
-      "links": []
+      "links": [],
+      "style": "damage"
     }
   ]
 }

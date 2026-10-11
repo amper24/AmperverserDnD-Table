@@ -33,7 +33,7 @@
 - `kind` — один из видов таблицы выше; `id` набора уникален; `name` обязательно.
 - `edition` (`"2014"` / `"2024"`) обязательна для `class_progression`, `multiclass_slots` и `class_rules`; у остальных видов не нужна.
 - У каждого элемента обязательны `id` (уникален внутри набора) и поля вида:
-  - `graph_starter`: `name`, `nodes` (`{key, type, params, x, y}`), `links` (`[из, сокет, в, сокет]`), необязательные `hint`, `attach`;
+  - `graph_starter`: `name`, `nodes` (`{key, type, params, x, y}`), `links` (`[из, сокет, в, сокет]`), необязательные `hint`, `attach`, `style` (стиль кнопки: `attack`, `damage`, … — ставится узлу «Начало», если там стиль по умолчанию);
   - `item_preset` / `spell_preset`: `name`, `fields` (значения полей формы), необязательный `hint`;
   - `class_progression` / `multiclass_slots` / `class_rules`: `table`.
 - Проверка (`Presets.problemOf`) отбрасывает неверный набор и называет причину: нет поля, повтор id, связь на неизвестный узел, нет редакции.

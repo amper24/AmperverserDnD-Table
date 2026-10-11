@@ -116,10 +116,29 @@ test('starter presets are data: every starter saves, the attached ones execute',
   }
 });
 
-test('the attack-hit-damage starter compiles to an attack, then damage only on a hit', () => {
-  const starter = ctx.window.Presets.item('graph_starter', 'attack-hit-damage');
-  assert.ok(starter, 'the starter exists');
-  assert.ok(starter.nodes.some(n => n.type === 'condition.hit') && starter.nodes.some(n => n.type === 'flow.if'));
+test('attack and damage are two separate starters with their own button styles', () => {
+  const P = ctx.window.Presets;
+  const attack = P.item('graph_starter', 'attack-only');
+  const damage = P.item('graph_starter', 'damage-only');
+  assert.ok(attack && damage, 'both starters exist');
+  assert.ok(!P.item('graph_starter', 'attack-hit-damage'), 'the combined starter is gone');
+  assert.equal(attack.style, 'attack');
+  assert.equal(damage.style, 'damage');
+  assert.deepEqual(plain(attack.nodes.map(n => n.type)), ['action.attack']);
+  assert.deepEqual(plain(damage.nodes.map(n => n.type)), ['action.damage']);
+});
+
+test('weapon and spell templates split attack and damage into separate actions', () => {
+  const P = ctx.window.Presets;
+  const expect = { weapon: ['attack', 'attack'], weapon_damage: ['damage', 'damage'], spell_attack: ['attack', 'spell'], spell_damage: ['damage', 'damage'] };
+  for (const [id, [type, style]] of Object.entries(expect)) {
+    const item = P.item('mechanic_templates', id);
+    assert.ok(item, `${id} exists`);
+    const nodes = item.table.graph.nodes;
+    assert.equal(nodes.length, 2, `${id}: program + one block`);
+    assert.equal(nodes[1].type, `action.${type}`);
+    assert.equal(nodes[0].params.style, style, `${id}: button style`);
+  }
 });
 
 test('preset lists for items and spells are data with the same shape as before', () => {

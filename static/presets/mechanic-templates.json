@@ -7,28 +7,23 @@
       "id": "weapon",
       "table": {
         "group": "Бой",
-        "name": "Атака → урон",
-        "hint": "Оружейная атака и урон с модификатором Силы/Ловкости",
+        "name": "Атака",
+        "hint": "Оружейная атака: бросок атаки. Урон — отдельным действием «Урон»",
         "chain": [
-          "attack",
-          "damage"
+          "attack"
         ],
-        "quick": {
-          "item": 2,
-          "monster": 1,
-          "default": 1
-        },
         "origin": "template",
         "version": 2,
         "graph": {
           "nodes": [
             {
-              "id": "program-uuqqtd",
+              "id": "program-weapon",
               "type": "action.program",
               "params": {
                 "program_id": "weapon",
                 "name": "Атака",
-                "trigger": "use"
+                "trigger": "use",
+                "style": "attack"
               },
               "position": {
                 "x": 60,
@@ -36,7 +31,7 @@
               }
             },
             {
-              "id": "action-uuqqtd-1",
+              "id": "action-weapon-1",
               "type": "action.attack",
               "params": {
                 "enabled": true,
@@ -53,9 +48,59 @@
                 "x": 330,
                 "y": 70
               }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-weapon",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-weapon-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        },
+        "quick": {
+          "item": 2,
+          "monster": 1,
+          "default": 1
+        }
+      }
+    },
+    {
+      "id": "weapon_damage",
+      "table": {
+        "group": "Бой",
+        "name": "Урон",
+        "hint": "Оружейный урон отдельным действием",
+        "chain": [
+          "damage"
+        ],
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-weapon_damage",
+              "type": "action.program",
+              "params": {
+                "program_id": "weapon_damage",
+                "name": "Урон",
+                "trigger": "use",
+                "style": "damage"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "id": "action-uuqqtd-2",
+              "id": "action-weapon_damage-1",
               "type": "action.damage",
               "params": {
                 "enabled": true,
@@ -69,7 +114,7 @@
                 "block_id": "8ad70e7e-aabd-4dc1-afff-5b140478a99b"
               },
               "position": {
-                "x": 590,
+                "x": 330,
                 "y": 70
               }
             }
@@ -77,21 +122,11 @@
           "links": [
             {
               "from": {
-                "node": "program-uuqqtd",
+                "node": "program-weapon_damage",
                 "socket": "exec"
               },
               "to": {
-                "node": "action-uuqqtd-1",
-                "socket": "exec"
-              }
-            },
-            {
-              "from": {
-                "node": "action-uuqqtd-1",
-                "socket": "exec"
-              },
-              "to": {
-                "node": "action-uuqqtd-2",
+                "node": "action-weapon_damage-1",
                 "socket": "exec"
               }
             }
@@ -105,26 +140,23 @@
       "id": "spell_attack",
       "table": {
         "group": "Бой",
-        "name": "Атака заклинанием → урон",
-        "hint": "Бонус атаки заклинанием, урон, сравнение с КД цели",
+        "name": "Атака заклинанием",
+        "hint": "Бросок атаки заклинанием: бонус и сравнение с КД цели. Урон — отдельным действием",
         "chain": [
-          "attack",
-          "damage"
+          "attack"
         ],
-        "quick": {
-          "spell": 2
-        },
         "origin": "template",
         "version": 2,
         "graph": {
           "nodes": [
             {
-              "id": "program-50z65q",
+              "id": "program-spell_attack",
               "type": "action.program",
               "params": {
                 "program_id": "spell_attack",
                 "name": "Атака заклинанием",
-                "trigger": "use"
+                "trigger": "use",
+                "style": "spell"
               },
               "position": {
                 "x": 60,
@@ -132,7 +164,7 @@
               }
             },
             {
-              "id": "action-50z65q-1",
+              "id": "action-spell_attack-1",
               "type": "action.attack",
               "params": {
                 "enabled": true,
@@ -149,9 +181,57 @@
                 "x": 330,
                 "y": 70
               }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-spell_attack",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-spell_attack-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        },
+        "quick": {
+          "spell": 2
+        }
+      }
+    },
+    {
+      "id": "spell_damage",
+      "table": {
+        "group": "Бой",
+        "name": "Урон заклинания",
+        "hint": "Урон заклинания отдельным действием",
+        "chain": [
+          "damage"
+        ],
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-spell_damage",
+              "type": "action.program",
+              "params": {
+                "program_id": "spell_damage",
+                "name": "Урон заклинания",
+                "trigger": "use",
+                "style": "damage"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "id": "action-50z65q-2",
+              "id": "action-spell_damage-1",
               "type": "action.damage",
               "params": {
                 "enabled": true,
@@ -165,7 +245,7 @@
                 "block_id": "7c7517d3-d91e-48ea-9a3f-c68515dd393a"
               },
               "position": {
-                "x": 590,
+                "x": 330,
                 "y": 70
               }
             }
@@ -173,21 +253,11 @@
           "links": [
             {
               "from": {
-                "node": "program-50z65q",
+                "node": "program-spell_damage",
                 "socket": "exec"
               },
               "to": {
-                "node": "action-50z65q-1",
-                "socket": "exec"
-              }
-            },
-            {
-              "from": {
-                "node": "action-50z65q-1",
-                "socket": "exec"
-              },
-              "to": {
-                "node": "action-50z65q-2",
+                "node": "action-spell_damage-1",
                 "socket": "exec"
               }
             }

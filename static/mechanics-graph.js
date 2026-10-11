@@ -737,6 +737,8 @@
       for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
       // Вариант «с подключением»: первый узел без входящих связей пресета встаёт после программы «Использовать».
       const program = nodeById(activeAction);
+      // Стиль кнопки (иконка) задаётся в «Начале»; меняем его, только если там стиль по умолчанию.
+      if (starter.style && program && (!program.params?.style || program.params.style === 'default')) program.params = { ...program.params, style: starter.style };
       const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
       if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec && !graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec')) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
