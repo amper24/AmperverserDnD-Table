@@ -347,14 +347,16 @@ window.Modules = (function () {
   // ---------- выбор изображения (инвентарь) и токена (карта) для модуля ----------
   /// imagePicker(doc, 'asset_id', { kind: 'item', label: 'Изображение' }) — превью + загрузка / из библиотеки / убрать.
   function imagePicker(doc, key, o = {}) {
-    const kind = o.kind || window.AssetKinds.forUsage('item'), tokenKind = window.AssetKinds.forUsage('token');
+    const kind = o.kind || window.AssetKinds.forUsage('item');
     const box = el('div', { class: 'imgpick' + (o.compact ? ' compact' : '') });
     const prev = el('div', { class: 'imgpick-prev' });
     const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     const draw = () => { prev.innerHTML = ''; if (doc[key]) assetURL(doc[key]).then(u => prev.append(el('img', { src: u }))).catch(() => prev.append(icon('image'))); else prev.append(icon(o.icon || 'image', 22)); };
-    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + (kind === tokenKind ? ' (токен)' : '')); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
+    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + ' (' + window.AssetKinds.label(kind).toLowerCase() + ')'); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
     const fromLib = async () => {
-      const list = await API.get('/api/assets' + (kind === tokenKind ? '?kind=' + tokenKind : ''));
+      // Список — только виды, которые разрешены для этого выбора (см. AssetKinds.pickFor).
+      const allowed = new Set(window.AssetKinds.pickFor(kind));
+      const list = (await API.get('/api/assets')).filter(a => allowed.has(a.kind));
       const grid = el('div', { class: 'asset-grid pick' });
       let chosen = null;
       for (const a of list) { const t = el('div', { class: 'asset', onclick: () => { grid.querySelectorAll('.asset').forEach(x => x.classList.remove('active')); t.classList.add('active'); chosen = a.id; } }, el('div', { class: 'thumb' }), el('div', { class: 'small ellipsis', title: a.name }, a.name)); assetURL(a.id).then(u => t.querySelector('.thumb').append(el('img', { src: u }))); grid.append(t); }

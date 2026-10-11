@@ -61,3 +61,16 @@ test('table layer maps to the kind uploaded on that layer', () => {
   assert.equal(AK.kindForLayer('prop'), 'prop');
   assert.equal(AK.kindForLayer('no-such-layer'), AK.DEFAULT);
 });
+
+test('выбор картинки: токен — только токены, предмет — все картинки кроме карт', () => {
+  assert.deepEqual(plain(AK.pickFor('token')), ['token']);
+  assert.deepEqual(plain(AK.pickFor('portrait')), ['portrait']);
+  assert.deepEqual(plain(AK.pickFor('item')), ['token', 'prop', 'portrait', 'item']);
+  assert.equal(AK.pickFor('item').includes('map'), false);
+});
+
+test('imagePicker не сравнивает тип с литералом токена и берёт список по реестру', () => {
+  const modules = fs.readFileSync('static/modules.js', 'utf8');
+  assert.equal(modules.includes('tokenKind'), false, 'нет сравнения с токеном');
+  assert.ok(modules.includes('AssetKinds.pickFor(kind)'), 'список фильтруется по реестру');
+});

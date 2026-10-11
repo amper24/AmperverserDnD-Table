@@ -25,6 +25,12 @@ window.AssetKinds = (() => {
   // Тип для слоя стола: первый тип, который кладётся на этот слой (слой map → карта, character → токен).
   const kindForLayer = layer => (KINDS.find(kind => kind.layer === layer) || DEFAULT).id;
   const pickers = () => KINDS.filter(kind => kind.picker);
+  // Какие виды показывать в выборе картинки для вида kind (библиотека ресурсов, «Из библиотеки»).
+  // Токен — только токены; предмет — любые картинки, кроме карт (карта занимает всю сцену); остальные — свой вид.
+  const pickFor = kind => {
+    const id = get(kind).id;
+    return id === 'item' ? KINDS.filter(k => k.id !== 'map').map(k => k.id) : [id];
+  };
   return {
     KINDS,
     ids: KINDS.map(kind => kind.id),
@@ -34,6 +40,7 @@ window.AssetKinds = (() => {
     DEFAULT: DEFAULT.id,
     forUsage,
     kindForLayer,
+    pickFor,
     // [значение, подпись] для <select> фильтра: «Все типы» + типы с picker.
     filterOptions: () => [['', 'Все типы'], ...pickers().map(kind => [kind.id, kind.plural])],
     // [значение, подпись] для <select> загрузки.
