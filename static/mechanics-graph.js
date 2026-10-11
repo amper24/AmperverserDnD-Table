@@ -1099,7 +1099,7 @@
     return root;
   }
 
-  const oldButtons = Base.buttons, oldPreview = Base.preview, oldProgramsOf = Base.programsOf, oldForFeature = Base.forFeature, oldPassiveData = Base.passiveData, oldStarter = Base.starter, oldMigrate = Base.migrate;
+  const oldButtons = Base.buttons, oldPreview = Base.preview, oldProgramsOf = Base.programsOf, oldForFeature = Base.forFeature, oldPassiveData = Base.passiveData, oldMigrate = Base.migrate;
   function runtimeContext(context = {}) {
     const sheet = window.SHEET_CTX || {};
     return { edition: context.edition ?? window.SHEET_EDITION ?? sheet.edition ?? '2014', level: context.level ?? sheet.level ?? 1,
@@ -1137,7 +1137,6 @@
     validate,
     programsOf(mechanics, context) { return mechanics?.version === GRAPH_VERSION ? Base.programsOf(v2ToV1(mechanics, runtimeContext(context))) : oldProgramsOf(mechanics); },
     migrate(doc, category) { const m = oldMigrate(doc, category); return v1ToV2(m); },
-    starter(category) { const m = oldStarter(category); return m ? v1ToV2(m) : undefined; },
     forFeature(mechanics, name, context) { const m = v2ToV1(mechanics, runtimeContext(context)); const out = oldForFeature(m, name); return out ? v1ToV2(out) : undefined; },
     passiveData(entry, context) {
       const e = clone(entry), original = e.data?.mechanics;

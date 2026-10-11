@@ -43,31 +43,18 @@ window.Mechanics = (() => {
   // Описание блока в наборе: вид (kind) и поля; dice — строка формулы, condition_key — ключ состояния
   // (русское название берётся из набора conditions), item — поля предмета поверх умолчаний вида.
   const libraryOf = kind => window.Presets?.items(kind) || [];
-  function blockFromSpec(spec) {
-    const { kind, dice: formula, condition_key: key, item, ...rest } = spec;
-    const b = block(kind);
-    if (formula !== undefined) b.dice = dice(formula);
-    if (key !== undefined) b.condition = conditionName(key);
-    if (item !== undefined) b.item = { ...(b.item || {}), ...clone(item) };
-    return Object.assign(b, clone(rest));
-  }
-  function programFromSpec(program) {
-    const out = { name: program.name, blocks: program.blocks.map(blockFromSpec) };
-    if (program.trigger) out.trigger = program.trigger;
-    return out;
-  }
   /// Стартовый набор блоков для новой записи создания персонажа (раса, класс, предыстория): влияет на характеристики,
   /// владения и даёт заготовку умения. Правится как обычные блоки.
   function starter(category) {
     const item = libraryOf('mechanic_starters').find(i => i.id === category);
     if (!item) return undefined;
-    return { version: VERSION, origin: 'starter', programs: item.table.programs.map(p => ({ id: uid(), ...programFromSpec(p) })) };
+    return JSON.parse(JSON.stringify(item.table));
   }
   /// Шаблоны: готовые цепочки блоков из набора mechanic_templates. build() собирает новую программу.
   function templateList() {
     return libraryOf('mechanic_templates').map(item => {
       const t = item.table;
-      return { id: item.id, group: t.group, name: t.name, hint: t.hint, chain: t.chain || [], creation: Boolean(t.creation), build: () => programFromSpec(t.program) };
+      return { id: item.id, group: t.group, name: t.name, hint: t.hint, chain: t.chain || [], creation: Boolean(t.creation), build: () => { const p = window.Mechanics.toLegacy({ version: 2, graph: clone(t.graph) }).programs[0]; return { ...p, blocks: p.blocks.map(b => ({ ...b, id: uid() })) }; } };
     });
   }
   /// Быстрые шаблоны по категории: порядок задаёт число quick[категория] в наборе; нет — шаблоны «default».

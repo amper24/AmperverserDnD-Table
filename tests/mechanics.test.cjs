@@ -118,16 +118,17 @@ test('named feature projection preserves mechanics without sharing mutable block
 test('starter templates give race and class valid creation blocks that project into the entry',async()=>{
   await presetsReady;
   for(const cat of ['race','class','background']){
-    const m=M.starter(cat);
-    assert.equal(m.version,1,cat);
-    assert.equal(M.validate(m),'',cat);
-    assert.ok(m.programs.some(p=>p.trigger==='passive'&&p.blocks.some(b=>b.kind==='passive')),cat);
-    assert.ok(m.programs.some(p=>p.trigger==='use'),cat);
+    const m=G.starter(cat);
+    assert.equal(m.version,2,cat);
+    assert.equal(G.validate(m),'',cat);
+    const v1=G.toLegacy(m);
+    assert.ok(v1.programs.some(p=>p.trigger==='passive'&&p.blocks.some(b=>b.kind==='passive')),cat);
+    assert.ok(v1.programs.some(p=>p.trigger==='use'),cat);
   }
-  assert.equal(M.starter('item'),undefined);
-  const race=M.passiveData({data:{mechanics:M.starter('race')}});
+  assert.equal(G.starter('item'),undefined);
+  const race=G.passiveData({data:{mechanics:G.starter('race')}});
   assert.equal(race.data.speed,30);assert.equal(race.data.asi.str,2);
-  const cls=M.passiveData({data:{mechanics:M.starter('class')}});
+  const cls=G.passiveData({data:{mechanics:G.starter('class')}});
   assert.equal(cls.data.hit_die,'d8');assert.deepEqual(JSON.parse(JSON.stringify(cls.data.saves)),['str']);assert.equal(cls.data.skills.choose,2);
 });
 test('template library builds valid programs and keeps creation templates apart',async()=>{

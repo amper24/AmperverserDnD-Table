@@ -250,6 +250,9 @@ mod tests {
         for (file, _source, edition) in SEED_FILES {
             let entries: Vec<Entry> = serde_json::from_slice(&SeedFiles::get(file).expect("файл справочника вшит").data).unwrap();
             assert!(!entries.is_empty());
+            // Записи, которых не было до локализации (у них нет хеша старой версии): магический щит 2024
+            // получил собственный слаг, потому что обычный и магический щит делили один.
+            const NEW_AFTER_LOCALIZATION: &[&str] = &["item/srd24-shield-magic"];
             for e in &entries {
                 let en = &e.data["i18n"]["en"];
                 let en_name = en["name"].as_str().unwrap_or("");
@@ -257,7 +260,8 @@ mod tests {
                 assert!(!en_name.chars().any(|c| ('\u{400}'..='\u{4FF}').contains(&c)), "{}: кириллица в английском названии", e.slug);
                 assert!(!e.name.chars().any(|c| c.is_ascii_alphabetic()), "{}: латиница в русском названии «{}»", e.slug, e.name);
                 assert!(i18n::validate(&e.data).is_ok(), "{}: некорректный i18n", e.slug);
-                assert!(legacy[*edition].contains_key(&format!("{}/{}", e.category, e.slug)), "{}: нет хеша старой версии", e.slug);
+                let key = format!("{}/{}", e.category, e.slug);
+                assert!(NEW_AFTER_LOCALIZATION.contains(&key.as_str()) || legacy[*edition].contains_key(&key), "{}: нет хеша старой версии", e.slug);
             }
         }
     }

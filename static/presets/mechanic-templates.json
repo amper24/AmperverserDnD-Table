@@ -13,21 +13,91 @@
           "attack",
           "damage"
         ],
-        "program": {
-          "name": "Атака",
-          "blocks": [
-            {
-              "kind": "attack"
-            },
-            {
-              "kind": "damage"
-            }
-          ]
-        },
         "quick": {
           "item": 2,
           "monster": 1,
           "default": 1
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-uuqqtd",
+              "type": "action.program",
+              "params": {
+                "program_id": "weapon",
+                "name": "Атака",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-uuqqtd-1",
+              "type": "action.attack",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "atk"
+                },
+                "block_id": "2b737394-063e-4f26-a554-970acd1db916"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-uuqqtd-2",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "block_id": "8ad70e7e-aabd-4dc1-afff-5b140478a99b"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-uuqqtd",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-uuqqtd-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-uuqqtd-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-uuqqtd-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -41,21 +111,89 @@
           "attack",
           "damage"
         ],
-        "program": {
-          "name": "Атака заклинанием",
-          "blocks": [
-            {
-              "kind": "attack",
-              "dice": "1d20+@spell"
-            },
-            {
-              "kind": "damage",
-              "dice": "1d10+@spell_mod"
-            }
-          ]
-        },
         "quick": {
           "spell": 2
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-50z65q",
+              "type": "action.program",
+              "params": {
+                "program_id": "spell_attack",
+                "name": "Атака заклинанием",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-50z65q-1",
+              "type": "action.attack",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "spell"
+                },
+                "block_id": "422bb85f-9ec4-4b30-8f03-65822e4146ee"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-50z65q-2",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 10,
+                  "bonus": 0,
+                  "stat": "spell_mod"
+                },
+                "block_id": "7c7517d3-d91e-48ea-9a3f-c68515dd393a"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-50z65q",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-50z65q-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-50z65q-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-50z65q-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -69,23 +207,87 @@
           "manual",
           "damage"
         ],
-        "program": {
-          "name": "Урон по площади",
-          "blocks": [
-            {
-              "kind": "manual",
-              "text": "Опишите область, условия и спасбросок цели: что именно и в каком порядке применяет ДМ."
-            },
-            {
-              "kind": "damage"
-            }
-          ]
-        },
         "quick": {
           "item": 3,
           "spell": 3,
           "monster": 2,
           "default": 3
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-1x8qqng",
+              "type": "action.program",
+              "params": {
+                "program_id": "area_damage",
+                "name": "Урон по площади",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1x8qqng-1",
+              "type": "action.manual",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "text": "Опишите область, условия и спасбросок цели: что именно и в каком порядке применяет ДМ.",
+                "block_id": "65bedd4f-db3d-4ede-b757-17608d921f59"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1x8qqng-2",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "block_id": "828aa17a-b64d-4d09-8c23-1176659ea25b"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1x8qqng",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1x8qqng-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1x8qqng-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1x8qqng-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -100,22 +302,114 @@
           "attack",
           "damage"
         ],
-        "program": {
-          "name": "Выстрел",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "consume",
-              "source": "tag",
-              "tag": "стрела",
-              "trigger": "attack"
+              "id": "program-1al9o8c",
+              "type": "action.program",
+              "params": {
+                "program_id": "ammo_attack",
+                "name": "Выстрел",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "attack"
+              "id": "action-1al9o8c-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "quantity",
+                "source": "tag",
+                "amount": 1,
+                "trigger": "attack",
+                "tag": "стрела",
+                "block_id": "87cb68b0-dcd6-4450-93cf-09c47c082b5d"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             },
             {
-              "kind": "damage"
+              "id": "action-1al9o8c-2",
+              "type": "action.attack",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "atk"
+                },
+                "block_id": "7f4f1bee-7cf9-4b2f-8bb1-451315723187"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1al9o8c-3",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "block_id": "7f063b84-3ab7-490e-b88d-524a99386bf8"
+              },
+              "position": {
+                "x": 850,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1al9o8c",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1al9o8c-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1al9o8c-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1al9o8c-2",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1al9o8c-2",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1al9o8c-3",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -131,22 +425,144 @@
           "attack",
           "damage"
         ],
-        "program": {
-          "name": "Две атаки",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "attack"
+              "id": "program-hm02nh",
+              "type": "action.program",
+              "params": {
+                "program_id": "double_attack",
+                "name": "Две атаки",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "damage"
+              "id": "action-hm02nh-1",
+              "type": "action.attack",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "atk"
+                },
+                "block_id": "9e4ce6f3-d6a1-4bec-9313-4c3b5c7b43e6"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             },
             {
-              "kind": "attack"
+              "id": "action-hm02nh-2",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "block_id": "b81595ae-8b30-400f-bdd2-6b41688c5238"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
             },
             {
-              "kind": "damage"
+              "id": "action-hm02nh-3",
+              "type": "action.attack",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "atk"
+                },
+                "block_id": "ea48e545-dce2-4d51-9be1-c551253e1985"
+              },
+              "position": {
+                "x": 850,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-hm02nh-4",
+              "type": "action.damage",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "block_id": "571980e6-7fdf-4145-99b4-b5c2e8b8834b"
+              },
+              "position": {
+                "x": 1110,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-hm02nh",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-hm02nh-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-hm02nh-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-hm02nh-2",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-hm02nh-2",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-hm02nh-3",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-hm02nh-3",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-hm02nh-4",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -161,24 +577,124 @@
           "heal",
           "grant_item"
         ],
-        "program": {
-          "name": "Выпить зелье",
-          "blocks": [
-            {
-              "kind": "consume"
-            },
-            {
-              "kind": "heal",
-              "dice": "2d4+2"
-            },
-            {
-              "kind": "grant_item"
-            }
-          ]
-        },
         "quick": {
           "item": 1,
           "default": 2
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-1gpnlyi",
+              "type": "action.program",
+              "params": {
+                "program_id": "potion",
+                "name": "Выпить зелье",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1gpnlyi-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "quantity",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "block_id": "f9369bbe-5508-4773-aaec-cfdeae7c4eaa"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1gpnlyi-2",
+              "type": "action.heal",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 2,
+                  "sides": 4,
+                  "bonus": 2,
+                  "stat": ""
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "bd6db8ba-e035-443e-9161-bbe046eb0feb"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1gpnlyi-3",
+              "type": "action.grant_item",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "amount": 1,
+                "item": {
+                  "name": "Пустой флакон",
+                  "type": "gear",
+                  "qty": 1,
+                  "weight": 0.1,
+                  "stackable": true,
+                  "handedness": "none",
+                  "actions": []
+                },
+                "block_id": "59f1e58f-4f0f-4a67-a2b2-333049cf1632"
+              },
+              "position": {
+                "x": 850,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1gpnlyi",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1gpnlyi-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1gpnlyi-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1gpnlyi-2",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1gpnlyi-2",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1gpnlyi-3",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -192,23 +708,90 @@
           "consume",
           "heal"
         ],
-        "program": {
-          "name": "Сотворить",
-          "blocks": [
-            {
-              "kind": "consume",
-              "resource": "slot",
-              "source": "self",
-              "slot_level": 1
-            },
-            {
-              "kind": "heal",
-              "dice": "1d8+@spell_mod"
-            }
-          ]
-        },
         "quick": {
           "spell": 1
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-1b0gdzd",
+              "type": "action.program",
+              "params": {
+                "program_id": "spell",
+                "name": "Сотворить",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1b0gdzd-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "slot",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "slot_level": 1,
+                "block_id": "efadf314-b960-43e1-b0d3-97c6f457582a"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1b0gdzd-2",
+              "type": "action.heal",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 8,
+                  "bonus": 0,
+                  "stat": "spell_mod"
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "56086e14-1075-4799-9d46-e407894ae259"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1b0gdzd",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1b0gdzd-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-1b0gdzd-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1b0gdzd-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -221,17 +804,62 @@
         "chain": [
           "temp_hp"
         ],
-        "program": {
-          "name": "Временные хиты",
-          "blocks": [
-            {
-              "kind": "temp_hp",
-              "dice": "1d6+2"
-            }
-          ]
-        },
         "quick": {
           "spell": 4
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-qzl8vk",
+              "type": "action.program",
+              "params": {
+                "program_id": "temp_hp",
+                "name": "Временные хиты",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-qzl8vk-1",
+              "type": "action.temp_hp",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 2,
+                  "stat": ""
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "11071224-f213-4ddc-9a1d-b27cf3a474cd"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-qzl8vk",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-qzl8vk-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -245,18 +873,90 @@
           "heal",
           "temp_hp"
         ],
-        "program": {
-          "name": "Лечение с запасом",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "heal",
-              "dice": "1d8+3"
+              "id": "program-unn5oa",
+              "type": "action.program",
+              "params": {
+                "program_id": "heal_temp",
+                "name": "Лечение с запасом",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "temp_hp",
-              "dice": "1d6"
+              "id": "action-unn5oa-1",
+              "type": "action.heal",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 8,
+                  "bonus": 3,
+                  "stat": ""
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "d9566532-b525-496e-ab95-eba1595b4e21"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-unn5oa-2",
+              "type": "action.temp_hp",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "8880643c-d1f3-4b86-b950-4f8af816f78f"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-unn5oa",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-unn5oa-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-unn5oa-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-unn5oa-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -270,19 +970,86 @@
           "consume",
           "heal"
         ],
-        "program": {
-          "name": "Использовать заряд",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "consume",
-              "resource": "charges",
-              "source": "self"
+              "id": "program-nf8xl4",
+              "type": "action.program",
+              "params": {
+                "program_id": "heal_charge",
+                "name": "Использовать заряд",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "heal",
-              "dice": "2d4+2"
+              "id": "action-nf8xl4-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "charges",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "block_id": "63ff56aa-e167-40f6-ac1f-efb364112347"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-nf8xl4-2",
+              "type": "action.heal",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 2,
+                  "sides": 4,
+                  "bonus": 2,
+                  "stat": ""
+                },
+                "target": "self",
+                "apply": true,
+                "block_id": "f6872e07-e395-4bea-b1df-30a1585f7891"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-nf8xl4",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-nf8xl4-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-nf8xl4-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-nf8xl4-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -296,18 +1063,90 @@
           "consume",
           "grant_item"
         ],
-        "program": {
-          "name": "Изготовить",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "consume",
-              "source": "tag",
-              "tag": "ingredient"
+              "id": "program-gsdeip",
+              "type": "action.program",
+              "params": {
+                "program_id": "craft",
+                "name": "Изготовить",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "grant_item"
+              "id": "action-gsdeip-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "quantity",
+                "source": "tag",
+                "amount": 1,
+                "trigger": "use",
+                "tag": "ingredient",
+                "block_id": "49710151-6124-4d1a-b219-89625c810980"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-gsdeip-2",
+              "type": "action.grant_item",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "amount": 1,
+                "item": {
+                  "name": "Пустой флакон",
+                  "type": "gear",
+                  "qty": 1,
+                  "weight": 0.1,
+                  "stackable": true,
+                  "handedness": "none",
+                  "actions": []
+                },
+                "block_id": "09fb2321-43d2-490d-a3c7-f77f12083f2c"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-gsdeip",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-gsdeip-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-gsdeip-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-gsdeip-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -320,19 +1159,63 @@
         "chain": [
           "grant_item"
         ],
-        "program": {
-          "name": "Выдать",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "grant_item",
-              "amount": 20,
-              "item": {
-                "name": "Стрелы",
-                "type": "ammo",
-                "ammo_tag": "стрела"
+              "id": "program-7q5mcw",
+              "type": "action.program",
+              "params": {
+                "program_id": "grant_ammo",
+                "name": "Выдать",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-7q5mcw-1",
+              "type": "action.grant_item",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "amount": 20,
+                "item": {
+                  "name": "Стрелы",
+                  "type": "ammo",
+                  "qty": 1,
+                  "weight": 0.1,
+                  "stackable": true,
+                  "handedness": "none",
+                  "actions": [],
+                  "ammo_tag": "стрела"
+                },
+                "block_id": "c94ae874-c744-4bc8-80a2-6e72994fbca3"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
               }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-7q5mcw",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-7q5mcw-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -345,15 +1228,55 @@
         "chain": [
           "consume"
         ],
-        "program": {
-          "name": "Потратить заряд",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "consume",
-              "resource": "charges",
-              "source": "self"
+              "id": "program-1638l3w",
+              "type": "action.program",
+              "params": {
+                "program_id": "consume_only",
+                "name": "Потратить заряд",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1638l3w-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "charges",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "block_id": "4c7e749a-d1f3-4108-a48f-0a5fb12f2a30"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1638l3w",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1638l3w-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -366,18 +1289,58 @@
         "chain": [
           "condition"
         ],
-        "program": {
-          "name": "Наложить",
-          "blocks": [
-            {
-              "kind": "condition",
-              "condition_key": "poisoned"
-            }
-          ]
-        },
         "quick": {
           "feature": 2,
           "monster": 3
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-1d98qfi",
+              "type": "action.program",
+              "params": {
+                "program_id": "condition_on",
+                "name": "Наложить",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1d98qfi-1",
+              "type": "action.condition",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "condition": "Отравленный",
+                "operation": "add",
+                "block_id": "1d25f646-76b9-48b9-985a-ca170e788f55"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1d98qfi",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1d98qfi-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -390,15 +1353,54 @@
         "chain": [
           "condition"
         ],
-        "program": {
-          "name": "Снять",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "condition",
-              "condition_key": "frightened",
-              "operation": "remove"
+              "id": "program-cue6eo",
+              "type": "action.program",
+              "params": {
+                "program_id": "condition_off",
+                "name": "Снять",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-cue6eo-1",
+              "type": "action.condition",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "condition": "Испуганный",
+                "operation": "remove",
+                "block_id": "b35049cb-cfad-4f19-a72c-3460f7528a1b"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-cue6eo",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-cue6eo-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -411,18 +1413,57 @@
         "chain": [
           "adjust"
         ],
-        "program": {
-          "name": "Усиление",
-          "blocks": [
-            {
-              "kind": "adjust",
-              "field": "speed",
-              "amount": 10
-            }
-          ]
-        },
         "quick": {
           "feature": 3
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-kkttxo",
+              "type": "action.program",
+              "params": {
+                "program_id": "buff",
+                "name": "Усиление",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-kkttxo-1",
+              "type": "action.adjust",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "field": "speed",
+                "amount": 10,
+                "block_id": "c6fdb578-5cd6-4552-85eb-53d9aaf43efc"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-kkttxo",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-kkttxo-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -435,14 +1476,57 @@
         "chain": [
           "roll"
         ],
-        "program": {
-          "name": "Проверка",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "roll",
-              "dice": "1d20+@str"
+              "id": "program-1dse79j",
+              "type": "action.program",
+              "params": {
+                "program_id": "check",
+                "name": "Проверка",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1dse79j-1",
+              "type": "action.roll",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "dice": {
+                  "count": 1,
+                  "sides": 20,
+                  "bonus": 0,
+                  "stat": "str"
+                },
+                "block_id": "12a6e896-1ad4-4551-b699-645b5b45a59e"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1dse79j",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1dse79j-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -456,22 +1540,82 @@
           "consume",
           "manual"
         ],
-        "program": {
-          "name": "Применить",
-          "blocks": [
-            {
-              "kind": "consume",
-              "resource": "uses",
-              "source": "self"
-            },
-            {
-              "kind": "manual",
-              "text": "Опишите, что делает умение и когда применяется."
-            }
-          ]
-        },
         "quick": {
           "feature": 1
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-169ejer",
+              "type": "action.program",
+              "params": {
+                "program_id": "uses_effect",
+                "name": "Применить",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-169ejer-1",
+              "type": "action.consume",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "resource": "uses",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "block_id": "a93b2bf0-899c-4f87-a9c3-ba00d823e8e8"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-169ejer-2",
+              "type": "action.manual",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "text": "Опишите, что делает умение и когда применяется.",
+                "block_id": "6e7f8bc2-f63c-4042-be4a-b3ccdbd32679"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-169ejer",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-169ejer-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-169ejer-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-169ejer-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -485,20 +1629,79 @@
           "require",
           "adjust"
         ],
-        "program": {
-          "name": "Под условием",
-          "blocks": [
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "require",
-              "field": "hp.current",
-              "minimum": 1
+              "id": "program-gtft2w",
+              "type": "action.program",
+              "params": {
+                "program_id": "require_effect",
+                "name": "Под условием",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
             },
             {
-              "kind": "adjust",
-              "field": "speed",
-              "amount": 10
+              "id": "action-gtft2w-1",
+              "type": "action.require",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "hp.current",
+                "minimum": 1,
+                "block_id": "24b333df-2641-407e-adb1-2a28a03b8a3b"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-gtft2w-2",
+              "type": "action.adjust",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "target": "self",
+                "field": "speed",
+                "amount": 10,
+                "block_id": "92de920b-82cb-4a82-8c7d-49ff268851f3"
+              },
+              "position": {
+                "x": 590,
+                "y": 70
+              }
             }
-          ]
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-gtft2w",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-gtft2w-1",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "action-gtft2w-1",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-gtft2w-2",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -511,20 +1714,58 @@
         "chain": [
           "manual"
         ],
-        "program": {
-          "name": "Правило",
-          "blocks": [
-            {
-              "kind": "manual",
-              "text": "Опишите правило, которое мастер применяет вручную."
-            }
-          ]
-        },
         "quick": {
           "item": 4,
           "feature": 4,
           "monster": 4,
           "default": 4
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-9baacj",
+              "type": "action.program",
+              "params": {
+                "program_id": "manual",
+                "name": "Правило",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-9baacj-1",
+              "type": "action.manual",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "text": "Опишите правило, которое мастер применяет вручную.",
+                "block_id": "a50efdfb-a4d6-498b-a86f-6595d1029a72"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-9baacj",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-9baacj-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -537,21 +1778,58 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Характеристики",
-          "blocks": [
-            {
-              "kind": "passive",
-              "field": "asi.str",
-              "value": 2
-            }
-          ],
-          "trigger": "passive"
-        },
         "creation": true,
         "quick": {
           "race": 1,
           "background": 1
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-6s7h7w",
+              "type": "action.program",
+              "params": {
+                "program_id": "asi",
+                "name": "Характеристики",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-6s7h7w-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "asi.str",
+                "value": 2,
+                "block_id": "37279c40-217d-4abb-a630-0d5b0d0d2789"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-6s7h7w",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-6s7h7w-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -564,25 +1842,62 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Навыки",
-          "blocks": [
-            {
-              "kind": "passive",
-              "field": "skills",
-              "value": {
-                "choose": 2,
-                "from": []
-              }
-            }
-          ],
-          "trigger": "passive"
-        },
         "creation": true,
         "quick": {
           "race": 2,
           "class": 2,
           "background": 2
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-s4902n",
+              "type": "action.program",
+              "params": {
+                "program_id": "skills",
+                "name": "Навыки",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-s4902n-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "skills",
+                "value": {
+                  "choose": 2,
+                  "from": []
+                },
+                "block_id": "9a5b3baf-2eb8-4aaa-a1a2-17e49d97b76a"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-s4902n",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-s4902n-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -595,18 +1910,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Спасброски",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "saves",
-              "value": []
+              "id": "program-1uxasbl",
+              "type": "action.program",
+              "params": {
+                "program_id": "saves",
+                "name": "Спасброски",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1uxasbl-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "saves",
+                "value": [],
+                "block_id": "1a4620e8-c51a-4714-bd6c-4e562a97eea9"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-1uxasbl",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1uxasbl-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -618,20 +1970,57 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Хиты",
-          "blocks": [
-            {
-              "kind": "passive",
-              "field": "hit_die",
-              "value": "d8"
-            }
-          ],
-          "trigger": "passive"
-        },
         "creation": true,
         "quick": {
           "class": 1
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-f7upo7",
+              "type": "action.program",
+              "params": {
+                "program_id": "hit_die",
+                "name": "Хиты",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-f7upo7-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "hit_die",
+                "value": "d8",
+                "block_id": "db616196-4879-4e1c-8931-c4d216b788e1"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-f7upo7",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-f7upo7-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -644,18 +2033,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Заклинания",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "spellcasting",
-              "value": "int"
+              "id": "program-73rmeu",
+              "type": "action.program",
+              "params": {
+                "program_id": "spellcasting",
+                "name": "Заклинания",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-73rmeu-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "spellcasting",
+                "value": "int",
+                "block_id": "708efc4f-1004-474b-a102-928e9bc7e509"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-73rmeu",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-73rmeu-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -667,18 +2093,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Доспехи",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "armor",
-              "value": ""
+              "id": "program-1ww2klw",
+              "type": "action.program",
+              "params": {
+                "program_id": "armor",
+                "name": "Доспехи",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1ww2klw-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "armor",
+                "value": "",
+                "block_id": "3dc8c474-83fe-4d1a-922c-a32da7014684"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-1ww2klw",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1ww2klw-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -690,18 +2153,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Оружие",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "weapons",
-              "value": ""
+              "id": "program-gacef0",
+              "type": "action.program",
+              "params": {
+                "program_id": "weapons_prof",
+                "name": "Оружие",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-gacef0-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "weapons",
+                "value": "",
+                "block_id": "9ecbbc9c-6738-43e9-ac92-867922e60789"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-gacef0",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-gacef0-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -713,18 +2213,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Языки",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "languages",
-              "value": []
+              "id": "program-1g1pnko",
+              "type": "action.program",
+              "params": {
+                "program_id": "languages",
+                "name": "Языки",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1g1pnko-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "languages",
+                "value": [],
+                "block_id": "21b4fd5a-237e-44ca-bc17-ad47f01a6f09"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-1g1pnko",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1g1pnko-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -736,18 +2273,55 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Скорость",
-          "blocks": [
+        "creation": true,
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
             {
-              "kind": "passive",
-              "field": "speed",
-              "value": 30
+              "id": "program-y9my68",
+              "type": "action.program",
+              "params": {
+                "program_id": "speed",
+                "name": "Скорость",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-y9my68-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "speed",
+                "value": 30,
+                "block_id": "ab2333c2-b8f2-4784-8d2b-368e0c8481ce"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
             }
           ],
-          "trigger": "passive"
-        },
-        "creation": true
+          "links": [
+            {
+              "from": {
+                "node": "program-y9my68",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-y9my68-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
       }
     },
     {
@@ -759,20 +2333,58 @@
         "chain": [
           "manual"
         ],
-        "program": {
-          "name": "Умение",
-          "blocks": [
-            {
-              "kind": "manual",
-              "text": "Опишите умение: что оно даёт и когда применяется."
-            }
-          ]
-        },
         "creation": true,
         "quick": {
           "race": 3,
           "class": 3,
           "background": 3
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-1rgpbnh",
+              "type": "action.program",
+              "params": {
+                "program_id": "feature",
+                "name": "Умение",
+                "trigger": "use"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-1rgpbnh-1",
+              "type": "action.manual",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "text": "Опишите умение: что оно даёт и когда применяется.",
+                "block_id": "a0185401-14aa-4fa6-b91d-5bccbeff1bbf"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-1rgpbnh",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-1rgpbnh-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     },
@@ -785,22 +2397,59 @@
         "chain": [
           "passive"
         ],
-        "program": {
-          "name": "Владения",
-          "blocks": [
-            {
-              "kind": "passive",
-              "field": "armor",
-              "value": ""
-            }
-          ],
-          "trigger": "passive"
-        },
         "creation": true,
         "quick": {
           "race": 4,
           "class": 4,
           "background": 4
+        },
+        "origin": "template",
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "program-u0yh46",
+              "type": "action.program",
+              "params": {
+                "program_id": "proficiency",
+                "name": "Владения",
+                "trigger": "passive"
+              },
+              "position": {
+                "x": 60,
+                "y": 70
+              }
+            },
+            {
+              "id": "action-u0yh46-1",
+              "type": "action.passive",
+              "params": {
+                "enabled": true,
+                "when": "always",
+                "field": "armor",
+                "value": "",
+                "block_id": "a52cf27d-b0a6-41ae-b40a-c0333b5fa9ed"
+              },
+              "position": {
+                "x": 330,
+                "y": 70
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "program-u0yh46",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "action-u0yh46-1",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
         }
       }
     }
