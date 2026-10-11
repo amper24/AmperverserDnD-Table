@@ -114,8 +114,8 @@ test('план: компетентность во всех классах и р�
   const wizard = L.plan(sheet({ level: 1, class: 'Волшебник', edition: '2024', skills: ['arcana', 'history', 'nature', 'stealth'] }), cls('2024', 'wizard'), '2024');
   assert.equal(wizard.expertise, 1);
   assert.deepEqual(plain(wizard.expertiseFrom), ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion']);
-  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'history', 'insight', 'stealth'], expertise: [] }, false, wizard.expertiseFrom)), ['arcana', 'history', 'insight']);
-  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['stealth'], expertise: [], proficiencies: 'Воровские инструменты' }, true)), ['stealth', 'thieves_tools']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'history', 'insight', 'stealth'], expertise: [] }, [], wizard.expertiseFrom)), ['arcana', 'history', 'insight']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['stealth'], expertise: [], proficiencies: 'Воровские инструменты' }, [{ key: 'thieves_tools', proficiency: 'воровские инструменты', flags: 'i' }])), ['stealth', 'thieves_tools']);
 });
 test('хиты: среднее, бросок, минимум 1 и пересчёт задним числом при смене Телосложения', () => {
   assert.equal(L.hpAverage(10), 6); assert.equal(L.hpAverage(6), 4);

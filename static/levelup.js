@@ -238,6 +238,7 @@ window.LevelUp = (() => {
     const { groups, hidden } = optionGroups(entry, edition, from, to, sheet, prog);
     const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
+    const expertiseExtra = classRulesOf(slug, edition)?.expertise_extra || [];
     const expertiseFrom = (classRulesOf(slug, edition)?.expertise_from_class || []).includes(to) ? (d.skills?.from || []).map(skillKeyFromName).filter(Boolean) : null;
     if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition, f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
     const subLevel = subclassLevel(entry), subclass = subclassOf(entry, row?.subclass || opts.subclass?.name);
@@ -269,7 +270,7 @@ window.LevelUp = (() => {
     const skillSet = classRulesOf(slug, edition)?.multiclass?.skill;
     const skillRule = isNew && multi && skillSet ? { count: Number(skillSet.count) || 1, any: skillSet.any === true, from: d.skills?.from || [] } : null;
     return { from, to, entry, slug, edition, isNew, multi, hitDie: dieOf(entry), pb: { from: pbFrom, to: pbTo }, total: { from: totalFrom, to: totalTo }, columns: changes, features: feats, subclass, subclassChoices: row?.subclass_choices || {}, subclassFeatures: subFeatures,
-      needSubclass, subclassLevel: subLevel, asi: feats.some(f => f.tag === 'asi'), epic: feats.some(f => f.tag === 'epic'), expertise, expertiseFrom,
+      needSubclass, subclassLevel: subLevel, asi: feats.some(f => f.tag === 'asi'), epic: feats.some(f => f.tag === 'epic'), expertise, expertiseFrom, expertiseExtra,
       groups, spells, slotsFrom: (multi || cur.combined ? cur.slots : before?.slots) || null, slotsTo: multi || nxt.combined ? nxt.slots : (after?.slots || null), combined: nxt.combined, casterLevel: nxt.casterLevel,
       pactFrom: cur.pact, pactTo: nxt.pact, castingFrom: cur, castingTo: nxt, nextClasses,
       multiclass: isNew && multi ? { req, reqCurrent, proficiency: mcProficiency(slug, sheet.edition), skill: skillRule } : null };
@@ -289,10 +290,14 @@ window.LevelUp = (() => {
     const room = KEYS.reduce((n, k) => n + Math.min(2, Math.max(0, 20 - (abilities[k] || 10))), 0);
     return KEYS.every(k => Number.isInteger(plus[k] || 0) && (plus[k] || 0) >= 0 && (plus[k] || 0) <= 2 && Number.isInteger(abilities[k] || 10) && (abilities[k] || 10) + (plus[k] || 0) <= 20) && total === Math.min(2, room);
   };
-  function expertiseCandidates(sheet, allowThievesTools = false, only = null) {
+  // extra — набор expertise_extra класса: { key, proficiency } — владение, которое можно удвоить сверх навыков.
+  function expertiseCandidates(sheet, extra = [], only = null) {
     const allowed = Array.isArray(only) ? new Set(only) : null;
     const candidates = (sheet.skills || []).filter(key => !(sheet.expertise || []).includes(key) && (!allowed || allowed.has(key)));
-    if (allowThievesTools && (!allowed || allowed.has('thieves_tools')) && /воровские инструменты/i.test(sheet.proficiencies || '') && !(sheet.expertise || []).includes('thieves_tools')) candidates.push('thieves_tools');
+    for (const x of extra || []) {
+      if ((allowed && !allowed.has(x.key)) || (sheet.expertise || []).includes(x.key) || candidates.includes(x.key)) continue;
+      if (new RegExp(x.proficiency, x.flags || '').test(sheet.proficiencies || '')) candidates.push(x.key);
+    }
     return candidates;
   }
   const hitDiceOf = (classes, dieFor) => { const by = new Map(); for (const c of classes) { const die = Number(c.hit_die) || dieFor(c); by.set(die, (by.get(die) || 0) + c.level); } return [...by].map(([die, n]) => `${n}d${die}`).join('+'); };
@@ -642,7 +647,7 @@ window.LevelUp = (() => {
         if (id === 'subclass_variants') { const saved = { ...(p.subclassChoices || {}), ...(st.subclassVariants || {}) }; return subclassVariantRules().every(group => group.options.includes(saved[group.base])); }
         if (id === 'asi') return st.asi.mode === 'asi' ? asiValid(sheet.abilities, st.asi.plus) : selectedFeatValid();
         if (id === 'epic') return selectedFeatValid();
-        if (id === 'expertise') return st.expertise.length === Math.min(p.expertise, expertiseCandidates(sheet, p.edition === '2014' && p.slug === 'rogue', p.expertiseFrom).length);
+        if (id === 'expertise') return st.expertise.length === Math.min(p.expertise, expertiseCandidates(sheet, p.expertiseExtra, p.expertiseFrom).length);
         if (id === 'spells') {
           const pool = spellPool(); const c = pool.filter(e => (e.data?.level || 0) === 0).length, s = pool.filter(e => (e.data?.level || 0) > 0 && (e.data?.level || 0) <= p.spells.maxLevel).length;
           return st.cantrips.length === Math.min(p.spells.cantrips + subclassCantripChoices(), c) && st.spells.length === Math.min(p.spells.spells + st.drop.length, s) && st.secrets.length === Math.min(p.spells.secrets, secretsPool().length);
@@ -833,7 +838,7 @@ window.LevelUp = (() => {
         return rule ? skillsStep(rule, st.subclassSkills, next => { st.subclassSkills = next; }) : [h('div', 'lu-empty', 'Для выбранного подкласса нет отдельного выбора навыков.')];
       };
       const expertiseStep = () => {
-        const cands = expertiseCandidates(sheet, st.p.edition === '2014' && st.p.slug === 'rogue', st.p.expertiseFrom), need = Math.min(st.p.expertise, cands.length);
+        const cands = expertiseCandidates(sheet, st.p.expertiseExtra, st.p.expertiseFrom), need = Math.min(st.p.expertise, cands.length);
         const tiles = cands.map(k => {
           const on = st.expertise.includes(k), disabled = !on && st.expertise.length >= need;
           if (k === 'thieves_tools') return el('button', { type: 'button', class: 'lu-skill' + (on ? ' on' : ''), 'aria-pressed': String(on), disabled: disabled ? '' : null,

@@ -1,8 +1,10 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const ctx = { window: {} }; vm.createContext(ctx); vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/equipment.js','utf8'),ctx);
+const ctx = { window: {} }; vm.createContext(ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady); vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/equipment.js','utf8'),ctx);
 const E = ctx.window.Equipment;
 test('defaults connect a bow to arrows and crossbow to bolts without overwriting opt-out',()=>{
   const bow = E.normalize({name:'Длинный лук',type:'weapon',properties:['Двуручное','Боеприпас'],qty:1});
@@ -146,4 +148,15 @@ test('аудит слотов называет нарушения правил �
   const conflict = E.slotsAudit(sheet);
   assert.ok(conflict.bad >= 1);
   assert.ok(conflict.checks.some(c => !c.ok && /Двуручное/.test(c.text)), JSON.stringify(conflict.checks));
+});
+
+test('пользовательский набор equipment_text_rules меняет разбор предметов без правки кода', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'equipment_text_rules', id: 'user.my-rules', name: 'Мои правила', items: [
+    { id: 'pouch_gear', table: { role: 'container_type', pattern: 'мешочек', flags: 'i', value: 'gear' } },
+    { id: 'shot_ammo', table: { role: 'ammo_tag', pattern: 'дробь', flags: 'i', value: 'shot' } },
+  ] });
+  const bag = E.normalize({ name: 'Мешочек с дробью', type: 'ammo', qty: 1 });
+  assert.equal(bag.type, 'gear');
+  assert.equal(E.normalize({ name: 'Патроны дробь', type: 'ammo', qty: 1 }).ammo_tag, 'shot');
 });

@@ -20,44 +20,34 @@ window.Equipment = (() => {
   const WORN_SLOTS = ['armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring'];
   const SLOTS_V = 2;
   const wornSlots = kind => ({ armor: ['armor'], head: ['head'], neck: ['neck'], cloak: ['cloak'], gloves: ['gloves'], belt: ['belt'], feet: ['feet'], ring: ['ring1', 'ring2'] }[kind] || []);
-  const B = '(?:^|[^а-яё])';
-  const NOT_EQUIPPABLE = new RegExp(`зель|свиток|свитки|боеприпас|potion|scroll|ammunition|палочк|\\bwands?\\b|конск|horse|barding|упряж|седл|saddle|кошел|pouch|посох|\\bstaff|жезл|\\brods?\\b|${B}щит|\\bshield\\b`);
-  const ARMOR_PATTERN = new RegExp(`доспех|\\barmor\\b|кольчуг|кирас|${B}латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail`);
-  const SHIELD = new RegExp(`${B}щит|\\bshield\\b`, 'i');
-  const JEWELRY = /брошь|brooch|амулет|amulet|ожерель|necklace|кольц|\bring\b/i;
-  const HAND_MAGIC = /оружие|weapon|посох|\bstaff|жезл|\brods?\b|палочк|\bwands?\b/i;
   const itemWords = value => Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
   const itemText = it => [it.name || '', ...itemWords(it.tags), ...itemWords(it.properties)].join(' ').toLowerCase();
-  const WEAR_RULES = [
-    ['ring', /кольц|\brings?\b/i],
-    ['neck', /амулет|ожерель|медальон|талисман|подвеск|ладанк|брошь|бусы|amulet|necklace|periapt|medallion|pendant|brooch|talisman|scarab|beads/i],
-    ['head', /шлем|шляп|колпак|корон|диадем|обруч|(?:^|[^а-яё])маск|(?:^|[^а-яё])очки|(?:^|[^а-яё])глаза|линзы|капюшон|\bhelm|\bhat\b|crown|circlet|headband|goggles|\bmask|lenses|\beyes of|\bhood|\bcap\b/i],
-    ['cloak', /плащ|накидк|мантия|одеян|(?:^|[^а-яё])роба(?:$|[^а-яё])|cloak|\bcape\b|mantle|\brobe/i],
-    ['gloves', /перчатк|рукавиц|наручи|браслет|gauntlet|glove|bracer|bracelet/i],
-    ['belt', /пояс|\bbelt\b/i],
-    ['feet', /сапог|ботин|башмак|туфл|sandal|\bboots?\b|slippers?/i],
-    ['armor', ARMOR_PATTERN],
-  ];
   // Что носят, если хват не задан: сверяемся с категорией и русскими/английскими названиями.
   function inferWear(it) {
     if (it.type === 'armor') return 'armor';
     if (!['magic', 'gear', 'treasure'].includes(it.type)) return '';
     const text = itemText(it);
-    if (NOT_EQUIPPABLE.test(text) && !JEWELRY.test(text)) return '';
-    return WEAR_RULES.find(([, pattern]) => pattern.test(text))?.[0] || '';
+    if (textHas('not_equippable', text) && !textHas('jewelry', text)) return '';
+    return textRuleValue('wear', text, '');
   }
   // Хват по умолчанию: оружие, щиты, магические палочки/посохи/жезлы/оружие.
   // Фокусировки и инструменты держат в руке: священный символ (не амулет), магическая и
   // друидическая фокусировка, музыкальный инструмент. Амулет или подвеска — на шее, не в руке.
-  const FOCUS = /фокусиров|focus|священн[а-яё]* символ|holy symbol|инструмент|instrument|лютн|флейт|рожок|барабан|арфа|дудочк/i;
-  const AMULET_FOCUS = /амулет|amulet|подвеск|ожерель/;
+  // Правила разбора текста предметов — набор equipment_text_rules; table.role задаёт назначение правила.
+  // Первое совпавшее правило даёт value; правило с пустым pattern — умолчание.
+  function textRuleValue(role, text, fallback = '') {
+    const rule = (window.Presets?.items('equipment_text_rules') || []).map(item => item.table)
+      .find(t => t?.role === role && new RegExp(t.pattern, t.flags || '').test(text));
+    return rule ? rule.value : fallback;
+  }
+  const textHas = (role, text) => Boolean(textRuleValue(role, text, false));
   function inferHands(it) {
     const text = itemText(it);
-    const consumable = ['зель', 'свиток', 'боеприпас', 'potion', 'scroll', 'ammunition'].some(w => text.includes(w));
-    const magicHand = it.type === 'magic' && !consumable && HAND_MAGIC.test(text);
-    const focusHand = it.type === 'gear' && !consumable && FOCUS.test(text) && !AMULET_FOCUS.test(text);
-    if (!(it.type === 'weapon' || (SHIELD.test(text) && !JEWELRY.test(text)) || magicHand || focusHand)) return 'none';
-    return /двуруч|two-handed/.test(text) ? 'two' : /универсаль|versatile/.test(text) ? 'versatile' : 'one';
+    const consumable = textRuleValue('consumable', text, false);
+    const magicHand = it.type === 'magic' && !consumable && textHas('hand_magic', text);
+    const focusHand = it.type === 'gear' && !consumable && textHas('focus', text) && !textHas('amulet_focus', text);
+    if (!(it.type === 'weapon' || (textHas('shield', text) && !textHas('jewelry', text)) || magicHand || focusHand)) return 'none';
+    return textRuleValue('handedness', text, 'one');
   }
   const handednessOf = it => ['none', 'one', 'two', 'versatile'].includes(it.handedness) ? it.handedness : inferHands(it);
   function wearKind(it) {
@@ -73,18 +63,18 @@ window.Equipment = (() => {
     (it.attunement !== true || it.attuned === true);
   function normalize(it) {
     it.qty ??= 1;
-    if (it.type === 'ammo' && !it.ammo_tag && /футляр|колчан|case|quiver/i.test(it.name || '')) it.type = 'gear';
+    if (it.type === 'ammo' && !it.ammo_tag && textRuleValue('container_type', it.name || '')) it.type = textRuleValue('container_type', it.name || '');
     const text = [it.name, it.desc, ...(it.properties || [])].join(' ').toLowerCase();
     // предметы старой схемы: «без рук» могло означать «не задано» — хват и место ношения выводим заново
     if (it.slots_v !== SLOTS_V && it.handedness === 'none') delete it.handedness;
     it.handedness = handednessOf(it); it.wear = wearKind(it); it.slots_v = SLOTS_V; it.favorite = it.favorite === true;
     // Настройка (attunement) есть только у предметов, которые её требуют: иначе флажок — мусор из старых данных.
     if (it.attuned && (it.attunement !== true || it.qty !== 1)) it.attuned = false;
-    if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = /болт|bolt/.test(text) ? 'bolt' : /стрел|arrow/.test(text) ? 'arrow' : /пул|bullet/.test(text) ? 'bullet' : '';
+    if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = textRuleValue('ammo_tag', text, '');
     if (it.consume === undefined) {
       if (it.type === 'consumable') it.consume = { enabled: true, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
-      else if (it.type === 'weapon' && /боеприпас|ammunition|арбалет|crossbow|лук|bow|пращ|sling/.test(text)) {
-        it.consume = { enabled: true, resource: 'quantity', target_uid: '', ammo_tag: /арбалет|crossbow/.test(text) ? 'bolt' : /пращ|sling/.test(text) ? 'bullet' : 'arrow', amount: 1, trigger: 'attack' };
+      else if (it.type === 'weapon' && textRuleValue('consume_ammo', text, false)) {
+        it.consume = { enabled: true, resource: 'quantity', target_uid: '', ammo_tag: textRuleValue('consume_ammo_tag', text, 'arrow'), amount: 1, trigger: 'attack' };
       } else it.consume = { enabled: false, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
     }
     // Legacy versatile actions used two independent damage buttons; now they are exclusive variants.
@@ -101,7 +91,7 @@ window.Equipment = (() => {
   function equipDefaults(inventory, options = {}) {
     const canHands = options.hands !== false, canWear = options.wear !== false;
     const free = it => (it.qty ?? 1) === 1 && !it.equipped;
-    const shieldOf = it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it));
+    const shieldOf = it => handednessOf(it) !== 'none' && textHas('shield', itemText(it)) && !textHas('jewelry', itemText(it));
     const oneHanded = it => ['one', 'versatile'].includes(handednessOf(it));
     const hold = (it, slot) => { it.equipped = true; it.hand_slot = slot; it.worn_slot = null; };
     const held = slot => inventory.some(it => it.equipped && (it.hand_slot === slot || it.hand_slot === 'both'));
@@ -254,7 +244,7 @@ window.Equipment = (() => {
     for (const it of all) { const slot = it.hand_slot || it.worn_slot; if (slot) (bySlot[slot] ||= []).push(it); }
     const rows = ['main', 'off', 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
       .map(key => ({ key, label: slots[key], items: bySlot[key] || [] }));
-    const shields = all.filter(it => handednessOf(it) !== 'none' && SHIELD.test(itemText(it)) && !JEWELRY.test(itemText(it)));
+    const shields = all.filter(it => handednessOf(it) !== 'none' && textHas('shield', itemText(it)) && !textHas('jewelry', itemText(it)));
     const armor = all.filter(it => it.worn_slot === 'armor' && wearKind(it) === 'armor');
     const twoHanded = bySlot.both || [];
     const rings = all.filter(it => ['ring1', 'ring2'].includes(it.worn_slot));

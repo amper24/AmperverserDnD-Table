@@ -555,7 +555,14 @@
         "expertise_levels": {
           "1": 2,
           "6": 2
-        }
+        },
+        "expertise_extra": [
+          {
+            "key": "thieves_tools",
+            "proficiency": "воровские инструменты",
+            "flags": "i"
+          }
+        ]
       }
     },
     {

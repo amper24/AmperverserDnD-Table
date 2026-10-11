@@ -295,7 +295,7 @@ window.CharacterBuilder = (() => {
     const gold = text.match(/^(\d{1,5})\s*(?:зм|золот[а-яё]*)/i);
     if (gold) return [token({ kind: 'gold', amount: Number(gold[1]) })];
     // Правило «колчан с N стрел» берётся из набора equipment_text_rules.
-    const quiverRule = window.Presets?.items('equipment_text_rules').find(i => i.id === 'quiver')?.table;
+    const quiverRule = window.Presets?.items('equipment_text_rules').map(i => i.table).find(t => t?.role === 'quiver');
     const quiver = quiverRule && text.match(new RegExp(quiverRule.pattern, quiverRule.flags || ''));
     if (quiver) return [token({ kind: 'item', name: quiverRule.container, qty: 1, note: '' }),
       token({ kind: 'item', name: cap(singular(quiver[quiverRule.ammo_group])), qty: Number(quiver[quiverRule.count_group]), note: '' })];

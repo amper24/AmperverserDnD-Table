@@ -6,13 +6,300 @@
     {
       "id": "quiver",
       "name": "Колчан с боеприпасами",
-      "hint": "«колчан с N стрел» → предмет-контейнер и предмет-боеприпас N штук",
+      "hint": "«колчан с N стрел» → предмет-контейнер и предмет-боеприпас N штук (стартовое снаряжение)",
       "table": {
+        "role": "quiver",
         "pattern": "^(?:колчан|футляр)\\s+с\\s+(\\d{1,4})\\s+(\\S+)$",
         "flags": "i",
         "container": "Колчан",
         "count_group": 1,
         "ammo_group": 2
+      }
+    },
+    {
+      "id": "container_type",
+      "name": "Футляр и колчан — не боеприпас",
+      "hint": "Предмет-ёмкость с боеприпасами получает тип «снаряжение»",
+      "table": {
+        "role": "container_type",
+        "pattern": "футляр|колчан|case|quiver",
+        "flags": "i",
+        "value": "gear"
+      }
+    },
+    {
+      "id": "hands_two",
+      "name": "Двуручное оружие",
+      "hint": "Хват: две руки",
+      "table": {
+        "role": "handedness",
+        "pattern": "двуруч|two-handed",
+        "flags": "i",
+        "value": "two"
+      }
+    },
+    {
+      "id": "hands_versatile",
+      "name": "Универсальное оружие",
+      "hint": "Хват: одна или две руки",
+      "table": {
+        "role": "handedness",
+        "pattern": "универсаль|versatile",
+        "flags": "i",
+        "value": "versatile"
+      }
+    },
+    {
+      "id": "hands_default",
+      "name": "Хват по умолчанию",
+      "hint": "Одна рука — если выше правил нет",
+      "table": {
+        "role": "handedness",
+        "pattern": "",
+        "flags": "",
+        "value": "one"
+      }
+    },
+    {
+      "id": "ammo_bolt",
+      "name": "Метка боеприпаса: болт",
+      "hint": "",
+      "table": {
+        "role": "ammo_tag",
+        "pattern": "болт|bolt",
+        "flags": "i",
+        "value": "bolt"
+      }
+    },
+    {
+      "id": "ammo_arrow",
+      "name": "Метка боеприпаса: стрела",
+      "hint": "",
+      "table": {
+        "role": "ammo_tag",
+        "pattern": "стрел|arrow",
+        "flags": "i",
+        "value": "arrow"
+      }
+    },
+    {
+      "id": "ammo_bullet",
+      "name": "Метка боеприпаса: пуля",
+      "hint": "",
+      "table": {
+        "role": "ammo_tag",
+        "pattern": "пул|bullet",
+        "flags": "i",
+        "value": "bullet"
+      }
+    },
+    {
+      "id": "consumable",
+      "name": "Расходуемый предмет",
+      "hint": "Зелье, свиток, боеприпас — хват не выводится",
+      "table": {
+        "role": "consumable",
+        "pattern": "зель|свиток|боеприпас|potion|scroll|ammunition",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "consume_ammo",
+      "name": "Оружие расходует боеприпасы",
+      "hint": "Оружие, стреляющее боеприпасами: при атаке тратится боеприпас",
+      "table": {
+        "role": "consume_ammo",
+        "pattern": "боеприпас|ammunition|арбалет|crossbow|лук|bow|пращ|sling",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "consume_tag_bolt",
+      "name": "Боеприпас арбалета — болт",
+      "hint": "",
+      "table": {
+        "role": "consume_ammo_tag",
+        "pattern": "арбалет|crossbow",
+        "flags": "i",
+        "value": "bolt"
+      }
+    },
+    {
+      "id": "consume_tag_bullet",
+      "name": "Боеприпас пращи — пуля",
+      "hint": "",
+      "table": {
+        "role": "consume_ammo_tag",
+        "pattern": "пращ|sling",
+        "flags": "i",
+        "value": "bullet"
+      }
+    },
+    {
+      "id": "consume_tag_default",
+      "name": "Боеприпас по умолчанию — стрела",
+      "hint": "",
+      "table": {
+        "role": "consume_ammo_tag",
+        "pattern": "",
+        "flags": "",
+        "value": "arrow"
+      }
+    },
+    {
+      "id": "not_equippable",
+      "name": "Не экипируется",
+      "hint": "Зелья, свитки, боеприпасы, палочки, упряжь, кошельки, посохи, щиты — не надеваются",
+      "table": {
+        "role": "not_equippable",
+        "pattern": "зель|свиток|свитки|боеприпас|potion|scroll|ammunition|палочк|\\bwands?\\b|конск|horse|barding|упряж|седл|saddle|кошел|pouch|посох|\\bstaff|жезл|\\brods?\\b|(?:^|[^а-яё])щит|\\bshield\\b",
+        "flags": "",
+        "value": true
+      }
+    },
+    {
+      "id": "shield",
+      "name": "Щит",
+      "hint": "Занимает руку, не надевается как доспех",
+      "table": {
+        "role": "shield",
+        "pattern": "(?:^|[^а-яё])щит|\\bshield\\b",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "jewelry",
+      "name": "Украшение",
+      "hint": "Кольцо, амулет, брошь, ожерелье",
+      "table": {
+        "role": "jewelry",
+        "pattern": "брошь|brooch|амулет|amulet|ожерель|necklace|кольц|\\bring\\b",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "hand_magic",
+      "name": "Магическое оружие в руке",
+      "hint": "Оружие, посох, жезл, палочка — держат в руке",
+      "table": {
+        "role": "hand_magic",
+        "pattern": "оружие|weapon|посох|\\bstaff|жезл|\\brods?\\b|палочк|\\bwands?\\b",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "focus",
+      "name": "Фокусировка и инструмент",
+      "hint": "Держат в руке: священный символ, фокусировка, инструмент",
+      "table": {
+        "role": "focus",
+        "pattern": "фокусиров|focus|священн[а-яё]* символ|holy symbol|инструмент|instrument|лютн|флейт|рожок|барабан|арфа|дудочк",
+        "flags": "i",
+        "value": true
+      }
+    },
+    {
+      "id": "amulet_focus",
+      "name": "Амулет-фокусировка",
+      "hint": "Амулет или подвеска — на шее, не в руке",
+      "table": {
+        "role": "amulet_focus",
+        "pattern": "амулет|amulet|подвеск|ожерель",
+        "flags": "",
+        "value": true
+      }
+    },
+    {
+      "id": "wear_ring",
+      "name": "Место ношения: кольцо",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "кольц|\\brings?\\b",
+        "flags": "i",
+        "value": "ring"
+      }
+    },
+    {
+      "id": "wear_neck",
+      "name": "Место ношения: шея",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "амулет|ожерель|медальон|талисман|подвеск|ладанк|брошь|бусы|amulet|necklace|periapt|medallion|pendant|brooch|talisman|scarab|beads",
+        "flags": "i",
+        "value": "neck"
+      }
+    },
+    {
+      "id": "wear_head",
+      "name": "Место ношения: голова",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "шлем|шляп|колпак|корон|диадем|обруч|(?:^|[^а-яё])маск|(?:^|[^а-яё])очки|(?:^|[^а-яё])глаза|линзы|капюшон|\\bhelm|\\bhat\\b|crown|circlet|headband|goggles|\\bmask|lenses|\\beyes of|\\bhood|\\bcap\\b",
+        "flags": "i",
+        "value": "head"
+      }
+    },
+    {
+      "id": "wear_cloak",
+      "name": "Место ношения: плащ",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "плащ|накидк|мантия|одеян|(?:^|[^а-яё])роба(?:$|[^а-яё])|cloak|\\bcape\\b|mantle|\\brobe",
+        "flags": "i",
+        "value": "cloak"
+      }
+    },
+    {
+      "id": "wear_gloves",
+      "name": "Место ношения: перчатки",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "перчатк|рукавиц|наручи|браслет|gauntlet|glove|bracer|bracelet",
+        "flags": "i",
+        "value": "gloves"
+      }
+    },
+    {
+      "id": "wear_belt",
+      "name": "Место ношения: пояс",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "пояс|\\bbelt\\b",
+        "flags": "i",
+        "value": "belt"
+      }
+    },
+    {
+      "id": "wear_feet",
+      "name": "Место ношения: обувь",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "сапог|ботин|башмак|туфл|sandal|\\bboots?\\b|slippers?",
+        "flags": "i",
+        "value": "feet"
+      }
+    },
+    {
+      "id": "wear_armor",
+      "name": "Место ношения: доспех",
+      "hint": "Порядок правил важен: первое совпадение",
+      "table": {
+        "role": "wear",
+        "pattern": "доспех|\\barmor\\b|кольчуг|кирас|(?:^|[^а-яё])латы|breastplate|chain mail|half plate|splint|studded leather|scale mail|ring mail",
+        "flags": "",
+        "value": "armor"
       }
     }
   ]
