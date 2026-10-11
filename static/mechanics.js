@@ -57,35 +57,7 @@ window.Mechanics = (() => {
       return { id: item.id, group: t.group, name: t.name, hint: t.hint, chain: t.chain || [], creation: Boolean(t.creation), build: () => { const p = window.Mechanics.toLegacy({ version: 2, graph: clone(t.graph) }).programs[0]; return { ...p, blocks: p.blocks.map(b => ({ ...b, id: uid() })) }; } };
     });
   }
-  /// Быстрые шаблоны по категории: порядок задаёт число quick[категория] в наборе; нет — шаблоны «default».
-  function quickFor(category) {
-    const pick = cat => libraryOf('mechanic_templates').filter(i => i.table.quick?.[cat] !== undefined).sort((x, y) => x.table.quick[cat] - y.table.quick[cat]).map(i => i.id);
-    const ids = pick(category);
-    return ids.length ? ids : pick('default');
-  }
   const templates = (category) => templateList().filter(t => ['race','class','background'].includes(category) ? !!t.creation : !t.creation);
-  /// Галерея шаблонов: группы, описание и цепочка блоков — вместо плоского списка кнопок.
-  function templatePicker(category = 'item') {
-    const all = templates(category), query = el('input', { placeholder: 'Найти шаблон…', 'aria-label': 'Поиск шаблона' });
-    const grid = el('div', { class: 'template-grid' });
-    let chosen = null;
-    const card = (t) => el('button', { class: 'template-card', title: t.hint,
-        onclick: () => { chosen = t; grid.closest('.modal')?.querySelector('.template-add')?.click(); } },
-      el('div', { class: 'template-card-head' }, el('b', {}, t.name), el('span', { class: 'badge' }, t.group)),
-      el('div', { class: 'muted small' }, t.hint),
-      el('div', { class: 'template-chain' }, ...t.chain.map(k => el('span', { class: 'template-block ' + (TYPES[k]?.[1] || 'control') }, TYPES[k]?.[0] || k))));
-    const render = () => {
-      const q = String(query.value || '').toLowerCase().trim();
-      const found = all.filter(t => !q || (t.name + ' ' + t.hint + ' ' + t.group).toLowerCase().includes(q));
-      const groups = [...new Set(found.map(t => t.group))];
-      grid.replaceChildren(...groups.flatMap(g => [el('h4', {}, g), el('div', { class: 'template-group' }, ...found.filter(t => t.group === g).map(card))]),
-        found.length ? null : el('p', { class: 'muted' }, 'Ничего не найдено. Измените запрос или соберите цепочку вручную.'));
-    };
-    query.addEventListener('input', render);
-    render();
-    const body = el('div', { class: 'template-picker' }, query, grid);
-    return modal('Шаблоны блоков', body, [{ label: 'Добавить шаблон', cls: 'primary template-add', fn: () => chosen || false }], { wide: true });
-  }
   /// Блоки не работают по чужой цели: эффекты применяются владельцу листа, а урон и бывший
   /// «спасбросок цели» — это своё действие (бросок и правило), результат которого применяет ДМ.
   /// Старые записи приводятся к новому виду при открытии в редакторе; сохранение закрепляет результат.
@@ -203,91 +175,6 @@ window.Mechanics = (() => {
     }
     return root;
   }
-  function editor(doc, options={}) {
-    const m=migrate(doc,options.category||'item'), root=el('div',{class:'mechanics-editor'}), instance=uid(); let selected=0;
-    const field=(n,c)=>el('label',{class:'block-field'},el('span',{},n),c);
-    const input=(obj,key,type='text',extra={})=>el('input',{type,value:obj[key]??'',...extra,oninput:e=>obj[key]=type==='number'?Number(e.target.value):e.target.value});
-    const select=(pairs,value,fn)=>el('select',{onchange:e=>{fn(e.target.value);render();}},...pairs.map(([k,n])=>el('option',{value:k,selected:String(value??'')===k?'':null},n)));
-    // Получателя больше нет: эффекты идут владельцу листа, остальное применяет ДМ.
-    const note=text=>el('p',{class:'muted small'},text);
-    const makeProgram=()=>({id:uid(),name:'Новое действие',trigger:'use',blocks:[]});
-    function render() {
-      root.replaceChildren(); selected=Math.max(0,Math.min(selected,m.programs.length-1)); const p=m.programs[selected];
-      const nav=el('div',{class:'mechanics-programs'},...m.programs.map((p,i)=>el('button',{class:i===selected?'active':'',onclick:()=>{selected=i;render();}},p.name)),el('button',{onclick:()=>{m.programs.push(makeProgram());selected=m.programs.length-1;render();}},'+ Действие'));
-      root.append(el('div',{class:'mechanics-heading'},el('div',{},el('h3',{},'Конструктор механик'),el('p',{class:'muted small'},'Соберите действие из блоков. Описание ничего не исполняет. Порядок — сверху вниз; при ошибке откатывается вся цепочка.')),el('span',{class:'badge'},'BLOCKS · v1')),nav);
-      if(!p) { root.append(el('p',{class:'muted'},'Добавьте действие или начните с рецепта ниже.')); }
-      const pick=(id)=>templateList().find(t=>t.id===id);
-      const addTemplate=(t)=>{const prog=makeProgram(),made=t.build();prog.name=made.name;prog.blocks=made.blocks;if(made.trigger)prog.trigger=made.trigger;m.programs.push(prog);selected=m.programs.length-1;render();};
-      const quickIds=quickFor(options.category||'item');
-      const presets=el('div',{class:'mechanics-presets'},el('span',{class:'muted small'},'Шаблоны:'),
-        ...quickIds.map(id=>{const t=pick(id);return t?el('button',{class:'small',title:t.hint,onclick:()=>addTemplate(t)},t.name):null;}),
-        el('button',{class:'small primary',title:'Все шаблоны по группам с описанием',onclick:async()=>{const t=await templatePicker(options.category||'item');if(t)addTemplate(t);}},'Все шаблоны ▸'));
-      root.append(presets); if(!p) return;
-      root.append(el('div',{class:'block-program-header'},field('Название действия',input(p,'name')),field('Когда',select([['use','По нажатию «Использовать»'],['passive','Параметры при создании']],p.trigger,v=>p.trigger=v)),el('button',{class:'small',onclick:()=>{const copy=clone(p);copy.id=uid();copy.name+=' (копия)';copy.blocks.forEach(b=>b.id=uid());m.programs.push(copy);selected=m.programs.length-1;render();}},'Копия'),el('button',{class:'small danger',onclick:()=>{if(confirm('Удалить действие со всеми блоками?')){m.programs.splice(selected,1);render();}}},'Удалить действие')));
-      const workspace=el('div',{class:'block-workspace'}), palette=el('aside',{class:'block-palette'},el('b',{},'Добавить блок'),...Object.entries(TYPES).map(([k,[name,color]])=>el('button',{class:'palette-block '+color,onclick:()=>{if(p.blocks.length>=32)return toast('Не более 32 блоков.');p.blocks.push(block(k));render();}},'+ '+name)));
-      const stack=el('div',{class:'block-stack'});workspace.append(palette,stack);root.append(workspace);
-      p.blocks.forEach((b,i)=>{
-        const card=el('section',{class:'mechanic-block '+(TYPES[b.kind]?.[1]||'control')+(b.enabled===false?' disabled':''),'data-block':b.id});
-        const move=(from,to)=>{if(to<0||to>=p.blocks.length)return;const [b]=p.blocks.splice(from,1);p.blocks.splice(to,0,b);render();};
-        const handle=el('span',{class:'block-handle',draggable:'true',title:'Перетащите блок'},'⠿');handle.addEventListener('dragstart',e=>e.dataTransfer.setData('application/x-mechanics-block',JSON.stringify({instance,index:i})));
-        card.addEventListener('dragover',e=>{if([...e.dataTransfer.types].includes('application/x-mechanics-block'))e.preventDefault();});card.addEventListener('drop',e=>{try{const d=JSON.parse(e.dataTransfer.getData('application/x-mechanics-block'));if(d.instance===instance){e.preventDefault();e.stopPropagation();move(d.index,i);}}catch{}});
-        card.append(el('header',{},handle,el('span',{class:'block-index'},String(i+1).padStart(2,'0')),el('b',{},TYPES[b.kind]?.[0]||b.kind),el('label',{class:'block-switch'},el('input',{type:'checkbox',checked:b.enabled!==false?'':null,'aria-label':b.kind==='consume'?'Автоматически расходовать ресурс':'Включить блок',onchange:e=>{b.enabled=e.target.checked;render();}}),' Вкл.'),el('button',{class:'small','aria-label':'Блок выше',disabled:i===0?'':null,onclick:()=>move(i,i-1)},'↑'),el('button',{class:'small','aria-label':'Блок ниже',disabled:i===p.blocks.length-1?'':null,onclick:()=>move(i,i+1)},'↓'),el('button',{class:'small','aria-label':'Копировать блок',onclick:()=>{if(p.blocks.length>=32)return;const copy=clone(b);copy.id=uid();p.blocks.splice(i+1,0,copy);render();}},'⧉'),el('button',{class:'small danger','aria-label':'Удалить блок',onclick:()=>{p.blocks.splice(i,1);render();}},'×')));
-        const body=el('div',{class:'block-controls'});
-        if(b.kind!=='passive') body.append(field('Условие',select([['always','Всегда'],['hit','Если попадание'],['miss','Если промах']],b.when||'always',v=>b.when=v)));
-        if(b.dice){
-          const d=b.dice;
-          body.append(field('Кубиков',input(d,'count','number',{min:0,max:100,step:1})),field('Грани',select([...new Set([4,6,8,10,12,20,100,d.sides])].sort((a,b)=>a-b).map(n=>[String(n),'d'+n]),String(d.sides),v=>d.sides=Number(v))),field('Бонус',input(d,'bonus','number',{step:1})),field('Модификатор',select(Object.entries(STATS),d.stat,v=>d.stat=v)));
-          const adv=el('details',{class:'block-advanced'},el('summary',{},'Своя формула (необязательно)'),field('Формула заменяет поля кубиков',input(d,'advanced')));body.append(adv);
-        }
-        if(['heal','temp_hp','condition','grant_item','adjust'].includes(b.kind)) body.append(note('Применяется владельцу листа. Эффекты по другим персонажам — задача ДМ.'));
-        if(b.kind==='attack'||b.kind==='damage') body.append(field('Хват',select([['','Любой'],['one','Одной рукой'],['two','Двумя руками']],b.grip,v=>b.grip=v)));
-        if(b.kind==='attack') body.append(field('КД цели (необязательно)',input(b,'dc','number',{min:0,max:40,step:1,placeholder:'0 — решает ДМ'})),
-          note('Попадание решает ДМ. Если указать КД, ветка «при попадании» сработает только при результате не ниже КД; без КД промахом считается одна натуральная 1.'));
-        if(b.kind==='damage') body.append(field('Тип урона',select((window.Modules?.DAMAGE_TYPES||['','рубящий','огонь']).map(n=>[n,n||'Не задан']),b.damage_type,v=>b.damage_type=v)),note('Урон не списывается с цели: бросок показывает результат, хиты меняет ДМ.'));
-        if(b.kind==='roll') body.append(field('Правило действия (необязательно)',el('textarea',{oninput:e=>b.text=e.target.value},b.text||'')),note('Своё действие: бросок кубов и правило, которое применяет ДМ.'));
-        if(b.kind==='consume'){
-          body.append(field('Ресурс',select([['quantity','Количество предмета'],['charges','Заряды предмета'],['slot','Ячейка заклинания'],['uses','Использования умения']],b.resource,v=>b.resource=v)));
-          if(['quantity','charges'].includes(b.resource)){
-            body.append(field('Источник',select([['self','Сам этот предмет'],['item','Другой предмет инвентаря'],['tag','Предметы по метке']],b.source,v=>b.source=v)));
-            if(b.source==='item')body.append(field('Предмет',select([['','Выберите…'],...(options.inventory||[]).map(x=>[x.uid,`${x.name} · ${x.qty??1} шт.`]),...(b.item_uid&&!(options.inventory||[]).some(x=>x.uid===b.item_uid)?[[b.item_uid,'Недоступная привязка']]:[])],b.item_uid,v=>b.item_uid=v)));
-            if(b.source==='tag')body.append(field('Метка ресурса',input(b,'tag')));
-          }
-          if(b.resource==='slot')body.append(field('Уровень ячейки',input(b,'slot_level','number',{min:1,max:9})));
-          body.append(field('Количество',input(b,'amount','number',{min:1,max:10000,step:1})),field('Списание',select([['use','Один раз за действие'],['attack','За каждую атаку в цепочке']],b.trigger,v=>b.trigger=v)));
-        }
-        if(b.kind==='grant_item'){
-          body.append(field('Количество',input(b,'amount','number',{min:1,max:10000,step:1})),field('Выдаваемый предмет',input(b.item,'name')),field('Тип',select(Object.entries(window.Modules?.ITEM_TYPES||{gear:'Снаряжение'}),b.item.type,v=>b.item.type=v)),field('Метка ресурса',input(b.item,'ammo_tag')),
-            el('button',{class:'small',onclick:async()=>{try{const entries=await API.get('/api/compendium?category=item&limit=3000&edition='+encodeURIComponent(window.SHEET_EDITION||defaultEdition()));const sel=el('select',{},...entries.map(e=>el('option',{value:e.id},e.name+' · '+e.source)));const id=await modal('Выдать копию шаблона',sel,[{label:'Выбрать',cls:'primary',fn:()=>sel.value}]);const entry=entries.find(e=>e.id===id);if(entry){b.item=Modules.itemFromCompendium(entry);delete b.item.uid;b.item.qty=1;b.item.equipped=false;b.item.hand_slot=null;render();}}catch(e){toast(e.message);}}},'Из справочника…'),el('span',{class:'muted small'},'Копия шаблона, не ссылка на чужую стопку. Механики выданного предмета не запускаются автоматически.'));
-        }
-        if(b.kind==='condition')body.append(field('Состояние',input(b,'condition')),field('Операция',select([['add','Добавить'],['remove','Снять']],b.operation,v=>b.operation=v)));
-        if(b.kind==='adjust')body.append(field('Показатель',select(Object.entries(FIELDS),b.field,v=>b.field=v)),field('Изменение',input(b,'amount','number',{min:-10000,max:10000,step:1})));
-        if(b.kind==='require')body.append(field('Показатель владельца',select([['hp.current','Текущие хиты'],...Object.entries(FIELDS)],b.field,v=>b.field=v)),field('Не меньше',input(b,'minimum','number',{step:1})));
-        if(b.kind==='manual')body.append(field('Правило / ограничение (не исполняется)',el('textarea',{oninput:e=>b.text=e.target.value},b.text||'')),el('small',{class:'muted'},'Перед использованием потребуется подтверждение. Этот блок не притворяется автоматизацией сложных правил.'));
-        if(b.kind==='passive') {
-          body.append(field('Параметр',select(Object.entries(PASSIVE),b.field,v=>{b.field=v;b.value=v==='hit_die'?'d8':v==='spellcasting'?'int':['saves','skills','languages'].includes(v)?[]:['armor','weapons'].includes(v)?'':v==='speed'?30:0;})));
-          if(b.field==='hit_die')body.append(field('Кость',select(['d6','d8','d10','d12'].map(x=>[x,x]),b.value,v=>b.value=v)));
-          else if(b.field==='spellcasting')body.append(field('Характеристика',select(Object.entries(window.ABIL||{}),b.value,v=>b.value=v)));
-          else if(b.field==='saves'||b.field==='skills'){
-            const skills=b.field==='skills', choice=skills&&!Array.isArray(b.value),values=choice?b.value.from||[]:Array.isArray(b.value)?b.value:[];
-            if(skills)body.append(field('Вид',select([['fixed','Предоставить выбранные навыки'],['choose','Выбрать из списка при создании']],choice?'choose':'fixed',v=>b.value=v==='choose'?{choose:2,from:[...values]}:[...values])));
-            if(choice)body.append(field('Сколько выбрать',input(b.value,'choose','number',{min:0,max:18,step:1})));
-            const checks=el('div',{class:'block-checks'},...(skills?(window.SKILLS||[]).map(([k,n])=>[n,n]):Object.entries(window.ABIL||{})).map(([key,name])=>el('label',{},el('input',{type:'checkbox',checked:values.includes(key)?'':null,onchange:e=>{const next=values.filter(v=>v!==key);if(e.target.checked)next.push(key);if(choice)b.value.from=next;else b.value=next;render();}}),name)));
-            body.append(checks);
-          }else if(b.field==='languages'){
-            body.append(field('Языки (через запятую) / число языков на выбор',el('input',{value:Array.isArray(b.value)?b.value.join(', '):b.value,oninput:e=>b.value=/^\d+$/.test(e.target.value)?Number(e.target.value):e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})));
-          }else body.append(field('Значение',input(b,'value',b.field==='speed'||b.field.startsWith('asi.')?'number':'text')));
-          body.append(el('small',{class:'muted'},'Применяется при создании персонажа; повторное нажатие не накапливает бонусы.'));
-        }
-        card.append(body);stack.append(card);
-      });
-      if(!p.blocks.length)stack.append(el('div',{class:'block-empty'},'Добавьте первый блок из палитры слева.'));
-      const check=el('div',{class:'mechanics-validation',role:'status'});root.append(el('button',{class:'small',onclick:()=>check.textContent=validate(m)||'✓ Структура корректна. Проверка ничего не расходует и не бросает.'},'Проверить цепочку'),check);
-    }
-    // Шаблоны берутся из наборов: при загрузке или импорте набора список перерисовывается.
-    const onPresets = () => { if (root.isConnected) render(); else window.removeEventListener('presets:changed', onPresets); };
-    window.addEventListener?.('presets:changed', onPresets);
-    render(); return root;
-  }
   function passiveData(entry) {
     const e=clone(entry);for(const p of e.data?.mechanics?.programs||[])if(p.trigger==='passive')for(const b of p.blocks||[])if(b.kind==='passive'&&b.enabled!==false){const parts=b.field.split('.');if(parts.some(k=>['__proto__','prototype','constructor'].includes(k)))continue;let d=e.data;parts.slice(0,-1).forEach(k=>{if(!d[k]||typeof d[k]!=='object')d[k]={};d=d[k];});d[parts.at(-1)]=clone(b.value);}
     return e;
@@ -296,5 +183,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,templatePicker,migrate,normalize,programsOf,validate,editor,preview,buttons,programSummary,passiveData};
+  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,migrate,normalize,programsOf,validate,preview,buttons,programSummary,passiveData};
 })();
