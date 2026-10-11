@@ -21,6 +21,8 @@
   // Вид набора: какие поля обязательны у элементов. Новый вид нужен только там, где появляется новый потребитель.
   const KINDS = {
     graph_starter: { fields: ['name', 'nodes'], optional: ['hint', 'attach', 'links'] },
+    // Группа нод (определение группы повторного использования): входы, выходы, узлы и связи.
+    graph_group: { fields: ['name', 'inputs', 'outputs', 'nodes', 'links'] },
     item_preset: { fields: ['name', 'fields'], optional: ['hint'] },
     spell_preset: { fields: ['name', 'fields'], optional: ['hint'] },
     class_progression: { fields: ['table'], needsEdition: true },
@@ -194,7 +196,7 @@
     const { el, modal, toast } = window;
     const text = el('textarea', { rows: 8, placeholder: '{ "kind": "graph_starter", "id": "...", "name": "...", "items": [ ... ] }', style: 'width:100%;font-family:monospace' });
     const list = el('div', { class: 'preset-sets' });
-    const kindLabel = { graph_starter: 'стартовые графы', item_preset: 'основы предметов', spell_preset: 'основы заклинаний', class_progression: 'таблицы развития', multiclass_slots: 'ячейки мультикласса' };
+    const kindLabel = { graph_starter: 'стартовые графы', graph_group: 'группы графа', item_preset: 'основы предметов', spell_preset: 'основы заклинаний', class_progression: 'таблицы развития', multiclass_slots: 'ячейки мультикласса' };
     const row = (set, own) => el('div', { class: 'preset-set-row', 'data-set': set.id },
       el('b', {}, set.name), ' ', el('span', { class: 'muted small' }, `${kindLabel[set.kind] || set.kind} · ${set.items.length} эл. · ${own ? 'ваш набор' : 'встроенный'}`),
       own ? el('button', { class: 'small danger', onclick: () => { removeUser(set.id); renderList(); } }, 'Удалить') : null);

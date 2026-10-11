@@ -21,7 +21,7 @@
     feat_rules: 'Черта', feature_rules: 'Особенность класса', conditions: 'Состояние', spell_schools: 'Школа заклинаний',
     languages: 'Язык', enemy_types: 'Тип врага', mechanic_templates: 'Шаблон блока', mechanic_starters: 'Стартовая программа',
     equipment_text_rules: 'Правило текста снаряжения', equipment_pick_rules: 'Правило выбора снаряжения', block_defaults: 'Умолчания блока',
-    item_preset: 'Основа предмета', spell_preset: 'Основа заклинания', graph_starter: 'Стартовый граф',
+    item_preset: 'Основа предмета', spell_preset: 'Основа заклинания', graph_starter: 'Стартовый граф', graph_group: 'Группа графа',
   };
   const EDITIONS = ['2014', '2024'];
   const P = () => window.Presets;

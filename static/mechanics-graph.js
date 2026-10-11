@@ -19,6 +19,32 @@
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
+  // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.and', 'logic.or', 'logic.not']);
+  const STAT_MODES = ['bonus', 'score'];
+  const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
+  const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
+  // Характеристика: bonus — модификатор, score — показатель. Навык: bonus — его бонус с владением (считает лист), score — пассивное 10 + бонус.
+  function statDice(p) {
+    const id = String(p.id || '');
+    const term = ABILITIES.includes(id) ? (p.mode === 'score' ? `@${id}_score` : `@${id}`) : (p.mode === 'score' ? `10+@${id}` : `@${id}`);
+    return { count: 0, sides: 6, bonus: 0, stat: '', advanced: term };
+  }
+  // Текст формулы кости в том же виде, что Mechanics.expression и серверная formula().
+  function diceTerm(d) {
+    if (d?.advanced) return String(d.advanced);
+    return (d.count ? `${d.count}d${d.sides}` : '0') + (Number(d.bonus) >= 0 ? '+' : '') + (Number(d.bonus) || 0) + (d.stat ? `+@${d.stat}` : '');
+  }
+  // Значение узла по значениям входов: get(socket) отдаёт значение входа или undefined. Неизвестное — undefined.
+  function computedValue(type, p, get) {
+    if (type === 'data.stat') return statDice(p);
+    if (type === 'dice.combine') { const a = get('a'), b = get('b'); return a && b ? { count: 0, sides: 6, bonus: 0, stat: '', advanced: `${diceTerm(a)}+${diceTerm(b)}` } : undefined; }
+    if (type === 'condition.compare') { const a = get('a'), b = get('b'); return typeof a === 'number' && typeof b === 'number' && COMPARE_OPS[p.op] ? COMPARE_OPS[p.op](a, b) : undefined; }
+    if (type === 'logic.and') { const a = get('a'), b = get('b'); if (a === false || b === false) return false; return a === true && b === true ? true : undefined; }
+    if (type === 'logic.or') { const a = get('a'), b = get('b'); if (a === true || b === true) return true; return a === false && b === false ? false : undefined; }
+    if (type === 'logic.not') { const a = get('a'); return typeof a === 'boolean' ? !a : undefined; }
+    return undefined;
+  }
 
   function graphOf(mechanics) { return mechanics?.graph || { nodes: [], links: [], frames: [], groups: [] }; }
   function graphEnvelope(graph, metadata = {}) {
@@ -185,6 +211,7 @@
     function outputValue(endpoint) {
       const node = byId.get(endpoint?.node); if (!node) return undefined;
       const p = node.params || {};
+      if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined));
       if (node.type.startsWith('data.')) return clone(p.value);
       if (node.type === 'condition.edition') return edition === undefined ? undefined : (p.editions || []).map(String).includes(edition);
       if (node.type === 'condition.level') return !Number.isFinite(level) ? undefined : level >= p.min && level <= p.max;
@@ -223,6 +250,8 @@
         if (!actionType(node.type)) continue;
         const kind = node.type.slice(7), ap = clone(node.params || {}), blockId = ap.block_id || node.id;
         if (gate && (ap.when === undefined || ap.when === 'always')) ap.when = gate;
+        // Кость, поданная проводом на вход «Кость», заменяет поле dice блока.
+        const diceIn = inputValue(node, 'dice', undefined); if (diceIn !== undefined) ap.dice = diceIn;
         const enabled = inputValue(node, 'enabled', ap.enabled);
         if (enabled !== false) {
           if (enabled !== undefined) ap.enabled = enabled;
@@ -308,9 +337,9 @@
       if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
       if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
       if (fromNode.type === 'condition.hit' && !(toNode.type === 'flow.if' && target.socket === 'condition')) { const e = soft(problems, 'Условие попадания подключается только ко входу «Если».'); if (e) return e; continue; }
-      const targetKey = `${target.node}:${target.socket}`;
-      if (incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
-      incoming.add(targetKey);
+      const targetKey = `${target.node}:${target.socket}`, manyInputs = toNode.type === 'flow.end';
+      if (!manyInputs && incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
+      if (!manyInputs) incoming.add(targetKey);
       const linkKey = `${source.node}:${source.socket}>${target.node}:${target.socket}`;
       if (linkKeys.has(linkKey)) { const e = soft(problems, 'Повторяющийся провод.'); if (e) return e; continue; }
       linkKeys.add(linkKey);
@@ -368,6 +397,8 @@
     if (type === 'condition.level' && (!Number.isInteger(p.min) || !Number.isInteger(p.max) || p.min < 1 || p.max > 20 || p.min > p.max)) return 'Условие уровня: диапазон 1–20.';
     if (type === 'condition.subclass' && (!idText(p.id, 100))) return 'Укажите ID подкласса в условии.';
     if (type === 'condition.choice' && (!idText(p.id, 100) || !Object.hasOwn(p, 'value'))) return 'Укажите ID группы и сравниваемый выбор.';
+    if (type === 'data.stat' && (!isStatId(p.id) || !STAT_MODES.includes(p.mode))) return 'Выберите характеристику или навык и режим: бонус или значение.';
+    if (type === 'condition.compare' && !Object.hasOwn(COMPARE_OPS, p.op)) return 'Сравнение: допустимы >=, <=, >, <, = и !=.';
     if (type === 'flow.if' && Object.keys(p).length > 8) return 'Условный узел содержит лишние параметры.';
     if (type === 'action.program' && p.style !== undefined && !window.BUTTON_STYLES?.[p.style]) return 'Неизвестный стиль кнопки.';
     if (type === 'action.program' && (!idText(p.program_id, 100) || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || !['use', 'passive'].includes(p.trigger))) return 'Программе нужны ID, название и допустимый триггер.';
@@ -523,6 +554,7 @@
       else if (type === 'condition.level') values.outputs.set(`${node.id}:value`, level >= p.min && level <= p.max);
       else if (type === 'condition.subclass') values.outputs.set(`${node.id}:value`, String(context.subclass) === String(p.id));
       else if (type === 'condition.choice') values.outputs.set(`${node.id}:value`, JSON.stringify(context.choices?.[p.id]) === JSON.stringify(p.value));
+      else if (COMPUTED.has(type)) values.outputs.set(`${node.id}:value`, computedValue(type, p, socket => get(node, socket)));
       else if (type.startsWith('rule.')) applyRuleNode(type, p, socket => get(node, socket), sheet, context, values.outputs);
     }
     sheet.skills = [...new Set(sheet.skills)];
@@ -589,7 +621,8 @@
     if (!NodeRegistry.sameType(outType, inType)) return `Типы не совпадают: ${outType} → ${inType}.`;
     const owners = actionOwners(graph);
     if (owners.get(from.id) !== owners.get(to.id)) return 'Соединять можно только узлы одного действия.';
-    const rest = (graph.links || []).filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+    // В конец («Конец») может прийти несколько проводов, поэтому его вход не заменяется.
+    const rest = to.type === 'flow.end' ? [...(graph.links || [])] : (graph.links || []).filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
     if (wouldCycle(rest, link.from.node, link.to.node)) return 'Связь создаёт цикл.';
     // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
     // отклоняется только ошибка, которую добавила именно эта связь. Полная проверка — при сохранении.
@@ -735,6 +768,23 @@
       window.Presets.removeUserItem('graph_starter', id);
       status = 'Свой шаблон удалён.'; render();
     }
+    // Группа нод как пользовательский шаблон: набор graph_group в Presets (в этом браузере). Вставка копирует определение группы.
+    const groupTemplates = () => window.Presets?.items('graph_group') || [];
+    function saveGroupTemplate(group) {
+      const item = { id: mkId('group-tpl'), name: group.name, inputs: clone(group.inputs || []), outputs: clone(group.outputs || []), nodes: clone(group.nodes || []), links: clone(group.links || []) };
+      try { window.Presets.upsertUserItem('graph_group', item); } catch (e) { status = e.message; return render(); }
+      status = `Группа «${item.name}» сохранена в шаблоны.`; render();
+    }
+    function insertGroupTemplate(item) {
+      const groupId = mkId('group'), id = mkId('instance');
+      graph.groups.push({ id: groupId, name: item.name, inputs: clone(item.inputs), outputs: clone(item.outputs), nodes: clone(item.nodes), links: clone(item.links), frames: [] });
+      graph.nodes.push({ id, type: 'group.instance', params: { group_id: groupId }, position: { x: 80 + graph.nodes.length * 28, y: 80 + graph.nodes.length * 24 }, action: activeAction });
+      checkpoint(); activeNode = id; selected = new Set([id]); status = `Группа «${item.name}» вставлена из шаблона.`; render();
+    }
+    function removeGroupTemplate(id) {
+      window.Presets.removeUserItem('graph_group', id);
+      status = 'Шаблон группы удалён.'; render();
+    }
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
       return socketMap(node, groups)[direction]?.[socket];
@@ -814,7 +864,7 @@
           if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 4) return;
           moved = true;
           // Тянем уже подключённый вход: связь снимается на время жеста, при неудаче возвращается.
-          if (direction === 'inputs') { detached = graph.links.find(l => l.to.node === node.id && l.to.socket === socket) || null; if (detached) graph.links = graph.links.filter(l => l !== detached); }
+          if (direction === 'inputs' && node.type !== 'flow.end') { detached = graph.links.find(l => l.to.node === node.id && l.to.socket === socket) || null; if (detached) graph.links = graph.links.filter(l => l !== detached); }
           wire = origin;
         }
         const p = worldPoint(m.clientX, m.clientY); wire = { ...origin, x: p.x, y: p.y };
@@ -842,7 +892,7 @@
     function applyLink(link, ok, rollback = null) {
       const error = connectionError(graph, link);
       if (error) { rollback?.(); status = error; render(); return false; }
-      graph.links = graph.links.filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
+      if (graph.nodes.find(n => n.id === link.to.node)?.type !== 'flow.end') graph.links = graph.links.filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
       graph.links.push(clone(link));
       checkpoint(); pendingPort = null; status = ok; render(); return true;
     }
@@ -1097,7 +1147,15 @@
         el('button', { class: 'small', onclick: () => { const t = chosenTemplate(); if (t && ownTemplate(t.id)) removeTemplate(t.id); else { status = 'Удалить можно только свой шаблон.'; render(); } } }, 'Удалить мой'),
         tplName,
         el('button', { class: 'small primary', onclick: () => saveTemplate(tplName.value) }, 'Сохранить цепочку как шаблон'));
-      const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
+      const groupShelf = graph.groups.length || groupTemplates().length ? el('div', { class: 'node-group-shelf' },
+        graph.groups.length ? el('b', {}, 'Группы') : null,
+        ...graph.groups.map(g => el('span', { class: 'node-group-item' },
+          el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name),
+          el('button', { class: 'small', title: 'Сохранить группу в шаблоны', onclick: () => saveGroupTemplate(g) }, 'В шаблоны'))),
+        groupTemplates().length ? el('b', {}, 'Шаблоны групп') : null,
+        ...groupTemplates().map(t => el('span', { class: 'node-group-item' },
+          el('button', { class: 'small', onclick: () => insertGroupTemplate(t) }, 'Вставить: ', t.name),
+          el('button', { class: 'small', title: 'Удалить шаблон группы', onclick: () => removeGroupTemplate(t.id) }, '×')))) : null;
       const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(n => n && shownIds.has(n.id)); if (!members.length) return null;
         const left = Math.min(...members.map(n => n.position?.x || 0)) - 16, top = Math.min(...members.map(n => n.position?.y || 0)) - 34;

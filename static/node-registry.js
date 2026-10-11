@@ -18,14 +18,25 @@
     'data.table': { label: 'Таблица по уровню', group: 'Данные', inputs: {}, outputs: { value: 'table' }, defaults: { value: {} } },
     'data.choice': { label: 'Выбор', group: 'Данные', inputs: {}, outputs: { value: 'choice' }, defaults: { value: { id: '', count: 1, options: [] } } },
     'data.text': { label: 'Текст', group: 'Данные', inputs: {}, outputs: { value: 'text' }, defaults: { value: '' } },
+    // Характеристика или навык персонажа: «bonus» — модификатор (для навыка уже с владением), «score» — значение
+    // (характеристика — показатель, навык — пассивное значение 10 + бонус). Числа берутся из листа при броске.
+    'data.stat': { label: 'Характеристика / навык', group: 'Данные', inputs: {}, outputs: { value: 'dice' }, defaults: { id: 'str', mode: 'bonus' } },
+    // Совмещение двух костей в одну формулу броска (сумма).
+    'dice.combine': { label: 'Сложить кости', group: 'Данные', inputs: { a: 'dice', b: 'dice' }, outputs: { value: 'dice' }, defaults: {} },
     'condition.edition': { label: 'Если редакция', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { editions: ['2014'] } },
     'condition.level': { label: 'Если уровень', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { min: 1, max: 20 } },
     'condition.subclass': { label: 'Если подкласс', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '' } },
     'condition.choice': { label: 'Если выбран вариант', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '', value: '' } },
     // Попадание последней атаки в цепочке. Подключается только ко входу «condition» узла «Если»: ветви «да»/«нет» задают гейт действий.
     'condition.hit': { label: 'Попадание атаки', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: {} },
+    // Сравнение двух чисел (данные «Число» и вычисленные значения). Операция: >=, <=, >, <, =, !=.
+    'condition.compare': { label: 'Сравнить числа', group: 'Условия', inputs: { a: 'number', b: 'number' }, outputs: { value: 'bool' }, defaults: { op: '>=' } },
+    // Логика условий: И, ИЛИ, НЕ. Вход условия «попадания атаки» сюда не подключается — только ко входу «Если».
+    'logic.and': { label: 'И', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
+    'logic.or': { label: 'ИЛИ', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
+    'logic.not': { label: 'НЕ', group: 'Логика', inputs: { a: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
     'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
-    // Конец цепочки действия: принимает поток и ничего не исполняет.
+    // Конец цепочки действия: принимает поток и ничего не исполняет. В конец может прийти несколько проводов.
     'flow.end': { label: 'Конец', group: 'Поток', inputs: { exec: 'flow' }, outputs: {}, defaults: {} },
     'rule.ability_bonus': { label: 'Бонус характеристики', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { ability: 'str', amount: 1 } },
     'rule.speed': { label: 'Скорость', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'number' }, outputs: { effect: 'effect' }, defaults: { value: 30 } },
@@ -48,10 +59,12 @@
     'group.input': { label: 'Вход группы', group: 'Группы', inputs: {}, outputs: { value: 'text' }, defaults: { socket_id: '' } },
     'group.output': { label: 'Выход группы', group: 'Группы', inputs: { value: 'text' }, outputs: {}, defaults: { socket_id: '' } },
   };
+  // Действия с костью: кость можно подать проводом на вход «Кость» (иначе берётся поле «dice»).
+  const DICE_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   for (const kind of ACTION_KINDS) {
     NODE_DEFS[`action.${kind}`] = {
       label: Base.TYPES[kind]?.[0] || kind, group: 'Действия',
-      inputs: { exec: 'flow', enabled: 'bool' }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
+      inputs: { exec: 'flow', enabled: 'bool', ...(DICE_KINDS.includes(kind) ? { dice: 'dice' } : {}) }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
     };
   }
   function actionDefaults(kind) {
@@ -70,8 +83,9 @@
   }
   // Категории меню (порядок показа). Узел попадает в первую подходящую категорию.
   const CATEGORIES = [
-    { id: 'data', title: 'Данные', match: type => type.startsWith('data.') },
+    { id: 'data', title: 'Данные', match: type => type.startsWith('data.') || type === 'dice.combine' },
     { id: 'conditions', title: 'Условия', match: type => type.startsWith('condition.') },
+    { id: 'logic', title: 'Логика', match: type => type.startsWith('logic.') },
     { id: 'flow', title: 'Поток управления', match: type => type.startsWith('flow.') || type === 'action.program' },
     { id: 'combat', title: 'Бой', match: type => ['action.attack', 'action.damage', 'action.heal', 'action.temp_hp', 'action.roll'].includes(type) },
     { id: 'effects', title: 'Эффекты', match: type => ['action.condition', 'action.adjust', 'action.grant_item', 'action.passive'].includes(type) },

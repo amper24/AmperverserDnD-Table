@@ -13,6 +13,10 @@ const ABILITIES: &[&str] = &["str", "dex", "con", "int", "wis", "cha"];
 // Стили кнопок действия (параметр style узла «Начало действия»); совпадает с BUTTON_STYLES в node-params-form.js.
 const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage", "item", "defense"];
 const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "require", "manual", "passive"];
+// Действия с костью: их вход «dice» принимает кость проводом (как в static/node-registry.js DICE_KINDS).
+const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
+// Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
+const SKILL_IDS: &[&str] = &["acrobatics", "animal", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight", "stealth", "survival"];
 const SOCKET_TYPES: &[&str] = &["flow", "bool", "number", "dice", "ability", "text", "list", "table", "choice", "effect"];
 
 type Ports = (HashMap<String, String>, HashMap<String, String>);
@@ -24,6 +28,11 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
         "data.ability" => { outputs.insert("value".into(), "ability".into()); }
         "data.table" => { outputs.insert("value".into(), "table".into()); }
+        "data.stat" => { outputs.insert("value".into(), "dice".into()); }
+        "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
+        "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.not" => { inputs.insert("a".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "data.choice" => { outputs.insert("value".into(), "choice".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
         "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
@@ -41,7 +50,10 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
-        x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => { inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into()); }
+        x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => {
+            inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into());
+            if DICE_ACTIONS.contains(&&x[7..]) { inputs.insert("dice".into(), "dice".into()); }
+        }
         "group.instance" => {
             let id = params["group_id"].as_str().unwrap_or("");
             if let Some(g) = groups.iter().find(|g| g["id"] == id) {
@@ -107,6 +119,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         }
         "condition.subclass" if !valid_id(&p["id"], 100) => return Err(bad("Укажите ID подкласса в условии.")),
         "condition.choice" if !valid_id(&p["id"], 100) || p.get("value").is_none() => return Err(bad("Укажите ID группы и сравниваемый выбор.")),
+        "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
+        "condition.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
@@ -194,7 +208,8 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
         if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") { problems.push("Условие попадания подключается только ко входу «Если».".to_string()); continue; }
         let key = format!("{target}:{in_socket}");
-        if !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
+        // В конец («Конец») может прийти несколько проводов; у остальных входов — один.
+        if to_node["type"] != "flow.end" && !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
         let edge_key = format!("{source}:{out_socket}>{target}:{in_socket}");
         if !edge_ids.insert(edge_key) { problems.push("Повторяющийся провод.".to_string()); continue; }
         adjacency.get_mut(source).unwrap().push(target.to_string()); *indegree.get_mut(target).unwrap() += 1;
@@ -240,8 +255,8 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "flow.if", "flow.end",
+    "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
@@ -402,9 +417,51 @@ fn expand_graph(graph: &Value, groups: &[Value]) -> (Vec<Value>, Vec<Value>) {
     (nodes, links)
 }
 
-fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, context: &Value) -> Option<Value> {
+// Характеристика / навык: bonus — модификатор (навык — с владением), score — показатель (навык — пассивное 10 + бонус).
+// Формулы те же, что в statDice (static/mechanics-graph.js); переменные *_score считает inventory::resolve.
+fn stat_dice(params: &Value) -> Value {
+    let id = params["id"].as_str().unwrap_or("");
+    let score = params["mode"].as_str() == Some("score");
+    let term = if ABILITIES.contains(&id) { if score { format!("@{id}_score") } else { format!("@{id}") } } else if score { format!("10+@{id}") } else { format!("@{id}") };
+    json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": term})
+}
+// Текст формулы кости: как diceTerm в static/mechanics-graph.js.
+fn dice_term(d: &Value) -> Option<String> {
+    if let Some(s) = d["advanced"].as_str().filter(|s| !s.is_empty()) { return Some(s.to_string()); }
+    let count = json_integer(&d["count"])?; let sides = json_integer(&d["sides"])?;
+    let bonus = json_integer(&d["bonus"]).unwrap_or(0); let stat = d["stat"].as_str().unwrap_or("");
+    Some(format!("{}{}{:+}{}", if count > 0 { count.to_string() } else { "0".into() }, if count > 0 { format!("d{sides}") } else { String::new() }, bonus, if stat.is_empty() { String::new() } else { format!("+@{stat}") }))
+}
+fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<bool> {
+    graph_input_value(node, socket, incoming, nodes, context, None).and_then(|value| value.as_bool())
+}
+fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value) -> Option<Value> {
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
+        "data.stat" => Some(stat_dice(params)),
+        "dice.combine" => {
+            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None)?)?;
+            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None)?)?;
+            Some(json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": format!("{a}+{b}")}))
+        }
+        "condition.compare" => {
+            let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
+            let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
+            Some(json!(result))
+        }
+        // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
+        "logic.and" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+            (Some(false), _) | (_, Some(false)) => Some(json!(false)),
+            (Some(true), Some(true)) => Some(json!(true)),
+            _ => None,
+        },
+        "logic.or" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+            (Some(true), _) | (_, Some(true)) => Some(json!(true)),
+            (Some(false), Some(false)) => Some(json!(false)),
+            _ => None,
+        },
+        "logic.not" => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
         kind if kind.starts_with("data.") => params.get("value").cloned(),
         "condition.edition" => {
             let edition = context.get("edition")?.as_str()?;
@@ -425,7 +482,7 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, cont
 }
 fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>) -> Option<Value> {
     let key = (node["id"].as_str().unwrap_or("").to_string(), socket.to_string());
-    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, context) } else { fallback }
+    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context) } else { fallback }
 }
 pub fn to_v1(mechanics: &Value) -> Value { to_v1_with_context(mechanics, &Value::Null) }
 pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
@@ -471,6 +528,8 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             if !ACTIONS.contains(&kind) { continue; }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
             if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
+            // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
+            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None) { block.insert("dice".into(), value); }
             let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned());
             if enabled.as_ref().is_some_and(|value| value == &json!(false)) {
                 let key = (node_id.clone(), "exec".to_string());

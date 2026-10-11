@@ -32,7 +32,11 @@
     'rule.ability_bonus': { ability: ABILS },
     'rule.spell_list': { mode: SPELL_MODES },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
+    'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
   };
+  // Список характеристик и навыков для узла «Характеристика / навык»: навыки берутся из набора SKILLS (common.js).
+  const statIdOptions = () => [...ABILS, ...(window.SKILLS || []).map(([value, label]) => ({ value, label: `${label} (навык)` }))];
   // Служебные идентификаторы: видны, но не редактируются вручную.
   const READ_ONLY = new Set(['block_id', 'program_id']);
   // Поле «Когда» у действий больше не редактируется: условие задаёт узел condition.hit через «Если».
@@ -205,7 +209,7 @@
     getAt, setAt, removeAt, emptyLike, isMap, LABELS, ENUMS, TYPE_ENUMS,
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
-      const enums = TYPE_ENUMS[node?.type] || {};
+      const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
       return mount(node?.params || {}, { ...options, enums, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
     },
     // Редактор произвольного значения (например, выборы для предпросмотра).

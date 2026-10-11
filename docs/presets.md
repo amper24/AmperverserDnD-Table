@@ -9,6 +9,7 @@
 |---|---|---|
 | `static/presets/index.json` | — | список встроенных наборов (`{"sets": ["graph-starters.json", ...]}`) |
 | `static/presets/graph-starters.json` | `graph_starter` | готовые графы для пустого редактора |
+| — (пользовательский слой) | `graph_group` | группы нод, сохранённые из редактора графа (вход/выход, узлы, связи) |
 | `static/presets/item-presets.json` | `item_preset` | основы «Что создаём?» для предмета |
 | `static/presets/spell-presets.json` | `spell_preset` | основы «Что создаём?» для заклинания |
 | `static/presets/class-progression-2014.json`, `…-2024.json` | `class_progression` | таблица развития каждого класса (ключ — slug) |

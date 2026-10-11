@@ -1633,3 +1633,5 @@ body.lu-open { overflow: hidden; }
 /* Полоса шаблонов графов (вставка, сохранение и удаление своих шаблонов) */
 .node-template-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
 .node-template-bar select, .node-template-bar input { min-width: 0; max-width: 260px; }
+
+.node-group-item{display:inline-flex;gap:3px;align-items:center}
