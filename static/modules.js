@@ -515,6 +515,8 @@ window.Modules = (function () {
     }
     // Варианты выбора «либо / либо»: игрок решает при создании персонажа (CharacterBuilder).
     if (['race', 'class', 'background'].includes(category) && window.CharacterBuilder?.choiceEditor) simple.append(window.CharacterBuilder.choiceEditor(d));
+    // Связь с наборами данных: раса, класс, черта, состояние — правила выбираются или создаются здесь же.
+    if (window.PresetsEditor?.LINKS?.[category]) simple.append(window.PresetsEditor.linkPicker(category, d, { getName: () => state.name }));
     simple.append(Mechanics.editor(d, {category}));
     return modal(entry ? 'Редактировать' : 'Новая запись', simple, [{label:'Сохранить', cls:'primary', fn:()=>{
       if (NO_TOKEN) delete d.token_asset_id;

@@ -205,7 +205,7 @@
     const file = el('input', { type: 'file', accept: '.json,application/json', onchange: async e => { const f = e.target.files?.[0]; if (f) text.value = await f.text(); } });
     const content = el('div', {},
       el('p', { class: 'muted small' }, 'Набор — JSON. Встроенные наборы только читаются; свой набор хранится в этом браузере и подключается сразу.'),
-      list, el('h3', {}, 'Импорт'), file, text);
+      list, window.PresetsEditor?.elementsPanel?.() || null, el('h3', {}, 'Импорт'), file, text);
     return modal('Наборы данных', content, [{ label: 'Импортировать', cls: 'primary', fn: () => {
       try {
         const ids = importUser(text.value);
@@ -215,11 +215,50 @@
     } }], { wide: true });
   }
 
+  // ---------- Свои элементы наборов ----------
+  // Свой элемент хранится в пользовательском наборе user.<вид>[.<редакция>]. Элемент с тем же id перекрывает встроенный.
+  const needsEdition = kind => Boolean(KINDS[kind]?.needsEdition);
+  const ownSetId = (kind, edition) => 'user.' + kind + (needsEdition(kind) ? '.' + edition : '');
+  function upsertUserItem(kind, item, edition) {
+    if (!KINDS[kind]) throw new Error(`неизвестный вид «${kind}»`);
+    const sid = ownSetId(kind, edition);
+    const existing = state.user.find(s => s.id === sid);
+    const set = existing ? JSON.parse(JSON.stringify(existing))
+      : { kind, id: sid, name: 'Мои элементы: ' + kind + (needsEdition(kind) ? ' ' + edition : ''), items: [], ...(needsEdition(kind) ? { edition: String(edition) } : {}) };
+    set.items = set.items.filter(i => i.id !== item.id).concat([JSON.parse(JSON.stringify(item))]);
+    checkSet(set);
+    state.user = state.user.filter(s => s.id !== sid).concat([set]);
+    saveUser();
+    changed();
+    return item.id;
+  }
+  function removeUserItem(kind, id, edition) {
+    const sid = ownSetId(kind, edition);
+    state.user = state.user.map(s => s.id === sid ? { ...s, items: s.items.filter(i => i.id !== id) } : s).filter(s => s.id !== sid || s.items.length);
+    saveUser();
+    changed();
+  }
+  // Элементы вида со служебными полями: source — 'ваш' или 'встроенный', edition и setId — из набора.
+  function itemsOfKind(kind, edition) {
+    const own = new Set(state.user.map(s => s.id));
+    const byId = new Map();
+    for (const s of sets()) {
+      if (s.kind !== kind) continue;
+      if (edition && s.edition && String(s.edition) !== String(edition)) continue;
+      for (const item of s.items) byId.set(item.id, { ...item, source: own.has(s.id) ? 'ваш' : 'встроенный', edition: s.edition || '', setId: s.id });
+    }
+    return [...byId.values()];
+  }
+  function ownItemOf(kind, id, edition) {
+    return state.user.find(s => s.id === ownSetId(kind, edition))?.items.find(i => i.id === id) || null;
+  }
+
   const api = {
     KINDS: Object.keys(KINDS),
     ready,
     load, sets, items, item, classProgression, multiclassSlots, classRules, liveList,
     userSets, importUser, removeUser, problemOf, openManager,
+    upsertUserItem, removeUserItem, itemsOfKind, ownItemOf,
     get loaded() { return state.loaded; },
   };
 
