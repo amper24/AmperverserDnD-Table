@@ -106,8 +106,7 @@ const WAND = {
     assert.deepEqual(await pos('spd'), before, 'правка значения не сдвигает узел');
     assert.equal((await graph()).links.length, 1, 'провод не потерян после правки');
     assert.equal(await wireCount(), wiresBefore, 'провод на холсте остался');
-    // Боковая панель показывает то же значение: поле не единственное место ввода, но и не расходится с картой.
-    assert.equal(await page.locator('.node-properties input[type="number"]').first().inputValue(), '35', 'панель параметров синхронна');
+    assert.equal(await page.locator('.node-properties').count(), 0, 'боковой панели нет: параметры редактируются на карточке');
 
     // Текстовый параметр тоже меняется на карточке (строка показывается в инлайн-форме).
     await graphNode('num').locator('.node-inline input[type="number"]').fill('7');

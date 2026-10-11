@@ -586,6 +586,8 @@
     const outType = socketMap(from, groups).outputs?.[link.from.socket], inType = socketMap(to, groups).inputs?.[link.to.socket];
     if (!outType || !inType) return 'Сокет не найден.';
     if (!NodeRegistry.sameType(outType, inType)) return `Типы не совпадают: ${outType} → ${inType}.`;
+    const owners = actionOwners(graph);
+    if (owners.get(from.id) !== owners.get(to.id)) return 'Соединять можно только узлы одного действия.';
     const rest = (graph.links || []).filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
     if (wouldCycle(rest, link.from.node, link.to.node)) return 'Связь создаёт цикл.';
     // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
@@ -599,6 +601,34 @@
   const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
   const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
+  // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).
+  // Узел принадлежит действию по полю action (его ставит редактор). У старых графов поля нет:
+  // узел относится к действию, с которым связан проводами; если связей нет — к первому действию.
+  function actionOwners(graph) {
+    const nodes = graph.nodes || [], programs = nodes.filter(n => n.type === 'action.program');
+    const programIds = new Set(programs.map(p => p.id)), owner = new Map();
+    for (const p of programs) owner.set(p.id, p.id);
+    for (const n of nodes) if (!owner.has(n.id) && programIds.has(n.action)) owner.set(n.id, n.action);
+    const adjacency = new Map();
+    for (const l of graph.links || []) {
+      if (!adjacency.has(l.from.node)) adjacency.set(l.from.node, []);
+      if (!adjacency.has(l.to.node)) adjacency.set(l.to.node, []);
+      adjacency.get(l.from.node).push(l.to.node); adjacency.get(l.to.node).push(l.from.node);
+    }
+    for (const p of programs) {
+      const stack = [p.id];
+      while (stack.length) {
+        const id = stack.pop();
+        for (const next of adjacency.get(id) || []) {
+          if (owner.has(next) || programIds.has(next)) continue;
+          owner.set(next, p.id); stack.push(next);
+        }
+      }
+    }
+    const first = programs[0]?.id || '';
+    for (const n of nodes) if (!owner.has(n.id)) owner.set(n.id, first);
+    return owner;
+  }
   function graphEditor(doc, options = {}) {
     const category = options.category || 'feature';
     const seed = doc.mechanics || Base.migrate(doc, category);
@@ -617,6 +647,8 @@
     root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
+    // Активное действие и id узлов, которые сейчас показаны на холсте (пересчитываются в render).
+    let activeAction = '', shownIds = new Set();
     const snapshot = () => JSON.stringify(graph);
     function checkpoint() {
       const state = snapshot();
@@ -631,36 +663,43 @@
     }
     function addNode(type, params = null, at = null) {
       if (!NODE_DEFS[type]) return;
+      if (type === 'action.program') return createAction();
       const id = mkId('node'), count = graph.nodes.length;
-      graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 } });
+      graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 }, action: activeAction });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
     }
     // Копии выделенных узлов со сдвигом; связи не копируются. block_id действия создаётся заново (уникален в графе).
     function duplicateNodes(ids) {
-      const source = graph.nodes.filter(n => ids.includes(n.id));
+      const source = graph.nodes.filter(n => ids.includes(n.id) && n.type !== 'action.program');
       if (!source.length) return;
       const copies = source.map(n => {
         const params = clone(n.params || {});
         if (actionType(n.type)) params.block_id = mkId('b');
-        return { id: mkId('node'), type: n.type, params, position: { x: n.position.x + 40, y: n.position.y + 40 } };
+        return { id: mkId('node'), type: n.type, params, position: { x: n.position.x + 40, y: n.position.y + 40 }, action: activeAction };
       });
       graph.nodes.push(...copies);
       checkpoint(); selected = new Set(copies.map(n => n.id)); activeNode = copies[0].id; render();
     }
+    // Пустое действие: только «Начало» и «Конец» (и выключенные блоки), тогда можно вставить готовый граф.
+    function isBlankAction() {
+      if (!activeAction) return false;
+      const owners = actionOwners(graph);
+      return graph.nodes.every(n => owners.get(n.id) !== activeAction || n.type === 'action.program' || n.type === 'flow.end' || (n.type === 'action.consume' && n.params?.enabled === false));
+    }
     // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
     function insertStarter(starter) {
-      if (!isBlankGraph(graph)) return;
+      if (!isBlankAction()) return;
       const ids = new Map(), origin = { x: 60, y: 70 };
       for (const n of starter.nodes) {
         const id = mkId('node'); ids.set(n.key, id);
         // Значения по умолчанию реестра + отличия из пресета; block_id действия создаётся заново (уникален в графе).
         const params = { ...clone(NODE_DEFS[n.type]?.defaults || {}), ...clone(n.params || {}) };
         if (actionType(n.type)) params.block_id = mkId('b');
-        graph.nodes.push({ id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y } });
+        graph.nodes.push({ id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y }, action: activeAction });
       }
       for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
       // Вариант «с подключением»: первый узел без входящих связей пресета встаёт после программы «Использовать».
-      const program = graph.nodes.find(n => n.type === 'action.program');
+      const program = nodeById(activeAction);
       const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
       if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
@@ -791,6 +830,7 @@
     }
     function makeGroup() {
       const ids = new Set(selected); if (!ids.size) { status = 'Выберите узлы, которые нужно сгруппировать.'; render(); return; }
+      if (graph.nodes.some(n => ids.has(n.id) && (n.type === 'action.program' || n.type === 'flow.end'))) { status = 'Начало и конец действия нельзя поместить в группу.'; render(); return; }
       const members = graph.nodes.filter(n => ids.has(n.id));
       const incoming = graph.links.filter(l => !ids.has(l.from.node) && ids.has(l.to.node));
       const outgoing = graph.links.filter(l => ids.has(l.from.node) && !ids.has(l.to.node));
@@ -823,17 +863,44 @@
       graph.nodes = graph.nodes.filter(n => !ids.has(n.id));
       graph.links = graph.links.filter(l => !ids.has(l.from.node) && !ids.has(l.to.node));
       graph.links.push(...outerLinks);
-      graph.nodes.push({ id: instanceId, type: 'group.instance', params: { group_id: groupId }, position: { x, y } });
+      graph.nodes.push({ id: instanceId, type: 'group.instance', params: { group_id: groupId }, position: { x, y }, action: activeAction });
       graph.frames.forEach(frame => frame.nodes = frame.nodes.filter(id => !ids.has(id)));
       checkpoint(); selected.clear(); activeNode = instanceId; selected.add(instanceId); status = 'Группа создана с типизированными входами и выходами. Её можно повторно вставить из списка групп.'; render();
     }
     function insertGroup(group) {
-      const id = mkId('instance'); graph.nodes.push({ id, type: 'group.instance', params: { group_id: group.id }, position: { x: 80 + graph.nodes.length * 28, y: 80 + graph.nodes.length * 24 } });
+      const id = mkId('instance'); graph.nodes.push({ id, type: 'group.instance', params: { group_id: group.id }, position: { x: 80 + graph.nodes.length * 28, y: 80 + graph.nodes.length * 24 }, action: activeAction });
       checkpoint(); activeNode = id; selected = new Set([id]); status = ''; render();
     }
     function moveNode(node, x, y) { node.position ||= { x: 0, y: 0 }; node.position.x = Math.max(-100000, Math.min(100000, x)); node.position.y = Math.max(-100000, Math.min(100000, y)); }
     function nodeById(id) { return graph.nodes.find(n => n.id === id); }
+    // Действие: «Начало» → «Конец». Новое действие — отдельная цепочка, связей с другими действиями нет.
+    function createAction() {
+      const count = graph.nodes.filter(n => n.type === 'action.program').length;
+      const start = { id: mkId('node'), type: 'action.program', params: { program_id: mkId('program'), name: `Действие ${count + 1}`, trigger: 'use' }, position: { x: 60, y: 70 } };
+      start.action = start.id;
+      const end = { id: mkId('node'), type: 'flow.end', params: {}, position: { x: 340, y: 70 }, action: start.id };
+      graph.nodes.push(start, end);
+      graph.links.push({ from: { node: start.id, socket: 'exec' }, to: { node: end.id, socket: 'exec' } });
+      activeAction = start.id; selected = new Set([start.id]); activeNode = start.id; status = '';
+      checkpoint(); render();
+    }
+    function switchAction(programId) {
+      activeAction = programId; selected = new Set(); activeNode = ''; status = '';
+      view.x = 40; view.y = 40; view.k = 1; render();
+    }
+    function deleteAction(programId) {
+      if (typeof window.confirm === 'function' && !window.confirm('Удалить действие вместе с его узлами?')) return;
+      const owners = actionOwners(graph), drop = new Set(graph.nodes.filter(n => owners.get(n.id) === programId).map(n => n.id));
+      graph.nodes = graph.nodes.filter(n => !drop.has(n.id));
+      graph.links = graph.links.filter(l => !drop.has(l.from.node) && !drop.has(l.to.node));
+      graph.frames.forEach(f => f.nodes = f.nodes.filter(n => !drop.has(n)));
+      activeAction = ''; selected = new Set(); activeNode = ''; status = '';
+      checkpoint(); render();
+    }
     function deleteNodes(ids) {
+      // Начало действия удаляется только вместе с действием (кнопка «Удалить действие»).
+      if (ids.some(id => nodeById(id)?.type === 'action.program')) { status = 'Начало действия удаляется кнопкой «Удалить действие».'; ids = ids.filter(id => nodeById(id)?.type !== 'action.program'); }
+      if (!ids.length) { render(); return; }
       const drop = new Set(ids);
       graph.nodes = graph.nodes.filter(n => !drop.has(n.id));
       graph.links = graph.links.filter(l => !drop.has(l.from.node) && !drop.has(l.to.node));
@@ -854,7 +921,7 @@
     // Значение записывается в граф на change (уход из поля или Enter), как и в боковой панели.
     function inlineParams(node) {
       const groups = graph.groups.map(item => ({ value: item.id, label: item.name }));
-      const form = NodeForm.nodeParams(node, { inline: true, groups, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      const form = NodeForm.nodeParams(node, { inline: false, groups, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
       return el('div', { class: 'node-inline', 'data-inline-params': node.id, onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, form);
     }
     function nodeCard(node) {
@@ -883,7 +950,7 @@
           onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
-        el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), sockets);
+        el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), groupExtras(node), nodeRaw(node), sockets);
       return card;
     }
     // Точка провода в мировых координатах: центр точки сокета из DOM (зум и панорама учитываются),
@@ -903,7 +970,7 @@
       svg.setAttribute('class', 'node-wires'); svg.setAttribute('aria-hidden', 'true');
       // Кривая Безье: отступ пропорционален расстоянию, поэтому провод не «петляет» у близких узлов.
       const curve = (x1, y1, x2, y2) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`; };
-      for (const link of graph.links) {
+      for (const link of graph.links.filter(l => shownIds.has(l.from.node) && shownIds.has(l.to.node))) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
         const type = portType(a, 'outputs', link.from.socket) || 'any';
         const from = socketAnchor(a.id, 'outputs', link.from.socket), to = socketAnchor(b.id, 'inputs', link.to.socket);
@@ -929,20 +996,23 @@
       }
       canvas.appendChild(svg);
     }
-    function renderProperties() {
-      const node = nodeById(activeNode); if (!node) return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('p', { class: 'muted small' }, 'Выберите узел на поле.'));
-      const rawParams = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'JSON параметров узла', onfocus: () => { rawParams.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
-        try { const next = JSON.parse(rawParams.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
-        catch (e) { status = e.message; if (root._statusNode) root._statusNode.textContent = status; }
-      } }, JSON.stringify(node.params || {}, null, 2));
-      const groupOptions = graph.groups.map(item => ({ value: item.id, label: item.name }));
-      const form = NodeForm.nodeParams(node, { groups: groupOptions, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
-      const raw = el('details', { class: 'node-raw' }, el('summary', {}, 'Для разработчиков · JSON'), rawParams);
-      const def = NODE_DEFS[node.type], group = node.type === 'group.instance' ? graph.groups.find(item => item.id === node.params?.group_id) : null;
-      const groupDetails = group ? el('div', { class: 'node-group-details' }, field('Имя группы', el('input', { value: group.name, onchange: e => { group.name = String(e.target.value).slice(0, 120) || group.name; checkpoint(); render(); } })),
+    // Группа на карточке: имя и список входов/выходов (остальные параметры — в полях карточки).
+    function groupExtras(node) {
+      const group = node.type === 'group.instance' ? graph.groups.find(item => item.id === node.params?.group_id) : null;
+      if (!group) return null;
+      const stop = { onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() };
+      return el('div', { class: 'node-group-details', ...stop },
+        field('Имя группы', el('input', { value: group.name, onchange: e => { group.name = String(e.target.value).slice(0, 120) || group.name; checkpoint(); render(); } })),
         el('p', { class: 'muted small' }, `Входы: ${(group.inputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`),
-        el('p', { class: 'muted small' }, `Выходы: ${(group.outputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`)) : null;
-      return el('aside', { class: 'node-properties' }, el('h3', {}, 'Параметры узла'), el('b', {}, def.label), el('p', { class: 'muted small' }, node.type), groupDetails, el('div', { class: 'node-field' }, el('span', {}, 'Параметры'), form), raw, el('button', { class: 'small danger', onclick: () => { graph.nodes = graph.nodes.filter(n => n.id !== node.id); graph.links = graph.links.filter(l => l.from.node !== node.id && l.to.node !== node.id); activeNode = ''; selected.delete(node.id); checkpoint(); render(); } }, 'Удалить узел'));
+        el('p', { class: 'muted small' }, `Выходы: ${(group.outputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`));
+    }
+    // JSON параметров для разработчиков — свёрнут внизу карточки.
+    function nodeRaw(node) {
+      const raw = el('textarea', { class: 'node-params', spellcheck: 'false', 'aria-label': 'JSON параметров узла', onfocus: () => { raw.value = JSON.stringify(node.params || {}, null, 2); }, onchange: () => {
+        try { const next = JSON.parse(raw.value); if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('Параметры должны быть JSON-объектом.'); node.params = next; checkpoint(); status = ''; render(); }
+        catch (e) { status = e.message; render(); }
+      } }, JSON.stringify(node.params || {}, null, 2));
+      return el('details', { class: 'node-raw', onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, el('summary', {}, 'JSON'), raw);
     }
     function renderPreview() {
       const out = el('pre', { class: 'node-preview-output' });
@@ -958,6 +1028,18 @@
       // Редактор переназначает массивы графа (links, nodes); записываем актуальный граф в документ до каждого показа.
       doc.mechanics.graph = graph;
       root.replaceChildren();
+      // Показываем одно действие: его узлы, его связи и кнопки переключения между действиями.
+      const starts = graph.nodes.filter(n => n.type === 'action.program');
+      if (!starts.some(n => n.id === activeAction)) activeAction = starts[0]?.id || '';
+      const owners = actionOwners(graph);
+      const shown = graph.nodes.filter(n => owners.get(n.id) === activeAction);
+      shownIds = new Set(shown.map(n => n.id));
+      const actionBar = el('div', { class: 'node-actions', role: 'tablist', 'aria-label': 'Действия' }, ...[
+        ...starts.map(n => el('button', { class: 'small node-action-tab' + (n.id === activeAction ? ' active' : ''), role: 'tab', 'aria-selected': n.id === activeAction ? 'true' : 'false', 'data-action-tab': n.id, onclick: () => switchAction(n.id) }, n.params?.name || 'Действие')),
+        el('button', { class: 'small', 'data-action': 'new-action', onclick: createAction }, '+ Действие'),
+        activeAction ? el('button', { class: 'small danger', 'data-action': 'delete-action', onclick: () => deleteAction(activeAction) }, 'Удалить действие') : null,
+        starts.length ? null : el('span', { class: 'muted small' }, 'Действий пока нет. У каждого действия есть начало и конец, блоки ставятся между ними.'),
+      ].filter(Boolean));
       const searchBox = el('input', { class: 'node-search', value: search, placeholder: 'Найти узел…  Shift+A', 'aria-label': 'Поиск узла', oninput: e => { search = e.target.value; render(); root.querySelector?.('.node-search')?.focus?.(); } });
       const query = search.toLocaleLowerCase();
       const palette = Object.entries(NODE_DEFS).filter(([type, def]) => !['group.input', 'group.output'].includes(type) && (!query || `${type} ${def.label} ${def.group}`.toLocaleLowerCase().includes(query)));
@@ -968,17 +1050,17 @@
         el('button', { class: 'small', 'data-action': 'presets', onclick: () => window.Presets?.openManager() }, 'Наборы данных…'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
-      const starters = !isBlankGraph(graph) || !graphStarters().length ? null : el('div', { class: 'node-starters' },
+      const starters = !isBlankAction() || !graphStarters().length ? null : el('div', { class: 'node-starters' },
         el('b', {}, 'Начните с готового графа'),
         el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
         ...graphStarters().map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
       const frames = graph.frames.map(f => {
-        const members = f.nodes.map(nodeById).filter(Boolean); if (!members.length) return null;
+        const members = f.nodes.map(nodeById).filter(n => n && shownIds.has(n.id)); if (!members.length) return null;
         const left = Math.min(...members.map(n => n.position?.x || 0)) - 16, top = Math.min(...members.map(n => n.position?.y || 0)) - 34;
         return el('div', { class: 'node-frame', style: `left:${left}px;top:${top}px;width:${Math.max(230, ...members.map(n => (n.position?.x || 0) - left + 230))}px;height:${Math.max(100, ...members.map(n => (n.position?.y || 0) - top + 120))}px` }, el('b', {}, f.title));
       });
-      const world = el('div', { class: 'node-world', style: `transform: translate(${view.x}px, ${view.y}px) scale(${view.k})` }, ...frames, ...graph.nodes.map(nodeCard));
+      const world = el('div', { class: 'node-world', style: `transform: translate(${view.x}px, ${view.y}px) scale(${view.k})` }, ...frames, ...shown.map(nodeCard));
       const canvas = el('div', { class: 'node-canvas', 'data-zoom': view.k.toFixed(2),
         onwheel: e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1); },
         onpointerdown: e => {
@@ -988,13 +1070,12 @@
         },
         onauxclick: e => e.preventDefault(),
         oncontextmenu: e => { e.preventDefault(); const at = worldPoint(e.clientX, e.clientY); openMenu(e.clientX, e.clientY, { searchable: true, categories: true, sections: q => window.NodeMenu.addSections(q), onPick: r => addNode(r.type, null, { x: Math.round(at.x), y: Math.round(at.y) }) }); } }, world);
-      const inspector = renderProperties();
       // Незавершённость графа (например, «Если» без условия) показываем сразу, но не блокируем связи:
       // блокируют только ошибки, которые создаёт сама новая связь (см. connectionError). Полная проверка — при сохранении.
       const pending = graphProblems(graph, graph.groups || []);
       const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
       // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
-      root.append(...[toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas, inspector), statusLine, renderPreview()].filter(Boolean));
+      root.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), statusLine, renderPreview()].filter(Boolean));
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
       // Keep status reference in a closure-safe property for JSON validation errors.
@@ -1069,6 +1150,8 @@
     preview(mechanics, ctx) { return oldPreview(v2ToV1(mechanics, runtimeContext(ctx)), ctx); },
     buttons(doc, options = {}) { return oldButtons({ ...doc, mechanics: v2ToV1(doc.mechanics, runtimeContext(options.context)) }, options); },
     editor: graphEditor,
+    actionOwners,
+    connectionError,
   };
   window.Mechanics = API;
 })();

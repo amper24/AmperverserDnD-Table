@@ -37,6 +37,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hp_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
         x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => { inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into()); }
         "group.instance" => {
@@ -233,7 +234,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "flow.if",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
