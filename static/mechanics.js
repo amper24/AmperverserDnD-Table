@@ -154,24 +154,9 @@ window.Mechanics = (() => {
     for(const p of programsOf(doc.mechanics)) {
       if(p.trigger!=='use') continue;
       const blocks=(p.blocks||[]).filter(b=>b.enabled!==false);
-      const program=el('button',{class:'act-btn',disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},el('span',{},p.name),el('small',{},` ${blocks.length} блоков`));
-      // Атака с уроном показывается как на листах: попадание и урон — две отдельные кнопки.
-      const atk=blocks.find(b=>b.kind==='attack'), dmg=blocks.find(b=>b.kind==='damage');
-      if(atk&&dmg&&window.Modules?.attackRow){
-        const row=window.Modules.attackRow(p.name,
-          {expr:expression(atk.dice),dtype:atk.damage_type,kind:'attack',name:atk.name||p.name,index:blocks.indexOf(atk)},
-          {expr:expression(dmg.dice),dtype:dmg.damage_type,kind:'damage',name:dmg.name||p.name,index:blocks.indexOf(dmg)},
-          window.SHEET_CTX||{},'',{disabled:options.disabled,note:options.onUse?'Сотворение заклинания сначала оплачивает расход':'Отдельный бросок: без расхода и эффектов',onUse:options.onUse});
-        // Пара «атака + урон» без условия — только два отдельных броска. Ветвление по попаданию (when hit/miss) — это цепочка: её запускает кнопка программы.
-        const gated = blocks.some(b=>b.when==='hit'||b.when==='miss');
-        const pureAttackDamage = blocks.length === 2 && !gated && blocks.some(b=>b.kind==='attack') && blocks.some(b=>b.kind==='damage');
-        if(pureAttackDamage) root.append(el('div',{class:'actions-row'},row));
-        else {
-          program.classList.add('all');
-          program.title='Вся цепочка целиком: расход, эффекты и удвоение костей при крите. '+programSummary(p);
-          root.append(el('div',{class:'actions-row'},row,program));
-        }
-      } else root.append(program);
+      const st=window.BUTTON_STYLES?.[p.style]||window.BUTTON_STYLES?.default||{icon:'dice'};
+      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},window.icon?.(st.icon,13),el('span',{},p.name),el('small',{},` ${blocks.length} блоков`));
+      root.append(program);
     }
     return root;
   }

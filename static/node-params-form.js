@@ -15,11 +15,23 @@
   const ENUMS = { ability: ABILS, stat: [{ value: '', label: '—' }, ...ABILS] };
   // Ключ → список вариантов с множественным выбором.
   const ENUM_MULTI = { editions: EDITIONS };
+  // Стили кнопок действия: параметр style у узла «Начало действия». Иконка — из набора ICONS (common.js).
+  const BUTTON_STYLES = {
+    default: { label: 'Обычная', icon: 'dice' },
+    attack: { label: 'Атака', icon: 'sword' },
+    spell: { label: 'Заклинание', icon: 'star' },
+    heal: { label: 'Лечение', icon: 'heart' },
+    damage: { label: 'Урон', icon: 'zap' },
+    item: { label: 'Предмет', icon: 'flask' },
+    defense: { label: 'Защита', icon: 'shield' },
+  };
+  const BUTTON_STYLE_OPTIONS = Object.entries(BUTTON_STYLES).map(([value, s]) => ({ value, label: s.label }));
   // Поля, которые задают узел-тип (переопределяют общие ENUMS для конкретного типа узла).
   const TYPE_ENUMS = {
     'data.ability': { value: ABILS },
     'rule.ability_bonus': { ability: ABILS },
     'rule.spell_list': { mode: SPELL_MODES },
+    'action.program': { style: BUTTON_STYLE_OPTIONS },
   };
   // Служебные идентификаторы: видны, но не редактируются вручную.
   const READ_ONLY = new Set(['block_id', 'program_id']);
@@ -40,7 +52,7 @@
   // Ключи, у которых вложенный объект — это таблица «ключ → значение» (строки можно добавлять и удалять).
   const MAP_KEYS = new Set(['table', 'choices', 'by_level']);
   const LABELS = {
-    value: 'Значение', amount: 'Количество', ability: 'Характеристика', count: 'Количество', sides: 'Граней',
+    value: 'Значение', style: 'Стиль кнопки', amount: 'Количество', ability: 'Характеристика', count: 'Количество', sides: 'Граней',
     bonus: 'Бонус', stat: 'Модификатор', text: 'Текст', name: 'Название', min: 'Минимум', max: 'Максимум',
     editions: 'Редакции', id: 'ID', options: 'Варианты', spells: 'Заклинания', mode: 'Режим', table: 'Таблица',
     formula: 'Формула', field: 'Поле', kind: 'Тип', group_id: 'Группа', socket_id: 'Вход / выход', trigger: 'Запуск',
@@ -202,4 +214,5 @@
     },
   };
   window.NodeForm = API;
+  window.BUTTON_STYLES = BUTTON_STYLES;
 })();

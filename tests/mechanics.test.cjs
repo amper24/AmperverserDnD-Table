@@ -10,15 +10,18 @@ vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContex
 const srd=f=>loadSrd(f).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,mechanics:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));
 test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+0+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
-test('pure attack plus damage shows only hit and damage buttons; extra blocks keep the full-action button',()=>{
-  ctx.window.Modules={attackRow:(name,hit,damage)=>node('div',{class:'attack-row'},node('button',{},'Попадание'),node('button',{},'Урон'))};
+test('each use program is one button: attack and damage in one program are a single chain, not two buttons',()=>{
   ctx.window.SHEET_CTX={};
   const pair=[{id:'a',kind:'attack',dice:M.dice('d20+5')},{id:'d',kind:'damage',dice:M.dice('1d8+3')}];
   const buttons=root=>{const all=[];const visit=n=>{if(!n||typeof n!=='object')return;if(n.tag==='button')all.push(n);(n.children||[]).forEach(visit);};visit(root);return all;};
   const pure=M.buttons({mechanics:{programs:[{id:'p',name:'Удар',trigger:'use',blocks:pair}]}});
-  assert.equal(buttons(pure).length,2);
+  assert.equal(buttons(pure).length,1);
   const extended=M.buttons({mechanics:{programs:[{id:'p2',name:'Удар с расходом',trigger:'use',blocks:[{id:'c',kind:'consume'},...pair]}]}});
-  assert.equal(buttons(extended).length,3);
+  assert.equal(buttons(extended).length,1);
+  const two=M.buttons({mechanics:{programs:[{id:'a1',name:'Атака',trigger:'use',blocks:[pair[0]]},{id:'d1',name:'Урон',trigger:'use',blocks:[pair[1]]}]}});
+  assert.equal(buttons(two).length,2,'две программы — две кнопки');
+  const styled=M.buttons({mechanics:{programs:[{id:'s',name:'Огнь',trigger:'use',style:'spell',blocks:[pair[1]]}]}});
+  assert.match(buttons(styled)[0].attrs.class,/btn-style-spell/);
   const blocked=M.buttons({mechanics:{programs:[{id:'p3',name:'Potion',trigger:'use',blocks:[{id:'m',kind:'manual',text:'Use it.'}]}]}},{disabled:true});
   assert.equal(blocked.children[0].attrs.disabled,'','item state disables activation controls');
 });

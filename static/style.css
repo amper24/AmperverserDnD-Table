@@ -418,6 +418,14 @@ button.primary, .btn.primary { font-weight: 600; }
 
 /* ---- связки бросков (атака + урон) ---- */
 .act-btn.all { border-style: dashed; }
+/* Стили кнопок действий: параметр style узла «Начало действия» (см. BUTTON_STYLES). */
+.act-btn[class*="btn-style-"] { font-weight: 600; }
+.act-btn.btn-style-attack { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--panel2)); }
+.act-btn.btn-style-spell { border-color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 16%, var(--panel2)); }
+.act-btn.btn-style-heal { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, var(--panel2)); }
+.act-btn.btn-style-damage { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--panel2)); }
+.act-btn.btn-style-item { border-color: #d97706; background: color-mix(in srgb, #d97706 16%, var(--panel2)); }
+.act-btn.btn-style-defense { border-color: #0891b2; background: color-mix(in srgb, #0891b2 16%, var(--panel2)); }
 .action-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; margin-bottom: 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); }
 .action-row .row select { flex: 0 0 110px; } .action-row .row input { flex: 1; min-width: 60px; } .action-row .row button { flex: 0 0 auto; }
 .action-row .action-note { font-size: 12px; }
@@ -846,9 +854,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 700px) { .choices-editor .choice-option { flex-wrap: wrap; } }
 
 /* Атака как на листах D&D: название · попадание · урон */
-.attack-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; }
-.attack-row-name { font-size: 12px; font-weight: 600; min-width: 90px; }
-.attack-row .act-btn { padding: 4px 10px; }
 /* Галерея шаблонов блоков */
 .template-picker { min-height: 200px; }
 .template-picker > input { margin-bottom: 12px; }

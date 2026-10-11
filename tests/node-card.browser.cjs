@@ -123,10 +123,10 @@ const WAND = {
     // Проекция графа в программу (та же, что уходит на сервер по ссылке): атака, затем урон только при попадании.
     const program = await page.evaluate(wand => Mechanics.programsOf(wand.mechanics, { edition: '2014', level: 1 })[0], WAND);
     assert.deepEqual(program.blocks.map(b => [b.kind, b.when || 'always']), [['attack', 'always'], ['damage', 'hit']], 'цепочка: атака → урон при попадании');
-    // Кнопка всей цепочки (класс all): отдельных бросков «Попадание»/«Урон» для ветвления недостаточно.
-    await wandRow.locator('.act-btn.all').click();
+    // Одна программа — одна кнопка: цепочка с ветвлением по попаданию запускается целиком.
+    await wandRow.locator('.act-btn').click();
     await page.waitForTimeout(400);
-    assert.equal(await wandRow.locator('.act-btn.all').count(), 1, 'кнопка цепочки видна на листе');
+    assert.equal(await wandRow.locator('.act-btn').count(), 1, 'кнопка цепочки видна на листе');
     assert.equal(requests.length, 1, 'кнопка отправила одну операцию');
     const sent = requests[0];
     assert.equal(sent.op, 'program');

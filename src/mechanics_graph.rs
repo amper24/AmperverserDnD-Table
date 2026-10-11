@@ -10,6 +10,8 @@ fn json_integer(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| value.as_f64().filter(|number| number.is_finite() && number.fract() == 0.0 && *number >= i64::MIN as f64 && *number <= i64::MAX as f64).map(|number| number as i64))
 }
 const ABILITIES: &[&str] = &["str", "dex", "con", "int", "wis", "cha"];
+// Стили кнопок действия (параметр style узла «Начало действия»); совпадает с BUTTON_STYLES в node-params-form.js.
+const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage", "item", "defense"];
 const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "require", "manual", "passive"];
 const SOCKET_TYPES: &[&str] = &["flow", "bool", "number", "dice", "ability", "text", "list", "table", "choice", "effect"];
 
@@ -109,6 +111,11 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
                 return Err(bad("Программе нужны ID, название и допустимый триггер."));
+            }
+            if let Some(style) = p.get("style") {
+                if !BUTTON_STYLES.contains(&style.as_str().unwrap_or("")) {
+                    return Err(bad("Неизвестный стиль кнопки."));
+                }
             }
         }
         "group.instance" if !valid_id(&p["group_id"], 64) => return Err(bad("Узел группы требует ID группы.")),

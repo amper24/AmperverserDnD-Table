@@ -219,8 +219,6 @@ window.Modules = (function () {
     return b;
   }
 
-  /// Строка атаки в стиле листов D&D: название, кнопка попадания и кнопка урона.
-  /// hit / damage: { expr, dtype, kind, index? }; index нужен, если бросок идёт через onUse (инвентарь).
   // Правый клик по кнопке броска: обычный бросок, преимущество или помеха (как в листе).
   let activeModeMenu = null, modeMenuCleanup = null;
   function closeModeMenu() {
@@ -246,27 +244,6 @@ window.Modules = (function () {
     document.addEventListener('keydown', onKey, true);
     modeMenuCleanup = () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true); };
   }
-  function attackRow(name, hit, damage, ctx, prefix, options = {}) {
-    const row = el('div', { class: 'attack-row' });
-    const label = text => (prefix ? prefix + ': ' : '') + text;
-    const mk = (action, cls, caption) => {
-      const shown = ctx ? resolve(action.expr, ctx) : action.expr;
-      const fire = mode => {
-        if (options.onUse && action.index !== undefined) return options.onUse([action.index], mode);
-        roll(action.expr, label(action.name || caption), { ctx, kind: action.kind, ...mode });
-      };
-      return el('button', { class: 'act-btn ' + cls, disabled: options.disabled ? '' : null,
-        title: [shown, action.dtype, options.note, 'Alt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим'].filter(Boolean).join('\n'),
-        onclick: e => { e.stopPropagation(); fire(modeFromEvent(e)); },
-        oncontextmenu: e => openModeMenu(e, label(action.name || caption), fire) },
-        icon(cls === 'attack' ? 'target' : 'zap', 13), ' ', caption, el('small', {}, ' ' + shown));
-    };
-    if (name) row.append(el('span', { class: 'attack-row-name' }, name));
-    if (hit) row.append(mk(hit, 'attack', 'Попадание'));
-    if (damage) row.append(mk(damage, 'damage', 'Урон'));
-    return row;
-  }
-
   // ---------- карточка предмета / заклинания (общая для листа, чата, справочника) ----------
   /// Иконка предмета: элемент. it.icon — короткий текст (1–2 символа) поверх стандартной иконки типа.
   function itemIcon(it) {
@@ -283,32 +260,16 @@ window.Modules = (function () {
     if (doc.mechanics && window.Mechanics) return Mechanics.buttons(doc, { ...options, context: ctx });
     const row = el('div', { class: 'actions-row' });
     const usable = options.item ? Equipment.activeActions(doc) : (doc.actions || []).map((a, index) => ({ ...a, index }));
-    const rollable = usable.filter(a => a.roll), paired = new Set();
+    const rollable = usable.filter(a => a.roll);
     for (let i = 0; i < rollable.length; i++) {
-      if (paired.has(i)) continue;
       const a = rollable[i];
-      // Атака и её урон — одна строка: две кнопки, как на листах D&D.
-      const j = a.kind === 'attack' ? rollable.findIndex((b, k) => k > i && !paired.has(k) && b.kind === 'damage') : -1;
-      if (j >= 0) {
-        paired.add(i); paired.add(j);
-        const d = rollable[j];
-        const line = attackRow(a.name || d.name || doc.name,
-          { expr: a.roll, dtype: a.dtype, kind: 'attack', index: a.index, name: a.name },
-          { expr: d.roll, dtype: d.dtype, kind: 'damage', index: d.index, name: d.name }, ctx, prefix, options);
-        const fireAll = mode => { if (options.onUse) return options.onUse([a.index, d.index], mode); rollMulti([a, d], prefix || doc.name, { ctx, ...mode }); };
-        line.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Попадание и урон одной связкой: при критическом попадании кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим',
-          onclick: e => { e.stopPropagation(); fireAll(modeFromEvent(e)); },
-          oncontextmenu: e => openModeMenu(e, prefix || doc.name, fireAll) }, icon('dice', 13), ' Всё'));
-        row.append(line);
-        continue;
-      }
       const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
       const fireOne = mode => { if (options.onUse) return options.onUse([a.index], mode); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...mode }); };
       row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip.replace('Shift — только мастеру', 'Shift — только мастеру, правая кнопка — выбрать режим'), onclick: (e) => { e.stopPropagation(); fireOne(modeFromEvent(e)); },
         oncontextmenu: e => openModeMenu(e, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}`, fireOne) },
         icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
-    const rest = rollable.filter((a, i) => !paired.has(i));
+    const rest = rollable;
     if (rest.length > 1) row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Бросить всё одной связкой: ' + rest.map(a => a.name || ACTION_KINDS[a.kind]).join(' → ') + '. При крите атаки кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру', onclick: e => { e.stopPropagation(); if (options.onUse) return options.onUse(rest.map(a => a.index), modeFromEvent(e)); rollMulti(rest, prefix || doc.name, { ctx, ...modeFromEvent(e) }); } }, icon('dice', 13), ' Всё'));
     if (doc.save_dc || doc.save_ability) row.append(el('span', { class: 'chip' }, `СЛ ${doc.save_dc || '@dc'} ${doc.save_ability || ''}`));
     return row;
@@ -536,5 +497,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, RACE_ICONS, raceIcon, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, RACE_ICONS, raceIcon, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

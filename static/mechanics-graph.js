@@ -38,7 +38,7 @@
       const programKey = String(p.id || programIndex + 1);
       const programNodeId = `program-${stableHash(programKey)}`;
       nodes.push({ id: programNodeId, type: 'action.program', params: {
-        program_id: p.id || mkId('p'), name: p.name || 'Действие', trigger: p.trigger || 'use',
+        program_id: p.id || mkId('p'), name: p.name || 'Действие', trigger: p.trigger || 'use', ...(p.style && p.style !== 'default' ? { style: p.style } : {}),
         ...(p.feature_name ? { feature_name: p.feature_name } : {}), ...(p.group ? { group: p.group } : {}), ...(p.roll_only ? { roll_only: true } : {}),
       }, position: { x: 60, y } });
       let previous = programNodeId, x = 330, blockIndex = 0;
@@ -202,7 +202,7 @@
     const programs = [];
     for (const n of expanded.nodes.filter(node => node.type === 'action.program')) {
       const params = n.params || {}, programId = String(params.program_id || n.id);
-      const p = { id: programId, name: String(params.name || 'Действие'), trigger: params.trigger === 'passive' ? 'passive' : 'use', blocks: [] };
+      const p = { id: programId, name: String(params.name || 'Действие'), trigger: params.trigger === 'passive' ? 'passive' : 'use', ...(params.style && params.style !== 'default' ? { style: String(params.style) } : {}), blocks: [] };
       for (const key of ['feature_name', 'group', 'roll_only']) if (params[key] !== undefined) p[key] = clone(params[key]);
       // Очередь хранит [узел, гейт]. Гейт «hit»/«miss» ставит ветка «Если» по условию «Попадание атаки»
       // и действует только на узел, подключённый к выходу ветки (его when в v1). Продолжение цепочки — без гейта.
@@ -369,6 +369,7 @@
     if (type === 'condition.subclass' && (!idText(p.id, 100))) return 'Укажите ID подкласса в условии.';
     if (type === 'condition.choice' && (!idText(p.id, 100) || !Object.hasOwn(p, 'value'))) return 'Укажите ID группы и сравниваемый выбор.';
     if (type === 'flow.if' && Object.keys(p).length > 8) return 'Условный узел содержит лишние параметры.';
+    if (type === 'action.program' && p.style !== undefined && !window.BUTTON_STYLES?.[p.style]) return 'Неизвестный стиль кнопки.';
     if (type === 'action.program' && (!idText(p.program_id, 100) || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || !['use', 'passive'].includes(p.trigger))) return 'Программе нужны ID, название и допустимый триггер.';
     if (['group.input', 'group.output'].includes(type) && !idText(p.socket_id, 64)) return 'Узел границы группы должен ссылаться на сокет интерфейса.';
     if (actionType(type)) {
