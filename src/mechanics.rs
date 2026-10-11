@@ -212,7 +212,9 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut total=0;
         if ["attack","damage","heal","temp_hp","roll"].contains(&kind) {
             let raw=formula(b)?;let mut expr=inventory::resolve(&raw,&s)?;
-            expr=crate::realtime::with_dice_mode(&expr,mode);
+            // Двуручное оружие в одной руке: помеха только на броски атаки предмета.
+            let roll_mode=if kind=="attack" {inventory::attack_mode(mode,category=="item"&&inventory::one_hand_penalty(&doc))} else {mode.to_string()};
+            expr=crate::realtime::with_dice_mode(&expr,&roll_mode);
             let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::realtime::double_dice(&expr);}
             let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
             // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.

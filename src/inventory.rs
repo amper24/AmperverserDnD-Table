@@ -82,6 +82,17 @@ pub fn wear_kind(it: &Value) -> String {
 
 pub fn equippable(it: &Value) -> bool { handedness(it) != "none" || !wear_kind(it).is_empty() }
 
+/// Двуручное оружие, которое держат одной рукой: броски атаки с помехой.
+pub fn one_hand_penalty(it: &Value) -> bool {
+    handedness(it) == "two" && it["equipped"] == true && matches!(it["hand_slot"].as_str(), Some("main") | Some("off"))
+}
+
+/// Режим броска атаки с учётом помехи: помеха поверх преимущества даёт обычный бросок (как за столом).
+pub fn attack_mode(mode: &str, penalty: bool) -> String {
+    if !penalty { return mode.to_string(); }
+    if mode == "adv" { "normal".into() } else { "dis".into() }
+}
+
 /// Shared server-side gate for both legacy item rolls and declarative item programs.
 pub fn validate_use(it: &Value) -> ApiResult<()> {
     if it["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
@@ -307,10 +318,12 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
         if need > 0 { return Err(AppError::bad("Недостаточно ресурса или не выбран источник расхода. Ничего не списано.")); }
     }
     let mut rolls = Vec::new(); let mut crit = false;
+    let penalty = one_hand_penalty(&item);
     for a in selected {
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
-        expr = crate::realtime::with_dice_mode(&expr, mode);
+        let roll_mode = if kind == "attack" { attack_mode(mode, penalty) } else { mode.to_string() };
+        expr = crate::realtime::with_dice_mode(&expr, &roll_mode);
         let base = expr.clone(); let doubled = crit && kind == "damage";
         if doubled { expr = crate::realtime::double_dice(&expr); }
         let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
@@ -370,6 +383,16 @@ mod tests {
         let r = use_item(&mut dis, "bow", &[1], "dis").unwrap();
         assert_eq!(r["rolls"][0]["expr"], "2d6kl1+3");
     }
+    #[test] fn two_handed_weapon_in_one_hand_rolls_attacks_with_disadvantage() {
+        let mut w = json!({"handedness":"two","equipped":true,"hand_slot":"main"});
+        assert!(one_hand_penalty(&w));
+        w["hand_slot"] = json!("both"); assert!(!one_hand_penalty(&w));
+        w["hand_slot"] = json!("off"); w["handedness"] = json!("versatile"); assert!(!one_hand_penalty(&w));
+        assert_eq!(attack_mode("normal", true), "dis");
+        assert_eq!(attack_mode("adv", true), "normal");
+        assert_eq!(attack_mode("adv", false), "adv");
+    }
+
     #[test] fn invalid_roll_does_not_spend_and_grip_is_enforced() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap(); s["inventory"][2]["actions"][0]["roll"]=json!("bad"); let before=s.clone();
         assert!(use_item(&mut s,"bow",&[0],"").is_err()); assert_eq!(s,before);

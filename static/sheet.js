@@ -215,11 +215,15 @@
     return el('section', { class: 'equipment-hands', 'aria-label': 'Экипировка рук и доспеха' }, ...['main', 'off'].map(key => {
       const current = occupied(key);
       const twoHanded = current?.hand_slot === 'both';
+      // Двуручный хват: одна общая рамка на обе руки (вторая ячейка не выводится).
+      if (twoHanded && key === 'off') return null;
       const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none' && Equipment.canEquip(it));
-      const hint = !current ? null : twoHanded ? 'Двуручный хват. Перетащите в свободную руку, чтобы держать одноручно'
+      const oneHandedTwo = current && !twoHanded && current.handedness === 'two';
+      const hint = !current ? null : twoHanded ? null
+        : oneHandedTwo ? 'Одной рукой: броски атаки с помехой. Перетащите во вторую руку, чтобы взять двумя руками'
         : canBoth(current) ? 'Перетащите во вторую руку, чтобы взять двумя руками' : null;
       const cell = el('div', {
-        class: 'hand-slot' + (current ? ' filled' : '') + (twoHanded ? ' two-handed' : ''),
+        class: 'hand-slot' + (current ? ' filled' : '') + (twoHanded ? ' two-handed merged' : ''),
         title: hint || 'Пустая рука: перетащите сюда оружие или щит',
         draggable: !readonly && current ? 'true' : null,
         ondragstart: ev => { if (readonly || !current) return ev.preventDefault(); draggingHand = current.uid; ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('application/x-hand', current.uid); },
@@ -240,9 +244,10 @@
           if (plan.error) return toast(plan.error);
           if (plan.slot) inventoryOp({ op: 'equip', item_uid: uid, slot: plan.slot });
         },
-      }, el('label', {}, Equipment.slots[key]),
-        el('strong', {}, current?.name || 'Свободна'), el('span', { class: 'muted small' }, twoHanded ? 'Один предмет занимает обе руки' : current ? Equipment.kinds[current.handedness] : 'Оружие, щит'),
+      }, el('label', {}, twoHanded ? 'Обе руки' : Equipment.slots[key]),
+        el('strong', {}, current?.name || 'Свободна'), el('span', { class: 'muted small' }, twoHanded ? 'Двуручный хват: броски атаки без помехи' : current ? Equipment.kinds[current.handedness] : 'Оружие, щит'),
         hint && !readonly ? el('span', { class: 'hand-hint small' }, hint) : null,
+        twoHanded && !readonly ? el('button', { class: 'small', title: 'Держать в одной руке: броски атаки с помехой', onclick: () => inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'main' }) }, 'Одной рукой') : null,
         readonly ? null : el('select', { 'aria-label': Equipment.slots[key], onchange: e => {
           if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
           const it = s.inventory.find(i => i.uid === e.target.value); if (it) inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.handedness === 'two' ? 'both' : key });
