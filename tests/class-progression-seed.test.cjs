@@ -1,3 +1,4 @@
+const loadSrd = require('./fixtures/srd.cjs');
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,7 +16,7 @@ const M = ctx.window.Mechanics;
 const plain = v => JSON.parse(JSON.stringify(v));
 
 for (const edition of ['2014', '2024']) {
-  const classes = JSON.parse(fs.readFileSync(`data_seed/srd_${edition}.json`, 'utf8')).filter(e => e.category === 'class');
+  const classes = loadSrd(`data_seed/srd_${edition}.json`).filter(e => e.category === 'class');
   test(`SRD ${edition}: each class has a rule.class_progression node equal to the preset table`, async () => {
     await presetsReady;
     assert.equal(classes.length, 12);

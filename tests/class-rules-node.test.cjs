@@ -2,6 +2,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 
 const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
@@ -13,7 +14,7 @@ for (const f of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 
 const R = ctx.window.ClassRules, M = ctx.window.Mechanics;
 before(async () => { await presetsReady; R.refresh(); });
 
-const wizard = () => JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8')).find(r => r.category === 'class' && r.data?.name_en === 'Wizard');
+const wizard = () => loadSrd('data_seed/srd_2014.json').find(r => r.category === 'class' && r.data?.name_en === 'Wizard');
 
 test('SRD-запись класса несёт узел rule.class_rules с кастерами и мультиклассом', () => {
   const rec = wizard();

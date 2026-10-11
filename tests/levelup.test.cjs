@@ -1,6 +1,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
@@ -8,7 +9,7 @@ for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(
 before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
-const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).filter(e => e.category === 'class');
+const seed = ed => loadSrd(`data_seed/srd_${ed}.json`).filter(e => e.category === 'class');
 const classes = { 2014: seed(2014), 2024: seed(2024) };
 const cls = (ed, slug) => classes[ed].find(e => e.slug === `srd${String(ed).slice(2)}-${slug}`);
 const sheet = (o = {}) => ({ edition: '2014', level: 1, class: '', subclass: '', abilities: { str: 10, dex: 10, con: 14, int: 16, wis: 10, cha: 10 }, skills: [], expertise: [], features: [],
@@ -131,7 +132,7 @@ test('улучшение характеристик: +2 или +1/+1, макси
   assert.equal(L.asiValid(ab, { cha: 2 }), false, '19 + 2 > 20'); assert.equal(L.asiValid(ab, { cha: 1, dex: 1 }), true); assert.equal(L.asiValid({ ...ab, cha: 20 }, { cha: 1 }), false);
 });
 test('черты с бонусом к характеристике требуют выбор, применяют его и откатывают вместе с повышением', () => {
-  const feats = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'feat');
+  const feats = loadSrd('data_seed/srd_2024.json').filter(e => e.category === 'feat');
   for (const feat of feats.filter(e => /увеличьте[^.\n]*характеристик/i.test(e.data?.desc || '')))
     assert.ok(L.featAbilityRule(feat), `ASI from feat is modeled: ${feat.name}`);
   const fighter = cls('2024', 'fighter'), grappler = feats.find(e => e.name === 'Борец');

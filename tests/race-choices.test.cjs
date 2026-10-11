@@ -1,3 +1,4 @@
+const loadSrd = require('./fixtures/srd.cjs');
 // Выборы расы — из набора race_rules: проверка обязательных выборов и кастомная раса, описанная только данными.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -15,7 +16,7 @@ vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 const abil = Object.fromEntries(B.keys.map(k => [k, 10]));
-const load = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).map(e => e.id ? e : { ...e, id: `${e.category}|${e.name}` });
+const load = ed => loadSrd(`data_seed/srd_${ed}.json`).map(e => e.id ? e : { ...e, id: `${e.category}|${e.name}` });
 const recs14 = load('2014'), recs24 = load('2024');
 const race = (recs, name) => recs.find(e => e.category === 'race' && e.name === name);
 const draftFor = (recs, ed, raceEntry, ruleChoices = {}) => ({ name: 'Тест', edition: ed, abilities: abil,

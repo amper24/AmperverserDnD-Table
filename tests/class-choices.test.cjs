@@ -1,9 +1,10 @@
+const loadSrd = require('./fixtures/srd.cjs');
 // Выборы класса из набора class_rules: варианты, проверки и применение к листу.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8'));
+const seed = ed => loadSrd(`data_seed/srd_${ed}.json`);
 const ctx = { crypto: require('node:crypto').webcrypto, window: {}, console: { log() {}, warn() {}, error() {} }, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);

@@ -1,6 +1,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 const ctx = { crypto: require('node:crypto').webcrypto, window: {}, Modules: { newFeature: x => x, spellFromCompendium: e => ({ name: e.name, level: e.data?.level ?? 1, prepared: false }) },
   SKILLS: [['acrobatics', 'Акробатика', 'dex'], ['animal', 'Уход за животными', 'wis'], ['arcana', 'Магия', 'int'], ['athletics', 'Атлетика', 'str'], ['deception', 'Обман', 'cha'],
@@ -23,7 +24,7 @@ const draft = () => ({ name: ' Герой ', edition: '2014', abilities: Object.
   background: entry('background', 'Послушник', { skills: ['Религия'] })
 }, spells: [entry('spell', 'Свет', { level: 0 })], method: 'standard' });
 test('2024 creation grants Common and requires the two additional standard language choices on the sheet', () => {
-  const records = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8'));
+  const records = loadSrd('data_seed/srd_2024.json');
   const dwarf = records.find(e => e.category === 'race' && e.name === 'Дварф');
   const acolyte = records.find(e => e.category === 'background' && e.name === 'Прислужник');
   const cleric = records.find(e => e.category === 'class' && e.name === 'Жрец');
@@ -35,13 +36,13 @@ test('2024 creation grants Common and requires the two additional standard langu
 });
 
 test('origin selections project into starting proficiencies and 2024 lineage spells', () => {
-  const records14 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records14 = loadSrd('data_seed/srd_2014.json');
   const halfElf = records14.find(e => e.category === 'race' && e.name === 'Полуэльф');
   const halfElfSheet = B.build({ name: 'Полуэльф', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: halfElf },
     ruleChoices: { raceSkills: ['stealth', 'athletics'] }, spells: [], method: 'standard' });
   assert.ok(halfElfSheet.skills.includes('stealth') && halfElfSheet.skills.includes('athletics'));
 
-  const records24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8'));
+  const records24 = loadSrd('data_seed/srd_2024.json');
   const woodElf = records24.find(e => e.category === 'race' && e.name === 'Эльфийская линия: лесной эльф');
   const lineageCatalog = records24.filter(e => e.category === 'spell' || (e.category === 'race' && (e.name === 'Эльф' || e.id === woodElf.id)));
   const elfSheet = B.build({ name: 'Эльф', edition: '2024', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: woodElf },
@@ -52,7 +53,7 @@ test('origin selections project into starting proficiencies and 2024 lineage spe
 });
 
 test('2014 dwarf/elf weapon proficiencies and tiefling cantrip, plus exact 2024 lineage cantrips', () => {
-  const records14 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records14 = loadSrd('data_seed/srd_2014.json');
   const dwarf = records14.find(e => e.category === 'race' && e.name === 'Дварф');
   const elf = records14.find(e => e.category === 'race' && e.name === 'Эльф');
   const tiefling = records14.find(e => e.category === 'race' && e.name === 'Тифлинг');
@@ -64,7 +65,7 @@ test('2014 dwarf/elf weapon proficiencies and tiefling cantrip, plus exact 2024 
   const tieflingSheet = B.build({ name: 'Тифлинг', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: tiefling }, catalog: spells14, spells: [] });
   assert.ok(tieflingSheet.spells.known.some(spell => spell.name === 'Чудотворство' && spell.spell_ability === 'cha'));
 
-  const records24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8'));
+  const records24 = loadSrd('data_seed/srd_2024.json');
   const drow = records24.find(e => e.category === 'race' && /дроу/i.test(e.name));
   const abyssal = records24.find(e => e.category === 'race' && /наследие исчадий: бездна/i.test(e.name));
   const drowSheet = B.build({ name: 'Дроу', edition: '2024', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: drow }, catalog: records24,
@@ -78,7 +79,7 @@ test('2014 dwarf/elf weapon proficiencies and tiefling cantrip, plus exact 2024 
 });
 
 test('2014 fighter receives only the one selected Fighting Style, never every style', () => {
-  const records = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records = loadSrd('data_seed/srd_2014.json');
   const fighter = records.find(e => e.category === 'class' && e.name === 'Воин');
   const d = { name: 'Воин', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { class: fighter }, ruleChoices: { fightingStyle: 'Боевой стиль: Оборона' }, spells: [], method: 'standard' };
   const styles = Array.from(B.build(d).features.filter(f => /Боевой стиль/.test(f.name)), f => f.name);
@@ -86,7 +87,7 @@ test('2014 fighter receives only the one selected Fighting Style, never every st
 });
 
 test('wizard creation separates the six-spell book from the prepared spell list', () => {
-  const records = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records = loadSrd('data_seed/srd_2014.json');
   const wizard = records.find(e => e.category === 'class' && e.name === 'Волшебник');
   const book = records.filter(e => e.category === 'spell' && Number(e.data.level) === 1 && e.data.classes?.includes('Волшебник')).slice(0, 6);
   assert.equal(book.length, 6);
@@ -101,7 +102,7 @@ test('wizard creation separates the six-spell book from the prepared spell list'
 
 test('bard tool proficiencies require and project three different instruments in either edition', () => {
   for (const edition of ['2014', '2024']) {
-    const records = JSON.parse(fs.readFileSync(`data_seed/srd_${edition}.json`, 'utf8'));
+    const records = loadSrd(`data_seed/srd_${edition}.json`);
     const bard = records.find(e => e.category === 'class' && e.name === 'Бард');
     const instruments = records.filter(e => e.category === 'item' && e.data?.category === 'Музыкальные инструменты').slice(0, 3).map(e => e.name);
     assert.equal(instruments.length, 3, `${edition} SRD includes the Bard instrument choices`);
@@ -112,7 +113,7 @@ test('bard tool proficiencies require and project three different instruments in
 });
 
 test('class creation applies order bonuses, selected expertise and always-prepared class spells', () => {
-  const records24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8'));
+  const records24 = loadSrd('data_seed/srd_2024.json');
   const druid = records24.find(e => e.category === 'class' && e.name === 'Друид');
   const speakWithAnimals = records24.find(e => e.category === 'spell' && e.name === 'Разговор с животными');
   const d = { name: 'Друид', edition: '2024', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { class: druid },
@@ -122,7 +123,7 @@ test('class creation applies order bonuses, selected expertise and always-prepar
   assert.ok(sheet.proficiencies.includes('Друидический'));
   assert.ok(sheet.spells.known.some(s => s.name === speakWithAnimals.name && s.prepared), 'Speak with Animals is always prepared at level 1');
 
-  const records14 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records14 = loadSrd('data_seed/srd_2014.json');
   const rogue = records14.find(e => e.category === 'class' && e.name === 'Плут');
   const rogueSheet = B.build({ name: 'Плут', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { class: rogue },
     skills: ['stealth', 'athletics'], ruleChoices: { expertise: ['stealth', 'thieves_tools'] }, spells: [], method: 'standard' });
@@ -134,7 +135,7 @@ test('class creation applies order bonuses, selected expertise and always-prepar
 test('every SRD class offers its complete, correctly sized skill-choice pool in both editions', () => {
   const expected = { barbarian: 2, bard: 3, cleric: 2, druid: 2, fighter: 2, monk: 2, paladin: 2, ranger: 3, rogue: 4, sorcerer: 2, warlock: 2, wizard: 2 };
   for (const edition of ['2014', '2024']) {
-    const records = JSON.parse(fs.readFileSync(`data_seed/srd_${edition}.json`, 'utf8')).filter(e => e.category === 'class');
+    const records = loadSrd(`data_seed/srd_${edition}.json`).filter(e => e.category === 'class');
     assert.equal(records.length, 12);
     for (const klass of records) {
       const state = B.skillsState({ edition, selected: { class: klass }, skills: [], freeSkills: [] });
@@ -173,7 +174,7 @@ test('creation initializes class-specific level-one spell limits and spell slots
 });
 test('spell limits resolve from every SRD class table in both editions', () => {
   for (const edition of ['2014', '2024']) {
-    const records = JSON.parse(fs.readFileSync(`data_seed/srd_${edition}.json`, 'utf8')).filter(e => e.category === 'class');
+    const records = loadSrd(`data_seed/srd_${edition}.json`).filter(e => e.category === 'class');
     assert.equal(records.length, 12);
     for (const klass of records) {
       const limits = B.spellLimits(klass, edition, { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
@@ -236,7 +237,7 @@ test('registry accepts a custom category handler', () => {
   const d = draft(); d.spells = [entry('custom-test', 'Модуль', {})]; assert.equal(B.build(d).notes, 'Модуль');
 });
 test('dragon sorcerer chooses exactly one ancestry feature at character creation', () => {
-  const records = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
+  const records = loadSrd('data_seed/srd_2014.json');
   const sorcerer = records.find(e => e.category === 'class' && e.name === 'Чародей');
   const raw = sorcerer.data.subclasses.find(sub => /родослов/i.test(sub.name));
   const module = B.subclassModule(sorcerer, raw), variants = raw.features['1'].filter(name => name.startsWith('Предок-дракон:'));
@@ -287,7 +288,7 @@ test('Magic Initiate grants its selected cantrips and first-level spell with the
   assert.equal(sheet.spells.slots[1]?.max || 0, 0, 'feat spells are granted independently of class spell slots');
   assert.ok(sheet.creation.rule_choices.magicInitiate);
 
-  const human = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).find(e => e.category === 'race' && e.name === 'Человек');
+  const human = loadSrd('data_seed/srd_2024.json').find(e => e.category === 'race' && e.name === 'Человек');
   const unrelatedFeat = entry('feat', 'Бдительный', { desc: 'Умение.' });
   const humanD = { ...d, edition: '2024', selected: { race: human, feat: unrelatedFeat }, catalog: [human, feat, cantripOne, cantripTwo, firstLevel],
     ruleChoices: { humanOriginFeat: feat.id, magicInitiate: d.ruleChoices.magicInitiate } };

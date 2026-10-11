@@ -5,6 +5,7 @@ const { test } = require('node:test');
 const { before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 
 const ctx = { window: {}, console, localStorage: { getItem() { return null; }, setItem() {} } };
@@ -404,7 +405,7 @@ test('compendium import keeps 2024 weapon mastery and action mechanics', () => {
 
 test('real SRD records resolve for every class and background of both editions', () => {
   for (const [file, edition] of [['data_seed/srd_2014.json', '2014'], ['data_seed/srd_2024.json', '2024']]) {
-    const catalog = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const catalog = loadSrd(file)
       .map(e => ({ id: e.slug || e.name, category: e.category, name: e.name, source: 'SRD', pack_id: null, data: e.data }));
     const classes = catalog.filter(e => e.category === 'class');
     const backgrounds = catalog.filter(e => e.category === 'background');

@@ -730,7 +730,6 @@ def localize_entry(ctx, e, names, feat_names):
             if not d0.get('desc') or LATIN.search(d0['desc']): ru['desc'] = r_desc
     if cat in ('race', 'class'):
         pass
-    ru['name_en'] = d0['name_en']
     if cat in ('item', 'spell') and any(u[2] == 'desc' and u[3] != '(нет раздела в md)' for u in ctx.unmatched[n_before:]):
         # описание не удалось перевести по кускам (в data_seed другая редакция текста) — берём раздел корпуса целиком, в обоих языках
         en_t, ru_t = tr.section_body()

@@ -5,6 +5,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 
 // ---------- минимальный DOM ----------
@@ -56,7 +57,7 @@ const documentStub = {
 };
 
 // ---------- песочница со справочником из data_seed ----------
-const srd2014 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8')).map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
+const srd2014 = loadSrd('data_seed/srd_2014.json').map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
 const sandbox = {
   console,
   document: documentStub,

@@ -5,6 +5,7 @@
 // Фикстура: реальные скрипты фронта, каталог — из data_seed (srd_2014 / srd_2024), наборы — из static/presets.
 const { chromium } = require('playwright');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const browserLaunchOptions = require('./browser-launch.cjs');
@@ -12,8 +13,8 @@ const browserLaunchOptions = require('./browser-launch.cjs');
 const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'];
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => `<script src="/static/${f}"></script>`).join('')}</body></html>`;
 const SEEDS = {
-  2014: JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8')),
-  2024: JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')),
+  2014: loadSrd('data_seed/srd_2014.json'),
+  2024: loadSrd('data_seed/srd_2024.json'),
 };
 const catalog = (edition, category) => SEEDS[edition].filter(r => r.category === category).map(r => ({ ...r, id: r.slug, source: `SRD ${edition}` }));
 

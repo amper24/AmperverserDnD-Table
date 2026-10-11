@@ -1,3 +1,4 @@
+const loadSrd = require('./fixtures/srd.cjs');
 // Правила черт из наборов feat_rules: группы, прибавка характеристики, требования.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,7 +10,7 @@ const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx
 vm.runInContext(fs.readFileSync('static/levelup.js', 'utf8'), ctx);
 before(async () => { await presetsReady; });
 const L = ctx.window.LevelUp;
-const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).filter(e => e.category === 'feat');
+const seed = ed => loadSrd(`data_seed/srd_${ed}.json`).filter(e => e.category === 'feat');
 const feats = { 2014: seed(2014), 2024: seed(2024) };
 const byEn = (ed, en) => feats[ed].find(f => f.data.name_en === en);
 const sheet = (o = {}) => ({ abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, features: [], ...o });
