@@ -150,7 +150,7 @@
 - Не исправлено: `tests/equipment.browser.cjs` ожидает подпись «Автоматически расходовать ресурс», которой нет в интерфейсе; тест падает и на `main`.
 
 ### Ассеты и мастера без хардкода
-- Типы ассетов: `static/asset-kinds.js` (`window.AssetKinds`) — роли использования (`forUsage`), умолчание и `kindForLayer`; `src/assets.rs` и `src/config.rs` (`KIND_SIZE_CLASS`) — одна строка на новый тип. Клиентские экраны (`app.js`, `table.js`, `sheet.js`, `packs.js`, `modules.js`) переведены на реестр.
+- Типы ассетов: `static/asset-kinds.js` (`window.AssetKinds`) — роли использования (`forUsage`), умолчание, `kindForLayer`, `pickFor` (какие виды показывать в выборе картинки) и реестр слоёв стола (`LAYER`, `layerOrder`). Новый тип — строка в реестре клиента, строка в `ASSET_KINDS` (`src/assets.rs`) и строка в `KIND_SIZE_CLASS` (`src/config.rs`); тесты в `config.rs` и `tests/asset-kinds.test.cjs` сверяют списки в обе стороны. Обложка набора — отдельный вид `cover`; у старых обложек вид остался `item`, они открываются по id. Экраны (`app.js`, `table.js`, `sheet.js`, `packs.js`, `modules.js`) используют реестр; литералов видов и слоёв в них нет. Rust в этой среде не собирался, проверка — в CI.
 - Классы-заклинатели: `static/class-rules.js` (`window.ClassRules`) — RU-имена, заклинатель, режим старта и подготовки по редакции. Блок `data.caster` в записи класса задаёт правило без JS; без него действует таблица SRD. `levelup.js`, `character-builder.js`, `builder-dialog.js` используют слой.
 - Не сделано: расы, особенности классов, подклассы, `multiclassReq`, `CLASS_COLOR` остаются в коде (см. `docs/hardcode-audit.md`). Rust не собирался в этой среде.
 

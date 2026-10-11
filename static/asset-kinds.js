@@ -9,13 +9,18 @@ window.AssetKinds = (() => {
   const KINDS = [
     // layer — слой стола, куда кладётся ассет; picker — показывать в списках выбора; square — квадратная раскладка на столе.
     // usage — для какого действия тип применяется по умолчанию: scene (карта), token (загрузка токена и умолчание),
-    // object (объект на столе), avatar (портрет персонажа и аватар игрока), item (картинка предмета).
+    // object (объект на столе), avatar (портрет персонажа и аватар игрока), item (картинка предмета), cover (обложка набора).
     { id: 'map', label: 'Карта', plural: 'Карты', layer: 'map', picker: true, square: false, usage: 'scene' },
     { id: 'token', label: 'Токен', plural: 'Токены', layer: 'character', picker: true, square: false, usage: 'token', default: true },
     { id: 'prop', label: 'Объект', plural: 'Объекты', layer: 'prop', picker: true, square: true, usage: 'object' },
     { id: 'portrait', label: 'Портрет', plural: 'Портреты', layer: 'character', picker: true, square: false, usage: 'avatar' },
     { id: 'item', label: 'Предмет', plural: 'Предметы', layer: 'character', picker: false, square: false, usage: 'item' },
+    // cover — обложка набора; на стол не кладётся (layer только для совместимости с layerOf).
+    { id: 'cover', label: 'Обложка', plural: 'Обложки', layer: 'character', picker: true, square: false, usage: 'cover' },
   ];
+  // Слои стола: имена, которыми ассеты и объекты попадают на сцену. Порядок отрисовки — layerOrder (нижние первыми).
+  const LAYER = { map: 'map', prop: 'prop', mount: 'mount', character: 'character', attachment: 'attachment', drawing: 'drawing', text: 'text', note: 'note' };
+  const layerOrder = ['map', 'prop', 'mount', 'character', 'attachment', 'drawing', 'text', 'note'];
   const byId = Object.fromEntries(KINDS.map(kind => [kind.id, kind]));
   // Неизвестный тип с сервера трактуется как токен (так же, как на сервере при загрузке).
   const DEFAULT = KINDS.find(kind => kind.default) || KINDS[0];
@@ -33,6 +38,8 @@ window.AssetKinds = (() => {
   };
   return {
     KINDS,
+    LAYER,
+    layerOrder,
     ids: KINDS.map(kind => kind.id),
     get,
     label: id => get(id).label,

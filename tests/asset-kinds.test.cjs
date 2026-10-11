@@ -20,8 +20,8 @@ test('server list ASSET_KINDS matches the client registry', () => {
 });
 
 test('the picker lists and labels come from the registry', () => {
-  assert.deepEqual(plain(AK.filterOptions()), [['', 'Все типы'], ['map', 'Карты'], ['token', 'Токены'], ['prop', 'Объекты'], ['portrait', 'Портреты']]);
-  assert.deepEqual(plain(AK.uploadOptions()), [['map', 'Карта'], ['token', 'Токен'], ['prop', 'Объект'], ['portrait', 'Портрет']]);
+  assert.deepEqual(plain(AK.filterOptions()), [['', 'Все типы'], ['map', 'Карты'], ['token', 'Токены'], ['prop', 'Объекты'], ['portrait', 'Портреты'], ['cover', 'Обложки']]);
+  assert.deepEqual(plain(AK.uploadOptions()), [['map', 'Карта'], ['token', 'Токен'], ['prop', 'Объект'], ['portrait', 'Портрет'], ['cover', 'Обложка']]);
   assert.equal(AK.label('portrait'), 'Портрет');
   assert.equal(AK.label('unknown-kind'), 'Токен', 'unknown kinds behave like tokens');
 });
@@ -65,7 +65,7 @@ test('table layer maps to the kind uploaded on that layer', () => {
 test('выбор картинки: токен — только токены, предмет — все картинки кроме карт', () => {
   assert.deepEqual(plain(AK.pickFor('token')), ['token']);
   assert.deepEqual(plain(AK.pickFor('portrait')), ['portrait']);
-  assert.deepEqual(plain(AK.pickFor('item')), ['token', 'prop', 'portrait', 'item']);
+  assert.deepEqual(plain(AK.pickFor('item')), ['token', 'prop', 'portrait', 'item', 'cover']);
   assert.equal(AK.pickFor('item').includes('map'), false);
 });
 
@@ -73,4 +73,23 @@ test('imagePicker не сравнивает тип с литералом ток�
   const modules = fs.readFileSync('static/modules.js', 'utf8');
   assert.equal(modules.includes('tokenKind'), false, 'нет сравнения с токеном');
   assert.ok(modules.includes('AssetKinds.pickFor(kind)'), 'список фильтруется по реестру');
+});
+
+test('обложка набора — свой вид реестра, а не предмет', () => {
+  assert.equal(AK.forUsage('cover'), 'cover');
+  assert.equal(AK.get('cover').picker, true);
+  assert.equal(AK.label('cover'), 'Обложка');
+  assert.equal(AK.get('item').picker, false, 'предмет не попадает в списки выбора');
+  const packs = fs.readFileSync('static/packs.js', 'utf8');
+  assert.ok(packs.includes("forUsage('cover')"), 'обложка набора использует вид cover');
+});
+
+test('слои стола берутся из реестра слоёв, а table.js не содержит литералов слоёв', () => {
+  assert.deepEqual(plain(AK.layerOrder), ['map', 'prop', 'mount', 'character', 'attachment', 'drawing', 'text', 'note']);
+  assert.equal(AK.LAYER.character, 'character');
+  const table = fs.readFileSync('static/table.js', 'utf8');
+  const literal = /(layer|activeLayer)\s*(===|!==|:|=)\s*'(map|prop|mount|character|attachment|drawing|text|note)'/;
+  assert.equal(literal.test(table), false, 'нет литералов слоя в table.js');
+  assert.equal(table.includes("['drawing', 'text', 'note']"), false);
+  assert.ok(table.includes('window.AssetKinds.layerOrder'));
 });

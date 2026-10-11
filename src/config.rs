@@ -187,6 +187,7 @@ pub const KIND_SIZE_CLASS: &[(&str, SizeClass)] = &[
     ("prop", SizeClass::Token),
     ("portrait", SizeClass::Token),
     ("item", SizeClass::Token),
+    ("cover", SizeClass::Token),
 ];
 
 impl ImagesCfg {
@@ -862,6 +863,14 @@ mod size_limit_tests {
     fn kind_size_table_covers_asset_kinds() {
         for kind in crate::assets::ASSET_KINDS {
             assert!(KIND_SIZE_CLASS.iter().any(|(k, _)| k == kind), "нет лимита для типа {kind}");
+        }
+    }
+
+    #[test]
+    fn asset_kinds_cover_kind_size_table() {
+        // Обратная сверка: лимит без типа в ASSET_KINDS — ошибка (тип не принимается загрузкой).
+        for (kind, _) in KIND_SIZE_CLASS {
+            assert!(crate::assets::ASSET_KINDS.contains(kind), "лимит для неизвестного типа {kind}");
         }
     }
 
