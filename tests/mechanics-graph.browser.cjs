@@ -32,6 +32,7 @@ const assert = require('node:assert/strict');
 
     // Add a node, then exercise local undo/redo without saving an intermediate state.
     const originalCount = await page.locator('.graph-node').count();
+    await page.getByLabel('Поиск узла', { exact: true }).fill('data.text');
     await page.locator('button.node-add[title="data.text"]').click();
     assert.equal(await page.locator('.graph-node').count(), originalCount + 1);
     await page.getByRole('button', { name: '↶ Отменить' }).click();

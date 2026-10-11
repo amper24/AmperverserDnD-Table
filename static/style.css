@@ -1629,3 +1629,7 @@ body.lu-open { overflow: hidden; }
 .hand-slot.dragover::after, .hand-slot.drop-invalid::after { content: attr(data-drop-hint); position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font-size: 11px; white-space: nowrap; padding: 2px 8px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--border); pointer-events: none; z-index: 2; }
 .hand-slot.drop-invalid::after { color: var(--danger); }
 .hand-slot { position: relative; }
+
+/* Полоса шаблонов графов (вставка, сохранение и удаление своих шаблонов) */
+.node-template-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.node-template-bar select, .node-template-bar input { min-width: 0; max-width: 260px; }

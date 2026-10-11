@@ -600,6 +600,8 @@
 
   // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
   const graphStarters = () => window.Presets?.items('graph_starter') || [];
+  // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
+  const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.attack', 'action.damage', 'action.heal', 'action.consume', 'condition.hit'];
   // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
   const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
   // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).
@@ -664,6 +666,7 @@
     }
     function addNode(type, params = null, at = null) {
       if (!NODE_DEFS[type]) return;
+      if (type === 'flow.end') { const owners = actionOwners(graph); if (graph.nodes.some(n => n.type === 'flow.end' && owners.get(n.id) === activeAction)) { status = 'У действия уже есть «Конец».'; return render(); } }
       if (type === 'action.program') return createAction();
       const id = mkId('node'), count = graph.nodes.length;
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 }, action: activeAction });
@@ -689,8 +692,8 @@
     }
     // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
     function insertStarter(starter) {
-      if (!isBlankAction()) return;
-      const ids = new Map(), origin = { x: 60, y: 70 };
+      const anchor = nodeById(activeAction);
+      const ids = new Map(), origin = anchor?.position ? { x: anchor.position.x + 280, y: anchor.position.y } : { x: 60, y: 70 };
       for (const n of starter.nodes) {
         const id = mkId('node'); ids.set(n.key, id);
         // Значения по умолчанию реестра + отличия из пресета; block_id действия создаётся заново (уникален в графе).
@@ -702,8 +705,35 @@
       // Вариант «с подключением»: первый узел без входящих связей пресета встаёт после программы «Использовать».
       const program = nodeById(activeAction);
       const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
-      if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
+      if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec && !graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec')) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
+    }
+    // Шаблоны графов: свои цепочки хранятся в наборе graph_starter пользовательского слоя Presets (в этом браузере).
+    const ownTemplate = id => Boolean(window.Presets?.ownItemOf('graph_starter', id));
+    // Узлы действия, которые входят в шаблон: без «Начала», «Конца» и групп (их связывает само действие).
+    function templateBody() {
+      const owners = actionOwners(graph);
+      return graph.nodes.filter(n => owners.get(n.id) === activeAction && n.type !== 'action.program' && n.type !== 'flow.end' && !n.type.startsWith('group.'));
+    }
+    function saveTemplate(name) {
+      const body = templateBody();
+      if (!name.trim()) { status = 'Укажите название шаблона.'; return render(); }
+      if (!body.length) { status = 'В действии нет узлов для шаблона.'; return render(); }
+      const ids = new Map(body.map((n, i) => [n.id, 'n' + i]));
+      const minX = Math.min(...body.map(n => n.position?.x || 0)), minY = Math.min(...body.map(n => n.position?.y || 0));
+      const nodes = body.map(n => {
+        const { block_id: _block, ...params } = n.params || {};
+        return { key: ids.get(n.id), type: n.type, params: clone(params), x: (n.position?.x || 0) - minX, y: (n.position?.y || 0) - minY };
+      });
+      const links = graph.links.filter(l => ids.has(l.from.node) && ids.has(l.to.node)).map(l => [ids.get(l.from.node), l.from.socket, ids.get(l.to.node), l.to.socket]);
+      const head = body.find(n => NODE_DEFS[n.type]?.inputs?.exec && !links.some(([, , to]) => to === ids.get(n.id)));
+      const item = { id: 'my-' + Date.now().toString(36), name: name.trim(), hint: `Свой шаблон: ${body.length} узл.`, attach: Boolean(head), nodes, links };
+      try { window.Presets.upsertUserItem('graph_starter', item); } catch (e) { status = e.message; return render(); }
+      status = `Шаблон «${item.name}» сохранён.`; render();
+    }
+    function removeTemplate(id) {
+      window.Presets.removeUserItem('graph_starter', id);
+      status = 'Свой шаблон удалён.'; render();
     }
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
@@ -1044,7 +1074,8 @@
       const searchBox = el('input', { class: 'node-search', value: search, placeholder: 'Найти узел…  Shift+A', 'aria-label': 'Поиск узла', oninput: e => { search = e.target.value; render(); root.querySelector?.('.node-search')?.focus?.(); } });
       const query = search.toLocaleLowerCase();
       const palette = Object.entries(NODE_DEFS).filter(([type, def]) => !['group.input', 'group.output'].includes(type) && (!query || `${type} ${def.label} ${def.group}`.toLocaleLowerCase().includes(query)));
-      const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...palette.slice(0, 8).map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
+      const shownPalette = query ? palette.slice(0, 8) : QUICK_NODES.filter(t => NODE_DEFS[t]).map(t => [t, NODE_DEFS[t]]);
+      const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...shownPalette.map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
@@ -1055,6 +1086,17 @@
         el('b', {}, 'Начните с готового графа'),
         el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
         ...graphStarters().map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
+      const tplItems = graphStarters();
+      const tplSelect = el('select', { 'aria-label': 'Шаблон графа' }, el('option', { value: '' }, tplItems.length ? '— выберите шаблон —' : 'Шаблонов пока нет'),
+        ...tplItems.map(s => el('option', { value: s.id }, s.name + (ownTemplate(s.id) ? ' · мой' : ''))));
+      const tplName = el('input', { placeholder: 'Название, чтобы сохранить цепочку действия', 'aria-label': 'Название шаблона' });
+      const chosenTemplate = () => tplItems.find(x => x.id === tplSelect.value);
+      const templateBar = el('div', { class: 'node-template-bar' }, el('b', {}, 'Шаблоны'),
+        tplSelect,
+        el('button', { class: 'small', onclick: () => { const t = chosenTemplate(); if (t) insertStarter(t); else { status = 'Выберите шаблон в списке.'; render(); } } }, 'Вставить в действие'),
+        el('button', { class: 'small', onclick: () => { const t = chosenTemplate(); if (t && ownTemplate(t.id)) removeTemplate(t.id); else { status = 'Удалить можно только свой шаблон.'; render(); } } }, 'Удалить мой'),
+        tplName,
+        el('button', { class: 'small primary', onclick: () => saveTemplate(tplName.value) }, 'Сохранить цепочку как шаблон'));
       const groupShelf = graph.groups.length ? el('div', { class: 'node-group-shelf' }, el('b', {}, 'Группы'), ...graph.groups.map(g => el('button', { class: 'small', onclick: () => insertGroup(g) }, 'Вставить: ', g.name))) : null;
       const frames = graph.frames.map(f => {
         const members = f.nodes.map(nodeById).filter(n => n && shownIds.has(n.id)); if (!members.length) return null;
@@ -1076,7 +1118,7 @@
       const pending = graphProblems(graph, graph.groups || []);
       const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
       // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
-      root.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), statusLine, renderPreview()].filter(Boolean));
+      root.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), templateBar, statusLine, renderPreview()].filter(Boolean));
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
       // Keep status reference in a closure-safe property for JSON validation errors.
