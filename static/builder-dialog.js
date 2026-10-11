@@ -228,17 +228,25 @@ window.newCharacterDialog = async function (defaults = {}) {
     cantrips: (draft.spells || []).filter(e => Number(e.data?.level) === 0).length,
     spells: (draft.spells || []).filter(e => Number(e.data?.level) === 1).length,
   });
-  function spellAllowedForList(entry, slug) {
+  // aliases: имена списка из набора (feat_rules.spell_choice.lists[].aliases) или русское имя и slug класса (class_rules).
+  function spellAllowedForList(entry, aliases) {
     const classes = entry?.data?.classes;
     // Without spell-list metadata we cannot establish RAW eligibility; fail closed instead of
     // silently offering an unclassified/homebrew spell to every class.
     if (!Array.isArray(classes) || !classes.length) return false;
-    const aliases = { cleric: ['жрец', 'cleric'], druid: ['друид', 'druid'], wizard: ['волшебник', 'wizard'] }[slug] || [slug];
-    return classes.some(name => aliases.includes(String(name).toLocaleLowerCase()));
+    const names = (aliases || []).map(name => String(name).toLocaleLowerCase());
+    return classes.some(name => names.includes(String(name).toLocaleLowerCase()));
+  }
+  function classSpellAliases(slug) {
+    const ru = (window.Presets?.items('class_rules') || []).find(item => item.id === slug)?.table?.ru;
+    return [ru, slug].filter(Boolean);
+  }
+  function magicListAliases(rule, list) {
+    return rule?.lists?.find(item => item.id === list)?.aliases || [];
   }
   function spellAllowedToClass(entry) {
     const klass = draft.selected.class;
-    return spellAllowedForList(entry, classSlugOf(klass));
+    return spellAllowedForList(entry, classSpellAliases(classSlugOf(klass)));
   }
   function magicInitiateFeat() {
     const raceFeatIds = B.raceChoices(draft).filter(c => c.kind === 'feat').map(c => draft.ruleChoices?.[c.key]);
@@ -258,8 +266,8 @@ window.newCharacterDialog = async function (defaults = {}) {
     const rule = B.spellChoiceOf(feat, draft.edition), need = Number(rule.cantrips) || 0;
     const requiredList = magicInitiateListRestriction(feat);
     const list = requiredList || (rule.lists.some(item => item.id === choice.list) ? choice.list : '');
-    const cantrips = (choice.cantrips || []).filter(id => spells.some(e => e.id === id && e.category === 'spell' && Number(e.data?.level) === 0 && spellAllowedForList(e, list)));
-    const first = spells.some(e => e.id === choice.firstLevel && e.category === 'spell' && Number(e.data?.level) === 1 && spellAllowedForList(e, list));
+    const cantrips = (choice.cantrips || []).filter(id => spells.some(e => e.id === id && e.category === 'spell' && Number(e.data?.level) === 0 && spellAllowedForList(e, magicListAliases(rule, list))));
+    const first = spells.some(e => e.id === choice.firstLevel && e.category === 'spell' && Number(e.data?.level) === 1 && spellAllowedForList(e, magicListAliases(rule, list)));
     return !list || !(rule.abilities || []).includes(choice.ability) || cantrips.length !== need || new Set(cantrips).size !== need || !first
       ? `«${feat.name}»: выберите список, заклинательную характеристику, ${need} заговора и заклинание 1-го уровня.` : '';
   }
@@ -273,7 +281,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     if (requiredList && choice.list !== requiredList) { choice.list = requiredList; choice.cantrips = []; choice.firstLevel = ''; }
     const list = lists.some(x => x.id === choice.list) ? choice.list : '';
     const listOptions = requiredList ? lists.filter(item => item.id === requiredList) : lists;
-    const available = (level) => entries.filter(e => e.category === 'spell' && Number(e.data?.level) === level && spellAllowedForList(e, list));
+    const available = (level) => entries.filter(e => e.category === 'spell' && Number(e.data?.level) === level && spellAllowedForList(e, magicListAliases(rule, list)));
     const cantrips = available(0), firstLevels = available(1), picked = choice.cantrips || [];
     return el('section', { class: 'builder-panel builder-magic-initiate' },
       el('div', { class: 'builder-panel-head' }, el('div', {}, el('b', {}, 'Посвящённый в магию · выборы черты'), el('small', { class: 'muted' }, requiredList ? `Список задан предысторией: ${lists.find(item => item.id === requiredList)?.name}. Выберите ${need} заговора, заклинание 1-го уровня и характеристику.` : `Выберите один список, ${need} заговора, заклинание 1-го уровня и характеристику черты.`)),
