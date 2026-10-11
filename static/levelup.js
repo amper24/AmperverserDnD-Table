@@ -622,7 +622,7 @@ window.LevelUp = (() => {
       const optionGroupsNeeded = () => st.p.groups.some(g => optionNeed(g) > 0 || (g.swap && g.swap.length));
       const secretsPool = () => {
         const p = st.p, have = new Set([...sheet.spells.known.map(x => x.name), ...st.cantrips.map(e => e.name), ...st.spells.map(e => e.name)]);
-        const four = ['Бард', 'Жрец', 'Друид', 'Волшебник', 'Bard', 'Cleric', 'Druid', 'Wizard'];
+        const four = featureRuleOf('secrets', p.edition)?.spell_classes || [];
         return (st.catalogs.spell || []).filter(e => (e.data?.level || 0) <= p.spells.maxLevel && !have.has(e.name) && (p.edition !== '2024' || (e.data?.classes || []).some(c => four.includes(c))));
       };
       const subclassSkillRule = () => subclassSkillChoices(st.p.entry, st.subclass || st.p.subclass, st.p.to, st.p.edition);

@@ -133,6 +133,17 @@
         "flags": "i",
         "label": "Экспертиза по описанию"
       }
+    },
+    {
+      "id": "style-creation",
+      "table": {
+        "kind": "style_creation",
+        "match": "regex",
+        "pattern": "^Боевой стиль(:|$)",
+        "flags": "",
+        "creation": "skip",
+        "label": "Боевой стиль: выбирается отдельно при создании"
+      }
     }
   ]
 }

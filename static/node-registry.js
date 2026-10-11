@@ -55,7 +55,8 @@
   function actionDefaults(kind) {
     // Условие «попал / не попал» не хранится в действии: его задаёт узел condition.hit через flow.if.
     const base = { enabled: true };
-    if (['attack', 'damage', 'heal', 'temp_hp', 'roll'].includes(kind)) base.dice = Base.dice(kind === 'attack' ? '1d20+@atk' : '1d6');
+    const defaultDice = window.Presets?.item('block_defaults', kind)?.table?.dice;
+    if (defaultDice) base.dice = Base.dice(defaultDice);
     if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });

@@ -57,9 +57,9 @@ window.CharacterBuilder = (() => {
   register('class', (s, e) => {
     const d = e.data || {}; s.class = e.name; s.saving_throws = [...(d.saves || [])];
     s.hp.hit_dice = '1' + (d.hit_die || 'd8'); s.spells.ability = d.spellcasting || '';
-    const slug = window.ClassRules.slugOf(e);
     for (const name of d.features?.['1'] || []) {
-      if (s.edition === '2014' && slug === 'fighter' && /^(Боевой стиль)(:|$)/.test(name)) continue;
+      // Особенность с признаком creation: skip (набор feature_rules) не добавляется как обычная: её выбирают отдельно.
+      if ((window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name))) continue;
       feature(s, name, d.feature_texts?.[name], e.name, window.Mechanics?.forFeature(d.mechanics,name));
     }
     appendProficiency(s, 'Доспехи', d.armor);
