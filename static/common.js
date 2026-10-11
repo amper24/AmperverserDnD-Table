@@ -262,11 +262,19 @@ const ICONS = {
 };
 // Имена всех векторных иконок: по ним интерфейс решает, можно ли показать иконку вместо текста.
 window.ICON_NAMES = Object.keys(ICONS);
+// Тон иконки по смыслу: цвет задаётся классом ico-<тон> в style.css и совпадает с цветами стилей кнопок.
+const ICON_TONES = {
+  attack: ['sword', 'bow', 'arrow', 'target'], defense: ['shield', 'helm'], magic: ['star', 'wand', 'scroll', 'gem'],
+  heal: ['heart'], damage: ['zap', 'skull'], item: ['flask', 'bag', 'box', 'chest', 'coin'],
+  nature: ['leaf', 'halfleaf', 'horns'], monster: ['dragon'],
+};
+const ICON_TONE_OF = Object.fromEntries(Object.entries(ICON_TONES).flatMap(([tone, names]) => names.map(n => [n, tone])));
 window.icon = function (name, size = 16) {
   const p = ICONS[name] || ICONS.box;
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', size); svg.setAttribute('height', size); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.classList.add('ico');
+  svg.setAttribute('class', 'ico' + (ICON_TONE_OF[name] ? ' ico-' + ICON_TONE_OF[name] : ''));
   const path = document.createElementNS(ns, 'path'); path.setAttribute('d', p); svg.append(path);
   return svg;
 };

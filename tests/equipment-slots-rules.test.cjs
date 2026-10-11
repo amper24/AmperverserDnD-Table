@@ -36,7 +36,7 @@ test('доспех — один на тело, второй остаётся в 
 test('двуручное оружие занимает обе руки и несовместимо со щитом', () => {
   const both = inv(item('Двуручный меч', { type: 'weapon', properties: ['Двуручное'] }), item('Щит', { type: 'armor', ac: '+2' }));
   E.equipDefaults(both);
-  assert.equal(both[0].equipped && both[1].equipped, false, 'двуручное и щит одновременно в руках невозможны');
+  assert.ok(!(both[0].equipped && both[1].equipped), 'двуручное и щит одновременно в руках невозможны');
   const only = inv(item('Двуручный меч', { type: 'weapon', properties: ['Двуручное'] }));
   only[0].equipped = true; E.migrate(only);
   assert.equal(only[0].hand_slot, 'both');

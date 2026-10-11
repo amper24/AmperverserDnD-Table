@@ -83,6 +83,11 @@ const assert = require('node:assert/strict');
     await page.locator('[data-uid="bow"] .act-btn.all').evaluate(b=>{b.click();b.click();});
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'));
     assert.equal(ops.filter(x=>x.op==='use').length,1);assert.equal(sheet.inventory[1].qty,2);
+    // Перетаскивание руки: двуручный лук (обе руки) сбрасывается в одну руку → одноручный хват.
+    assert.equal(await page.locator('.hand-slot.two-handed .hand-hint').count(), 2, 'подсказка двуручного хвата видна на обеих ячейках рук');
+    await page.locator('.hand-slot.filled').first().dragTo(page.locator('.hand-slot').nth(1));
+    await page.waitForTimeout(300);
+    assert.equal(ops.at(-1).op,'equip');assert.equal(ops.at(-1).item_uid,'bow');assert.equal(ops.at(-1).slot,'off','из обеих рук в одну — одноручный хват');
     await page.keyboard.press('Escape');
     await page.locator('[data-uid="bow"] .mcard-head').click();
     await page.locator('[data-uid="bow"]').getByRole('button',{name:'Изменить',exact:true}).click();
@@ -94,7 +99,8 @@ const assert = require('node:assert/strict');
     assert.ok(await page.locator('.equipment-hands').count());
     await page.waitForTimeout(600);
     const before = ops.length; concurrentSave = true;
-    await page.getByLabel('Основная рука',{exact:true}).selectOption('');
+    // После перетаскивания лук находится во второй руке: операция снятия идёт с неё.
+    await page.getByLabel('Вторая рука',{exact:true}).selectOption('');
     await page.getByText('Лист обновлён параллельно.',{exact:false}).first().waitFor();
     assert.equal(ops.length,before, 'a concurrent revision must abort the inventory operation');
     assert.equal(sheet.inventory[1].qty,1);

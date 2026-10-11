@@ -128,7 +128,7 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
             it["worn_slot"] = Value::Null;
             let mut slot = it["hand_slot"].as_str().unwrap_or("").to_string();
             if slot.is_empty() { slot = if hands == "two" { "both" } else if !occupied.contains("main") { "main" } else { "off" }.into(); }
-            let valid = match hands.as_str() { "two" => slot == "both", "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
+            let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
             if !valid || qty != 1 || slots(&slot).iter().any(|s| occupied.contains(*s)) { unequip(it); }
             else { it["hand_slot"] = json!(slot); occupied.extend(slots(&slot).iter().map(|s| s.to_string())); }
         } else if !wear.is_empty() {
@@ -170,7 +170,7 @@ pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
     let wear = wear_kind(&inv[pos]);
     let mut target = String::new();
     if hands != "none" {
-        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", "two" => slot == "both", _ => !slots(slot).is_empty() };
+        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(slot).is_empty() };
         if !valid { return Err(AppError::bad("Этот хват недоступен для предмета")); }
     } else if !wear.is_empty() {
         let allowed = worn_slots(&wear);
@@ -343,7 +343,9 @@ mod tests {
         assert_eq!(s["inventory"][0]["equipped"],false); assert_eq!(s["inventory"][1]["equipped"],false);
         assert_eq!(s["inventory"][2]["hand_slot"],"both");
         equip(&mut s,"sword","main").unwrap(); assert_eq!(s["inventory"][2]["hand_slot"],Value::Null);
-        assert!(equip(&mut s,"bow","off").is_err());
+        // Двуручный лук можно держать одной рукой; в «both» возвращаем для остальных проверок.
+        assert!(equip(&mut s,"bow","off").is_ok()); assert_eq!(s["inventory"][2]["hand_slot"],"off");
+        equip(&mut s,"bow","both").unwrap();
     }
     #[test] fn one_arrow_per_attack_not_per_damage_roll() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap();

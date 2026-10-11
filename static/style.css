@@ -1611,3 +1611,21 @@ body.lu-open { overflow: hidden; }
 .node-inline .param-group{margin:0;padding:2px 4px;border:1px dashed var(--border);border-radius:6px;display:flex;flex-wrap:wrap;gap:4px}
 .node-inline .param-group legend{font-size:10px;color:var(--muted);padding:0 3px}
 .node-inline .param-group input{width:44px}
+
+/* Тона иконок (см. ICON_TONES в common.js) и точечная зона сброса для рук */
+.ico-attack { color: var(--accent); }
+.ico-defense { color: #0891b2; }
+.ico-magic { color: #8b5cf6; }
+.ico-heal { color: var(--ok); }
+.ico-damage { color: var(--danger); }
+.ico-item { color: #d97706; }
+.ico-nature { color: #16a34a; }
+.ico-monster { color: #be185d; }
+.hand-slot[draggable="true"] { cursor: grab; }
+.hand-slot.two-handed { border-color: var(--accent); }
+.hand-hint { color: var(--accent); line-height: 1.3; }
+.hand-slot.dragover { outline: 2px dashed var(--ok); outline-offset: 3px; background: color-mix(in srgb, var(--ok) 12%, var(--panel)); }
+.hand-slot.drop-invalid { outline: 2px dashed var(--danger); outline-offset: 3px; }
+.hand-slot.dragover::after, .hand-slot.drop-invalid::after { content: attr(data-drop-hint); position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font-size: 11px; white-space: nowrap; padding: 2px 8px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--border); pointer-events: none; z-index: 2; }
+.hand-slot.drop-invalid::after { color: var(--danger); }
+.hand-slot { position: relative; }

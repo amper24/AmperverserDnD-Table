@@ -55,7 +55,8 @@ window.Equipment = (() => {
     if (it.slots_v === SLOTS_V && typeof it.wear === 'string' && (it.wear === '' || wearKinds[it.wear] !== undefined)) return it.wear;
     return inferWear(it);
   }
-  const choices = it => handednessOf(it) === 'two' ? ['both'] : handednessOf(it) === 'versatile' ? ['main', 'off', 'both'] : handednessOf(it) === 'one' ? ['main', 'off'] : wornSlots(wearKind(it));
+  // Двуручное оружие тоже можно держать одной рукой: как универсальное, но без взятия одной рукой по умолчанию.
+  const choices = it => ['two', 'versatile'].includes(handednessOf(it)) ? ['main', 'off', 'both'] : handednessOf(it) === 'one' ? ['main', 'off'] : wornSlots(wearKind(it));
   const canEquip = it => choices(it).length > 0;
   // Активное свойство недоступно, пока предмет требует экипировки/настройки, но они не выполнены.
   const canUse = it => (it.qty ?? 1) > 0 &&
@@ -100,7 +101,8 @@ window.Equipment = (() => {
       for (const it of inventory) if (free(it) && shieldOf(it) && !held('off') && !held('both')) { hold(it, 'off'); break; }
       for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it) && oneHanded(it) && !held('main')) { hold(it, 'main'); break; }
       if (!held('main') && !held('off')) for (const it of inventory) if (free(it) && handednessOf(it) === 'two' && !shieldOf(it)) { hold(it, 'both'); break; }
-      if (!held('main')) for (const it of inventory) if (free(it) && handednessOf(it) !== 'none' && !shieldOf(it)) { hold(it, 'main'); break; }
+      // Двуручное автоматически берётся только в обе руки; одноручный хват выбирает игрок.
+      if (!held('main')) for (const it of inventory) if (free(it) && !['none', 'two'].includes(handednessOf(it)) && !shieldOf(it)) { hold(it, 'main'); break; }
     }
     return migrate(inventory);
   }
