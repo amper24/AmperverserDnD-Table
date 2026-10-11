@@ -30,7 +30,10 @@ window.Modules = (function () {
   const itemPresets = () => window.Presets?.items('item_preset') || [];
   const spellPresets = () => window.Presets?.items('spell_preset') || [];
 
-  const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
+  const ICONS_KNOWN = (n) => (window.ICON_NAMES || []).includes(n);
+  // Иконки рас: векторные имена из common.js (ICONS). Ключ — name_en расы в нижнем регистре.
+  const RACE_ICONS = { dwarf: 'helm', elf: 'leaf', 'half-elf': 'halfleaf', tiefling: 'horns', dragonborn: 'dragon', gnome: 'cog', human: 'user' };
+  const raceIcon = name => icon(RACE_ICONS[String(name || '').toLowerCase()] || 'user', 18);
   // ---------- модель ----------
   // null и undefined в записи не должны затирать значения по умолчанию (иначе в интерфейсе появляется «null»)
   const defined = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined));
@@ -533,5 +536,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, RACE_ICONS, raceIcon, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();
