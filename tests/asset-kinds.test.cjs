@@ -93,3 +93,10 @@ test('слои стола берутся из реестра слоёв, а tabl
   assert.equal(table.includes("['drawing', 'text', 'note']"), false);
   assert.ok(table.includes('window.AssetKinds.layerOrder'));
 });
+
+test('панель стола не показывает обложки (table: false), библиотека — показывает', () => {
+  assert.deepEqual(plain(AK.tableOptions()), [['map', 'Карты'], ['token', 'Токены'], ['prop', 'Объекты'], ['portrait', 'Портреты']]);
+  assert.ok(AK.filterOptions().some(([k]) => k === 'cover'), 'в библиотеке обложки видны');
+  const app = fs.readFileSync('static/app.js', 'utf8');
+  assert.ok(app.includes('AssetKinds.tableOptions()'), 'панель стола берёт список из реестра');
+});

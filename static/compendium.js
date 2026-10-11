@@ -423,7 +423,7 @@ window.Compendium = (function () {
       for (const e of items) {
         e.pack_name = packNames[e.pack_id] || e.pack_name;
         e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
         const row = el('div', { class: 'item comp-entry', role: 'button', tabindex: '0', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, el('b', {}, e.name), el('small', { class: 'muted comp-entry-source' }, sourceLabel(e))), e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => showEntry(e, row));
@@ -626,7 +626,7 @@ window.Compendium = (function () {
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
         const row = el('div', { class: 'item comp-compact-entry', role: 'button', tabindex: '0', draggable: 'true', title: 'Нажми, чтобы открыть, или перетащи на лист' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => selectEntry(e, row, true));

@@ -82,12 +82,12 @@ async fn main() -> anyhow::Result<()> {
 
     let (db, is_sqlite) = db::connect(&cfg.database.url, cfg.database.max_connections).await?;
     db::migrate(&db, is_sqlite).await?;
-    seed::seed(&db).await?;
+    seed::seed(&db, &cfg.images).await?;
     admin::ensure_root_from_config(&db, &cfg.root).await?;
 
     // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход
     // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
-    match admin::run_cli(&db, &args, admin::CliMode::Cli).await {
+    match admin::run_cli(&db, &args, admin::CliMode::Cli, &cfg.images).await {
         Ok(true) => return Ok(()),
         Ok(false) => {}
         Err(e) => admin::exit_cli_error(&e),
@@ -134,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
         println!("      users create admin@example.com <пароль> --root");
         println!("    или заполните root.email и root.password в {} и перезапустите сервер.", config::display_path(&loaded.path));
     }
-    admin::spawn_console(state_db);
+    admin::spawn_console(state_db, cfg.images.clone());
     axum::serve(listener, app).await?;
     Ok(())
 }

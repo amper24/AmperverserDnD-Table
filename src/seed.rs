@@ -88,7 +88,7 @@ fn matches_shipped(current: &serde_json::Value, row_name: &str, shipped: &[(Stri
     !cm.is_empty() && shipped.iter().any(|(d, m)| *d == cd && *m == cm)
 }
 
-pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
+pub async fn seed(pool: &AnyPool, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<()> {
     let legacy: LegacyHashes = SeedFiles::get("legacy_hashes.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
     let shipped_all: ShippedHashes = SeedFiles::get("previous_shipped.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
     for (file, source, edition) in SEED_FILES {
@@ -142,24 +142,31 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
     // устаревший базовый набор (source = 'SRD' из ранних версий) убираем — его заменяют SRD 2014/2024
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL AND source = 'SRD'").execute(pool).await?;
 
-    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM assets WHERE builtin = 1").fetch_one(pool).await?.get("n");
-    if n == 0 {
-        let raw = SeedFiles::get("builtin/manifest.json").ok_or_else(|| anyhow::anyhow!("manifest.json не вшит"))?;
-        let list: Vec<BuiltinAsset> = serde_json::from_slice(&raw.data)?;
-        let mut count = 0;
-        for a in list {
+    // Встроенные ассеты: каждая запись манифеста сеется один раз (отметка в builtin_seeds).
+    // Новые записи добавляются и в уже развёрнутых базах. Ассет с тем же именем и видом, что уже есть,
+    // только отмечается (так работает переход со старой версии). Удалённый встроенный ассет не возвращается.
+    let raw = SeedFiles::get("builtin/manifest.json").ok_or_else(|| anyhow::anyhow!("manifest.json не вшит"))?;
+    let list: Vec<BuiltinAsset> = serde_json::from_slice(&raw.data)?;
+    let mut added = 0;
+    for a in list {
+        let done: i64 = sqlx::query("SELECT COUNT(*) AS n FROM builtin_seeds WHERE file = ?").bind(&a.file).fetch_one(pool).await?.get("n");
+        if done > 0 { continue; }
+        let exists: i64 = sqlx::query("SELECT COUNT(*) AS n FROM assets WHERE builtin = 1 AND name = ? AND kind = ?").bind(&a.name).bind(&a.kind).fetch_one(pool).await?.get("n");
+        if exists == 0 {
             let Some(file) = SeedFiles::get(&format!("builtin/{}", a.file)) else { continue };
             let bytes = file.data.into_owned();
-            // Размеры встроенных картинок по классу лимита (таблица KIND_SIZE_CLASS в config.rs).
-            let max_side = match crate::config::size_class(&a.kind) { crate::config::SizeClass::Map => 2048, crate::config::SizeClass::Token => 512 };
-            let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, 85)).await??;
+            // Размеры и качество — из config.yml (images), как у загрузок пользователя.
+            let max_side = img_cfg.max_side(&a.kind);
+            let quality = img_cfg.quality.min(100) as u8;
+            let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, quality)).await??;
             sqlx::query("INSERT INTO assets (id, campaign_id, owner_id, name, kind, mime, width, height, encoding, data_b64, builtin, created_at) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
                 .bind(util::uid()).bind(&a.name).bind(&a.kind).bind(&info.mime).bind(info.width).bind(info.height).bind(&info.encoding).bind(&info.data_b64).bind(util::now())
                 .execute(pool).await?;
-            count += 1;
+            added += 1;
         }
-        tracing::info!("Ассеты: добавлено {} встроенных", count);
+        sqlx::query("INSERT INTO builtin_seeds (file) VALUES (?)").bind(&a.file).execute(pool).await?;
     }
+    if added > 0 { tracing::info!("Ассеты: добавлено {} встроенных", added); }
     Ok(())
 }
 

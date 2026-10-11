@@ -592,7 +592,7 @@
     // ---- ассеты ----
     function buildAssets() {
       const w = el('div');
-      const kindSel = el('select', {}, ...AssetKinds.filterOptions().slice(1).map(([k, v]) => el('option', { value: k }, v)));
+      const kindSel = el('select', {}, ...AssetKinds.tableOptions().map(([k, v]) => el('option', { value: k }, v)));
       const gridEl = el('div', { class: 'asset-grid' });
       const drop = el('div', { class: 'dropzone' }, 'Перетащите изображения сюда или ', el('a', { href: '#', onclick: e => { e.preventDefault(); file.click(); } }, 'выберите файл'));
       const file = el('input', { type: 'file', accept: 'image/*', multiple: '', class: 'hidden' });

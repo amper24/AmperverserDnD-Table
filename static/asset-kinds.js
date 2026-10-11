@@ -16,7 +16,7 @@ window.AssetKinds = (() => {
     { id: 'portrait', label: 'Портрет', plural: 'Портреты', layer: 'character', picker: true, square: false, usage: 'avatar' },
     { id: 'item', label: 'Предмет', plural: 'Предметы', layer: 'character', picker: false, square: false, usage: 'item' },
     // cover — обложка набора; на стол не кладётся (layer только для совместимости с layerOf).
-    { id: 'cover', label: 'Обложка', plural: 'Обложки', layer: 'character', picker: true, square: false, usage: 'cover' },
+    { id: 'cover', label: 'Обложка', plural: 'Обложки', layer: 'character', picker: true, square: false, usage: 'cover', table: false },
   ];
   // Слои стола: имена, которыми ассеты и объекты попадают на сцену. Порядок отрисовки — layerOrder (нижние первыми).
   const LAYER = { map: 'map', prop: 'prop', mount: 'mount', character: 'character', attachment: 'attachment', drawing: 'drawing', text: 'text', note: 'note' };
@@ -30,6 +30,8 @@ window.AssetKinds = (() => {
   // Тип для слоя стола: первый тип, который кладётся на этот слой (слой map → карта, character → токен).
   const kindForLayer = layer => (KINDS.find(kind => kind.layer === layer) || DEFAULT).id;
   const pickers = () => KINDS.filter(kind => kind.picker);
+  // Виды для панели ресурсов стола: выбираемые и не помеченные table: false (обложки на стол не кладутся).
+  const tableOptions = () => pickers().filter(kind => kind.table !== false).map(kind => [kind.id, kind.plural]);
   // Какие виды показывать в выборе картинки для вида kind (библиотека ресурсов, «Из библиотеки»).
   // Токен — только токены; предмет — любые картинки, кроме карт (карта занимает всю сцену); остальные — свой вид.
   const pickFor = kind => {
@@ -52,5 +54,7 @@ window.AssetKinds = (() => {
     filterOptions: () => [['', 'Все типы'], ...pickers().map(kind => [kind.id, kind.plural])],
     // [значение, подпись] для <select> загрузки.
     uploadOptions: () => pickers().map(kind => [kind.id, kind.label]),
+    // [значение, подпись] для панели ресурсов стола (без «Все типы»).
+    tableOptions,
   };
 })();
