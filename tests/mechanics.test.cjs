@@ -102,16 +102,19 @@ test('charge automation is limited to one explicit fixed cost; variable costs st
 test('item rules preserve finesse and edition-specific net procedures without invented rolls',()=>{
   const d14=srd('data_seed/srd_2014.json');
   const d24=srd('data_seed/srd_2024.json');
-  const dart=d14.find(e=>e.slug==='srd14-dart').data.mechanics.programs[0].blocks;
+  // Атака и урон — две программы (кнопки): блоки проверяем по всем программам предмета.
+  const dartPrograms=d14.find(e=>e.slug==='srd14-dart').data.mechanics.programs;
+  assert.deepEqual(dartPrograms.map(p=>p.name),['Атака','Урон']);
+  const dart=dartPrograms.flatMap(p=>p.blocks);
   assert.equal(dart.find(b=>b.kind==='attack').dice.stat,'atk');
   assert.equal(dart.find(b=>b.kind==='damage').dice.stat,'best');
-  const net14=d14.find(e=>e.slug==='srd14-net').data.mechanics.programs[0].blocks;
+  const net14=d14.find(e=>e.slug==='srd14-net').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.deepEqual(net14.map(b=>b.kind),['attack','manual']);
   assert.match(net14[1].text,/Опутан/);
-  const net24=d24.find(e=>e.slug==='srd24-net').data.mechanics.programs[0].blocks;
+  const net24=d24.find(e=>e.slug==='srd24-net').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.deepEqual(net24.map(b=>b.kind),['manual']);
   assert.match(net24[0].text,/спасброске Ловкости/);
-  const lance=d14.find(e=>e.slug==='srd14-lance').data.mechanics.programs[0].blocks;
+  const lance=d14.find(e=>e.slug==='srd14-lance').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.ok(lance.some(b=>b.kind==='manual'&&/помехой/.test(b.text||'')));
 });
 test('no standard entry targets another character: weapons and conditions are owner-side',()=>{for(const ed of ['2014','2024']){for(const e of srd(`data_seed/srd_${ed}.json`)){for(const p of e.data.mechanics?.programs||[])for(const b of p.blocks){assert.ok(b.target!=='target',`${e.slug}: цель «${b.target}»`);if(['heal','temp_hp','condition','adjust','grant_item'].includes(b.kind))assert.equal(b.target,'self',`${e.slug}/${b.kind}`);if(['attack','damage','roll'].includes(b.kind))assert.equal(b.apply,undefined,`${e.slug}/${b.kind}`);}}}});
