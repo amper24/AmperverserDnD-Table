@@ -100,8 +100,8 @@ const assert = require('node:assert/strict');
     assert.ok(await page.locator('.equipment-hands').count());
     await page.waitForTimeout(600);
     const before = ops.length; concurrentSave = true;
-    // После перетаскивания лук находится во второй руке: операция снятия идёт с неё.
-    await page.getByLabel('Вторая рука',{exact:true}).selectOption('');
+    // Двуручный лук теперь в основной руке (одноручный хват): снятие идёт с неё.
+    await page.getByLabel('Основная рука',{exact:true}).selectOption('');
     await page.getByText('Лист обновлён параллельно.',{exact:false}).first().waitFor();
     assert.equal(ops.length,before, 'a concurrent revision must abort the inventory operation');
     assert.equal(sheet.inventory[1].qty,1);
