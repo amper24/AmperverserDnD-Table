@@ -100,7 +100,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     const backgroundLanguages = Number(draft.selected.background?.data?.languages);
     const classSlug = window.ClassRules.slugOf(draft.selected.class);
     const originLanguages = draft.edition === '2024' ? 2 : 0; // Common is automatic; choose two Standard Languages
-    const rogueLanguage = draft.edition === '2024' && classSlug === 'rogue' ? 1 : 0;
+    const rogueLanguage = Number(window.Presets?.classRules(draft.edition, classSlug)?.languages_extra) || 0;
     return originLanguages + (Number.isInteger(backgroundLanguages) && backgroundLanguages > 0 ? backgroundLanguages : 0) + raceLanguageChoice() + rogueLanguage;
   }
   /// Что мешает пройти шаг — для подсказок в навигации и сообщений.
@@ -516,7 +516,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     const classSlug = window.ClassRules.slugOf(draft.selected.class);
     const origin = [draft.edition === '2024' ? 'происхождение — 2 стандартных' : '',
       Number(draft.selected.background?.data?.languages) > 0 ? `предыстория — ${draft.selected.background.data.languages}` : '',
-      fromRace ? `раса — ${fromRace}` : '', draft.edition === '2024' && classSlug === 'rogue' ? 'плут — 1 стандартный' : ''].filter(Boolean).join(' · ');
+      fromRace ? `раса — ${fromRace}` : '', window.Presets?.classRules(draft.edition, classSlug)?.languages_extra_label || ''].filter(Boolean).join(' · ');
     return el('section', { class: 'builder-panel builder-languages' },
       el('div', { class: 'builder-panel-head' },
         el('div', {}, el('b', {}, 'Дополнительные языки'), el('small', { class: 'muted' }, `${origin} · знаете от расы: ${known.length ? known.join(', ') : 'нет'}`)),

@@ -39,6 +39,10 @@
     mechanic_starters: { fields: ['table'] },
     // Правила разбора текста снаряжения (колчан с N стрел и т. п.): table.pattern, flags, container, count_group, ammo_group.
     equipment_text_rules: { fields: ['table'] },
+    // Выбор стартового снаряжения: role 'filter' (фильтр каталога) и 'pattern' (текст → фильтр).
+    equipment_pick_rules: { fields: ['table'] },
+    // Умолчания блоков механик: поля нового блока по виду (dice — формула, condition_key — состояние).
+    block_defaults: { fields: ['table'] },
   };
   const STORE_KEY = 'et-presets-user';
   const MANIFEST = 'index.json';

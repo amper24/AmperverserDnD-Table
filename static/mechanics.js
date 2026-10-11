@@ -26,17 +26,18 @@ window.Mechanics = (() => {
     return {count:m[2]?Number(m[1]||1):0,sides:Number(m[2]||6),bonus:Number(m[3]||0),stat:m[4]||''};
   }
   function expression(d) { if(d?.advanced) return d.advanced; return (d?.count ? `${d.count}d${d.sides}` : '0') + (Number(d?.bonus)>=0?'+':'') + (Number(d?.bonus)||0) + (d?.stat?'+@'+d.stat:''); }
+  // Умолчания полей блока по виду — набор block_defaults (dice — строка формулы, condition_key — ключ состояния).
+  function blockDefaults(kind) {
+    const fields = window.Presets?.item('block_defaults', kind)?.table || {};
+    return Object.fromEntries(Object.entries(fields).map(([key, value]) => {
+      if (key === 'dice') return ['dice', dice(value)];
+      if (key === 'condition_key') return ['condition', conditionName(value)];
+      return [key, JSON.parse(JSON.stringify(value))];
+    }));
+  }
   function block(kind) {
     const b={id:uid(),kind,enabled:true,when:'always'};
-    if(['attack','damage','heal','temp_hp','roll'].includes(kind)) Object.assign(b,{dice:dice(kind==='attack'?'1d20+@atk':'1d6'),...(['heal','temp_hp'].includes(kind)?{target:'self',apply:true}:{})});
-    if(kind==='consume') Object.assign(b,{resource:'quantity',source:'self',amount:1,trigger:'use'});
-    if(kind==='grant_item') Object.assign(b,{target:'self',amount:1,item:{name:'Пустой флакон',type:'gear',qty:1,weight:0.1,stackable:true,handedness:'none',actions:[]}});
-    if(kind==='condition') Object.assign(b,{target:'self',condition:conditionName('poisoned'),operation:'add'});
-    if(kind==='adjust') Object.assign(b,{target:'self',field:'speed',amount:5});
-    if(kind==='require') Object.assign(b,{field:'hp.current',minimum:1});
-    if(kind==='manual') Object.assign(b,{text:'Опишите правило, которое мастер применяет вручную.'});
-    if(kind==='passive') Object.assign(b,{field:'speed',value:30});
-    return b;
+    return Object.assign(b, blockDefaults(kind));
   }
   // Библиотека шаблонов и стартовые программы — наборы mechanic_templates и mechanic_starters (static/presets/).
   // Описание блока в наборе: вид (kind) и поля; dice — строка формулы, condition_key — ключ состояния

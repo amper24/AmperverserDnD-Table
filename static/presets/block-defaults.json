@@ -1,0 +1,126 @@
+{
+  "kind": "block_defaults",
+  "id": "builtin.block-defaults",
+  "name": "Умолчания блоков механик",
+  "items": [
+    {
+      "id": "attack",
+      "name": "Умолчания: attack",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "dice": "1d20+@atk"
+      }
+    },
+    {
+      "id": "damage",
+      "name": "Умолчания: damage",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "dice": "1d6"
+      }
+    },
+    {
+      "id": "roll",
+      "name": "Умолчания: roll",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "dice": "1d6"
+      }
+    },
+    {
+      "id": "heal",
+      "name": "Умолчания: heal",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "dice": "1d6",
+        "target": "self",
+        "apply": true
+      }
+    },
+    {
+      "id": "temp_hp",
+      "name": "Умолчания: temp_hp",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "dice": "1d6",
+        "target": "self",
+        "apply": true
+      }
+    },
+    {
+      "id": "consume",
+      "name": "Умолчания: consume",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "resource": "quantity",
+        "source": "self",
+        "amount": 1,
+        "trigger": "use"
+      }
+    },
+    {
+      "id": "grant_item",
+      "name": "Умолчания: grant_item",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "target": "self",
+        "amount": 1,
+        "item": {
+          "name": "Пустой флакон",
+          "type": "gear",
+          "qty": 1,
+          "weight": 0.1,
+          "stackable": true,
+          "handedness": "none",
+          "actions": []
+        }
+      }
+    },
+    {
+      "id": "condition",
+      "name": "Умолчания: condition",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "target": "self",
+        "condition_key": "poisoned",
+        "operation": "add"
+      }
+    },
+    {
+      "id": "adjust",
+      "name": "Умолчания: adjust",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "target": "self",
+        "field": "speed",
+        "amount": 5
+      }
+    },
+    {
+      "id": "require",
+      "name": "Умолчания: require",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "field": "hp.current",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Умолчания: manual",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "text": "Опишите правило, которое мастер применяет вручную."
+      }
+    },
+    {
+      "id": "passive",
+      "name": "Умолчания: passive",
+      "hint": "Поля нового блока этого вида. dice — формула; condition_key — ключ состояния из набора conditions",
+      "table": {
+        "field": "speed",
+        "value": 30
+      }
+    }
+  ]
+}

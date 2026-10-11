@@ -188,39 +188,17 @@ window.CharacterBuilder = (() => {
     return t || 'gear';
   };
   // «По выбору»: категории предметов совпадают в 2014 и 2024, поэтому фильтр один на обе редакции.
-  const PICK_FILTERS = {
-    'martial-melee': { label: 'воинское рукопашное оружие', test: e => itemKind(e) === 'weapon' && /Воинское рукопашное/i.test(entryCategory(e)) },
-    'martial-ranged': { label: 'воинское дальнобойное оружие', test: e => itemKind(e) === 'weapon' && /Воинское дальнобойное/i.test(entryCategory(e)) },
-    'simple-melee': { label: 'простое рукопашное оружие', test: e => itemKind(e) === 'weapon' && /Простое рукопашное/i.test(entryCategory(e)) },
-    'simple-ranged': { label: 'простое дальнобойное оружие', test: e => itemKind(e) === 'weapon' && /Простое дальнобойное/i.test(entryCategory(e)) },
-    'martial-weapon': { label: 'воинское оружие', test: e => itemKind(e) === 'weapon' && /Воинское/i.test(entryCategory(e)) },
-    'simple-weapon': { label: 'простое оружие', test: e => itemKind(e) === 'weapon' && /Простое/i.test(entryCategory(e)) },
-    weapon: { label: 'оружие', test: e => itemKind(e) === 'weapon' },
-    instrument: { label: 'музыкальный инструмент', test: e => /Музыкальные инструменты/i.test(entryCategory(e)) },
-    tools: { label: 'инструменты ремесленника', test: e => /Инструменты ремесленника/i.test(entryCategory(e)) },
-    'tools-or-instrument': { label: 'инструменты или музыкальный инструмент', test: e => /Инструменты ремесленника|Музыкальные инструменты/i.test(entryCategory(e)) },
-    'holy-symbol': { label: 'священный символ', test: e => /Священные символы/i.test(entryCategory(e)) },
-    'arcane-focus': { label: 'магический фокус', test: e => /Магические фокусы/i.test(entryCategory(e)) },
-    'druidic-focus': { label: 'друидический фокус', test: e => /Друидические фокусы/i.test(entryCategory(e)) || /омел|тотем|тисовая|деревянный посох/i.test(entryName(e)) },
-    'gaming-set': { label: 'игровой набор', test: e => /Игровые наборы/i.test(entryCategory(e)) },
-    pack: { label: 'набор снаряжения', test: e => /Наборы снаряжения/i.test(entryCategory(e)) },
-  };
-  // \w в JavaScript не включает кириллицу — классы букв задаются явно. Порядок важен: узкие правила раньше общих.
-  const PICK_PATTERNS = [
-    [/друидическ[а-яё]*|фокусировк[а-яё]*\s+друида/i, 'druidic-focus'],
-    [/священн[а-яё]*\s+символ/i, 'holy-symbol'],
-    [/(?:магическ[а-яё]*|заклинательн[а-яё]*)\s+фокус/i, 'arcane-focus'],
-    [/инструмент[а-яё]*\s+ремесленник[а-яё]*\s+(?:или|and)\s+.*музыкальн[а-яё]*\s+инструмент/i, 'tools-or-instrument'],
-    [/инструмент[а-яё]*\s+ремесленник/i, 'tools'],
-    [/музыкальн[а-яё]*\s+инструмент/i, 'instrument'],
-    [/игров[а-яё]*\s+набор/i, 'gaming-set'],
-    [/воинск[а-яё]*\s+рукопашн[а-яё]*/i, 'martial-melee'],
-    [/прост[а-яё]*\s+рукопашн[а-яё]*/i, 'simple-melee'],
-    [/прост[а-яё]*\s+дальнобойн[а-яё]*/i, 'simple-ranged'],
-    [/воинск[а-яё]*\s+оружи[а-яё]*/i, 'martial-weapon'],
-    [/прост[а-яё]*\s+оружи[а-яё]*/i, 'simple-weapon'],
-    [/^(?:любо[ейя]|любые|любого|любую|any)?\s*оружи[а-яё]*/i, 'weapon'],
-  ];
+  // Фильтры и шаблоны выбора снаряжения — набор equipment_pick_rules (роли filter и pattern).
+  const pickRules = role => (window.Presets?.items('equipment_pick_rules') || []).map(item => ({ id: item.id, ...item.table })).filter(t => t.role === role);
+  function pickFilterOf(id) {
+    const f = pickRules('filter').find(t => t.id === id);
+    if (!f) return undefined;
+    const category = f.category ? new RegExp(f.category, 'i') : null, name = f.name ? new RegExp(f.name, 'i') : null;
+    return { label: f.label, test: e => (!f.weapon || itemKind(e) === 'weapon')
+      && (category || name ? Boolean((category && category.test(entryCategory(e))) || (name && name.test(entryName(e)))) : true) };
+  }
+  // PICK_FILTERS[id] → { label, test }: прежний интерфейс для мастера и builder-dialog, данные — из набора.
+  const PICK_FILTERS = new Proxy({}, { get: (_, id) => typeof id === 'string' ? pickFilterOf(id) : undefined });
   const cap = v => { const t = String(v || '').trim(); return t ? t[0].toLocaleUpperCase() + t.slice(1) : ''; };
   const normalizeName = v => String(v === undefined || v === null ? '' : v).toLocaleLowerCase().replace(/ё/g, 'е')
     .replace(/[«»"'.,;:()[\]×*]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -279,11 +257,11 @@ window.CharacterBuilder = (() => {
   }
   /// «Любое воинское рукопашное оружие», «священный символ», «два простых рукопашных оружия» — выбор игрока.
   function parsePick(text) {
-    const match = PICK_PATTERNS.find(([re]) => re.test(text));
+    const match = pickRules('pattern').find(t => new RegExp(t.pattern, t.flags || '').test(text));
     if (!match) return null;
     const count = /^\s*(?:два|две|2)\s/i.test(text) ? 2 : /^\s*(?:три|3)\s/i.test(text) ? 3 : 1;
     const qualifier = (String(text).match(/\(([^)]*)\)/) || [])[1] || '';
-    return { filter: match[1], count, label: PICK_FILTERS[match[1]].label, prefer: qualifier.trim() };
+    return { filter: match.filter, count, label: pickFilterOf(match.filter)?.label || '', prefer: qualifier.trim() };
   }
   /// Один предмет из текста: количество (×N, «4», «пять»), пояснение в скобках и золото.
   function parseItemToken(raw, source) {

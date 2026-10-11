@@ -522,7 +522,9 @@
         "expertise_levels": {
           "1": 2,
           "6": 2
-        }
+        },
+        "languages_extra": 1,
+        "languages_extra_label": "плут — 1 стандартный"
       }
     },
     {
