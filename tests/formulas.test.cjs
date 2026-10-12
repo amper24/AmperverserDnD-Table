@@ -87,7 +87,7 @@ test('legacy item formulas are translated to the same meaning', () => {
 test('unarmored rule is read from data first and from legacy strings second', () => {
   const data = { formula: '10 + @dex + @wis', no_shield: true };
   assert.deepEqual(F.unarmoredRule({ unarmored_defense: data }), data);
-  assert.deepEqual(F.unarmoredRule({ unarmored_defense: 'monk' }), F.LEGACY_UNARMORED.monk);
+  assert.deepEqual(F.unarmoredRule({ unarmored_defense: 'monk' }), F.legacyUnarmored('monk'));
   assert.equal(F.unarmoredRule({ unarmored_defense: 'unknown-class' }), null, 'unknown class names give no rule');
   assert.equal(F.unarmoredRule({}), null);
 });

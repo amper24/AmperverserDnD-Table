@@ -85,6 +85,8 @@ pub fn locales(data: &Value, base: &str) -> Vec<String> {
 pub fn view(data: &Value, base: &str, lang: &str) -> (Value, String) {
     let mut d = data.clone();
     let layers = d.as_object_mut().and_then(|o| o.remove("i18n"));
+    // Английское название хранится только в слое i18n.en.name; клиенту отдаём его как name_en (сопоставление по именам).
+    let name_en = layers.as_ref().and_then(|i| i.get("en")).and_then(|o| o.get("name")).cloned();
     let mut effective = base.to_string();
     if lang != base {
         if let Some(ov) = layers.as_ref().and_then(|i| i.get(lang)).filter(|o| o.is_object()) {
@@ -92,7 +94,10 @@ pub fn view(data: &Value, base: &str, lang: &str) -> (Value, String) {
             effective = lang.to_string();
         }
     }
-    if let Some(o) = d.as_object_mut() { o.insert("i18n_view".into(), json!(effective)); }
+    if let Some(o) = d.as_object_mut() {
+        if let Some(n) = name_en { o.entry("name_en").or_insert(n); }
+        o.insert("i18n_view".into(), json!(effective));
+    }
     (d, effective)
 }
 
@@ -111,14 +116,13 @@ pub fn validate(data: &Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Ключ поиска `name_lc`: название и переводы названия (`name_en`, `i18n.*.name`) в нижнем регистре, без повторов.
+/// Ключ поиска `name_lc`: название и переводы названия (`i18n.*.name`) в нижнем регистре, без повторов.
 pub fn search_key(name: &str, data: &Value) -> String {
     let mut parts: Vec<String> = vec![name.trim().to_lowercase()];
     let mut push = |s: &str| {
         let s = s.trim().to_lowercase();
         if !s.is_empty() && !parts.contains(&s) { parts.push(s); }
     };
-    if let Some(en) = data.get("name_en").and_then(|v| v.as_str()) { push(en); }
     if let Some(i) = data.get("i18n").and_then(|v| v.as_object()) {
         for l in LANGS {
             if let Some(n) = i.get(*l).and_then(|o| o.get("name")).and_then(|v| v.as_str()) { push(n); }
@@ -205,8 +209,19 @@ mod tests {
     }
 
     #[test]
+    fn view_exposes_english_name_from_the_layer_as_name_en() {
+        let data = json!({ "desc": "Описание", "i18n": { "en": { "name": "Fireball" } } });
+        let (v, _) = view(&data, "ru", "ru");
+        assert_eq!(v["name_en"], "Fireball");
+        assert!(v.get("i18n").is_none());
+        // Сохранённое поле name_en (старые записи) не перезаписывается.
+        let old = json!({ "name_en": "Old", "i18n": { "en": { "name": "Fireball" } } });
+        assert_eq!(view(&old, "ru", "en").0["name_en"], "Old");
+    }
+
+    #[test]
     fn search_key_contains_all_names_without_duplicates() {
-        let d = json!({ "name_en": "Fireball", "i18n": { "en": { "name": "Fireball" } } });
+        let d = json!({ "i18n": { "en": { "name": "Fireball" } } });
         assert_eq!(search_key("Огненный шар", &d), "огненный шар fireball");
         assert_eq!(search_key("Меч", &json!({})), "меч");
         let d2 = json!({ "i18n": { "en": { "name": "Sword" } } });

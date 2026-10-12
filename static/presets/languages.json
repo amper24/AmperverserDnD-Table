@@ -1,0 +1,143 @@
+{
+  "kind": "languages",
+  "id": "languages",
+  "name": "Языки (SRD)",
+  "items": [
+    {
+      "id": "common",
+      "table": {
+        "ru": "Общий",
+        "en": "Common",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "common-sign",
+      "table": {
+        "ru": "Общий жестовый язык",
+        "en": "Common Sign Language",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "dwarvish",
+      "table": {
+        "ru": "Дварфийский",
+        "en": "Dwarvish",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "elvish",
+      "table": {
+        "ru": "Эльфийский",
+        "en": "Elvish",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "giant",
+      "table": {
+        "ru": "Великаний",
+        "en": "Giant",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "gnomish",
+      "table": {
+        "ru": "Гномий",
+        "en": "Gnomish",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "goblin",
+      "table": {
+        "ru": "Гоблинский",
+        "en": "Goblin",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "halfling",
+      "table": {
+        "ru": "Полуросличий",
+        "en": "Halfling",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "orc",
+      "table": {
+        "ru": "Орочий",
+        "en": "Orc",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "abyssal",
+      "table": {
+        "ru": "Абиссальный",
+        "en": "Abyssal",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "celestial",
+      "table": {
+        "ru": "Небесный",
+        "en": "Celestial",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "draconic",
+      "table": {
+        "ru": "Драконий",
+        "en": "Draconic",
+        "standard_2024": true
+      }
+    },
+    {
+      "id": "deep-speech",
+      "table": {
+        "ru": "Глубинная речь",
+        "en": "Deep Speech",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "infernal",
+      "table": {
+        "ru": "Инфернальный",
+        "en": "Infernal",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "primordial",
+      "table": {
+        "ru": "Первичный",
+        "en": "Primordial",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "sylvan",
+      "table": {
+        "ru": "Сильван",
+        "en": "Sylvan",
+        "standard_2024": false
+      }
+    },
+    {
+      "id": "undercommon",
+      "table": {
+        "ru": "Подземный общий",
+        "en": "Undercommon",
+        "standard_2024": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,2935 @@
+{
+  "kind": "class_progression",
+  "id": "builtin.class-progression.2024",
+  "name": "Таблицы развития SRD 2024",
+  "edition": "2024",
+  "items": [
+    {
+      "id": "barbarian",
+      "table": {
+        "columns": [
+          {
+            "key": "x:rages",
+            "ru": "Ярости",
+            "en": "Rages"
+          },
+          {
+            "key": "x:rage_damage",
+            "ru": "Урон ярости",
+            "en": "Rage Damage"
+          },
+          {
+            "key": "x:weapon_mastery",
+            "ru": "Мастерство оружия",
+            "en": "Weapon Mastery"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:rages": 2,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 2
+          },
+          "2": {
+            "pb": 2,
+            "x:rages": 2,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 2
+          },
+          "3": {
+            "pb": 2,
+            "x:rages": 3,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 2
+          },
+          "4": {
+            "pb": 2,
+            "x:rages": 3,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 3
+          },
+          "5": {
+            "pb": 3,
+            "x:rages": 3,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 3
+          },
+          "6": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 3
+          },
+          "7": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 3
+          },
+          "8": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2",
+            "x:weapon_mastery": 3
+          },
+          "9": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 3
+          },
+          "10": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "11": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "12": {
+            "pb": 4,
+            "x:rages": 5,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "13": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "14": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "15": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3",
+            "x:weapon_mastery": 4
+          },
+          "16": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+4",
+            "x:weapon_mastery": 4
+          },
+          "17": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4",
+            "x:weapon_mastery": 4
+          },
+          "18": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4",
+            "x:weapon_mastery": 4
+          },
+          "19": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4",
+            "x:weapon_mastery": 4
+          },
+          "20": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4",
+            "x:weapon_mastery": 4
+          }
+        }
+      }
+    },
+    {
+      "id": "bard",
+      "table": {
+        "columns": [
+          {
+            "key": "x:bardic_die",
+            "ru": "Кость бардического вдохновения",
+            "en": "Bardic Die"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:bardic_die": "D6",
+            "cantrips": 2,
+            "prepared": 4,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:bardic_die": "D6",
+            "cantrips": 2,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:bardic_die": "D6",
+            "cantrips": 2,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:bardic_die": "D6",
+            "cantrips": 3,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:bardic_die": "D8",
+            "cantrips": 3,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:bardic_die": "D8",
+            "cantrips": 3,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:bardic_die": "D8",
+            "cantrips": 3,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:bardic_die": "D8",
+            "cantrips": 3,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:bardic_die": "D8",
+            "cantrips": 3,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:bardic_die": "D10",
+            "cantrips": 4,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:bardic_die": "D10",
+            "cantrips": 4,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:bardic_die": "D10",
+            "cantrips": 4,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:bardic_die": "D10",
+            "cantrips": 4,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:bardic_die": "D10",
+            "cantrips": 4,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 20,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 21,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:bardic_die": "D12",
+            "cantrips": 4,
+            "prepared": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "cleric",
+      "table": {
+        "columns": [
+          {
+            "key": "x:channel_divinity",
+            "ru": "Божественный канал",
+            "en": "Channel Divinity"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:channel_divinity": 0,
+            "cantrips": 3,
+            "prepared": 4,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:channel_divinity": 2,
+            "cantrips": 3,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:channel_divinity": 2,
+            "cantrips": 3,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:channel_divinity": 2,
+            "cantrips": 4,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:channel_divinity": 2,
+            "cantrips": 4,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:channel_divinity": 3,
+            "cantrips": 4,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:channel_divinity": 3,
+            "cantrips": 4,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:channel_divinity": 3,
+            "cantrips": 4,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "cantrips": 4,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:channel_divinity": 3,
+            "cantrips": 5,
+            "prepared": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:channel_divinity": 4,
+            "cantrips": 5,
+            "prepared": 20,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:channel_divinity": 4,
+            "cantrips": 5,
+            "prepared": 21,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:channel_divinity": 4,
+            "cantrips": 5,
+            "prepared": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "druid",
+      "table": {
+        "columns": [
+          {
+            "key": "x:wild_shape",
+            "ru": "Дикий облик",
+            "en": "Wild Shape"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:wild_shape": 0,
+            "cantrips": 2,
+            "prepared": 4,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:wild_shape": 2,
+            "cantrips": 2,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:wild_shape": 2,
+            "cantrips": 2,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:wild_shape": 2,
+            "cantrips": 3,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:wild_shape": 2,
+            "cantrips": 3,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:wild_shape": 3,
+            "cantrips": 3,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:wild_shape": 3,
+            "cantrips": 3,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:wild_shape": 3,
+            "cantrips": 3,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:wild_shape": 3,
+            "cantrips": 3,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:wild_shape": 3,
+            "cantrips": 4,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:wild_shape": 4,
+            "cantrips": 4,
+            "prepared": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:wild_shape": 4,
+            "cantrips": 4,
+            "prepared": 20,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:wild_shape": 4,
+            "cantrips": 4,
+            "prepared": 21,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:wild_shape": 4,
+            "cantrips": 4,
+            "prepared": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "fighter",
+      "table": {
+        "columns": [
+          {
+            "key": "x:second_wind",
+            "ru": "Второе дыхание",
+            "en": "Second Wind"
+          },
+          {
+            "key": "x:weapon_mastery",
+            "ru": "Мастерство оружия",
+            "en": "Weapon Mastery"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:second_wind": 2,
+            "x:weapon_mastery": 3
+          },
+          "2": {
+            "pb": 2,
+            "x:second_wind": 2,
+            "x:weapon_mastery": 3
+          },
+          "3": {
+            "pb": 2,
+            "x:second_wind": 2,
+            "x:weapon_mastery": 3
+          },
+          "4": {
+            "pb": 2,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "5": {
+            "pb": 3,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "6": {
+            "pb": 3,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "7": {
+            "pb": 3,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "8": {
+            "pb": 3,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "9": {
+            "pb": 4,
+            "x:second_wind": 3,
+            "x:weapon_mastery": 4
+          },
+          "10": {
+            "pb": 4,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "11": {
+            "pb": 4,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "12": {
+            "pb": 4,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "13": {
+            "pb": 5,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "14": {
+            "pb": 5,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "15": {
+            "pb": 5,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 5
+          },
+          "16": {
+            "pb": 5,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 6
+          },
+          "17": {
+            "pb": 6,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 6
+          },
+          "18": {
+            "pb": 6,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 6
+          },
+          "19": {
+            "pb": 6,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 6
+          },
+          "20": {
+            "pb": 6,
+            "x:second_wind": 4,
+            "x:weapon_mastery": 6
+          }
+        }
+      }
+    },
+    {
+      "id": "monk",
+      "table": {
+        "columns": [
+          {
+            "key": "x:martial_arts",
+            "ru": "Боевые искусства",
+            "en": "Martial Arts"
+          },
+          {
+            "key": "x:focus_points",
+            "ru": "Очки сосредоточения",
+            "en": "Focus Points"
+          },
+          {
+            "key": "x:unarmored_movement",
+            "ru": "Движение без доспехов",
+            "en": "Unarmored Movement"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:martial_arts": "1d6",
+            "x:focus_points": 0,
+            "x:unarmored_movement": 0
+          },
+          "2": {
+            "pb": 2,
+            "x:martial_arts": "1d6",
+            "x:focus_points": 2,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "3": {
+            "pb": 2,
+            "x:martial_arts": "1d6",
+            "x:focus_points": 3,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "4": {
+            "pb": 2,
+            "x:martial_arts": "1d6",
+            "x:focus_points": 4,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "5": {
+            "pb": 3,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 5,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "6": {
+            "pb": 3,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 6,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "7": {
+            "pb": 3,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 7,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "8": {
+            "pb": 3,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 8,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "9": {
+            "pb": 4,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 9,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "10": {
+            "pb": 4,
+            "x:martial_arts": "1d8",
+            "x:focus_points": 10,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "11": {
+            "pb": 4,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 11,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "12": {
+            "pb": 4,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 12,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "13": {
+            "pb": 5,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 13,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "14": {
+            "pb": 5,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 14,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "15": {
+            "pb": 5,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 15,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "16": {
+            "pb": 5,
+            "x:martial_arts": "1d10",
+            "x:focus_points": 16,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "17": {
+            "pb": 6,
+            "x:martial_arts": "1d12",
+            "x:focus_points": 17,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "18": {
+            "pb": 6,
+            "x:martial_arts": "1d12",
+            "x:focus_points": 18,
+            "x:unarmored_movement": "+30 ft."
+          },
+          "19": {
+            "pb": 6,
+            "x:martial_arts": "1d12",
+            "x:focus_points": 19,
+            "x:unarmored_movement": "+30 ft."
+          },
+          "20": {
+            "pb": 6,
+            "x:martial_arts": "1d12",
+            "x:focus_points": 20,
+            "x:unarmored_movement": "+30 ft."
+          }
+        }
+      }
+    },
+    {
+      "id": "paladin",
+      "table": {
+        "columns": [
+          {
+            "key": "x:channel_divinity",
+            "ru": "Божественный канал",
+            "en": "Channel Divinity"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:channel_divinity": 0,
+            "prepared": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:channel_divinity": 0,
+            "prepared": 3,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:channel_divinity": 2,
+            "prepared": 4,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:channel_divinity": 2,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:channel_divinity": 2,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:channel_divinity": 2,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:channel_divinity": 2,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:channel_divinity": 2,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:channel_divinity": 2,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:channel_divinity": 2,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:channel_divinity": 3,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:channel_divinity": 3,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:channel_divinity": 3,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:channel_divinity": 3,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:channel_divinity": 3,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:channel_divinity": 3,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "ranger",
+      "table": {
+        "columns": [
+          {
+            "key": "x:favored_enemy",
+            "ru": "Избранный враг",
+            "en": "Favored Enemy"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:favored_enemy": 2,
+            "prepared": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:favored_enemy": 2,
+            "prepared": 3,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:favored_enemy": 2,
+            "prepared": 4,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:favored_enemy": 2,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:favored_enemy": 3,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:favored_enemy": 3,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:favored_enemy": 3,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:favored_enemy": 3,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:favored_enemy": 4,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:favored_enemy": 4,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:favored_enemy": 4,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:favored_enemy": 4,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:favored_enemy": 5,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:favored_enemy": 5,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:favored_enemy": 5,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:favored_enemy": 5,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:favored_enemy": 6,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:favored_enemy": 6,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:favored_enemy": 6,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:favored_enemy": 6,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "rogue",
+      "table": {
+        "columns": [
+          {
+            "key": "x:sneak_attack",
+            "ru": "Скрытая атака",
+            "en": "Sneak Attack"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:sneak_attack": "1d6"
+          },
+          "2": {
+            "pb": 2,
+            "x:sneak_attack": "1d6"
+          },
+          "3": {
+            "pb": 2,
+            "x:sneak_attack": "2d6"
+          },
+          "4": {
+            "pb": 2,
+            "x:sneak_attack": "2d6"
+          },
+          "5": {
+            "pb": 3,
+            "x:sneak_attack": "3d6"
+          },
+          "6": {
+            "pb": 3,
+            "x:sneak_attack": "3d6"
+          },
+          "7": {
+            "pb": 3,
+            "x:sneak_attack": "4d6"
+          },
+          "8": {
+            "pb": 3,
+            "x:sneak_attack": "4d6"
+          },
+          "9": {
+            "pb": 4,
+            "x:sneak_attack": "5d6"
+          },
+          "10": {
+            "pb": 4,
+            "x:sneak_attack": "5d6"
+          },
+          "11": {
+            "pb": 4,
+            "x:sneak_attack": "6d6"
+          },
+          "12": {
+            "pb": 4,
+            "x:sneak_attack": "6d6"
+          },
+          "13": {
+            "pb": 5,
+            "x:sneak_attack": "7d6"
+          },
+          "14": {
+            "pb": 5,
+            "x:sneak_attack": "7d6"
+          },
+          "15": {
+            "pb": 5,
+            "x:sneak_attack": "8d6"
+          },
+          "16": {
+            "pb": 5,
+            "x:sneak_attack": "8d6"
+          },
+          "17": {
+            "pb": 6,
+            "x:sneak_attack": "9d6"
+          },
+          "18": {
+            "pb": 6,
+            "x:sneak_attack": "9d6"
+          },
+          "19": {
+            "pb": 6,
+            "x:sneak_attack": "10d6"
+          },
+          "20": {
+            "pb": 6,
+            "x:sneak_attack": "10d6"
+          }
+        }
+      }
+    },
+    {
+      "id": "sorcerer",
+      "table": {
+        "columns": [
+          {
+            "key": "x:sorcery_points",
+            "ru": "Очки чародейства",
+            "en": "Sorcery Points"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:sorcery_points": 0,
+            "cantrips": 4,
+            "prepared": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:sorcery_points": 2,
+            "cantrips": 4,
+            "prepared": 4,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:sorcery_points": 3,
+            "cantrips": 4,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:sorcery_points": 4,
+            "cantrips": 5,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:sorcery_points": 5,
+            "cantrips": 5,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:sorcery_points": 6,
+            "cantrips": 5,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:sorcery_points": 7,
+            "cantrips": 5,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:sorcery_points": 8,
+            "cantrips": 5,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:sorcery_points": 9,
+            "cantrips": 5,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:sorcery_points": 10,
+            "cantrips": 6,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:sorcery_points": 11,
+            "cantrips": 6,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:sorcery_points": 12,
+            "cantrips": 6,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:sorcery_points": 13,
+            "cantrips": 6,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:sorcery_points": 14,
+            "cantrips": 6,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:sorcery_points": 15,
+            "cantrips": 6,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:sorcery_points": 16,
+            "cantrips": 6,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:sorcery_points": 17,
+            "cantrips": 6,
+            "prepared": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:sorcery_points": 18,
+            "cantrips": 6,
+            "prepared": 20,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:sorcery_points": 19,
+            "cantrips": 6,
+            "prepared": 21,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:sorcery_points": 20,
+            "cantrips": 6,
+            "prepared": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "warlock",
+      "table": {
+        "columns": [
+          {
+            "key": "x:eldritch_invocations",
+            "ru": "Таинственные воззвания",
+            "en": "Eldritch Invocations"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:eldritch_invocations": 1,
+            "cantrips": 2,
+            "prepared": 2,
+            "pact_slots": 1,
+            "pact_level": 1
+          },
+          "2": {
+            "pb": 2,
+            "x:eldritch_invocations": 3,
+            "cantrips": 2,
+            "prepared": 3,
+            "pact_slots": 2,
+            "pact_level": 1
+          },
+          "3": {
+            "pb": 2,
+            "x:eldritch_invocations": 3,
+            "cantrips": 2,
+            "prepared": 4,
+            "pact_slots": 2,
+            "pact_level": 2
+          },
+          "4": {
+            "pb": 2,
+            "x:eldritch_invocations": 3,
+            "cantrips": 3,
+            "prepared": 5,
+            "pact_slots": 2,
+            "pact_level": 2
+          },
+          "5": {
+            "pb": 3,
+            "x:eldritch_invocations": 5,
+            "cantrips": 3,
+            "prepared": 6,
+            "pact_slots": 2,
+            "pact_level": 3
+          },
+          "6": {
+            "pb": 3,
+            "x:eldritch_invocations": 5,
+            "cantrips": 3,
+            "prepared": 7,
+            "pact_slots": 2,
+            "pact_level": 3
+          },
+          "7": {
+            "pb": 3,
+            "x:eldritch_invocations": 6,
+            "cantrips": 3,
+            "prepared": 8,
+            "pact_slots": 2,
+            "pact_level": 4
+          },
+          "8": {
+            "pb": 3,
+            "x:eldritch_invocations": 6,
+            "cantrips": 3,
+            "prepared": 9,
+            "pact_slots": 2,
+            "pact_level": 4
+          },
+          "9": {
+            "pb": 4,
+            "x:eldritch_invocations": 7,
+            "cantrips": 3,
+            "prepared": 10,
+            "pact_slots": 2,
+            "pact_level": 5
+          },
+          "10": {
+            "pb": 4,
+            "x:eldritch_invocations": 7,
+            "cantrips": 4,
+            "prepared": 10,
+            "pact_slots": 2,
+            "pact_level": 5
+          },
+          "11": {
+            "pb": 4,
+            "x:eldritch_invocations": 7,
+            "cantrips": 4,
+            "prepared": 11,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "12": {
+            "pb": 4,
+            "x:eldritch_invocations": 8,
+            "cantrips": 4,
+            "prepared": 11,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "13": {
+            "pb": 5,
+            "x:eldritch_invocations": 8,
+            "cantrips": 4,
+            "prepared": 12,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "14": {
+            "pb": 5,
+            "x:eldritch_invocations": 8,
+            "cantrips": 4,
+            "prepared": 12,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "15": {
+            "pb": 5,
+            "x:eldritch_invocations": 9,
+            "cantrips": 4,
+            "prepared": 13,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "16": {
+            "pb": 5,
+            "x:eldritch_invocations": 9,
+            "cantrips": 4,
+            "prepared": 13,
+            "pact_slots": 3,
+            "pact_level": 5
+          },
+          "17": {
+            "pb": 6,
+            "x:eldritch_invocations": 9,
+            "cantrips": 4,
+            "prepared": 14,
+            "pact_slots": 4,
+            "pact_level": 5
+          },
+          "18": {
+            "pb": 6,
+            "x:eldritch_invocations": 10,
+            "cantrips": 4,
+            "prepared": 14,
+            "pact_slots": 4,
+            "pact_level": 5
+          },
+          "19": {
+            "pb": 6,
+            "x:eldritch_invocations": 10,
+            "cantrips": 4,
+            "prepared": 15,
+            "pact_slots": 4,
+            "pact_level": 5
+          },
+          "20": {
+            "pb": 6,
+            "x:eldritch_invocations": 10,
+            "cantrips": 4,
+            "prepared": 15,
+            "pact_slots": 4,
+            "pact_level": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "wizard",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 3,
+            "prepared": 4,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 3,
+            "prepared": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 3,
+            "prepared": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 4,
+            "prepared": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 4,
+            "prepared": 9,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 4,
+            "prepared": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 4,
+            "prepared": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 4,
+            "prepared": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 4,
+            "prepared": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 5,
+            "prepared": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 5,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 5,
+            "prepared": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 5,
+            "prepared": 17,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 5,
+            "prepared": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 5,
+            "prepared": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 5,
+            "prepared": 21,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 5,
+            "prepared": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 5,
+            "prepared": 23,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 5,
+            "prepared": 24,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 5,
+            "prepared": 25,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -18,12 +18,15 @@
     level: { sheet: 'level' },
   };
 
-  // Устаревшие значения листа (до данных-правил) → правило защиты без доспехов.
+  // Устаревшие значения листа (до данных-правил) → правило защиты без доспехов из набора class_rules (поле legacy_unarmored).
   // Используются только для чтения старых листов; новые записи задают правило в данных класса.
-  const LEGACY_UNARMORED = {
-    barbarian: { formula: '10 + @dex + @con', name: 'Защита без доспехов (варвар)', no_shield: false },
-    monk: { formula: '10 + @dex + @wis', name: 'Защита без доспехов (монах)', no_shield: true },
-  };
+  function legacyUnarmored(slug) {
+    for (const edition of ['2014', '2024']) {
+      const rule = window.Presets?.classRules(edition, slug)?.legacy_unarmored;
+      if (rule) return rule;
+    }
+    return null;
+  }
 
   const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const modOf = score => Math.floor((Number(score ?? 10) - 10) / 2);
@@ -155,10 +158,10 @@
   function unarmoredRule(sheet) {
     const value = sheet?.unarmored_defense;
     if (value && typeof value === 'object' && typeof value.formula === 'string') return value;
-    if (typeof value === 'string' && LEGACY_UNARMORED[value]) return LEGACY_UNARMORED[value];
+    if (typeof value === 'string' && legacyUnarmored(value)) return legacyUnarmored(value);
     return null;
   }
 
-  const API = { VARIABLES, FUNCTIONS, LEGACY_UNARMORED, modOf, sheetVars, validate, evaluate, normalizeLegacy, unarmoredRule, parse };
+  const API = { VARIABLES, FUNCTIONS, legacyUnarmored, modOf, sheetVars, validate, evaluate, normalizeLegacy, unarmoredRule, parse };
   window.Formulas = API;
 })();

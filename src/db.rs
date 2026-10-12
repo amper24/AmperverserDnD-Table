@@ -192,6 +192,9 @@ CREATE TABLE IF NOT EXISTS compendium (
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
   FOREIGN KEY (pack_id) REFERENCES packs(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS builtin_seeds (
+  file VARCHAR(128) PRIMARY KEY
+);
 "#;
 
 /// Миграции для уже существующих баз (ошибки "колонка уже есть" игнорируются).

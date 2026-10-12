@@ -114,11 +114,9 @@ window.Lang = (() => {
       'рубящий': 'Slashing', 'колющий': 'Piercing', 'дробящий': 'Bludgeoning', 'кислота': 'Acid', 'холод': 'Cold', 'огонь': 'Fire', 'силовое поле': 'Force',
       'электричество': 'Lightning', 'некротический': 'Necrotic', 'яд': 'Poison', 'психический': 'Psychic', 'излучение': 'Radiant', 'звук': 'Thunder',
       'СИЛ': 'STR', 'ЛОВ': 'DEX', 'ТЕЛ': 'CON', 'ИНТ': 'INT', 'МДР': 'WIS', 'ХАР': 'CHA',
-      'Ослеплённый': 'Blinded', 'Очарованный': 'Charmed', 'Оглохший': 'Deafened', 'Истощение': 'Exhaustion', 'Испуганный': 'Frightened', 'Схваченный': 'Grappled',
-      'Недееспособный': 'Incapacitated', 'Невидимый': 'Invisible', 'Парализованный': 'Paralyzed', 'Окаменевший': 'Petrified', 'Отравленный': 'Poisoned',
-      'Сбитый с ног': 'Prone', 'Опутанный': 'Restrained', 'Ошеломлённый': 'Stunned', 'Бессознательный': 'Unconscious',
     },
-    term(v) { return api.get() === 'en' ? (api.TERMS_EN[v] || v) : v; },
+    // Состояния переводятся из набора conditions (поле en); остальные термины — таблица выше.
+    term(v) { return api.get() === 'en' ? (api.TERMS_EN[v] || window.Presets?.items('conditions').find(c => c.table.ru === v)?.table.en || v) : v; },
     // Перевод набора: у набора есть базовый язык (locale) и переводы i18n = { en: { name, description } }.
     pack(p, field) {
       const l = api.get(), base = p?.locale || 'ru';
@@ -240,6 +238,7 @@ const ICONS = {
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z',
   edit: 'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z', trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',
   window: 'M3 5h18v14H3z M3 9h18', sheet: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M8 13h8M8 17h8', chat: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
+  d20: 'M12 2l9 5.2v9.6L12 22l-9-5.2V7.2z M3 7.2l9 5 9-5 M12 12.2V22',
   dice: 'M4 4h16v16H4z M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01', eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 15a3 3 0 100-6 3 3 0 000 6z', eyeoff: 'M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24 M1 1l22 22',
   copy: 'M9 9h11v11H9z M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1', lock: 'M5 11h14v10H5z M8 11V7a4 4 0 018 0v4', unlock: 'M5 11h14v10H5z M8 11V7a4 4 0 017.5-2',
   select: 'M4 4l7 16 2-7 7-2z', hand: 'M18 11V6a2 2 0 00-4 0v1 M14 10V4a2 2 0 00-4 0v2 M10 10.5V6a2 2 0 00-4 0v8 M18 8a2 2 0 014 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 012.83-2.82L7 15',
@@ -256,12 +255,27 @@ const ICONS = {
   sun: 'M12 17a5 5 0 100-10 5 5 0 000 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42', moon: 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z', wand: 'M15 4V2 M15 16v-2 M8 9h2 M20 9h2 M17.8 11.8L19 13 M17.8 6.2L19 5 M12.2 6.2L11 5 M3 21l9-9', scroll: 'M8 21h12a2 2 0 002-2v-2H10v2a2 2 0 11-4 0V5a2 2 0 10-4 0v3h4 M19 17V5a2 2 0 00-2-2H4', link: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71 M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
   logout: 'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9', rotate: 'M23 4v6h-6 M20.49 15a9 9 0 11-2.12-9.36L23 10', up: 'M18 15l-6-6-6 6', down: 'M6 9l6 6 6-6', left: 'M15 18l-6-6 6-6', skull: 'M12 2a8 8 0 00-8 8c0 3 1.5 5 3 6v3h10v-3c1.5-1 3-3 3-6a8 8 0 00-8-8z M9 11h.01M15 11h.01 M10 16v3M14 16v3',
   hidden: 'M2 2l20 20 M12 5c7 0 10 7 10 7a15 15 0 01-3 4 M9.9 4.6A9 9 0 0112 4 M6.6 6.6C3.4 8.6 2 12 2 12s3 7 10 7c1.8 0 3.3-.4 4.6-1', clock: 'M12 22a10 10 0 100-20 10 10 0 000 20z M12 6v6l4 2', split: 'M16 3h5v5 M8 3H3v5 M21 3l-7 7 M3 3l7 7 M12 10v11', hands: 'M12 3l4 4-4 4-4-4z M4 13h16v8H4z',
+  // Предметы: лук, самоцвет, шлем, нагрудник.
+  bow: 'M6 3c7 4 7 14 0 18 M6 3v18 M6 12h13 M16 9l3 3-3 3', gem: 'M6 3h12l4 6-10 12L2 9z M2 9h20 M9 3l3 6 3-6', helm: 'M4 17v-3a8 8 0 0116 0v3z M4 17h16 M12 6v11', chest: 'M8 3l4 2 4-2 5 3v5l-2 2v8H5v-8L3 11V6z',
+  // Расы: дварф — шлем, эльф — лист, полуэльф — половина листа, тифлинг — рога, драконорожденный — голова дракона, гном — шестерёнка, человек — силуэт (user).
+  leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-15 15z M5 19L13 11', halfleaf: 'M12 3a9 9 0 000 18z M12 3c5 2 7 6 7 9s-2 7-7 9', horns: 'M7 20C5 14 6 8 10 5 M17 20c2-6 1-12-3-15 M7 20h10',
+  dragon: 'M4 16c4-1 6-5 8-9 1 3 4 4 8 4-2 2-2 5-4 7-3 0-5-1-7 1-2-1-3-2-5-3z', cog: 'M12 15a3 3 0 100-6 3 3 0 000 6z M12 2l2 3 3-1 1 3 3 1-1 3 2 2-2 2 1 3-3 1-1 3-3-1-2 3-2-3-3 1-1-3-3-1 1-3-2-2 2-2-1-3 3-1 1-3 3 1z',
 };
+// Имена всех векторных иконок: по ним интерфейс решает, можно ли показать иконку вместо текста.
+window.ICON_NAMES = Object.keys(ICONS);
+// Тон иконки по смыслу: цвет задаётся классом ico-<тон> в style.css и совпадает с цветами стилей кнопок.
+const ICON_TONES = {
+  attack: ['sword', 'bow', 'arrow', 'target'], defense: ['shield', 'helm'], magic: ['star', 'wand', 'scroll', 'gem'],
+  heal: ['heart'], damage: ['zap', 'skull'], item: ['flask', 'bag', 'box', 'chest', 'coin'],
+  nature: ['leaf', 'halfleaf', 'horns'], monster: ['dragon'],
+};
+const ICON_TONE_OF = Object.fromEntries(Object.entries(ICON_TONES).flatMap(([tone, names]) => names.map(n => [n, tone])));
 window.icon = function (name, size = 16) {
   const p = ICONS[name] || ICONS.box;
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', size); svg.setAttribute('height', size); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.classList.add('ico');
+  svg.setAttribute('class', 'ico' + (ICON_TONE_OF[name] ? ' ico-' + ICON_TONE_OF[name] : ''));
   const path = document.createElementNS(ns, 'path'); path.setAttribute('d', p); svg.append(path);
   return svg;
 };

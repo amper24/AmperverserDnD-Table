@@ -1,13 +1,15 @@
 // Слоты экипировки по правилам D&D 5e (2014) и SRD 2024: руки, доспех, щит, кольца, фокусировки, настройка.
 // Проверяем и правила подбора слота (Equipment.choices), и то, что migrate() не создаёт недопустимых состояний,
 // и панель «Слоты по правилам» (Equipment.slotsAudit), которая показывает нарушения на листе.
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
 const ctx = { window: {}, console, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+before(() => presetsReady);
 vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
@@ -34,7 +36,7 @@ test('доспех — один на тело, второй остаётся в 
 test('двуручное оружие занимает обе руки и несовместимо со щитом', () => {
   const both = inv(item('Двуручный меч', { type: 'weapon', properties: ['Двуручное'] }), item('Щит', { type: 'armor', ac: '+2' }));
   E.equipDefaults(both);
-  assert.equal(both[0].equipped && both[1].equipped, false, 'двуручное и щит одновременно в руках невозможны');
+  assert.ok(!(both[0].equipped && both[1].equipped), 'двуручное и щит одновременно в руках невозможны');
   const only = inv(item('Двуручный меч', { type: 'weapon', properties: ['Двуручное'] }));
   only[0].equipped = true; E.migrate(only);
   assert.equal(only[0].hand_slot, 'both');

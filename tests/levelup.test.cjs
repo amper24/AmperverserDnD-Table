@@ -1,12 +1,15 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
-for (const f of ['static/class-progression.js', 'static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
-const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8')).filter(e => e.category === 'class');
+const seed = ed => loadSrd(`data_seed/srd_${ed}.json`).filter(e => e.category === 'class');
 const classes = { 2014: seed(2014), 2024: seed(2024) };
 const cls = (ed, slug) => classes[ed].find(e => e.slug === `srd${String(ed).slice(2)}-${slug}`);
 const sheet = (o = {}) => ({ edition: '2014', level: 1, class: '', subclass: '', abilities: { str: 10, dex: 10, con: 14, int: 16, wis: 10, cha: 10 }, skills: [], expertise: [], features: [],
@@ -14,10 +17,13 @@ const sheet = (o = {}) => ({ edition: '2014', level: 1, class: '', subclass: '',
 const stubs = { newFeature: f => ({ uid: 'f' + Math.random(), ...f }), spellFromCompendium: e => ({ uid: 's' + Math.random(), name: e.name, level: e.data.level, prepared: false }) };
 
 test('таблицы развития есть для всех 12 классов обеих редакций и 20 уровней', () => {
-  const P = ctx.window.CLASS_PROGRESSION;
-  for (const ed of ['2014', '2024']) { assert.equal(Object.keys(P[ed]).length, 12); for (const c of Object.values(P[ed])) assert.equal(Object.keys(c.levels).length, 20); }
-  assert.deepEqual(plain(P['2014'].wizard.levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
-  assert.equal(P['2024'].wizard.levels['5'].prepared, 9);
+  const Presets = ctx.window.Presets;
+  for (const ed of ['2014', '2024']) {
+    assert.equal(Presets.items('class_progression', ed).length, 12);
+    for (const slug of Presets.items('class_progression', ed).map(i => i.id)) assert.equal(Object.keys(Presets.classProgression(ed, slug).levels).length, 20, slug);
+  }
+  assert.deepEqual(plain(Presets.multiclassSlots('2014').levels['5'].slots.slice(0, 4)), [4, 3, 2, 0]);
+  assert.equal(Presets.classProgression('2024', 'wizard').levels['5'].prepared, 9);
 });
 test('slugOf распознаёт класс по английскому и русскому названию', () => {
   assert.equal(L.slugOf(cls('2014', 'wizard')), 'wizard'); assert.equal(L.slugOf({ name: 'Колдун', data: {} }), 'warlock'); assert.equal(L.slugOf({ name: 'Свой класс', data: {} }), '');
@@ -109,8 +115,8 @@ test('план: компетентность во всех классах и р�
   const wizard = L.plan(sheet({ level: 1, class: 'Волшебник', edition: '2024', skills: ['arcana', 'history', 'nature', 'stealth'] }), cls('2024', 'wizard'), '2024');
   assert.equal(wizard.expertise, 1);
   assert.deepEqual(plain(wizard.expertiseFrom), ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion']);
-  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'history', 'insight', 'stealth'], expertise: [] }, false, wizard.expertiseFrom)), ['arcana', 'history', 'insight']);
-  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['stealth'], expertise: [], proficiencies: 'Воровские инструменты' }, true)), ['stealth', 'thieves_tools']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'history', 'insight', 'stealth'], expertise: [] }, [], wizard.expertiseFrom)), ['arcana', 'history', 'insight']);
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['stealth'], expertise: [], proficiencies: 'Воровские инструменты' }, [{ key: 'thieves_tools', proficiency: 'воровские инструменты', flags: 'i' }])), ['stealth', 'thieves_tools']);
 });
 test('хиты: среднее, бросок, минимум 1 и пересчёт задним числом при смене Телосложения', () => {
   assert.equal(L.hpAverage(10), 6); assert.equal(L.hpAverage(6), 4);
@@ -126,7 +132,7 @@ test('улучшение характеристик: +2 или +1/+1, макси
   assert.equal(L.asiValid(ab, { cha: 2 }), false, '19 + 2 > 20'); assert.equal(L.asiValid(ab, { cha: 1, dex: 1 }), true); assert.equal(L.asiValid({ ...ab, cha: 20 }, { cha: 1 }), false);
 });
 test('черты с бонусом к характеристике требуют выбор, применяют его и откатывают вместе с повышением', () => {
-  const feats = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'feat');
+  const feats = loadSrd('data_seed/srd_2024.json').filter(e => e.category === 'feat');
   for (const feat of feats.filter(e => /увеличьте[^.\n]*характеристик/i.test(e.data?.desc || '')))
     assert.ok(L.featAbilityRule(feat), `ASI from feat is modeled: ${feat.name}`);
   const fighter = cls('2024', 'fighter'), grappler = feats.find(e => e.name === 'Борец');
@@ -298,4 +304,40 @@ test('данные: варианты умений не попадают в «Н�
     for (const f of p.features) assert.ok(!/^(Боевой стиль: |Таинственные воззвания )/.test(f.name), `${e.slug} ${lv}: ${f.name}`);
     for (const g of p.groups) if (g.kind === 'feature') { assert.ok(g.options.length >= g.count, `${e.slug} ${lv} ${g.id}`); assert.ok(g.options.every(o => o.text.length > 5), `${e.slug} ${lv} ${g.id}`); }
   }
+});
+
+test('подклассы друида и барда: правила из набора subclass_rules, в коде имён подклассов нет', async () => {
+  await presetsReady;
+  const druid = cls('2014', 'druid'), land = druid.data.subclasses.find(s => s.name_en === 'Land');
+  assert.equal(L.subclassCantripGain(druid, land, '2014', 2), 1, 'Круг Земли 2014: дополнительный заговор на 2 уровне');
+  assert.equal(L.subclassCantripGain(druid, land, '2014', 3), 0);
+  const land24 = cls('2024', 'druid').data.subclasses.find(s => s.name_en === 'Circle of the Land');
+  assert.equal(L.subclassCantripGain(cls('2024', 'druid'), land24, '2024', 2), 0, 'в 2024 правила нет');
+  const src = fs.readFileSync('static/levelup.js', 'utf8');
+  assert.doesNotMatch(src, /Круг Земли|Коллегия знаний|college of lore|круг земли/i, 'имена подклассов не зашиты в код');
+});
+
+test('пользовательский подкласс со своим правилом заклинаний из своего набора класса', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'class_rules', id: 'user.homebrew-rules', name: 'Своё', edition: '2014',
+    items: [{ id: 'homebrew', table: { subclass_rules: [{ effect: 'extra_cantrip', subclass: 'Custom', level: 2, feature: 'лишний заговор', count: 2 }] } }] });
+  const entry = { name: 'Своя', data: { name_en: 'homebrew', edition: '2014' } };
+  const sub = { name: 'Свой путь', name_en: 'Custom', features: { 2: ['Лишний заговор'] }, feature_texts: {} };
+  assert.equal(L.subclassCantripGain(entry, sub, '2014', 2), 2);
+  assert.equal(L.subclassCantripGain(entry, { ...sub, name_en: 'Other' }, '2014', 2), 0, 'другой подкласс правило не получает');
+});
+
+test('пользовательский класс: выбор повышения уровня задаётся своим набором level_choices', async () => {
+  await presetsReady;
+  ctx.window.Presets.importUser({ kind: 'class_rules', id: 'user.homebrew-levels', name: 'Свой', edition: '2014',
+    items: [{ id: 'homebrew2', table: { level_choices: [{ type: 'pick', id: 'style', feature: 'Особый стиль', kind: 'feature', prefix: 'Особый стиль: ', label: 'Особый стиль', hint: 'Один стиль', count: 1 }] } }] });
+  const entry = { name: 'Свой', data: { name_en: 'homebrew2', edition: '2014', features: { 1: ['Особый стиль'] }, feature_texts: {}, progression: null,
+    subclasses: [], features_text: {} } };
+  // Варианты стиля: в записи класса — особенности «Особый стиль: …» на уровне 1.
+  entry.data.features = { 1: ['Особый стиль', 'Особый стиль: Защита', 'Особый стиль: Дуэль'] };
+  const s = sheet({ edition: '2014', level: 0, class: '', classes: [] });
+  const p = L.plan(s, entry, '2014', {});
+  const style = p.groups.find(g => g.id === 'style');
+  assert.ok(style, 'группа выбора из своего набора есть в плане');
+  assert.deepEqual(plain(style.options.map(o => o.name)).sort(), ['Особый стиль: Дуэль', 'Особый стиль: Защита']);
 });

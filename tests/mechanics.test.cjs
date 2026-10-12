@@ -1,21 +1,27 @@
+const loadSrd = require('./fixtures/srd.cjs');
 const { test }=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function node(tag,attrs={},...children){return {tag,attrs,children:children.flat().filter(x=>x!==null&&x!==undefined),classList:{add(){}},append(...more){this.children.push(...more.flat().filter(x=>x!==null&&x!==undefined));}};}
-const ctx={window:{},crypto:require('node:crypto').webcrypto,el:node,toast(){}};vm.createContext(ctx);vm.runInContext(fs.readFileSync('static/dice.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics.js','utf8'),ctx);const M=ctx.window.Mechanics;
+const ctx={window:{},crypto:require('node:crypto').webcrypto,el:node,toast(){}};vm.createContext(ctx);
+// Шаблоны и стартовые программы читаются из наборов mechanic_templates / mechanic_starters.
+const presetsReady=require('../tools/presets/node-loader.cjs').loadPresets(ctx);vm.runInContext(fs.readFileSync('static/dice.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics.js','utf8'),ctx);const M=ctx.window.Mechanics;
 // SRD хранится в графе v2; проверки ниже читают его v1-представление (toLegacy), то есть ту же логику, что редактор.
 vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-params-form.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-registry.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics-graph.js','utf8'),ctx);const G=ctx.window.Mechanics;
-const srd=f=>JSON.parse(fs.readFileSync(f)).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,mechanics:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
+const srd=f=>loadSrd(f).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,mechanics:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));
 test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+0+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
-test('pure attack plus damage shows only hit and damage buttons; extra blocks keep the full-action button',()=>{
-  ctx.window.Modules={attackRow:(name,hit,damage)=>node('div',{class:'attack-row'},node('button',{},'Попадание'),node('button',{},'Урон'))};
+test('each use program is one button: attack and damage in one program are a single chain, not two buttons',()=>{
   ctx.window.SHEET_CTX={};
   const pair=[{id:'a',kind:'attack',dice:M.dice('d20+5')},{id:'d',kind:'damage',dice:M.dice('1d8+3')}];
   const buttons=root=>{const all=[];const visit=n=>{if(!n||typeof n!=='object')return;if(n.tag==='button')all.push(n);(n.children||[]).forEach(visit);};visit(root);return all;};
   const pure=M.buttons({mechanics:{programs:[{id:'p',name:'Удар',trigger:'use',blocks:pair}]}});
-  assert.equal(buttons(pure).length,2);
+  assert.equal(buttons(pure).length,1);
   const extended=M.buttons({mechanics:{programs:[{id:'p2',name:'Удар с расходом',trigger:'use',blocks:[{id:'c',kind:'consume'},...pair]}]}});
-  assert.equal(buttons(extended).length,3);
+  assert.equal(buttons(extended).length,1);
+  const two=M.buttons({mechanics:{programs:[{id:'a1',name:'Атака',trigger:'use',blocks:[pair[0]]},{id:'d1',name:'Урон',trigger:'use',blocks:[pair[1]]}]}});
+  assert.equal(buttons(two).length,2,'две программы — две кнопки');
+  const styled=M.buttons({mechanics:{programs:[{id:'s',name:'Огнь',trigger:'use',style:'spell',blocks:[pair[1]]}]}});
+  assert.match(buttons(styled)[0].attrs.class,/btn-style-spell/);
   const blocked=M.buttons({mechanics:{programs:[{id:'p3',name:'Potion',trigger:'use',blocks:[{id:'m',kind:'manual',text:'Use it.'}]}]}},{disabled:true});
   assert.equal(blocked.children[0].attrs.disabled,'','item state disables activation controls');
 });
@@ -96,37 +102,43 @@ test('charge automation is limited to one explicit fixed cost; variable costs st
 test('item rules preserve finesse and edition-specific net procedures without invented rolls',()=>{
   const d14=srd('data_seed/srd_2014.json');
   const d24=srd('data_seed/srd_2024.json');
-  const dart=d14.find(e=>e.slug==='srd14-dart').data.mechanics.programs[0].blocks;
+  // Атака и урон — две программы (кнопки): блоки проверяем по всем программам предмета.
+  const dartPrograms=d14.find(e=>e.slug==='srd14-dart').data.mechanics.programs;
+  assert.deepEqual(dartPrograms.map(p=>p.name),['Атака','Урон']);
+  const dart=dartPrograms.flatMap(p=>p.blocks);
   assert.equal(dart.find(b=>b.kind==='attack').dice.stat,'atk');
   assert.equal(dart.find(b=>b.kind==='damage').dice.stat,'best');
-  const net14=d14.find(e=>e.slug==='srd14-net').data.mechanics.programs[0].blocks;
+  const net14=d14.find(e=>e.slug==='srd14-net').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.deepEqual(net14.map(b=>b.kind),['attack','manual']);
   assert.match(net14[1].text,/Опутан/);
-  const net24=d24.find(e=>e.slug==='srd24-net').data.mechanics.programs[0].blocks;
+  const net24=d24.find(e=>e.slug==='srd24-net').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.deepEqual(net24.map(b=>b.kind),['manual']);
   assert.match(net24[0].text,/спасброске Ловкости/);
-  const lance=d14.find(e=>e.slug==='srd14-lance').data.mechanics.programs[0].blocks;
+  const lance=d14.find(e=>e.slug==='srd14-lance').data.mechanics.programs.flatMap(p=>p.blocks);
   assert.ok(lance.some(b=>b.kind==='manual'&&/помехой/.test(b.text||'')));
 });
 test('no standard entry targets another character: weapons and conditions are owner-side',()=>{for(const ed of ['2014','2024']){for(const e of srd(`data_seed/srd_${ed}.json`)){for(const p of e.data.mechanics?.programs||[])for(const b of p.blocks){assert.ok(b.target!=='target',`${e.slug}: цель «${b.target}»`);if(['heal','temp_hp','condition','adjust','grant_item'].includes(b.kind))assert.equal(b.target,'self',`${e.slug}/${b.kind}`);if(['attack','damage','roll'].includes(b.kind))assert.equal(b.apply,undefined,`${e.slug}/${b.kind}`);}}}});
 test('monster extracted conditional dice never become one automatically executed attack',()=>{const data=srd('data_seed/srd_2014.json');const m=data.find(e=>e.category==='monster'&&e.data.name_en==='Aboleth').data.mechanics;assert.ok(m.programs.every(p=>p.blocks.filter(b=>b.dice).length<=1));assert.ok(m.programs.flatMap(p=>p.blocks).every(b=>b.apply!==true));});
 test('standard ammo defaults conserve package weight and distinguish firearm resources',()=>{for(const ed of ['2014','2024']){const data=srd(`data_seed/srd_${ed}.json`);for(const e of data){const d=e.data.mechanics?.item_defaults;if(!d)continue;assert.ok(Number.isInteger(d.qty)&&d.qty>1);assert.ok(Math.abs(d.qty*d.unit_weight-e.data.weight)<1e-9,e.slug);if(e.data.name_en==='Bullets, Firearm')assert.equal(d.ammo_tag,'firearm_bullet');}}});
 test('named feature projection preserves mechanics without sharing mutable blocks',()=>{const m={version:1,programs:[{id:'rage',name:'Ярость',feature_name:'Ярость',trigger:'use',blocks:[{id:'b',kind:'manual',text:'Правило'}]},{id:'profile',name:'Параметры',trigger:'passive',blocks:[]}]};const f=M.forFeature(m,'Ярость');assert.equal(f.programs.length,1);f.programs[0].blocks[0].text='Изменено';assert.equal(m.programs[0].blocks[0].text,'Правило');assert.equal(M.forFeature(m,'Иное'),undefined);});
-test('starter templates give race and class valid creation blocks that project into the entry',()=>{
+test('starter templates give race and class valid creation blocks that project into the entry',async()=>{
+  await presetsReady;
   for(const cat of ['race','class','background']){
-    const m=M.starter(cat);
-    assert.equal(m.version,1,cat);
-    assert.equal(M.validate(m),'',cat);
-    assert.ok(m.programs.some(p=>p.trigger==='passive'&&p.blocks.some(b=>b.kind==='passive')),cat);
-    assert.ok(m.programs.some(p=>p.trigger==='use'),cat);
+    const m=G.starter(cat);
+    assert.equal(m.version,2,cat);
+    assert.equal(G.validate(m),'',cat);
+    const v1=G.toLegacy(m);
+    assert.ok(v1.programs.some(p=>p.trigger==='passive'&&p.blocks.some(b=>b.kind==='passive')),cat);
+    assert.ok(v1.programs.some(p=>p.trigger==='use'),cat);
   }
-  assert.equal(M.starter('item'),undefined);
-  const race=M.passiveData({data:{mechanics:M.starter('race')}});
+  assert.equal(G.starter('item'),undefined);
+  const race=G.passiveData({data:{mechanics:G.starter('race')}});
   assert.equal(race.data.speed,30);assert.equal(race.data.asi.str,2);
-  const cls=M.passiveData({data:{mechanics:M.starter('class')}});
+  const cls=G.passiveData({data:{mechanics:G.starter('class')}});
   assert.equal(cls.data.hit_die,'d8');assert.deepEqual(JSON.parse(JSON.stringify(cls.data.saves)),['str']);assert.equal(cls.data.skills.choose,2);
 });
-test('template library builds valid programs and keeps creation templates apart',()=>{
+test('template library builds valid programs and keeps creation templates apart',async()=>{
+  await presetsReady;
   const ids=c=>M.templates(c).map(t=>t.id);
   for(const cat of ['item','spell','feature','monster','race','class','background']){
     const list=M.templates(cat);

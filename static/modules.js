@@ -22,25 +22,18 @@ window.Modules = (function () {
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
   const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
-  const SCHOOLS = ['Воплощение', 'Вызов', 'Иллюзия', 'Некромантия', 'Ограждение', 'Очарование', 'Преобразование', 'Прорицание'];
-  // Основы для создания записи (шаг «Что создаём?»). Поля — стартовые значения, всё редактируется.
-  const ITEM_PRESETS = [
-    { id: 'weapon', name: 'Оружие', hint: 'Клинок, лук или посох: урон и тип атаки', fields: { type: 'weapon', name: 'Оружие' } },
-    { id: 'armor', name: 'Доспех или щит', hint: 'Защита и класс доспеха', fields: { type: 'armor', name: 'Доспех' } },
-    { id: 'consumable', name: 'Зелье или свиток', hint: 'Одноразовый эффект, расходуется при использовании', fields: { type: 'consumable', name: 'Зелье' } },
-    { id: 'magic', name: 'Магический предмет', hint: 'Требует настройки, часто с зарядами', fields: { type: 'magic', name: 'Магический предмет', attunement: true } },
-    { id: 'gear', name: 'Снаряжение', hint: 'Обычная вещь без механики: верёвка, факел, инструмент', fields: { type: 'gear', name: 'Снаряжение' } },
-    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
-  ];
-  const SPELL_PRESETS = [
-    { id: 'cantrip', name: 'Заговор', hint: 'Не тратит ячейки, работает на любом уровне', fields: { level: 0, cast_cost: 'free', name: 'Заговор' } },
-    { id: 'spell1', name: 'Заклинание 1 круга', hint: 'Тратит ячейку своего круга или выше', fields: { level: 1, name: 'Заклинание' } },
-    { id: 'spell3', name: 'Заклинание 3 круга', hint: 'Для средних по силе эффектов', fields: { level: 3, name: 'Заклинание' } },
-    { id: 'ritual', name: 'Ритуал', hint: 'Можно сотворить без ячейки за дополнительное время', fields: { level: 1, ritual: true, name: 'Ритуал' } },
-    { id: 'blank', name: 'С нуля', hint: 'Пустая форма, все поля по умолчанию', fields: {} },
-  ];
+  // Школы магии — из набора spell_schools (порядок набора; список обновляется при загрузке наборов).
+  const SCHOOLS = window.Presets?.liveList('spell_schools') || [];
+  // Школа по ключу набора (запасом — сам ключ).
+  const schoolName = key => window.Presets?.item('spell_schools', key)?.table?.ru || key;
+  // Основы для создания записи (шаг «Что создаём?») — наборы данных item_preset / spell_preset (реестр Presets).
+  const itemPresets = () => window.Presets?.items('item_preset') || [];
+  const spellPresets = () => window.Presets?.items('spell_preset') || [];
 
-  const ICONS_KNOWN = (n) => ['sword', 'shield', 'bag', 'flask', 'star', 'tool', 'coin', 'target', 'box', 'scroll', 'book'].includes(n);
+  const ICONS_KNOWN = (n) => (window.ICON_NAMES || []).includes(n);
+  // Иконки рас: векторные имена из common.js (ICONS). Ключ — name_en расы в нижнем регистре.
+  const RACE_ICONS = { dwarf: 'helm', elf: 'leaf', 'half-elf': 'halfleaf', tiefling: 'horns', dragonborn: 'dragon', gnome: 'cog', human: 'user' };
+  const raceIcon = name => icon(RACE_ICONS[String(name || '').toLowerCase()] || 'user', 18);
   // ---------- модель ----------
   // null и undefined в записи не должны затирать значения по умолчанию (иначе в интерфейсе появляется «null»)
   const defined = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined));
@@ -57,7 +50,7 @@ window.Modules = (function () {
   }
   function newSpell(o = {}) {
     o = defined(o);
-    return { uid: uid(), name: 'Заклинание', level: 1, school: 'Воплощение', casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
+    return { uid: uid(), name: 'Заклинание', level: 1, school: schoolName('evocation'), casting_time: '1 действие', range: '60 фт', components: 'В, С', duration: 'Мгновенная',
       concentration: false, ritual: false, desc: '', prepared: false, cast_cost: null, use_cost: 1, uses: null, actions: [], asset_id: null, token_asset_id: null, effect_size: 1, source: '', ...o };
   }
   /// Умение / черта / особенность — тоже модуль: описание с кнопками, действия, заряды, картинка.
@@ -226,8 +219,6 @@ window.Modules = (function () {
     return b;
   }
 
-  /// Строка атаки в стиле листов D&D: название, кнопка попадания и кнопка урона.
-  /// hit / damage: { expr, dtype, kind, index? }; index нужен, если бросок идёт через onUse (инвентарь).
   // Правый клик по кнопке броска: обычный бросок, преимущество или помеха (как в листе).
   let activeModeMenu = null, modeMenuCleanup = null;
   function closeModeMenu() {
@@ -253,27 +244,6 @@ window.Modules = (function () {
     document.addEventListener('keydown', onKey, true);
     modeMenuCleanup = () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true); };
   }
-  function attackRow(name, hit, damage, ctx, prefix, options = {}) {
-    const row = el('div', { class: 'attack-row' });
-    const label = text => (prefix ? prefix + ': ' : '') + text;
-    const mk = (action, cls, caption) => {
-      const shown = ctx ? resolve(action.expr, ctx) : action.expr;
-      const fire = mode => {
-        if (options.onUse && action.index !== undefined) return options.onUse([action.index], mode);
-        roll(action.expr, label(action.name || caption), { ctx, kind: action.kind, ...mode });
-      };
-      return el('button', { class: 'act-btn ' + cls, disabled: options.disabled ? '' : null,
-        title: [shown, action.dtype, options.note, 'Alt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим'].filter(Boolean).join('\n'),
-        onclick: e => { e.stopPropagation(); fire(modeFromEvent(e)); },
-        oncontextmenu: e => openModeMenu(e, label(action.name || caption), fire) },
-        icon(cls === 'attack' ? 'target' : 'zap', 13), ' ', caption, el('small', {}, ' ' + shown));
-    };
-    if (name) row.append(el('span', { class: 'attack-row-name' }, name));
-    if (hit) row.append(mk(hit, 'attack', 'Попадание'));
-    if (damage) row.append(mk(damage, 'damage', 'Урон'));
-    return row;
-  }
-
   // ---------- карточка предмета / заклинания (общая для листа, чата, справочника) ----------
   /// Иконка предмета: элемент. it.icon — короткий текст (1–2 символа) поверх стандартной иконки типа.
   function itemIcon(it) {
@@ -290,32 +260,16 @@ window.Modules = (function () {
     if (doc.mechanics && window.Mechanics) return Mechanics.buttons(doc, { ...options, context: ctx });
     const row = el('div', { class: 'actions-row' });
     const usable = options.item ? Equipment.activeActions(doc) : (doc.actions || []).map((a, index) => ({ ...a, index }));
-    const rollable = usable.filter(a => a.roll), paired = new Set();
+    const rollable = usable.filter(a => a.roll);
     for (let i = 0; i < rollable.length; i++) {
-      if (paired.has(i)) continue;
       const a = rollable[i];
-      // Атака и её урон — одна строка: две кнопки, как на листах D&D.
-      const j = a.kind === 'attack' ? rollable.findIndex((b, k) => k > i && !paired.has(k) && b.kind === 'damage') : -1;
-      if (j >= 0) {
-        paired.add(i); paired.add(j);
-        const d = rollable[j];
-        const line = attackRow(a.name || d.name || doc.name,
-          { expr: a.roll, dtype: a.dtype, kind: 'attack', index: a.index, name: a.name },
-          { expr: d.roll, dtype: d.dtype, kind: 'damage', index: d.index, name: d.name }, ctx, prefix, options);
-        const fireAll = mode => { if (options.onUse) return options.onUse([a.index, d.index], mode); rollMulti([a, d], prefix || doc.name, { ctx, ...mode }); };
-        line.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Попадание и урон одной связкой: при критическом попадании кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим',
-          onclick: e => { e.stopPropagation(); fireAll(modeFromEvent(e)); },
-          oncontextmenu: e => openModeMenu(e, prefix || doc.name, fireAll) }, icon('dice', 13), ' Всё'));
-        row.append(line);
-        continue;
-      }
       const tip = [resolve(a.roll, ctx || {}), a.dtype, a.note].filter(Boolean).join(' · ') + '\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру';
       const fireOne = mode => { if (options.onUse) return options.onUse([a.index], mode); roll(a.roll, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}${a.dtype ? ' (' + a.dtype + ')' : ''}`, { ctx, kind: a.kind, ...mode }); };
       row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn ' + (a.kind || 'other'), title: tip.replace('Shift — только мастеру', 'Shift — только мастеру, правая кнопка — выбрать режим'), onclick: (e) => { e.stopPropagation(); fireOne(modeFromEvent(e)); },
         oncontextmenu: e => openModeMenu(e, `${prefix ? prefix + ': ' : ''}${a.name || a.kind}`, fireOne) },
         icon(ACTION_ICONS[a.kind] || 'dice', 13), ' ', a.name || ACTION_KINDS[a.kind] || 'Бросок', el('small', {}, ' ' + resolve(a.roll, ctx || {}))));
     }
-    const rest = rollable.filter((a, i) => !paired.has(i));
+    const rest = rollable;
     if (rest.length > 1) row.append(el('button', { disabled: options.disabled ? '' : null, class: 'act-btn all', title: 'Бросить всё одной связкой: ' + rest.map(a => a.name || ACTION_KINDS[a.kind]).join(' → ') + '. При крите атаки кости урона удваиваются.\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру', onclick: e => { e.stopPropagation(); if (options.onUse) return options.onUse(rest.map(a => a.index), modeFromEvent(e)); rollMulti(rest, prefix || doc.name, { ctx, ...modeFromEvent(e) }); } }, icon('dice', 13), ' Всё'));
     if (doc.save_dc || doc.save_ability) row.append(el('span', { class: 'chip' }, `СЛ ${doc.save_dc || '@dc'} ${doc.save_ability || ''}`));
     return row;
@@ -357,14 +311,16 @@ window.Modules = (function () {
   // ---------- выбор изображения (инвентарь) и токена (карта) для модуля ----------
   /// imagePicker(doc, 'asset_id', { kind: 'item', label: 'Изображение' }) — превью + загрузка / из библиотеки / убрать.
   function imagePicker(doc, key, o = {}) {
-    const kind = o.kind || window.AssetKinds.forUsage('item'), tokenKind = window.AssetKinds.forUsage('token');
+    const kind = o.kind || window.AssetKinds.forUsage('item');
     const box = el('div', { class: 'imgpick' + (o.compact ? ' compact' : '') });
     const prev = el('div', { class: 'imgpick-prev' });
     const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     const draw = () => { prev.innerHTML = ''; if (doc[key]) assetURL(doc[key]).then(u => prev.append(el('img', { src: u }))).catch(() => prev.append(icon('image'))); else prev.append(icon(o.icon || 'image', 22)); };
-    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + (kind === tokenKind ? ' (токен)' : '')); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
+    file.addEventListener('change', async () => { const f = file.files[0]; if (!f) return; try { const fd = new FormData(); fd.append('file', f); fd.append('kind', kind); fd.append('name', (doc.name || o.label || 'image') + ' (' + window.AssetKinds.label(kind).toLowerCase() + ')'); if (o.campaignId) fd.append('campaign_id', o.campaignId); const a = await API.upload('/api/assets', fd); doc[key] = a.id; draw(); o.onChange && o.onChange(a.id); } catch (e) { toast('Ошибка: ' + e.message, 4000); } file.value = ''; });
     const fromLib = async () => {
-      const list = await API.get('/api/assets' + (kind === tokenKind ? '?kind=' + tokenKind : ''));
+      // Список — только виды, которые разрешены для этого выбора (см. AssetKinds.pickFor).
+      const allowed = new Set(window.AssetKinds.pickFor(kind));
+      const list = (await API.get('/api/assets')).filter(a => allowed.has(a.kind));
       const grid = el('div', { class: 'asset-grid pick' });
       let chosen = null;
       for (const a of list) { const t = el('div', { class: 'asset', onclick: () => { grid.querySelectorAll('.asset').forEach(x => x.classList.remove('active')); t.classList.add('active'); chosen = a.id; } }, el('div', { class: 'thumb' }), el('div', { class: 'small ellipsis', title: a.name }, a.name)); assetURL(a.id).then(u => t.querySelector('.thumb').append(el('img', { src: u }))); grid.append(t); }
@@ -400,7 +356,7 @@ window.Modules = (function () {
   }
   async function editItem(item, opts = {}) {
     const fresh = !item;
-    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', ITEM_PRESETS); if (!preset) return null; item = newItem(preset.fields); }
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', itemPresets()); if (!preset) return null; item = newItem(preset.fields); }
     const it = Equipment.normalize(JSON.parse(JSON.stringify(item || newItem())));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const form = el('div', { class: 'editor-form' },
@@ -427,7 +383,7 @@ window.Modules = (function () {
   }
   async function editSpell(spell, opts = {}) {
     const fresh = !spell;
-    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', SPELL_PRESETS); if (!preset) return null; spell = newSpell(preset.fields); }
+    if (fresh && !opts.noPresets) { const preset = await pickPreset('Что создаём?', spellPresets()); if (!preset) return null; spell = newSpell(preset.fields); }
     const sp = JSON.parse(JSON.stringify(spell || newSpell()));
     const f = (label, node) => el('div', { class: 'field' }, el('label', {}, label), node);
     const cost = el('select', {}, ...[['slot', 'Ячейка заклинания по уровню'], ['free', 'Без расхода'], ['uses', 'Заряды заклинания']].map(([value, label]) => el('option', { value, selected: (sp.cast_cost || (Number(sp.level) === 0 ? 'free' : 'slot')) === value ? '' : null }, label)));
@@ -525,6 +481,8 @@ window.Modules = (function () {
     }
     // Варианты выбора «либо / либо»: игрок решает при создании персонажа (CharacterBuilder).
     if (['race', 'class', 'background'].includes(category) && window.CharacterBuilder?.choiceEditor) simple.append(window.CharacterBuilder.choiceEditor(d));
+    // Связь с наборами данных: раса, класс, черта, состояние — правила выбираются или создаются здесь же.
+    if (window.PresetsEditor?.LINKS?.[category]) simple.append(window.PresetsEditor.linkPicker(category, d, { getName: () => state.name }));
     simple.append(Mechanics.editor(d, {category}));
     return modal(entry ? 'Редактировать' : 'Новая запись', simple, [{label:'Сохранить', cls:'primary', fn:()=>{
       if (NO_TOKEN) delete d.token_asset_id;
@@ -539,5 +497,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, attackRow, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, RACE_ICONS, raceIcon, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
 })();

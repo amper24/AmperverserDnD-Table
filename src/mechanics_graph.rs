@@ -10,7 +10,13 @@ fn json_integer(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| value.as_f64().filter(|number| number.is_finite() && number.fract() == 0.0 && *number >= i64::MIN as f64 && *number <= i64::MAX as f64).map(|number| number as i64))
 }
 const ABILITIES: &[&str] = &["str", "dex", "con", "int", "wis", "cha"];
+// Стили кнопок действия (параметр style узла «Начало действия»); совпадает с BUTTON_STYLES в node-params-form.js.
+const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage", "item", "defense"];
 const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "require", "manual", "passive"];
+// Действия с костью: их вход «dice» принимает кость проводом (как в static/node-registry.js DICE_KINDS).
+const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
+// Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
+const SKILL_IDS: &[&str] = &["acrobatics", "animal", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight", "stealth", "survival"];
 const SOCKET_TYPES: &[&str] = &["flow", "bool", "number", "dice", "ability", "text", "list", "table", "choice", "effect"];
 
 type Ports = (HashMap<String, String>, HashMap<String, String>);
@@ -22,9 +28,14 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
         "data.ability" => { outputs.insert("value".into(), "ability".into()); }
         "data.table" => { outputs.insert("value".into(), "table".into()); }
+        "data.stat" => { outputs.insert("value".into(), "dice".into()); }
+        "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
+        "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.not" => { inputs.insert("a".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "data.choice" => { outputs.insert("value".into(), "choice".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
-        "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" => { outputs.insert("value".into(), "bool".into()); }
+        "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.ability_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.speed" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -33,12 +44,16 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("options".into(), "list".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("spells".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hp_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
-        x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => { inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into()); }
+        x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => {
+            inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into());
+            if DICE_ACTIONS.contains(&&x[7..]) { inputs.insert("dice".into(), "dice".into()); }
+        }
         "group.instance" => {
             let id = params["group_id"].as_str().unwrap_or("");
             if let Some(g) = groups.iter().find(|g| g["id"] == id) {
@@ -104,10 +119,17 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         }
         "condition.subclass" if !valid_id(&p["id"], 100) => return Err(bad("Укажите ID подкласса в условии.")),
         "condition.choice" if !valid_id(&p["id"], 100) || p.get("value").is_none() => return Err(bad("Укажите ID группы и сравниваемый выбор.")),
+        "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
+        "condition.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
                 return Err(bad("Программе нужны ID, название и допустимый триггер."));
+            }
+            if let Some(style) = p.get("style") {
+                if !BUTTON_STYLES.contains(&style.as_str().unwrap_or("")) {
+                    return Err(bad("Неизвестный стиль кнопки."));
+                }
             }
         }
         "group.instance" if !valid_id(&p["group_id"], 64) => return Err(bad("Узел группы требует ID группы.")),
@@ -129,7 +151,7 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "rule.spell_list" => {
             if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); }
         }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
         "rule.armor_formula" => {
             let formula = p["formula"].as_str().unwrap_or("");
             if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); }
@@ -184,8 +206,10 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
             _ => { problems.push("Провод подключён к отсутствующему сокету.".to_string()); continue; }
         };
         if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
+        if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") { problems.push("Условие попадания подключается только ко входу «Если».".to_string()); continue; }
         let key = format!("{target}:{in_socket}");
-        if !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
+        // В конец («Конец») может прийти несколько проводов; у остальных входов — один.
+        if to_node["type"] != "flow.end" && !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
         let edge_key = format!("{source}:{out_socket}>{target}:{in_socket}");
         if !edge_ids.insert(edge_key) { problems.push("Повторяющийся провод.".to_string()); continue; }
         adjacency.get_mut(source).unwrap().push(target.to_string()); *indegree.get_mut(target).unwrap() += 1;
@@ -194,6 +218,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     let mut queue: VecDeque<String> = indegree.iter().filter(|(_, d)| **d == 0).map(|(id, _)| id.clone()).collect(); let mut visited = 0;
     while let Some(current) = queue.pop_front() { visited += 1; for target in adjacency.get(&current).into_iter().flatten() { let d = indegree.get_mut(target).unwrap(); *d -= 1; if *d == 0 { queue.push_back(target.clone()); } } }
     if visited != node_ids.len() { problems.push("Цикл в графе запрещён.".to_string()); }
+    if gated_hit_nesting(nodes, links) { problems.push("Ветвление по попаданию нельзя вкладывать в другое ветвление по попаданию.".to_string()); }
     let mut frame_ids = HashSet::new(); let mut framed_nodes = HashSet::new();
     for frame in frames {
         let id = frame["id"].as_str().unwrap_or(""); let title = frame["title"].as_str().unwrap_or("");
@@ -203,10 +228,36 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     }
     Ok(())
 }
+/// Ветвление по попаданию внутри ветви другого (см. gatedHitNesting в static/mechanics-graph.js).
+fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
+    let kind_of = |id: &str| -> String { nodes.iter().find(|n| n["id"].as_str() == Some(id)).and_then(|n| n["type"].as_str()).unwrap_or("").to_string() };
+    let edges: Vec<(String, String, String, String)> = links.iter().map(|l| (
+        l["from"]["node"].as_str().unwrap_or("").to_string(), l["from"]["socket"].as_str().unwrap_or("").to_string(),
+        l["to"]["node"].as_str().unwrap_or("").to_string(), l["to"]["socket"].as_str().unwrap_or("").to_string(),
+    )).collect();
+    let hit_flows: HashSet<String> = nodes.iter()
+        .filter(|n| n["type"].as_str() == Some("flow.if"))
+        .filter_map(|n| n["id"].as_str().map(|id| id.to_string()))
+        .filter(|id| edges.iter().any(|(from, _, to, socket)| to.as_str() == id.as_str() && socket.as_str() == "condition" && kind_of(from.as_str()) == "condition.hit"))
+        .collect();
+    let targets = |id: &str| -> Vec<String> {
+        edges.iter().filter(|(from, out, _, _)| from.as_str() == id && (out.as_str() == "then" || out.as_str() == "else")).map(|(_, _, to, _)| to.clone()).collect()
+    };
+    for id in &hit_flows {
+        let mut stack = targets(id.as_str());
+        let mut seen: HashSet<String> = HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current.clone()) { continue; }
+            if hit_flows.contains(&current) { return true; }
+            if kind_of(current.as_str()) == "flow.if" { stack.extend(targets(current.as_str())); }
+        }
+    }
+    false
+}
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "flow.if",
-    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
+    "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
+    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 
@@ -366,9 +417,51 @@ fn expand_graph(graph: &Value, groups: &[Value]) -> (Vec<Value>, Vec<Value>) {
     (nodes, links)
 }
 
-fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, context: &Value) -> Option<Value> {
+// Характеристика / навык: bonus — модификатор (навык — с владением), score — показатель (навык — пассивное 10 + бонус).
+// Формулы те же, что в statDice (static/mechanics-graph.js); переменные *_score считает inventory::resolve.
+fn stat_dice(params: &Value) -> Value {
+    let id = params["id"].as_str().unwrap_or("");
+    let score = params["mode"].as_str() == Some("score");
+    let term = if ABILITIES.contains(&id) { if score { format!("@{id}_score") } else { format!("@{id}") } } else if score { format!("10+@{id}") } else { format!("@{id}") };
+    json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": term})
+}
+// Текст формулы кости: как diceTerm в static/mechanics-graph.js.
+fn dice_term(d: &Value) -> Option<String> {
+    if let Some(s) = d["advanced"].as_str().filter(|s| !s.is_empty()) { return Some(s.to_string()); }
+    let count = json_integer(&d["count"])?; let sides = json_integer(&d["sides"])?;
+    let bonus = json_integer(&d["bonus"]).unwrap_or(0); let stat = d["stat"].as_str().unwrap_or("");
+    Some(format!("{}{}{:+}{}", if count > 0 { count.to_string() } else { "0".into() }, if count > 0 { format!("d{sides}") } else { String::new() }, bonus, if stat.is_empty() { String::new() } else { format!("+@{stat}") }))
+}
+fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<bool> {
+    graph_input_value(node, socket, incoming, nodes, context, None).and_then(|value| value.as_bool())
+}
+fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value) -> Option<Value> {
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
+        "data.stat" => Some(stat_dice(params)),
+        "dice.combine" => {
+            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None)?)?;
+            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None)?)?;
+            Some(json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": format!("{a}+{b}")}))
+        }
+        "condition.compare" => {
+            let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
+            let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
+            Some(json!(result))
+        }
+        // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
+        "logic.and" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+            (Some(false), _) | (_, Some(false)) => Some(json!(false)),
+            (Some(true), Some(true)) => Some(json!(true)),
+            _ => None,
+        },
+        "logic.or" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+            (Some(true), _) | (_, Some(true)) => Some(json!(true)),
+            (Some(false), Some(false)) => Some(json!(false)),
+            _ => None,
+        },
+        "logic.not" => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
         kind if kind.starts_with("data.") => params.get("value").cloned(),
         "condition.edition" => {
             let edition = context.get("edition")?.as_str()?;
@@ -389,7 +482,7 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, cont
 }
 fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>) -> Option<Value> {
     let key = (node["id"].as_str().unwrap_or("").to_string(), socket.to_string());
-    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, context) } else { fallback }
+    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context) } else { fallback }
 }
 pub fn to_v1(mechanics: &Value) -> Value { to_v1_with_context(mechanics, &Value::Null) }
 pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
@@ -413,34 +506,41 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
         program.insert("trigger".into(), json!(if params["trigger"] == "passive" { "passive" } else { "use" }));
         for key in ["feature_name", "group", "roll_only"] { if let Some(value) = params.get(key) { program.insert(key.into(), value.clone()); } }
         let start = (node["id"].as_str().unwrap_or("").to_string(), "exec".to_string());
-        let mut pending: Vec<Endpoint> = outgoing.get(&start).cloned().unwrap_or_default().into_iter().rev().collect();
+        // Очередь хранит [конечная точка, гейт]. Гейт «hit»/«miss» ставит ветка «Если» по условию «Попадание атаки»
+        // и действует только на узел у выхода ветки (как when в v1); продолжение цепочки — без гейта.
+        let mut pending: Vec<(Endpoint, Option<String>)> = outgoing.get(&start).cloned().unwrap_or_default().into_iter().rev().map(|endpoint| (endpoint, None)).collect();
         let mut visited = HashSet::new(); let mut blocks = Vec::new();
-        while let Some((node_id, _input_socket)) = pending.pop() {
+        while let Some(((node_id, _input_socket), gate)) = pending.pop() {
             if !visited.insert(node_id.clone()) { continue; }
             let Some(current) = nodes.get(&node_id).copied() else { continue; };
             if current["type"] == "flow.if" {
-                let condition = graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool());
+                let hit_gate = incoming.get(&(node_id.clone(), "condition".to_string())).and_then(|source| nodes.get(&source.0).copied()).is_some_and(|source| source["type"] == "condition.hit");
+                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) };
                 let sockets: &[&str] = match condition { Some(true) => &["then"], Some(false) => &["else"], None => &["then", "else"] };
                 for socket in sockets.iter().rev() {
+                    let branch: Option<String> = if hit_gate { Some(if *socket == "then" { "hit".to_string() } else { "miss".to_string() }) } else { gate.clone() };
                     let key = (node_id.clone(), (*socket).to_string());
-                    for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+                    for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, branch.clone())); }
                 }
                 continue;
             }
             let kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("");
             if !ACTIONS.contains(&kind) { continue; }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
+            if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
+            // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
+            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None) { block.insert("dice".into(), value); }
             let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned());
             if enabled.as_ref().is_some_and(|value| value == &json!(false)) {
                 let key = (node_id.clone(), "exec".to_string());
-                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
                 continue;
             }
             if let Some(value) = enabled { block.insert("enabled".into(), value); }
             let block_id = block.remove("block_id").unwrap_or(json!(node_id));
             block.insert("id".into(), block_id); block.insert("kind".into(), json!(kind)); blocks.push(Value::Object(block));
             let key = (node_id, "exec".to_string());
-            for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push(target); }
+            for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
         }
         program.insert("blocks".into(), json!(blocks)); programs.push(Value::Object(program));
     }
@@ -469,5 +569,60 @@ mod tests {
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
         assert_eq!(blocks.iter().map(|block| block["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["inner-manual", "root-roll"]);
+    }
+}
+
+#[cfg(test)]
+mod hit_gate_tests {
+    use super::*;
+
+    /// Атака → «Если» по условию «Попадание атаки» → урон. Бросок атаки детерминирован (без костей, +5).
+    fn hit_chain() -> Value {
+        json!({"version": 2, "origin": "test", "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
+            {"id": "a", "type": "action.attack", "params": {"block_id": "atk", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
+            {"id": "h", "type": "condition.hit", "params": {}},
+            {"id": "f", "type": "flow.if", "params": {}},
+            {"id": "d", "type": "action.damage", "params": {"block_id": "dmg", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
+            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+            {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
+        ], "frames": [], "groups": []}})
+    }
+
+    #[test]
+    fn hit_branch_compiles_to_a_gated_block() {
+        let graph = hit_chain();
+        assert!(problems(&graph).unwrap().is_empty());
+        let v1 = to_v1(&graph);
+        let blocks = v1["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["kind"], "attack");
+        assert_eq!(blocks[1]["kind"], "damage");
+        assert_eq!(blocks[1]["when"], "hit");
+    }
+
+    #[test]
+    fn hit_condition_only_feeds_a_branch() {
+        let mut graph = hit_chain();
+        // Условие попадания подключено к узлу, который не является «Если»: сохранение и исполнение отклоняют граф.
+        graph["graph"]["links"].as_array_mut().unwrap().push(json!({"from": {"node": "h", "socket": "value"}, "to": {"node": "d", "socket": "enabled"}}));
+        let list = problems(&graph).unwrap();
+        assert!(list.iter().any(|message| message.contains("только ко входу")), "{list:?}");
+    }
+
+    #[test]
+    fn nested_hit_branches_are_problems() {
+        let mut graph = hit_chain();
+        let nodes = graph["graph"]["nodes"].as_array_mut().unwrap();
+        nodes.push(json!({"id": "h2", "type": "condition.hit", "params": {}}));
+        nodes.push(json!({"id": "f2", "type": "flow.if", "params": {}}));
+        let links = graph["graph"]["links"].as_array_mut().unwrap();
+        links.push(json!({"from": {"node": "h2", "socket": "value"}, "to": {"node": "f2", "socket": "condition"}}));
+        links.push(json!({"from": {"node": "f", "socket": "then"}, "to": {"node": "f2", "socket": "exec"}}));
+        let list = problems(&graph).unwrap();
+        assert!(list.iter().any(|message| message.contains("вкладывать")), "{list:?}");
     }
 }

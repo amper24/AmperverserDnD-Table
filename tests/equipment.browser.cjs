@@ -78,20 +78,29 @@ const assert = require('node:assert/strict');
     assert.deepEqual(slotStyles[2], slotStyles[0], 'armor uses the same card style as hand slots');
 
     await page.getByLabel('Основная рука',{exact:true}).selectOption('bow');
-    await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===2&&!document.querySelector('.sheet').inert);
+    await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===1&&!document.querySelector('.sheet').inert);
     assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,2);
     await page.locator('[data-uid="bow"] .act-btn.all').evaluate(b=>{b.click();b.click();});
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'));
     assert.equal(ops.filter(x=>x.op==='use').length,1);assert.equal(sheet.inventory[1].qty,2);
+    // Перетаскивание руки: двуручный лук (обе руки) сбрасывается в одну руку → одноручный хват.
+    // Двуручный хват показывается одной общей рамкой на обе руки; «Одной рукой» переводит в одноручный хват.
+    assert.equal(await page.locator('.equipment-hands .hand-slot.two-handed.merged').count(), 1, 'обе руки — одна рамка');
+    await page.locator('.equipment-hands .hand-slot.merged').getByRole('button',{name:'Одной рукой',exact:true}).click();
+    await page.waitForTimeout(300);
+    assert.equal(ops.at(-1).op,'equip');assert.equal(ops.at(-1).item_uid,'bow');assert.equal(ops.at(-1).slot,'main','одна рука — одноручный хват');
     await page.keyboard.press('Escape');
     await page.locator('[data-uid="bow"] .mcard-head').click();
     await page.locator('[data-uid="bow"]').getByRole('button',{name:'Изменить',exact:true}).click();
-    await page.getByLabel('Автоматически расходовать ресурс').uncheck();
+    // Расход ресурса — узел action.consume на карточке графа (поле «Ресурс»); выключаем его «Включено».
+    const consumeCard = page.locator('.graph-node').filter({ has: page.getByLabel('Ресурс', { exact: true }) });
+    await consumeCard.getByLabel('Включено', { exact: true }).uncheck();
     await page.getByRole('button',{name:'Сохранить',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('выключен'));
     assert.ok(await page.locator('.equipment-hands').count());
     await page.waitForTimeout(600);
     const before = ops.length; concurrentSave = true;
+    // Двуручный лук теперь в основной руке (одноручный хват): снятие идёт с неё.
     await page.getByLabel('Основная рука',{exact:true}).selectOption('');
     await page.getByText('Лист обновлён параллельно.',{exact:false}).first().waitFor();
     assert.equal(ops.length,before, 'a concurrent revision must abort the inventory operation');

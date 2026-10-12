@@ -1,0 +1,151 @@
+{
+  "kind": "conditions",
+  "id": "conditions",
+  "name": "Состояния (SRD)",
+  "items": [
+    {
+      "id": "blinded",
+      "table": {
+        "ru": "Ослеплённый",
+        "en": "Blinded",
+        "short": "Ослеплён",
+        "icon": "ОС"
+      }
+    },
+    {
+      "id": "charmed",
+      "table": {
+        "ru": "Очарованный",
+        "en": "Charmed",
+        "short": "Очарован",
+        "icon": "ОЧ"
+      }
+    },
+    {
+      "id": "deafened",
+      "table": {
+        "ru": "Оглохший",
+        "en": "Deafened",
+        "short": "Оглох",
+        "icon": "ГЛ"
+      }
+    },
+    {
+      "id": "frightened",
+      "table": {
+        "ru": "Испуганный",
+        "en": "Frightened",
+        "short": "Испуган",
+        "icon": "ИС"
+      }
+    },
+    {
+      "id": "grappled",
+      "table": {
+        "ru": "Схваченный",
+        "en": "Grappled",
+        "short": "Схвачен",
+        "icon": "СХ"
+      }
+    },
+    {
+      "id": "incapacitated",
+      "table": {
+        "ru": "Недееспособный",
+        "en": "Incapacitated",
+        "short": "Недееспособен",
+        "icon": "НД"
+      }
+    },
+    {
+      "id": "invisible",
+      "table": {
+        "ru": "Невидимый",
+        "en": "Invisible",
+        "short": "Невидим",
+        "icon": "НВ"
+      }
+    },
+    {
+      "id": "paralyzed",
+      "table": {
+        "ru": "Парализованный",
+        "en": "Paralyzed",
+        "short": "Парализован",
+        "icon": "ПР"
+      }
+    },
+    {
+      "id": "petrified",
+      "table": {
+        "ru": "Окаменевший",
+        "en": "Petrified",
+        "short": "Окаменел",
+        "icon": "ОК"
+      }
+    },
+    {
+      "id": "poisoned",
+      "table": {
+        "ru": "Отравленный",
+        "en": "Poisoned",
+        "short": "Отравлен",
+        "icon": "ОТ"
+      }
+    },
+    {
+      "id": "prone",
+      "table": {
+        "ru": "Сбитый с ног",
+        "en": "Prone",
+        "short": "Сбит с ног",
+        "icon": "СБ"
+      }
+    },
+    {
+      "id": "restrained",
+      "table": {
+        "ru": "Опутанный",
+        "en": "Restrained",
+        "short": "Опутан",
+        "icon": "ОП"
+      }
+    },
+    {
+      "id": "stunned",
+      "table": {
+        "ru": "Ошеломлённый",
+        "en": "Stunned",
+        "short": "Ошеломлён",
+        "icon": "ОШ"
+      }
+    },
+    {
+      "id": "unconscious",
+      "table": {
+        "ru": "Бессознательный",
+        "en": "Unconscious",
+        "short": "Без сознания",
+        "icon": "БС"
+      }
+    },
+    {
+      "id": "exhaustion",
+      "table": {
+        "ru": "Истощение",
+        "en": "Exhaustion",
+        "short": "Истощение",
+        "icon": "ИТ"
+      }
+    },
+    {
+      "id": "concentration",
+      "table": {
+        "ru": "Концентрация",
+        "en": "Concentration",
+        "short": "Концентрация",
+        "icon": "КЦ"
+      }
+    }
+  ]
+}

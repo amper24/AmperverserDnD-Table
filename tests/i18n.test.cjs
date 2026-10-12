@@ -1,9 +1,10 @@
+const loadSrd = require('./fixtures/srd.cjs');
 // Локализация: целостность справочника (ru/en), семантика слоя перевода и клиентские помощники языка.
 const { test } = require('node:test');
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
 
 const CYR = /[А-Яа-яЁё]/, LAT = /[A-Za-z]/;
-const seed = ed => JSON.parse(fs.readFileSync(`data_seed/srd_${ed}.json`, 'utf8'));
+const seed = ed => loadSrd(`data_seed/srd_${ed}.json`);
 
 // Эталон слияния — те же правила, что в src/i18n.rs и tools/srd/localize.py.
 function merge(base, over) {
@@ -60,7 +61,9 @@ for (const ed of ['2014', '2024']) {
   });
 
   test(`SRD ${ed}: английский вид не содержит русского текста, кроме служебных значений механик`, () => {
-    const allowed = new Set(Object.keys(client().Lang.TERMS_EN));
+    // Служебные значения: ключи словаря терминов и названия состояний из набора conditions (их хранит механика).
+    const conditions = JSON.parse(fs.readFileSync('static/presets/conditions.json', 'utf8')).items.map(i => i.table.ru);
+    const allowed = new Set([...Object.keys(client().Lang.TERMS_EN), ...conditions]);
     const bad = [];
     for (const e of seed(ed)) {
       const v = view(e, 'en');
@@ -98,7 +101,7 @@ for (const ed of ['2014', '2024']) {
 }
 
 test('манифест встроенных ассетов: понятные русские названия', () => {
-  const list = JSON.parse(fs.readFileSync('data_seed/builtin/manifest.json', 'utf8'));
+  const list = loadSrd('data_seed/builtin/manifest.json');
   assert.ok(list.length > 0);
   for (const a of list) { const w = a.name.replace(/\d+x\d+/g, '').replace(/NPC/g, '').trim(); assert.ok(!LAT.test(w) && (!w || CYR.test(w)), a.name); assert.ok(['map', 'token', 'prop'].includes(a.kind) || a.kind, a.name); assert.ok(fs.existsSync(`data_seed/builtin/${a.file}`), a.file); }
 });

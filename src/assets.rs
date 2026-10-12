@@ -8,7 +8,7 @@ use axum::{
 };
 
 /// Допустимые типы ассетов. Клиентский реестр — static/asset-kinds.js; tests/asset-kinds.test.cjs сверяет списки.
-pub const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item"];
+pub const ASSET_KINDS: &[&str] = &["map", "token", "prop", "portrait", "item", "cover"];
 /// Тип, который получает загрузка без типа или с неизвестным типом. Совпадает с default в static/asset-kinds.js.
 pub const DEFAULT_KIND: &str = "token";
 use serde::Deserialize;

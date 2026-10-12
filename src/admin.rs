@@ -89,7 +89,7 @@ async fn stats(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Val
 async fn reseed(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
     user.require_root()?;
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(&st.db).await?;
-    crate::seed::seed(&st.db).await.map_err(|e| AppError::internal(e.to_string()))?;
+    crate::seed::seed(&st.db, &st.cfg.images).await.map_err(|e| AppError::internal(e.to_string()))?;
     let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").fetch_one(&st.db).await?.get("n");
     Ok(Json(json!({ "ok": true, "entries": n })))
 }
@@ -619,7 +619,7 @@ fn print_help(topic: &[String]) -> Result<(), CliError> {
 
 /// Возвращает Ok(true), если аргументы — команда администрирования и она выполнена
 /// (сервер запускать не нужно), и Ok(false), если нужно запускать сервер.
-pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Result<bool> {
+pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<bool> {
     let argv = strip_launcher(args);
     let first = argv.first().map(|s| s.to_lowercase()).unwrap_or_default();
     let rest: &[String] = if argv.is_empty() { &[] } else { &argv[1..] };
@@ -636,7 +636,7 @@ pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Re
         "version" | "--version" | "-v" | "-V" | "версия" => println!("{PROG} {VERSION} — Amperverser DnD Table (Edge Tablet)"),
         "users" | "user" => users_cmd(db, rest, mode).await?,
         "stats" => stats_cmd(db, rest).await?,
-        "reseed" => reseed_cmd(db, rest, mode).await?,
+        "reseed" => reseed_cmd(db, rest, mode, img_cfg).await?,
         "config" | "конфиг" => {
             if rest.iter().any(|t| matches!(t.as_str(), "--help" | "-h" | "help")) { println!("{HELP_CONFIG}"); } else { println!("{}", crate::config::describe()); }
         }
@@ -870,7 +870,7 @@ async fn stats_cmd(db: &AnyPool, args: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Result<()> {
+async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<()> {
     let p = parse(args, &[F_YES, F_HELP])?;
     if p.has("help") { println!("{HELP_RESEED}"); return Ok(()); }
     if !p.has("yes") && mode.interactive() {
@@ -880,7 +880,7 @@ async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Res
     let base = "SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL";
     let before: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(db).await?;
-    crate::seed::seed(db).await?;
+    crate::seed::seed(db, img_cfg).await?;
     let after: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
     println!("Базовый справочник пересоздан: было {before} записей, стало {after}");
     Ok(())
@@ -890,7 +890,7 @@ async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Res
 /// docker attach / терминал) и выполняет их тем же кодом, что и CLI. Команду можно писать как
 /// есть (`users list`) или с префиксом (`dnd-table users list`). Если stdin закрыт или
 /// недоступен — просто завершается.
-pub fn spawn_console(db: AnyPool) {
+pub fn spawn_console(db: AnyPool, img_cfg: crate::config::ImagesCfg) {
     let handle = tokio::runtime::Handle::current();
     let _ = std::thread::Builder::new().name("console".into()).spawn(move || {
         use std::io::BufRead;
@@ -910,7 +910,8 @@ pub fn spawn_console(db: AnyPool) {
                 _ => {}
             }
             let db = db.clone();
-            if let Err(e) = handle.block_on(async move { run_cli(&db, &cmd, CliMode::Console).await }) {
+            let img_cfg = img_cfg.clone();
+            if let Err(e) = handle.block_on(async move { run_cli(&db, &cmd, CliMode::Console, &img_cfg).await }) {
                 match e.downcast_ref::<CliError>() {
                     Some(c) => {
                         println!("Ошибка: {}", c.msg);

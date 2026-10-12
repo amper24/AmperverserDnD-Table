@@ -13,9 +13,10 @@ const assert = require('node:assert/strict');
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://forms-create.test/');
+    await page.waitForFunction(() => window.Presets?.loaded === true);
 
     // 1. Новый предмет: сначала шаг «Что создаём?», потом форма с заполненной основой.
     await page.evaluate(() => { window.itemResult = Modules.editItem(null); });
@@ -59,7 +60,7 @@ const assert = require('node:assert/strict');
     // 4. Стартовые графы в пустом редакторе предмета: вставка даёт валидный граф.
     await page.evaluate(() => { window.g = Modules.editItem(null, { noPresets: true }); });
     await page.locator('.node-editor').waitFor();
-    assert.equal(await page.locator('.node-starters button').count(), 3, 'blank graph (only the default use program) offers starters');
+    assert.equal(await page.locator('.node-starters button').count(), 5, 'blank graph (only the default use program) offers the starters from the presets set');
     const base = await page.locator('.graph-node').count();
     await page.locator('.node-starters button', { hasText: 'Скорость с уровня' }).click();
     assert.equal(await page.locator('.graph-node').count(), base + 2, 'speed starter adds two nodes');

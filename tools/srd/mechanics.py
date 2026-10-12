@@ -20,7 +20,7 @@ PASSIVE = ('speed', 'hit_die', 'spellcasting', 'saves', 'skills', 'languages', '
 # Строки, которые генератор подставляет сам (не из текста записи). Язык выбирается через convert(..., lang=...).
 STR = {
     'ru': {
-        'rule': 'Правило', 'feature': 'Особенность', 'creation': 'Параметры при создании', 'attack': 'Атака и урон',
+        'rule': 'Правило', 'feature': 'Особенность', 'creation': 'Параметры при создании', 'attack': 'Атака', 'damage': 'Урон',
         'choose_variant': 'Выбрать разновидность', 'variant_hint': 'Импортируйте конкретную разновидность зелья: эта запись — таблица редкостей, не отдельное зелье.',
         'empty_vial': 'Пустой флакон', 'drink': 'Выпить зелье', 'use': 'Использовать',
         'use_manual': 'Эффект и длительность применяются вручную по правилам предмета.',
@@ -36,7 +36,7 @@ STR = {
         'rules': 'Правила применения', 'no_mech': 'Нет активной автоматической механики. Параметры предмета приведены в карточке.',
     },
     'en': {
-        'rule': 'Rule', 'feature': 'Feature', 'creation': 'Character creation parameters', 'attack': 'Attack and damage',
+        'rule': 'Rule', 'feature': 'Feature', 'creation': 'Character creation parameters', 'attack': 'Attack', 'damage': 'Damage',
         'choose_variant': 'Choose a variant', 'variant_hint': 'Import a specific variant of the potion: this entry is a rarity table, not a single potion.',
         'empty_vial': 'Empty vial', 'drink': 'Drink the potion', 'use': 'Use',
         'use_manual': "Apply the effect and duration manually according to the item's rules.",
@@ -249,7 +249,10 @@ def item_programs(e, edition):
                 actions.insert(0, block('consume', resource='quantity', source='tag', tag=tag, amount=1, trigger='attack'))
             if desc:
                 actions.append(manual(desc))
-            return [program(_('attack'), actions)]
+            # Атака и урон — две отдельные программы (кнопки), у каждой свой стиль.
+            attack_part = [a for a in actions if a['kind'] in ('consume', 'attack')]
+            damage_part = [a for a in actions if a['kind'] not in ('consume', 'attack')]
+            return [program(_('attack'), attack_part, style='attack'), program(_('damage'), damage_part, style='damage')]
         if name == 'Net' and edition == '2014' and desc:
             # В SRD 2014 сеть — дальнобойное оружие без урона: попадание накладывает правило сети.
             return [program(_('use'), [block('attack', dice=dice('1d20+@atk_dex')), manual(desc)])]

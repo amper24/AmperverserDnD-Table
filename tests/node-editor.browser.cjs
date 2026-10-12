@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'mechanics-graph', 'asset-kinds', 'modules'];
+const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -18,6 +18,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' + MODULES.map(name => `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://node-editor.test/');
+    await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
       window.doc = Modules.newItem({ name: 'Холст', type: 'feature', mechanics: { version: 2, origin: 'test', graph: {
         nodes: [
@@ -60,7 +61,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     assert.notEqual(await transform(), t0, 'средняя кнопка двигает полотно');
 
     // 3. ПКМ на пустом месте: меню с поиском и категориями, узел появляется у курсора.
-    await page.mouse.click(box.x + 250, box.y + 560, { button: 'right' });
+    await page.mouse.click(box.x + 600, box.y + 700, { button: 'right' }); // пустое место: карточки с полями выше, чем раньше
     await page.locator('.node-menu').waitFor();
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
@@ -134,7 +135,16 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     // Условие: bool → условие flow.if, затем отвод провода на пустое место удаляет связь.
     await dragWire(socket('c', 'outputs', 'value'), inD);
     assert.deepEqual(await linkOf(), ['e.value->b.value', 'c.value->d.condition'], 'bool → условие создано');
-    const cvs = await canvas.boundingBox(), empty = { x: cvs.x + cvs.width - 24, y: cvs.y + cvs.height - 24 };
+    // Ищем пустую точку от правого нижнего угла холста: карточки с полями занимают больше места, чем раньше.
+    const cvs = await canvas.boundingBox();
+    const empty = await page.evaluate(([x0, y0]) => {
+      for (let y = y0; y > y0 - 500; y -= 16) for (let x = x0; x > x0 - 700; x -= 16) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && !hit.closest('.graph-node, .node-menu, .node-wires, .node-frame, .node-toolbar, .node-starters')) return { x, y };
+      }
+      return null;
+    }, [cvs.x + cvs.width - 24, cvs.y + cvs.height - 24]);
+    assert.ok(empty, 'на холсте есть пустая точка для отвода провода');
     assert.ok(await page.evaluate(([x, y]) => !document.elementFromPoint(x, y)?.closest('.graph-node, .node-menu'), [empty.x, empty.y]), 'точка отвода действительно пустая');
     const cond = await center(socket('d', 'inputs', 'condition'));
     await page.mouse.move(cond.x, cond.y); await page.mouse.down(); await page.mouse.move(empty.x, empty.y, { steps: 6 }); await page.mouse.up();
@@ -159,18 +169,42 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     await page.locator('.graph-node[data-node-id="c"] .node-id').click();
     await page.locator('.graph-node[data-node-id="d"] .node-id').click({ modifiers: ['Control'] });
     await page.locator('.graph-node[data-node-id="d"] .node-id').click({ button: 'right' });
+    // Меню узла: категории видны сразу, варианты — только при наведении на категорию.
+    await page.locator('.node-menu').waitFor();
+    const nodeCats = await page.locator('.node-menu > .node-menu-list > .node-menu-cat').allTextContents();
+    assert.deepEqual(nodeCats, ['Узел', 'Группа', 'Добавить рядом'], 'категории меню узла');
+    assert.equal(await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).isVisible(), false, 'вариант скрыт, пока не наведён курсор на категорию');
+    await page.locator('.node-menu-cat', { hasText: 'Группа' }).hover();
     await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).click();
     const graphNow = await page.evaluate(() => document.querySelector('.node-editor').getGraph());
     assert.equal(graphNow.groups.length, 1, 'выделение превращено в группу');
     assert.ok(graphNow.nodes.some(n => n.type === 'group.instance'), 'вместо выделения появился экземпляр группы');
     assert.ok(!graphNow.nodes.some(n => n.id === 'c' || n.id === 'd'), 'узлы группы убраны с полотна и лежат внутри группы');
 
+    // 10б. Дублирование из меню узла: копия появляется со сдвигом, связи не копируются.
+    const beforeDup = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.length);
+    await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
+    await page.locator('.node-menu-cat', { hasText: 'Узел' }).hover();
+    await page.locator('.node-menu-item', { hasText: 'Дублировать' }).click();
+    const afterDup = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.length);
+    assert.ok(afterDup > beforeDup, 'дублирование добавило узел');
+    const dupIds = await page.evaluate(() => { const g = document.querySelector('.node-editor').getGraph(); return new Set(g.nodes.map(n => n.id)).size === g.nodes.length; });
+    assert.equal(dupIds, true, 'у копии свой id');
+
+    // 10в. Добавление рядом: категория → подкатегория → узел (вложенные подменю).
+    await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
+    await page.locator('.node-menu-cat', { hasText: 'Добавить рядом' }).hover();
+    await page.locator('.node-menu-cat', { hasText: 'Условия' }).hover();
+    await page.locator('.node-menu-item', { hasText: 'Если уровень' }).click();
+    const lastType = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.at(-1).type);
+    assert.equal(lastType, 'condition.level', 'узел добавлен через вложенное меню');
+
     // 11. Неполный граф не блокирует связи; статус показывает незавершённость.
     await page.locator('.node-editor').focus();
     await page.keyboard.press('Escape'); // сбрасывает одноразовое сообщение, остаётся статус незавершённости
     assert.match(await statusText(), /не исполняется/i, 'незавершённый граф показан списком в статусе');
     assert.deepEqual(errors, [], 'нет ошибок страницы');
-    console.log('PASS node editor browser: zoom, middle pan, context search menu, marquee, group move, typed wires, reconnect, detach, wire anchors, view not saved');
+    console.log('PASS node editor browser: zoom, middle pan, context search menu, node menu categories and hover variants, duplicate, nested add, marquee, group move, typed wires, reconnect, detach, wire anchors, view not saved');
   } finally {
     await browser.close();
   }

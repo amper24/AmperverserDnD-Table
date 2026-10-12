@@ -2,9 +2,10 @@
 // открыться, отрисовать все шаги и довести персонажа до готового листа без ошибок.
 // Запускаем настоящие скрипты фронта в vm с минимальным DOM-стабом и реальными
 // записями справочника из data_seed.
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
 
 // ---------- минимальный DOM ----------
@@ -56,7 +57,7 @@ const documentStub = {
 };
 
 // ---------- песочница со справочником из data_seed ----------
-const srd2014 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8')).map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
+const srd2014 = loadSrd('data_seed/srd_2014.json').map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
 const sandbox = {
   console,
   document: documentStub,
@@ -75,6 +76,9 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.confirm = () => true; // диалог подтверждения: по умолчанию «да», тест переопределяет
 vm.createContext(sandbox);
+// Наборы данных (языки, состояния) — первыми: модули читают их списки при загрузке.
+const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(sandbox);
+before(() => presetsReady);
 for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'])
   vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), sandbox, { filename: f });
 

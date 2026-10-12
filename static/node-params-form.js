@@ -15,18 +15,48 @@
   const ENUMS = { ability: ABILS, stat: [{ value: '', label: '—' }, ...ABILS] };
   // Ключ → список вариантов с множественным выбором.
   const ENUM_MULTI = { editions: EDITIONS };
+  // Стили кнопок действия: параметр style у узла «Начало действия». Иконка — из набора ICONS (common.js).
+  const BUTTON_STYLES = {
+    default: { label: 'Обычная', icon: 'd20' },
+    attack: { label: 'Атака', icon: 'sword' },
+    spell: { label: 'Заклинание', icon: 'star' },
+    heal: { label: 'Лечение', icon: 'heart' },
+    damage: { label: 'Урон', icon: 'zap' },
+    item: { label: 'Предмет', icon: 'flask' },
+    defense: { label: 'Защита', icon: 'shield' },
+  };
+  const BUTTON_STYLE_OPTIONS = Object.entries(BUTTON_STYLES).map(([value, s]) => ({ value, label: s.label }));
   // Поля, которые задают узел-тип (переопределяют общие ENUMS для конкретного типа узла).
   const TYPE_ENUMS = {
     'data.ability': { value: ABILS },
     'rule.ability_bonus': { ability: ABILS },
     'rule.spell_list': { mode: SPELL_MODES },
+    'action.program': { style: BUTTON_STYLE_OPTIONS },
+    'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
   };
+  // Список характеристик и навыков для узла «Характеристика / навык»: навыки берутся из набора SKILLS (common.js).
+  const statIdOptions = () => [...ABILS, ...(window.SKILLS || []).map(([value, label]) => ({ value, label: `${label} (навык)` }))];
   // Служебные идентификаторы: видны, но не редактируются вручную.
   const READ_ONLY = new Set(['block_id', 'program_id']);
+  // Поле «Когда» у действий больше не редактируется: условие задаёт узел condition.hit через «Если».
+  const HIDDEN = new Set(['when']);
+  // Режим карточки на холсте: только короткие скалярные поля (число, флаг, строка, список чисел/строк, кость).
+  // Таблицы, списки объектов, длинный текст и служебные ID остаются в боковой панели.
+  function shownField(key, value, inline) {
+    if (HIDDEN.has(key)) return false;
+    if (!inline) return true;
+    if (READ_ONLY.has(key)) return false;
+    if (typeof value === 'number' || typeof value === 'boolean') return true;
+    if (typeof value === 'string') return value.length <= 120 && key !== 'text' && key !== 'description';
+    if (Array.isArray(value)) return value.every(item => item === null || typeof item !== 'object');
+    if (value && typeof value === 'object' && !Array.isArray(value)) return key === 'dice';
+    return false;
+  }
   // Ключи, у которых вложенный объект — это таблица «ключ → значение» (строки можно добавлять и удалять).
   const MAP_KEYS = new Set(['table', 'choices', 'by_level']);
   const LABELS = {
-    value: 'Значение', amount: 'Количество', ability: 'Характеристика', count: 'Количество', sides: 'Граней',
+    value: 'Значение', style: 'Стиль кнопки', amount: 'Количество', ability: 'Характеристика', count: 'Количество', sides: 'Граней',
     bonus: 'Бонус', stat: 'Модификатор', text: 'Текст', name: 'Название', min: 'Минимум', max: 'Максимум',
     editions: 'Редакции', id: 'ID', options: 'Варианты', spells: 'Заклинания', mode: 'Режим', table: 'Таблица',
     formula: 'Формула', field: 'Поле', kind: 'Тип', group_id: 'Группа', socket_id: 'Вход / выход', trigger: 'Запуск',
@@ -79,7 +109,7 @@
     const removeValue = path => emit(removeAt(current, path));
 
     function paint() {
-      const rows = isPlainObject(current) ? Object.entries(current).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
+      const rows = isPlainObject(current) ? Object.entries(current).filter(([key, value]) => shownField(key, value, !!options.inline)).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
       root.replaceChildren(...rows, isPlainObject(current) && options.map ? addKeyRow([]) : null);
     }
 
@@ -179,8 +209,8 @@
     getAt, setAt, removeAt, emptyLike, isMap, LABELS, ENUMS, TYPE_ENUMS,
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
-      const enums = TYPE_ENUMS[node?.type] || {};
-      return mount(node?.params || {}, { ...options, enums, ariaLabel: 'Параметры узла' });
+      const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
+      return mount(node?.params || {}, { ...options, enums, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
     },
     // Редактор произвольного значения (например, выборы для предпросмотра).
     valueEditor(value, options = {}) {
@@ -188,4 +218,5 @@
     },
   };
   window.NodeForm = API;
+  window.BUTTON_STYLES = BUTTON_STYLES;
 })();

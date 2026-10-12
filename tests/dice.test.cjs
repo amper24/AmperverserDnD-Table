@@ -166,7 +166,7 @@ test('visualization is separated from the secure result engine', () => {
 // которая не перехватывает клики и не создаёт отдельную карточку на каждый бросок.
 test('shipped dice visualization is single, transparent and click-through', () => {
   const forbidden = /dice-global|dice-stage|dice-scene|dice-burst|dice-canvas|dice-overlay|dice-fullscreen|roll-overlay|roll-banner|roll-stage|roll-scene|result-overlay|result-banner/i;
-  for (const file of fs.readdirSync('static').sort()) {
+  for (const file of fs.readdirSync('static').sort().filter(f => fs.statSync('static/' + f).isFile())) {
     assert.doesNotMatch(fs.readFileSync('static/' + file, 'utf8'), forbidden, `${file} must not ship a blocking result overlay`);
   }
   const css = fs.readFileSync('static/style.css', 'utf8');

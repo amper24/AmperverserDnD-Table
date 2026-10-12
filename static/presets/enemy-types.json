@@ -1,0 +1,105 @@
+{
+  "kind": "enemy_types",
+  "id": "enemy_types",
+  "name": "Типы врагов (SRD)",
+  "items": [
+    {
+      "id": "aberrations",
+      "table": {
+        "ru": "Аберрации",
+        "en": "Aberrations"
+      }
+    },
+    {
+      "id": "beasts",
+      "table": {
+        "ru": "Звери",
+        "en": "Beasts"
+      }
+    },
+    {
+      "id": "celestials",
+      "table": {
+        "ru": "Небожители",
+        "en": "Celestials"
+      }
+    },
+    {
+      "id": "constructs",
+      "table": {
+        "ru": "Конструкты",
+        "en": "Constructs"
+      }
+    },
+    {
+      "id": "dragons",
+      "table": {
+        "ru": "Драконы",
+        "en": "Dragons"
+      }
+    },
+    {
+      "id": "elementals",
+      "table": {
+        "ru": "Элементали",
+        "en": "Elementals"
+      }
+    },
+    {
+      "id": "fey",
+      "table": {
+        "ru": "Феи",
+        "en": "Fey"
+      }
+    },
+    {
+      "id": "fiends",
+      "table": {
+        "ru": "Исчадия",
+        "en": "Fiends"
+      }
+    },
+    {
+      "id": "giants",
+      "table": {
+        "ru": "Великаны",
+        "en": "Giants"
+      }
+    },
+    {
+      "id": "monstrosities",
+      "table": {
+        "ru": "Чудовища",
+        "en": "Monstrosities"
+      }
+    },
+    {
+      "id": "oozes",
+      "table": {
+        "ru": "Слизи",
+        "en": "Oozes"
+      }
+    },
+    {
+      "id": "plants",
+      "table": {
+        "ru": "Растения",
+        "en": "Plants"
+      }
+    },
+    {
+      "id": "undead",
+      "table": {
+        "ru": "Нежить",
+        "en": "Undead"
+      }
+    },
+    {
+      "id": "humanoids",
+      "table": {
+        "ru": "Гуманоиды (две расы)",
+        "en": "Humanoids (two races)"
+      }
+    }
+  ]
+}

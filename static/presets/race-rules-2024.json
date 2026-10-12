@@ -1,0 +1,233 @@
+{
+  "kind": "race_rules",
+  "id": "builtin.race-rules.2024",
+  "name": "Особенности рас и родословных SRD 2024",
+  "edition": "2024",
+  "items": [
+    {
+      "id": "dwarf",
+      "table": {
+        "name_en": "Dwarf",
+        "hp_bonus": 1
+      }
+    },
+    {
+      "id": "elf",
+      "table": {
+        "name_en": "Elf",
+        "cantrips": [
+          {
+            "name": "Искусство друидов",
+            "ability": "choice"
+          }
+        ],
+        "choices": [
+          {
+            "key": "raceSkills",
+            "kind": "skills",
+            "count": 1,
+            "title": "Острые чувства · эльф"
+          },
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "elven-lineage-drow",
+      "table": {
+        "name_en": "Elven Lineage: Drow",
+        "cantrips": [
+          {
+            "name": "Пляшущие огоньки",
+            "ability": "choice"
+          }
+        ]
+      }
+    },
+    {
+      "id": "elven-lineage-high-elf",
+      "table": {
+        "name_en": "Elven Lineage: High Elf",
+        "cantrips": [
+          {
+            "name": "Фокусы",
+            "ability": "choice"
+          }
+        ]
+      }
+    },
+    {
+      "id": "elven-lineage-wood-elf",
+      "table": {
+        "name_en": "Elven Lineage: Wood Elf",
+        "speed": 35
+      }
+    },
+    {
+      "id": "gnome",
+      "table": {
+        "name_en": "Gnome",
+        "cantrips": [
+          {
+            "name": "Починка",
+            "ability": "choice"
+          },
+          {
+            "name": "Фокусы",
+            "ability": "choice"
+          }
+        ],
+        "choices": [
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "gnomish-lineage-forest-gnome",
+      "table": {
+        "name_en": "Gnomish Lineage: Forest Gnome",
+        "cantrips": [
+          {
+            "name": "Малая иллюзия",
+            "ability": "choice"
+          }
+        ],
+        "always_prepared": [
+          "Разговор с животными"
+        ]
+      }
+    },
+    {
+      "id": "human",
+      "table": {
+        "name_en": "Human",
+        "choices": [
+          {
+            "key": "raceSkills",
+            "kind": "skills",
+            "count": 1,
+            "title": "Умелость · человек"
+          },
+          {
+            "key": "humanOriginFeat",
+            "kind": "feat",
+            "title": "Универсальность · черта происхождения",
+            "hint": "Человек выбирает дополнительную черту происхождения.",
+            "filter": {
+              "no_prerequisites": true,
+              "exclude_selected_feat": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "tiefling",
+      "table": {
+        "name_en": "Tiefling",
+        "cantrips": [
+          {
+            "name": "Чудотворство",
+            "ability": "choice"
+          },
+          {
+            "name": "Огненный снаряд",
+            "ability": "choice"
+          }
+        ],
+        "choices": [
+          {
+            "key": "raceSpellAbility",
+            "kind": "options",
+            "title": "Заклинательная характеристика родословной",
+            "hint": "Выберите характеристику, указанную в особенности расы.",
+            "options": [
+              {
+                "value": "int",
+                "name": "Интеллект"
+              },
+              {
+                "value": "wis",
+                "name": "Мудрость"
+              },
+              {
+                "value": "cha",
+                "name": "Харизма"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "fiendish-legacy-abyssal",
+      "table": {
+        "name_en": "Fiendish Legacy: Abyssal",
+        "cantrips": [
+          {
+            "name": "Чудотворство",
+            "ability": "choice"
+          },
+          {
+            "name": "Ядовитые брызги",
+            "ability": "choice"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fiendish-legacy-chthonic",
+      "table": {
+        "name_en": "Fiendish Legacy: Chthonic",
+        "cantrips": [
+          {
+            "name": "Чудотворство",
+            "ability": "choice"
+          },
+          {
+            "name": "Леденящее прикосновение",
+            "ability": "choice"
+          }
+        ]
+      }
+    }
+  ]
+}

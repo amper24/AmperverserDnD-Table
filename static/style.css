@@ -418,6 +418,17 @@ button.primary, .btn.primary { font-weight: 600; }
 
 /* ---- связки бросков (атака + урон) ---- */
 .act-btn.all { border-style: dashed; }
+/* Кнопки действий в духе D&D: карточка как статблок — шрифт с засечками, красная линия сверху, цвет по типу (параметр style, см. BUTTON_STYLES). */
+.act-btn[class*="btn-style-"] { font-family: Georgia, 'Times New Roman', serif; font-weight: 600; letter-spacing: .01em; border-radius: 2px; border-top: 2px solid var(--dnd-rule, #922610); background: var(--panel2); }
+.act-btn[class*="btn-style-"] small { font-style: italic; font-weight: 400; }
+.act-btn[class*="btn-style-"]:hover { border-top-color: var(--dnd-rule, #922610); }
+.act-btn.btn-style-default { --dnd-rule: #5c4a32; }
+.act-btn.btn-style-attack { --dnd-rule: #922610; background: color-mix(in srgb, #922610 12%, var(--panel2)); }
+.act-btn.btn-style-spell { --dnd-rule: #5b3a8c; background: color-mix(in srgb, #5b3a8c 14%, var(--panel2)); }
+.act-btn.btn-style-heal { --dnd-rule: #2f6b3a; background: color-mix(in srgb, #2f6b3a 14%, var(--panel2)); }
+.act-btn.btn-style-damage { --dnd-rule: #b45309; background: color-mix(in srgb, #b45309 14%, var(--panel2)); }
+.act-btn.btn-style-item { --dnd-rule: #8a6d3b; background: color-mix(in srgb, #8a6d3b 14%, var(--panel2)); }
+.act-btn.btn-style-defense { --dnd-rule: #1f5f73; background: color-mix(in srgb, #1f5f73 14%, var(--panel2)); }
 .action-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; margin-bottom: 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); }
 .action-row .row select { flex: 0 0 110px; } .action-row .row input { flex: 1; min-width: 60px; } .action-row .row button { flex: 0 0 auto; }
 .action-row .action-note { font-size: 12px; }
@@ -846,9 +857,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 700px) { .choices-editor .choice-option { flex-wrap: wrap; } }
 
 /* Атака как на листах D&D: название · попадание · урон */
-.attack-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; }
-.attack-row-name { font-size: 12px; font-weight: 600; min-width: 90px; }
-.attack-row .act-btn { padding: 4px 10px; }
 /* Галерея шаблонов блоков */
 .template-picker { min-height: 200px; }
 .template-picker > input { margin-bottom: 12px; }
@@ -1522,9 +1530,9 @@ body.lu-open { overflow: hidden; }
 .node-editor{border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:18px;background:var(--panel,var(--bg));text-align:left;overflow:hidden}
 .node-toolbar{display:flex;align-items:end;gap:7px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border)}
 .node-toolbar .node-field{min-width:210px;flex:1}.node-add{white-space:nowrap}
-.node-group-shelf{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0}.node-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(245px,300px);gap:12px;align-items:stretch}
+.node-group-shelf{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0}.node-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:8px 0}.node-action-tab.active{font-weight:700;text-decoration:underline}.node-workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
 .node-canvas{position:relative;min-height:520px;height:min(68vh,760px);overflow:hidden;cursor:default;user-select:none;touch-action:none;border:1px solid var(--border);border-radius:10px;background-color:color-mix(in srgb,var(--bg) 92%,var(--accent) 8%);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:18px 18px;isolation:isolate}
-.graph-node{position:absolute;z-index:2;width:224px;min-height:94px;border:1px solid var(--border);border-radius:10px;background:var(--panel,#fff);box-shadow:0 4px 14px #0002;user-select:none;touch-action:none}
+.graph-node{position:absolute;z-index:2;width:260px;min-height:94px;border:1px solid var(--border);border-radius:10px;background:var(--panel,#fff);box-shadow:0 4px 14px #0002;user-select:none;touch-action:none}
 .graph-node.selected{outline:2px solid var(--accent);outline-offset:1px}.graph-node.action-node{border-top:3px solid #df9b44}.graph-node.rule-node{border-top:3px solid #53a987}
 .graph-node-head{display:flex;align-items:center;gap:7px;min-height:36px;padding:5px 7px;border-bottom:1px solid var(--border);cursor:grab}.graph-node-head b{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}.node-delete{border:0;background:transparent;color:var(--muted);padding:0 4px;font-size:18px;line-height:1}.node-id{padding:5px 9px 0;font-size:9px;overflow:hidden;text-overflow:ellipsis}
 .node-sockets{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:5px 7px 7px;font-size:10px}.node-inputs,.node-outputs{display:flex;flex-direction:column;gap:4px}.node-outputs{align-items:flex-end}.node-socket{display:flex;align-items:center;gap:5px;max-width:100%;border:0;background:transparent;padding:2px 0;color:inherit;font-size:10px;cursor:pointer}.node-socket i{display:inline-block;width:9px;height:9px;border:2px solid currentColor;border-radius:50%;background:var(--panel,#fff);flex:none}.node-outputs .node-socket{flex-direction:row}.node-socket.in{flex-direction:row-reverse;align-self:flex-start}.socket-flow{color:#e0a24b}.socket-bool{color:#b981dc}.socket-number{color:#54b7d0}.socket-dice{color:#d86f78}.socket-ability{color:#60a6e5}.socket-text,.socket-list{color:#83bd78}.socket-table,.socket-choice{color:#da8ab2}.socket-effect{color:#8a98a8}
@@ -1568,6 +1576,12 @@ body.lu-open { overflow: hidden; }
 .node-menu-item:hover,.node-menu-item:focus{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .node-menu-item small{opacity:.55;font-size:10px}
 .node-menu-empty{opacity:.6;padding:8px}
+.node-menu-sub{position:absolute;z-index:11;min-width:220px;max-width:300px;max-height:340px;overflow:auto;display:flex;flex-direction:column;background:var(--bg);color:inherit;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:6px}
+.node-menu-sub[hidden]{display:none}
+.node-menu-cat{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%}
+.node-menu-title.node-menu-cat{text-transform:none;letter-spacing:0;font-size:13px;opacity:1;padding:6px 8px}
+.node-menu-arrow::after{content:'›';opacity:.6}
+.node-menu-cat[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 
 .node-status.warn{color:var(--warn,#b7791f)}
 /* Холст получает всю ширину, а панель параметров уходит под него, когда редактор узкий (модальное окно). */
@@ -1589,3 +1603,39 @@ body.lu-open { overflow: hidden; }
 .preset-tile:focus-within { outline: 2px solid var(--accent, #c9a227); outline-offset: 2px; }
 .node-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; margin: 6px 0; border: 1px dashed var(--line, #3a3a3a); border-radius: 8px; }
 .node-starters > b { width: 100%; }
+/* Параметры узла прямо на карточке холста: поля не двигают узел и не мешают проводам (см. inlineParams в mechanics-graph.js). */
+.node-inline{padding:4px 8px 6px;font-size:11px;cursor:default;user-select:text}
+.node-inline .param-form{display:flex;flex-direction:column;gap:4px}
+.node-inline .param-form:empty,.node-inline:has(.param-form:empty){display:none}
+.node-inline .param-row,.node-inline .node-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.node-inline .param-label{font-size:10px;color:var(--muted)}
+.node-inline input,.node-inline select{width:100%;min-width:0;box-sizing:border-box;font-size:11px;padding:2px 4px}
+.node-inline .param-check{display:flex;align-items:center;gap:4px;font-size:11px}
+.node-inline .param-group{margin:0;padding:2px 4px;border:1px dashed var(--border);border-radius:6px;display:flex;flex-wrap:wrap;gap:4px}
+.node-inline .param-group legend{font-size:10px;color:var(--muted);padding:0 3px}
+.node-inline .param-group input{width:44px}
+
+/* Тона иконок (см. ICON_TONES в common.js) и точечная зона сброса для рук */
+.ico-attack { color: var(--accent); }
+.ico-defense { color: #0891b2; }
+.ico-magic { color: #8b5cf6; }
+.ico-heal { color: var(--ok); }
+.ico-damage { color: var(--danger); }
+.ico-item { color: #d97706; }
+.ico-nature { color: #16a34a; }
+.ico-monster { color: #be185d; }
+.hand-slot[draggable="true"] { cursor: grab; }
+.hand-slot.two-handed { border-color: var(--accent); }
+.hand-slot.merged { grid-column: span 2; }
+.hand-hint { color: var(--accent); line-height: 1.3; }
+.hand-slot.dragover { outline: 2px dashed var(--ok); outline-offset: 3px; background: color-mix(in srgb, var(--ok) 12%, var(--panel)); }
+.hand-slot.drop-invalid { outline: 2px dashed var(--danger); outline-offset: 3px; }
+.hand-slot.dragover::after, .hand-slot.drop-invalid::after { content: attr(data-drop-hint); position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font-size: 11px; white-space: nowrap; padding: 2px 8px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--border); pointer-events: none; z-index: 2; }
+.hand-slot.drop-invalid::after { color: var(--danger); }
+.hand-slot { position: relative; }
+
+/* Полоса шаблонов графов (вставка, сохранение и удаление своих шаблонов) */
+.node-template-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.node-template-bar select, .node-template-bar input { min-width: 0; max-width: 260px; }
+
+.node-group-item{display:inline-flex;gap:3px;align-items:center}

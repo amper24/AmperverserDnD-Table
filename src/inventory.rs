@@ -82,6 +82,17 @@ pub fn wear_kind(it: &Value) -> String {
 
 pub fn equippable(it: &Value) -> bool { handedness(it) != "none" || !wear_kind(it).is_empty() }
 
+/// Двуручное оружие, которое держат одной рукой: броски атаки с помехой.
+pub fn one_hand_penalty(it: &Value) -> bool {
+    handedness(it) == "two" && it["equipped"] == true && matches!(it["hand_slot"].as_str(), Some("main") | Some("off"))
+}
+
+/// Режим броска атаки с учётом помехи: помеха поверх преимущества даёт обычный бросок (как за столом).
+pub fn attack_mode(mode: &str, penalty: bool) -> String {
+    if !penalty { return mode.to_string(); }
+    if mode == "adv" { "normal".into() } else { "dis".into() }
+}
+
 /// Shared server-side gate for both legacy item rolls and declarative item programs.
 pub fn validate_use(it: &Value) -> ApiResult<()> {
     if it["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
@@ -128,7 +139,7 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
             it["worn_slot"] = Value::Null;
             let mut slot = it["hand_slot"].as_str().unwrap_or("").to_string();
             if slot.is_empty() { slot = if hands == "two" { "both" } else if !occupied.contains("main") { "main" } else { "off" }.into(); }
-            let valid = match hands.as_str() { "two" => slot == "both", "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
+            let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
             if !valid || qty != 1 || slots(&slot).iter().any(|s| occupied.contains(*s)) { unequip(it); }
             else { it["hand_slot"] = json!(slot); occupied.extend(slots(&slot).iter().map(|s| s.to_string())); }
         } else if !wear.is_empty() {
@@ -170,7 +181,7 @@ pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
     let wear = wear_kind(&inv[pos]);
     let mut target = String::new();
     if hands != "none" {
-        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", "two" => slot == "both", _ => !slots(slot).is_empty() };
+        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(slot).is_empty() };
         if !valid { return Err(AppError::bad("Этот хват недоступен для предмета")); }
     } else if !wear.is_empty() {
         let allowed = worn_slots(&wear);
@@ -251,6 +262,8 @@ pub fn resolve(expr: &str, sheet: &Value) -> ApiResult<String> {
     for (k, v) in [("prof", prof), ("best", best), ("atk", best + prof), ("atk_str", ctx["str"] + prof), ("atk_dex", ctx["dex"] + prof), ("level", sheet["level"].as_i64().unwrap_or(1)), ("spell", modifier(sheet, sheet["spells"]["ability"].as_str().unwrap_or("int")) + prof)] { ctx.insert(k.into(), v); }
     let spell = modifier(sheet, sheet["spells"]["ability"].as_str().unwrap_or("int"));
     for (k, v) in [("spell_mod", spell), ("dc", 8 + prof + spell), ("spell_dc", 8 + prof + spell), ("half_level", sheet["level"].as_i64().unwrap_or(1) / 2), ("hp", sheet["hp"]["current"].as_i64().unwrap_or(0)), ("hp_max", sheet["hp"]["max"].as_i64().unwrap_or(0)), ("ac", sheet["ac"].as_i64().unwrap_or(10)), ("speed", sheet["speed"].as_i64().unwrap_or(30)), ("init", modifier(sheet, "dex") + sheet["initiative_bonus"].as_i64().unwrap_or(0))] { ctx.insert(k.into(), v); }
+    // Значения характеристик (показатели) для узла «Характеристика / навык»: @str_score и т. д.
+    for k in ["str", "dex", "con", "int", "wis", "cha"] { ctx.insert(format!("{k}_score"), sheet["abilities"][k].as_i64().unwrap_or(10)); }
     for k in ["str", "dex", "con", "int", "wis", "cha"] { let trained = sheet["saving_throws"].as_array().is_some_and(|v| v.contains(&json!(k))); ctx.insert(format!("save_{k}"), modifier(sheet, k) + if trained { prof } else { 0 }); }
     for (k, ab) in [("acrobatics","dex"),("animal","wis"),("arcana","int"),("athletics","str"),("deception","cha"),("history","int"),("insight","wis"),("intimidation","cha"),("investigation","int"),("medicine","wis"),("nature","int"),("perception","wis"),("performance","cha"),("persuasion","cha"),("religion","int"),("sleight","dex"),("stealth","dex"),("survival","wis")] {
         let trained = sheet["skills"].as_array().is_some_and(|v| v.contains(&json!(k))); let expert = sheet["expertise"].as_array().is_some_and(|v| v.contains(&json!(k)));
@@ -305,10 +318,12 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
         if need > 0 { return Err(AppError::bad("Недостаточно ресурса или не выбран источник расхода. Ничего не списано.")); }
     }
     let mut rolls = Vec::new(); let mut crit = false;
+    let penalty = one_hand_penalty(&item);
     for a in selected {
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
-        expr = crate::realtime::with_dice_mode(&expr, mode);
+        let roll_mode = if kind == "attack" { attack_mode(mode, penalty) } else { mode.to_string() };
+        expr = crate::realtime::with_dice_mode(&expr, &roll_mode);
         let base = expr.clone(); let doubled = crit && kind == "damage";
         if doubled { expr = crate::realtime::double_dice(&expr); }
         let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
@@ -343,7 +358,9 @@ mod tests {
         assert_eq!(s["inventory"][0]["equipped"],false); assert_eq!(s["inventory"][1]["equipped"],false);
         assert_eq!(s["inventory"][2]["hand_slot"],"both");
         equip(&mut s,"sword","main").unwrap(); assert_eq!(s["inventory"][2]["hand_slot"],Value::Null);
-        assert!(equip(&mut s,"bow","off").is_err());
+        // Двуручный лук можно держать одной рукой; в «both» возвращаем для остальных проверок.
+        assert!(equip(&mut s,"bow","off").is_ok()); assert_eq!(s["inventory"][2]["hand_slot"],"off");
+        equip(&mut s,"bow","both").unwrap();
     }
     #[test] fn one_arrow_per_attack_not_per_damage_roll() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap();
@@ -366,6 +383,16 @@ mod tests {
         let r = use_item(&mut dis, "bow", &[1], "dis").unwrap();
         assert_eq!(r["rolls"][0]["expr"], "2d6kl1+3");
     }
+    #[test] fn two_handed_weapon_in_one_hand_rolls_attacks_with_disadvantage() {
+        let mut w = json!({"handedness":"two","equipped":true,"hand_slot":"main"});
+        assert!(one_hand_penalty(&w));
+        w["hand_slot"] = json!("both"); assert!(!one_hand_penalty(&w));
+        w["hand_slot"] = json!("off"); w["handedness"] = json!("versatile"); assert!(!one_hand_penalty(&w));
+        assert_eq!(attack_mode("normal", true), "dis");
+        assert_eq!(attack_mode("adv", true), "normal");
+        assert_eq!(attack_mode("adv", false), "adv");
+    }
+
     #[test] fn invalid_roll_does_not_spend_and_grip_is_enforced() {
         let mut s=fixture(); equip(&mut s,"bow","both").unwrap(); s["inventory"][2]["actions"][0]["roll"]=json!("bad"); let before=s.clone();
         assert!(use_item(&mut s,"bow",&[0],"").is_err()); assert_eq!(s,before);

@@ -465,6 +465,451 @@
         }
       },
       "executable": false
+    },
+    {
+      "name": "hit-branch-damage",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Удар",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "action.attack",
+              "params": {
+                "block_id": "atk",
+                "enabled": true,
+                "dice": {
+                  "count": 0,
+                  "sides": 20,
+                  "bonus": 5,
+                  "stat": ""
+                },
+                "dc": 3
+              }
+            },
+            {
+              "id": "h",
+              "type": "condition.hit",
+              "params": {}
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "dmg",
+              "type": "action.damage",
+              "params": {
+                "block_id": "dmg",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "hit-condition-not-into-if",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture-misuse",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Удар",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "action.attack",
+              "params": {
+                "block_id": "atk",
+                "enabled": true,
+                "dice": {
+                  "count": 0,
+                  "sides": 20,
+                  "bonus": 5,
+                  "stat": ""
+                },
+                "dc": 3
+              }
+            },
+            {
+              "id": "h",
+              "type": "condition.hit",
+              "params": {}
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "dmg",
+              "type": "action.damage",
+              "params": {
+                "block_id": "dmg",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "value"
+              },
+              "to": {
+                "node": "dmg",
+                "socket": "enabled"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "end-accepts-many-wires",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "start",
+              "type": "action.program",
+              "params": {
+                "program_id": "p",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "action.damage",
+              "params": {
+                "block_id": "a",
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            },
+            {
+              "id": "b",
+              "type": "action.heal",
+              "params": {
+                "block_id": "b",
+                "dice": {
+                  "count": 1,
+                  "sides": 4,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "start",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "a",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "start",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "b",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "b",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "stat-score-into-damage-dice",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "start",
+              "type": "action.program",
+              "params": {
+                "program_id": "p",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "s",
+              "type": "data.stat",
+              "params": {
+                "id": "str",
+                "mode": "score"
+              }
+            },
+            {
+              "id": "d",
+              "type": "action.damage",
+              "params": {
+                "block_id": "d",
+                "dice": {
+                  "count": 0,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "s",
+                "socket": "value"
+              },
+              "to": {
+                "node": "d",
+                "socket": "dice"
+              }
+            },
+            {
+              "from": {
+                "node": "start",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "d",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "stat-unknown-id",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "start",
+              "type": "action.program",
+              "params": {
+                "program_id": "p",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "s",
+              "type": "data.stat",
+              "params": {
+                "id": "luck",
+                "mode": "bonus"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "compare-unknown-operator",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "start",
+              "type": "action.program",
+              "params": {
+                "program_id": "p",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "c",
+              "type": "condition.compare",
+              "params": {
+                "op": "~"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
     }
   ]
 }

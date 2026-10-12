@@ -1,0 +1,2649 @@
+{
+  "kind": "class_progression",
+  "id": "builtin.class-progression.2014",
+  "name": "Таблицы развития SRD 2014",
+  "edition": "2014",
+  "items": [
+    {
+      "id": "barbarian",
+      "table": {
+        "columns": [
+          {
+            "key": "x:rages",
+            "ru": "Ярости",
+            "en": "Rages"
+          },
+          {
+            "key": "x:rage_damage",
+            "ru": "Урон ярости",
+            "en": "Rage Damage"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:rages": 2,
+            "x:rage_damage": "+2"
+          },
+          "2": {
+            "pb": 2,
+            "x:rages": 2,
+            "x:rage_damage": "+2"
+          },
+          "3": {
+            "pb": 2,
+            "x:rages": 3,
+            "x:rage_damage": "+2"
+          },
+          "4": {
+            "pb": 2,
+            "x:rages": 3,
+            "x:rage_damage": "+2"
+          },
+          "5": {
+            "pb": 3,
+            "x:rages": 3,
+            "x:rage_damage": "+2"
+          },
+          "6": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2"
+          },
+          "7": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2"
+          },
+          "8": {
+            "pb": 3,
+            "x:rages": 4,
+            "x:rage_damage": "+2"
+          },
+          "9": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3"
+          },
+          "10": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3"
+          },
+          "11": {
+            "pb": 4,
+            "x:rages": 4,
+            "x:rage_damage": "+3"
+          },
+          "12": {
+            "pb": 4,
+            "x:rages": 5,
+            "x:rage_damage": "+3"
+          },
+          "13": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3"
+          },
+          "14": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3"
+          },
+          "15": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+3"
+          },
+          "16": {
+            "pb": 5,
+            "x:rages": 5,
+            "x:rage_damage": "+4"
+          },
+          "17": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4"
+          },
+          "18": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4"
+          },
+          "19": {
+            "pb": 6,
+            "x:rages": 6,
+            "x:rage_damage": "+4"
+          },
+          "20": {
+            "pb": 6,
+            "x:rages": "Unlimited",
+            "x:rage_damage": "+4"
+          }
+        }
+      }
+    },
+    {
+      "id": "bard",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 4,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 5,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 6,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 3,
+            "known": 7,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 8,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 9,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 3,
+            "known": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 16,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 18,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 19,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 20,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 22,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "cleric",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "druid",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 2,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 2,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 3,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "fighter",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2
+          },
+          "2": {
+            "pb": 2
+          },
+          "3": {
+            "pb": 2
+          },
+          "4": {
+            "pb": 2
+          },
+          "5": {
+            "pb": 3
+          },
+          "6": {
+            "pb": 3
+          },
+          "7": {
+            "pb": 3
+          },
+          "8": {
+            "pb": 3
+          },
+          "9": {
+            "pb": 4
+          },
+          "10": {
+            "pb": 4
+          },
+          "11": {
+            "pb": 4
+          },
+          "12": {
+            "pb": 4
+          },
+          "13": {
+            "pb": 5
+          },
+          "14": {
+            "pb": 5
+          },
+          "15": {
+            "pb": 5
+          },
+          "16": {
+            "pb": 5
+          },
+          "17": {
+            "pb": 6
+          },
+          "18": {
+            "pb": 6
+          },
+          "19": {
+            "pb": 6
+          },
+          "20": {
+            "pb": 6
+          }
+        }
+      }
+    },
+    {
+      "id": "monk",
+      "table": {
+        "columns": [
+          {
+            "key": "x:martial_arts",
+            "ru": "Боевые искусства",
+            "en": "Martial Arts"
+          },
+          {
+            "key": "x:ki_points",
+            "ru": "Очки Ки",
+            "en": "Ki Points"
+          },
+          {
+            "key": "x:unarmored_movement",
+            "ru": "Перемещение без доспехов",
+            "en": "Unarmored Movement"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:martial_arts": "1d4",
+            "x:ki_points": 0,
+            "x:unarmored_movement": 0
+          },
+          "2": {
+            "pb": 2,
+            "x:martial_arts": "1d4",
+            "x:ki_points": 2,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "3": {
+            "pb": 2,
+            "x:martial_arts": "1d4",
+            "x:ki_points": 3,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "4": {
+            "pb": 2,
+            "x:martial_arts": "1d4",
+            "x:ki_points": 4,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "5": {
+            "pb": 3,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 5,
+            "x:unarmored_movement": "+10 ft."
+          },
+          "6": {
+            "pb": 3,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 6,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "7": {
+            "pb": 3,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 7,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "8": {
+            "pb": 3,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 8,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "9": {
+            "pb": 4,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 9,
+            "x:unarmored_movement": "+15 ft."
+          },
+          "10": {
+            "pb": 4,
+            "x:martial_arts": "1d6",
+            "x:ki_points": 10,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "11": {
+            "pb": 4,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 11,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "12": {
+            "pb": 4,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 12,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "13": {
+            "pb": 5,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 13,
+            "x:unarmored_movement": "+20 ft."
+          },
+          "14": {
+            "pb": 5,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 14,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "15": {
+            "pb": 5,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 15,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "16": {
+            "pb": 5,
+            "x:martial_arts": "1d8",
+            "x:ki_points": 16,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "17": {
+            "pb": 6,
+            "x:martial_arts": "1d10",
+            "x:ki_points": 17,
+            "x:unarmored_movement": "+25 ft."
+          },
+          "18": {
+            "pb": 6,
+            "x:martial_arts": "1d10",
+            "x:ki_points": 18,
+            "x:unarmored_movement": "+30 ft."
+          },
+          "19": {
+            "pb": 6,
+            "x:martial_arts": "1d10",
+            "x:ki_points": 19,
+            "x:unarmored_movement": "+30 ft."
+          },
+          "20": {
+            "pb": 6,
+            "x:martial_arts": "1d10",
+            "x:ki_points": 20,
+            "x:unarmored_movement": "+30 ft."
+          }
+        }
+      }
+    },
+    {
+      "id": "paladin",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "slots": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "ranger",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "known": 0,
+            "slots": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "known": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "known": 3,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "known": 3,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "known": 4,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "known": 4,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "known": 5,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "known": 5,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "known": 6,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "known": 6,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "known": 7,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "known": 7,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "known": 8,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "known": 8,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "known": 9,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "known": 9,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "known": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "known": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "known": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "known": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "rogue",
+      "table": {
+        "columns": [
+          {
+            "key": "x:sneak_attack",
+            "ru": "Скрытая атака",
+            "en": "Sneak Attack"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:sneak_attack": "1d6"
+          },
+          "2": {
+            "pb": 2,
+            "x:sneak_attack": "1d6"
+          },
+          "3": {
+            "pb": 2,
+            "x:sneak_attack": "2d6"
+          },
+          "4": {
+            "pb": 2,
+            "x:sneak_attack": "2d6"
+          },
+          "5": {
+            "pb": 3,
+            "x:sneak_attack": "3d6"
+          },
+          "6": {
+            "pb": 3,
+            "x:sneak_attack": "3d6"
+          },
+          "7": {
+            "pb": 3,
+            "x:sneak_attack": "4d6"
+          },
+          "8": {
+            "pb": 3,
+            "x:sneak_attack": "4d6"
+          },
+          "9": {
+            "pb": 4,
+            "x:sneak_attack": "5d6"
+          },
+          "10": {
+            "pb": 4,
+            "x:sneak_attack": "5d6"
+          },
+          "11": {
+            "pb": 4,
+            "x:sneak_attack": "6d6"
+          },
+          "12": {
+            "pb": 4,
+            "x:sneak_attack": "6d6"
+          },
+          "13": {
+            "pb": 5,
+            "x:sneak_attack": "7d6"
+          },
+          "14": {
+            "pb": 5,
+            "x:sneak_attack": "7d6"
+          },
+          "15": {
+            "pb": 5,
+            "x:sneak_attack": "8d6"
+          },
+          "16": {
+            "pb": 5,
+            "x:sneak_attack": "8d6"
+          },
+          "17": {
+            "pb": 6,
+            "x:sneak_attack": "9d6"
+          },
+          "18": {
+            "pb": 6,
+            "x:sneak_attack": "9d6"
+          },
+          "19": {
+            "pb": 6,
+            "x:sneak_attack": "10d6"
+          },
+          "20": {
+            "pb": 6,
+            "x:sneak_attack": "10d6"
+          }
+        }
+      }
+    },
+    {
+      "id": "sorcerer",
+      "table": {
+        "columns": [
+          {
+            "key": "x:sorcery_points",
+            "ru": "Очки чародейства",
+            "en": "Sorcery Points"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "x:sorcery_points": 0,
+            "cantrips": 4,
+            "known": 2,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "x:sorcery_points": 2,
+            "cantrips": 4,
+            "known": 3,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "x:sorcery_points": 3,
+            "cantrips": 4,
+            "known": 4,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "x:sorcery_points": 4,
+            "cantrips": 5,
+            "known": 5,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "x:sorcery_points": 5,
+            "cantrips": 5,
+            "known": 6,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "x:sorcery_points": 6,
+            "cantrips": 5,
+            "known": 7,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "x:sorcery_points": 7,
+            "cantrips": 5,
+            "known": 8,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "x:sorcery_points": 8,
+            "cantrips": 5,
+            "known": 9,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "x:sorcery_points": 9,
+            "cantrips": 5,
+            "known": 10,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "x:sorcery_points": 10,
+            "cantrips": 6,
+            "known": 11,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "x:sorcery_points": 11,
+            "cantrips": 6,
+            "known": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "x:sorcery_points": 12,
+            "cantrips": 6,
+            "known": 12,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "x:sorcery_points": 13,
+            "cantrips": 6,
+            "known": 13,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "x:sorcery_points": 14,
+            "cantrips": 6,
+            "known": 13,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "x:sorcery_points": 15,
+            "cantrips": 6,
+            "known": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "x:sorcery_points": 16,
+            "cantrips": 6,
+            "known": 14,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "x:sorcery_points": 17,
+            "cantrips": 6,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "x:sorcery_points": 18,
+            "cantrips": 6,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "x:sorcery_points": 19,
+            "cantrips": 6,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "x:sorcery_points": 20,
+            "cantrips": 6,
+            "known": 15,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "warlock",
+      "table": {
+        "columns": [
+          {
+            "key": "x:invocations_known",
+            "ru": "Известные воззвания",
+            "en": "Invocations Known"
+          }
+        ],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 2,
+            "pact_slots": 1,
+            "pact_level": 1,
+            "x:invocations_known": 0
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 3,
+            "pact_slots": 2,
+            "pact_level": 1,
+            "x:invocations_known": 2
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 2,
+            "known": 4,
+            "pact_slots": 2,
+            "pact_level": 2,
+            "x:invocations_known": 2
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 3,
+            "known": 5,
+            "pact_slots": 2,
+            "pact_level": 2,
+            "x:invocations_known": 2
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 6,
+            "pact_slots": 2,
+            "pact_level": 3,
+            "x:invocations_known": 3
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 7,
+            "pact_slots": 2,
+            "pact_level": 3,
+            "x:invocations_known": 3
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 8,
+            "pact_slots": 2,
+            "pact_level": 4,
+            "x:invocations_known": 4
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 3,
+            "known": 9,
+            "pact_slots": 2,
+            "pact_level": 4,
+            "x:invocations_known": 4
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 3,
+            "known": 10,
+            "pact_slots": 2,
+            "pact_level": 5,
+            "x:invocations_known": 5
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 10,
+            "pact_slots": 2,
+            "pact_level": 5,
+            "x:invocations_known": 5
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 11,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 5
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 4,
+            "known": 11,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 6
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 12,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 6
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 12,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 6
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 13,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 7
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 4,
+            "known": 13,
+            "pact_slots": 3,
+            "pact_level": 5,
+            "x:invocations_known": 7
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 14,
+            "pact_slots": 4,
+            "pact_level": 5,
+            "x:invocations_known": 7
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 14,
+            "pact_slots": 4,
+            "pact_level": 5,
+            "x:invocations_known": 8
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 15,
+            "pact_slots": 4,
+            "pact_level": 5,
+            "x:invocations_known": 8
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 4,
+            "known": 15,
+            "pact_slots": 4,
+            "pact_level": 5,
+            "x:invocations_known": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "wizard",
+      "table": {
+        "columns": [],
+        "levels": {
+          "1": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "2": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "3": {
+            "pb": 2,
+            "cantrips": 3,
+            "slots": [
+              4,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "4": {
+            "pb": 2,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "5": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "6": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "7": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "8": {
+            "pb": 3,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "9": {
+            "pb": 4,
+            "cantrips": 4,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "10": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "11": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "12": {
+            "pb": 4,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "13": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "14": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          "15": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "16": {
+            "pb": 5,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              0
+            ]
+          },
+          "17": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "18": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          "19": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              1,
+              1,
+              1
+            ]
+          },
+          "20": {
+            "pb": 6,
+            "cantrips": 5,
+            "slots": [
+              4,
+              3,
+              3,
+              3,
+              3,
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

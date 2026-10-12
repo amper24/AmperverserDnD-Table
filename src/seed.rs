@@ -24,6 +24,11 @@ const SEED_FILES: &[(&str, &str, &str)] = &[("srd_2014.json", "SRD 2014", "2014"
 /// (tools/srd/legacy_hashes.py). По ним при обновлении находим строки БД, которые никто не менял, и переводим их на новую версию.
 type LegacyHashes = std::collections::HashMap<String, std::collections::HashMap<String, (String, String)>>;
 
+/// Прежние поставочные версии записей с механикой (tools/srd/previous_shipped.py):
+/// `{"2014": {"категория/slug": [[хеш data, хеш mechanics], ...]}}`. Нужны, чтобы обновить узлы механики в базах,
+/// где запись не менялась с прежней сборки, не трогая правки пользователя.
+type ShippedHashes = std::collections::HashMap<String, std::collections::HashMap<String, Vec<(String, String)>>>;
+
 /// Каноническая форма JSON: ключи по возрастанию, без пробелов, UTF-8 — совпадает с `canon()` в tools/srd/legacy_hashes.py.
 pub fn canon(v: &serde_json::Value) -> String {
     match v {
@@ -60,7 +65,7 @@ fn entry_hashes(name: &str, data: &serde_json::Value) -> (String, String) {
 
 /// Что делать с уже существующей строкой справочника при обновлении.
 #[derive(Debug, PartialEq)]
-enum Upgrade { Keep, AddMechanics, ReplaceLegacy }
+enum Upgrade { Keep, AddMechanics, ReplaceLegacy, ReplaceShipped }
 
 /// * строка совпадает с новой версией, но без механики — дописываем механику (как раньше);
 /// * строка — нетронутая запись старой (до локализации) сборки: имя и data, а механика либо отсутствует, либо тоже старая — заменяем целиком;
@@ -76,8 +81,16 @@ fn classify(current: &serde_json::Value, row_name: &str, new_data: &serde_json::
     Upgrade::Keep
 }
 
-pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
+/// Строка совпадает с одним из прежних поставочных снимков (имя + data + механика), и в новой версии есть механика.
+/// Такую строку заменяем целиком: правок пользователя в ней нет, иначе хеши бы не совпали.
+fn matches_shipped(current: &serde_json::Value, row_name: &str, shipped: &[(String, String)]) -> bool {
+    let (cd, cm) = entry_hashes(row_name, current);
+    !cm.is_empty() && shipped.iter().any(|(d, m)| *d == cd && *m == cm)
+}
+
+pub async fn seed(pool: &AnyPool, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<()> {
     let legacy: LegacyHashes = SeedFiles::get("legacy_hashes.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
+    let shipped_all: ShippedHashes = SeedFiles::get("previous_shipped.json").and_then(|f| serde_json::from_slice(&f.data).ok()).unwrap_or_default();
     for (file, source, edition) in SEED_FILES {
         let Some(raw) = SeedFiles::get(file) else { tracing::warn!("{} не вшит", file); continue };
         let entries: Vec<Entry> = serde_json::from_slice(&raw.data)?;
@@ -90,20 +103,26 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
             if let Some(m)=e.data.get("mechanics") {crate::mechanics::validate(m).map_err(|err|anyhow::anyhow!("Некорректная механика {}: {:?}",e.slug,err))?;}
             let existing=stored.remove(&(e.category.clone(),e.slug.clone())).unwrap_or_default();
             if !existing.is_empty() {
-                let legacy_hash = legacy.get(*edition).and_then(|m| m.get(&format!("{}/{}", e.category, e.slug)));
+                let key = format!("{}/{}", e.category, e.slug);
+                let legacy_hash = legacy.get(*edition).and_then(|m| m.get(&key));
+                let shipped: &[(String, String)] = shipped_all.get(*edition).and_then(|m| m.get(&key)).map(|v| v.as_slice()).unwrap_or(&[]);
                 for row in existing {
                     let raw=util::text(&row,"data");let current=util::json_value(&raw);
                     let row_name=row.get::<String,_>("name");
                     // Only upgrade byte-semantically matching shipped definitions. Customized rows
                     // and previously edited blocks are never replaced by a later seed boot.
-                    match classify(&current,&row_name,&e.data,&e.name,legacy_hash) {
+                    let mut upgrade = classify(&current,&row_name,&e.data,&e.name,legacy_hash);
+                    if upgrade == Upgrade::Keep && e.data.get("mechanics").is_some() && matches_shipped(&current,&row_name,shipped) {
+                        upgrade = Upgrade::ReplaceShipped;
+                    }
+                    match upgrade {
                         Upgrade::AddMechanics => {
                             let mut next=current;
                             next["mechanics"]=e.data["mechanics"].clone();
                             sqlx::query("UPDATE compendium SET data = ? WHERE id = ? AND data = ?")
                                 .bind(next.to_string()).bind(row.get::<String,_>("id")).bind(raw).execute(&mut *tx).await?;
                         }
-                        Upgrade::ReplaceLegacy => {
+                        Upgrade::ReplaceLegacy | Upgrade::ReplaceShipped => {
                             // запись старой сборки без правок пользователя: русский текст, слой en, название и ключ поиска
                             sqlx::query("UPDATE compendium SET name = ?, name_lc = ?, data = ? WHERE id = ? AND data = ?")
                                 .bind(util::truncate(&e.name,128)).bind(i18n::search_key(&e.name,&e.data)).bind(e.data.to_string()).bind(row.get::<String,_>("id")).bind(raw).execute(&mut *tx).await?;
@@ -123,24 +142,31 @@ pub async fn seed(pool: &AnyPool) -> anyhow::Result<()> {
     // устаревший базовый набор (source = 'SRD' из ранних версий) убираем — его заменяют SRD 2014/2024
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL AND source = 'SRD'").execute(pool).await?;
 
-    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM assets WHERE builtin = 1").fetch_one(pool).await?.get("n");
-    if n == 0 {
-        let raw = SeedFiles::get("builtin/manifest.json").ok_or_else(|| anyhow::anyhow!("manifest.json не вшит"))?;
-        let list: Vec<BuiltinAsset> = serde_json::from_slice(&raw.data)?;
-        let mut count = 0;
-        for a in list {
+    // Встроенные ассеты: каждая запись манифеста сеется один раз (отметка в builtin_seeds).
+    // Новые записи добавляются и в уже развёрнутых базах. Ассет с тем же именем и видом, что уже есть,
+    // только отмечается (так работает переход со старой версии). Удалённый встроенный ассет не возвращается.
+    let raw = SeedFiles::get("builtin/manifest.json").ok_or_else(|| anyhow::anyhow!("manifest.json не вшит"))?;
+    let list: Vec<BuiltinAsset> = serde_json::from_slice(&raw.data)?;
+    let mut added = 0;
+    for a in list {
+        let done: i64 = sqlx::query("SELECT COUNT(*) AS n FROM builtin_seeds WHERE file = ?").bind(&a.file).fetch_one(pool).await?.get("n");
+        if done > 0 { continue; }
+        let exists: i64 = sqlx::query("SELECT COUNT(*) AS n FROM assets WHERE builtin = 1 AND name = ? AND kind = ?").bind(&a.name).bind(&a.kind).fetch_one(pool).await?.get("n");
+        if exists == 0 {
             let Some(file) = SeedFiles::get(&format!("builtin/{}", a.file)) else { continue };
             let bytes = file.data.into_owned();
-            // Размеры встроенных картинок по классу лимита (таблица KIND_SIZE_CLASS в config.rs).
-            let max_side = match crate::config::size_class(&a.kind) { crate::config::SizeClass::Map => 2048, crate::config::SizeClass::Token => 512 };
-            let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, 85)).await??;
+            // Размеры и качество — из config.yml (images), как у загрузок пользователя.
+            let max_side = img_cfg.max_side(&a.kind);
+            let quality = img_cfg.quality.min(100) as u8;
+            let info = tokio::task::spawn_blocking(move || images::compress_image(&bytes, max_side, quality)).await??;
             sqlx::query("INSERT INTO assets (id, campaign_id, owner_id, name, kind, mime, width, height, encoding, data_b64, builtin, created_at) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
                 .bind(util::uid()).bind(&a.name).bind(&a.kind).bind(&info.mime).bind(info.width).bind(info.height).bind(&info.encoding).bind(&info.data_b64).bind(util::now())
                 .execute(pool).await?;
-            count += 1;
+            added += 1;
         }
-        tracing::info!("Ассеты: добавлено {} встроенных", count);
+        sqlx::query("INSERT INTO builtin_seeds (file) VALUES (?)").bind(&a.file).execute(pool).await?;
     }
+    if added > 0 { tracing::info!("Ассеты: добавлено {} встроенных", added); }
     Ok(())
 }
 
@@ -193,6 +219,17 @@ mod tests {
     }
 
     #[test]
+    fn rows_of_an_earlier_shipped_version_match_and_edited_rows_do_not() {
+        let shipped = vec![entry_hashes("Дротик", &legacy_dart())];
+        assert!(matches_shipped(&legacy_dart(), "Дротик", &shipped));
+        let mut edited = legacy_dart(); edited["desc"] = json!("моя правка");
+        assert!(!matches_shipped(&edited, "Дротик", &shipped));
+        assert!(!matches_shipped(&legacy_dart(), "Мой дротик", &shipped));
+        let mut no_mech = legacy_dart(); no_mech.as_object_mut().unwrap().remove("mechanics");
+        assert!(!matches_shipped(&no_mech, "Дротик", &shipped), "без механики снимок не совпадает");
+    }
+
+    #[test]
     fn passive_seed_rows_do_not_get_null_mechanics_added() {
         let passive = json!({ "desc": "Пассивный предмет без отдельной активации" });
         assert_eq!(classify(&passive, "Рюкзак", &passive, "Рюкзак", None), Upgrade::Keep);
@@ -213,6 +250,9 @@ mod tests {
         for (file, _source, edition) in SEED_FILES {
             let entries: Vec<Entry> = serde_json::from_slice(&SeedFiles::get(file).expect("файл справочника вшит").data).unwrap();
             assert!(!entries.is_empty());
+            // Записи, которых не было до локализации (у них нет хеша старой версии): магический щит 2024
+            // получил собственный слаг, потому что обычный и магический щит делили один.
+            const NEW_AFTER_LOCALIZATION: &[&str] = &["item/srd24-shield-magic"];
             for e in &entries {
                 let en = &e.data["i18n"]["en"];
                 let en_name = en["name"].as_str().unwrap_or("");
@@ -220,7 +260,8 @@ mod tests {
                 assert!(!en_name.chars().any(|c| ('\u{400}'..='\u{4FF}').contains(&c)), "{}: кириллица в английском названии", e.slug);
                 assert!(!e.name.chars().any(|c| c.is_ascii_alphabetic()), "{}: латиница в русском названии «{}»", e.slug, e.name);
                 assert!(i18n::validate(&e.data).is_ok(), "{}: некорректный i18n", e.slug);
-                assert!(legacy[*edition].contains_key(&format!("{}/{}", e.category, e.slug)), "{}: нет хеша старой версии", e.slug);
+                let key = format!("{}/{}", e.category, e.slug);
+                assert!(NEW_AFTER_LOCALIZATION.contains(&key.as_str()) || legacy[*edition].contains_key(&key), "{}: нет хеша старой версии", e.slug);
             }
         }
     }
