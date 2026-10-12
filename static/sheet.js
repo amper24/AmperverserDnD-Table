@@ -21,7 +21,7 @@
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
-  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', spellLevel: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null };
+  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', spellLevel: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null, slotsEdit: false };
 
   // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
   function noteBtn(key, title) {
@@ -586,7 +586,7 @@
 
     // Действия: экипированные предметы с кнопками + подготовленные заклинания с атаками + ручные атаки
     const act = el('div', { class: 'card dropslot', 'data-cat': 'item', style: 'margin-top:8px' }, h3n('Действия ⤓', 'actions'), noteLine('actions'));
-    const c = ctx();
+    ctx(); // заполняет window.SHEET_CTX для кнопок действий ниже
     const eq = s.inventory.filter(it => it.equipped && (it.actions || []).some(a => a.roll));
     eq.forEach(it => act.append(el('div', { class: 'act-line' }, el('span', { class: 'card-icon' }, M.itemIcon(it)), el('b', { style: 'cursor:pointer', title: 'Открыть в инвентаре', onclick: () => { tab = 'inv'; ui.open.add(it.uid); render(); } }, it.name), itemActions(it))));
     const castable = s.spells.known.filter(sp => (sp.casting_mode === 'known' || sp.prepared || sp.level === 0) && (sp.actions || []).some(a => a.roll));
@@ -624,7 +624,23 @@
       el('button', { class: 'small fav-filter' + (ui.invFav ? ' on' : ''), title: 'Показать только избранное', onclick: e => { ui.invFav = !ui.invFav; e.currentTarget.classList.toggle('on', ui.invFav); drawList(); } }, icon('star', 12), ' Избранное'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const it = await M.editItem(null, { inventory: s.inventory }); if (it) { s.inventory.push(it); save(); render(); } } }, '+ Предмет'),
       el('button', { class: 'small', onclick: () => toggleComp('item') }, 'Справочник'));
-    const wallet = el('div', { class: 'wallet' }, ...['pp', 'gp', 'ep', 'sp', 'cp'].map(c => el('label', {}, { pp: 'ПМ', gp: 'ЗМ', ep: 'ЭМ', sp: 'СМ', cp: 'ММ' }[c], el('input', { type: 'number', value: s.currency[c], disabled: dis(), onchange: e => { s.currency[c] = +e.target.value; save(); } }))),
+    // Кошелёк: фишки монет с цветом металла. Ввод принимает число или поправку («+5», «-3»);
+    // стрелки ↑/↓ меняют на 1 (с Shift — на 10). Рядом — итог в пересчёте на золотые.
+    const COINS = { pp: ['пм', 'Платиновые (1 пм = 10 зм)'], gp: ['зм', 'Золотые'], ep: ['эм', 'Электрумовые (1 эм = 5 см)'], sp: ['см', 'Серебряные (1 зм = 10 см)'], cp: ['мм', 'Медные (1 см = 10 мм)'] };
+    const inGold = () => Math.round((s.currency.pp * 10 + s.currency.gp + s.currency.ep * 0.5 + s.currency.sp * 0.1 + s.currency.cp * 0.01) * 10) / 10;
+    const goldTotal = el('span', { class: 'wallet-total muted small', title: 'Всего в пересчёте на золотые' }, `≈ ${inGold().toLocaleString('ru-RU')} зм`);
+    const coinInput = c => {
+      const inp = el('input', { type: 'text', inputmode: 'numeric', value: s.currency[c], disabled: dis(), 'aria-label': COINS[c][1] });
+      const fit = () => { inp.style.width = Math.max(2, String(s.currency[c]).length) + 'ch'; inp.closest('label')?.classList.toggle('zero', !s.currency[c]); };
+      const apply = next => { s.currency[c] = Math.max(0, Math.min(9999999, Math.round(next) || 0)); inp.value = s.currency[c]; fit(); goldTotal.textContent = `≈ ${inGold().toLocaleString('ru-RU')} зм`; save(); };
+      inp.addEventListener('change', () => { const raw = inp.value.trim().replace(',', '.'); const n = Number(raw); apply(/^[+-]/.test(raw) && !Number.isNaN(n) ? s.currency[c] + n : n); });
+      inp.addEventListener('keydown', e => { if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return; e.preventDefault(); apply(s.currency[c] + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1)); });
+      fit();
+      return inp;
+    };
+    const wallet = el('div', { class: 'wallet' },
+      ...Object.keys(COINS).map(c => el('label', { class: 'coin coin-' + c + (s.currency[c] ? '' : ' zero'), title: `${COINS[c][1]}. Можно ввести «+5» или «-3»; стрелки ↑/↓ — ±1, с Shift — ±10` }, el('i', { class: 'coin-dot' }), coinInput(c), el('span', { class: 'coin-tag' }, COINS[c][0]))),
+      goldTotal,
       el('span', { class: 'muted small', style: 'margin-left:auto' }, `Вес: ${totalWeight()} / ${s.abilities.str * 15} фнт${totalWeight() > s.abilities.str * 15 ? ' — перегруз' : ''}`));
     const list = el('div', { class: 'inv-list' });
     root.append(bar, wallet, list);
@@ -718,25 +734,53 @@
       el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: ui.spellFav ? '' : null, onchange: e => { ui.spellFav = e.target.checked; draw(); } }), ' ★ избранные'),
       readonly ? null : el('button', { class: 'primary small', onclick: async () => { const x = await M.editSpell(null,{inventory:s.inventory}); if (x) { sp.known.push(x); save(); render(); } } }, '+ Заклинание'),
       el('button', { class: 'small', onclick: () => toggleComp('spell') }, 'Справочник')));
+    // Ячейки: компактные фишки кругов — видно только то, что есть у персонажа. Клик по ромбу —
+    // потратить/вернуть ячейку. Запас и круг Договора правятся в режиме «Настроить» (шестерёнка).
     const slots = el('div', { class: 'slots spell-slots' });
-    const slotRow = (label, sl, pool, level, extra = null) => {
-      const persist = () => { if (pool === 'pact_slots') sp.pact_slots = sl; else sp.slots[level] = sl; };
-      slots.append(el('div', { class: 'slot' + (sl.max ? '' : ' empty') + (pool === 'pact_slots' ? ' pact-slot' : '') },
-        el('b', { title: pool === 'pact_slots' ? 'Ячейки магии договора: восстанавливаются коротким или долгим отдыхом' : `${label}: восстанавливаются долгим отдыхом` }, label),
-        el('span', { class: 'pips' }, ...Array.from({ length: Math.min(20, sl.max) }, (_, i) => el('span', { class: 'pip' + (i >= sl.used ? ' on' : ''), role: readonly ? null : 'button', tabindex: readonly ? null : '0', title: i >= sl.used ? 'Потратить ячейку' : 'Вернуть ячейку', onclick: readonly ? null : () => { sl.used = i >= sl.used ? i + 1 : i; persist(); save(); render(); }, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } }))),
-        extra,
-        readonly ? null : el('input', { type: 'number', value: sl.max, min: 0, max: 20, title: 'Всего ячеек', 'aria-label': `${label}: всего ячеек`, onchange: e => { sl.max = Math.max(0, Math.min(20, +e.target.value || 0)); sl.used = Math.min(sl.used, sl.max); persist(); save(); render(); } })));
+    const persistSlot = (sl, pool, level) => { if (pool === 'pact_slots') sp.pact_slots = sl; else sp.slots[level] = sl; };
+    const slotPips = (sl, pool, level) => el('span', { class: 'pips' }, ...Array.from({ length: Math.min(20, sl.max) }, (_, i) => el('span', {
+      class: 'pip' + (i >= sl.used ? ' on' : ''), role: readonly ? null : 'button', tabindex: readonly ? null : '0',
+      title: readonly ? null : i >= sl.used ? 'Потратить ячейку' : 'Вернуть ячейку',
+      onclick: readonly ? null : () => { sl.used = i >= sl.used ? i + 1 : i; persistSlot(sl, pool, level); save(); render(); },
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } })));
+    const slotChip = (sl, pool, level) => {
+      const free = sl.max - sl.used, pact = pool === 'pact_slots';
+      return el('div', { class: 'slot' + (pact ? ' pact-slot' : '') + (free ? '' : ' spent'),
+        title: `${pact ? `Договор · ${level} круг` : `${level} круг`} · свободно ${free} из ${sl.max} · восстановление: ${pact ? 'короткий или долгий отдых' : 'долгий отдых'}` },
+        el('b', { class: 'slot-lv' }, pact ? 'Д' : String(level)), pact ? el('span', { class: 'slot-pact-lv' }, `${level} кр.`) : null, slotPips(sl, pool, level));
     };
-    for (let l = 1; l <= 9; l++) {
-      const sl = sp.slots[l] || { max: 0, used: 0 }; if (!sl.max && readonly) continue;
-      slotRow(`${l} круг`, sl, 'slots', l);
+    const circles = Array.from({ length: 9 }, (_, i) => i + 1);
+    const pact = sp.pact_slots || { level: 1, max: 0, used: 0 };
+    const anySlots = circles.some(l => sp.slots[l]?.max) || pact.max > 0;
+    if (!ui.slotsEdit) {
+      if (anySlots || !readonly) slots.append(el('span', { class: 'muted small slots-cap' }, 'Ячейки'));
+      for (const l of circles) if (sp.slots[l]?.max) slots.append(slotChip(sp.slots[l], 'slots', l));
+      if (pact.max > 0) slots.append(slotChip(pact, 'pact_slots', pact.level));
+      if (!readonly) {
+        if (!anySlots) slots.append(el('span', { class: 'muted small' }, 'нет —'));
+        slots.append(el('button', { class: 'small slots-gear', title: 'Настроить запас ячеек и круг Договора', onclick: () => { ui.slotsEdit = true; render(); } }, anySlots ? icon('settings', 12) : 'настроить'));
+      }
+    } else {
+      // Режим настройки: все девять кругов и Договор с шагом −/+, круг Договора — списком.
+      const stepper = (sl, pool, level) => {
+        const set = max => { sl.max = Math.max(0, Math.min(20, max)); sl.used = Math.min(sl.used, sl.max); persistSlot(sl, pool, level); save(); render(); };
+        return el('span', { class: 'slot-step' },
+          el('button', { class: 'small', disabled: sl.max ? null : '', 'aria-label': 'Меньше ячеек', onclick: () => set(sl.max - 1) }, '−'),
+          el('b', {}, String(sl.max)),
+          el('button', { class: 'small', disabled: sl.max >= 20 ? '' : null, 'aria-label': 'Больше ячеек', onclick: () => set(sl.max + 1) }, '+'));
+      };
+      const panel = el('div', { class: 'slots-edit' },
+        el('div', { class: 'slots-edit-head' }, el('b', {}, 'Запас ячеек'),
+          el('span', { class: 'muted small' }, 'Обычные — долгий отдых · Договор — короткий или долгий'),
+          el('button', { class: 'primary small', style: 'margin-left:auto', onclick: () => { ui.slotsEdit = false; render(); } }, 'Готово')),
+        el('div', { class: 'slots-edit-grid' },
+          ...circles.map(l => { const sl = sp.slots[l] || { max: 0, used: 0 }; return el('label', { class: sl.max ? '' : 'muted' }, `${l} круг`, stepper(sl, 'slots', l)); }),
+          el('label', { class: pact.max ? 'pact' : 'muted pact' }, 'Договор',
+            el('select', { 'aria-label': 'Круг ячеек Договора', title: 'Круг ячеек Договора', onchange: e => { pact.level = +e.target.value; sp.pact_slots = pact; save(); render(); } },
+              ...circles.map(l => el('option', { value: l, selected: pact.level === l ? '' : null }, `${l} кр.`))),
+            stepper(pact, 'pact_slots', pact.level))));
+      slots.append(panel);
     }
-    if (sp.pact_slots || !readonly) {
-      const pact = sp.pact_slots || { level: 1, max: 0, used: 0 };
-      const levelPick = readonly ? null : el('select', { 'aria-label': 'Круг ячейки Договора', title: 'Уровень ячейки Договора', onchange: e => { pact.level = +e.target.value; sp.pact_slots = pact; save(); render(); } }, ...Array.from({ length: 9 }, (_, i) => i + 1).map(l => el('option', { value: l, selected: pact.level === l ? '' : null }, `${l} кр.`)));
-      if (pact.max || !readonly) slotRow('Договор', pact, 'pact_slots', pact.level, levelPick);
-    }
-    slots.append(el('p', { class: 'muted small slot-rest-hint' }, 'Обычные ячейки — долгий отдых · ячейки Договора — короткий или долгий отдых.'));
     root.append(slots);
     const list = el('div');
     root.append(list);

@@ -25,7 +25,8 @@ test('a v1 gated block becomes a condition node and compiles back to the same wh
   const types = graph.graph.nodes.map(n => n.type);
   assert.ok(types.includes('condition.hit'), 'condition.hit node is created');
   assert.ok(types.includes('flow.if'), 'flow.if node is created');
-  assert.equal(graph.graph.nodes.find(n => n.type === 'action.damage').params.when, 'always', 'the gate lives in the branch, not in the block');
+  const damageNode = graph.graph.nodes.find(n => n.type === 'action.roll' && n.params.roll_kind === 'damage');
+  assert.equal(damageNode.params.when, 'always', 'the gate lives in the branch, not in the block');
   assert.equal(M.validate(graph), '', 'the converted graph saves');
   assert.equal(M.problems(graph).length, 0, 'and executes');
   const back = M.toLegacy(graph).programs[0].blocks;
@@ -124,8 +125,8 @@ test('attack and damage are two separate starters with their own button styles',
   assert.ok(!P.item('graph_starter', 'attack-hit-damage'), 'the combined starter is gone');
   assert.equal(attack.style, 'attack');
   assert.equal(damage.style, 'damage');
-  assert.deepEqual(plain(attack.nodes.map(n => n.type)), ['action.attack']);
-  assert.deepEqual(plain(damage.nodes.map(n => n.type)), ['action.damage']);
+  assert.deepEqual(plain(attack.nodes.map(n => [n.type, n.params.roll_kind])), [['action.roll', 'attack']]);
+  assert.deepEqual(plain(damage.nodes.map(n => [n.type, n.params.roll_kind])), [['action.roll', 'damage']]);
 });
 
 test('weapon and spell templates split attack and damage into separate actions', () => {
@@ -136,7 +137,8 @@ test('weapon and spell templates split attack and damage into separate actions',
     assert.ok(item, `${id} exists`);
     const nodes = item.table.graph.nodes;
     assert.equal(nodes.length, 2, `${id}: program + one block`);
-    assert.equal(nodes[1].type, `action.${type}`);
+    assert.equal(nodes[1].type, 'action.roll', `${id}: single configurable roll node`);
+    assert.equal(nodes[1].params.roll_kind, type, `${id}: roll kind`);
     assert.equal(nodes[0].params.style, style, `${id}: button style`);
   }
 });

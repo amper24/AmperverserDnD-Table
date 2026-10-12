@@ -699,34 +699,6 @@ window.Compendium = (function () {
     return root;
   }
 
-  // ---- Управление наборами (лобби) ----
-  // ---------- Панели наборов ----------
-  function packsPanel() {
-    const root = el('div');
-    const scope = el('select', {}, el('option', { value: 'mine' }, 'Мои наборы'), el('option', { value: 'public' }, 'Публичные'), el('option', { value: 'all' }, 'Все доступные'));
-    const list = el('div', { class: 'list' });
-    const fileInp = el('input', { type: 'file', accept: 'application/json', class: 'hidden' });
-    fileInp.addEventListener('change', async () => { const f = fileInp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); const p = await API.post('/api/packs/import', { name: j.name || f.name.replace(/\.json$/, ''), description: j.description || '', entries: j.entries || [], is_public: false }); toast(`Импортирован «${p.name}»: ${p.entries} записей`); packsCache = null; load(); } catch (e) { toast('Ошибка импорта: ' + e.message, 4000); } fileInp.value = ''; });
-    root.append(el('div', { class: 'row', style: 'margin-bottom:10px' }, scope, el('button', { class: 'primary', onclick: async () => { const n = await prompt2('Название набора'); if (!n) return; await API.post('/api/packs', { name: n }); packsCache = null; load(); } }, '+ Создать'), el('button', { onclick: () => fileInp.click() }, 'Импорт JSON'), fileInp),
-      el('p', { class: 'muted small' }, 'Набор — ваша коллекция предметов, заклинаний, монстров и т.д. Свои наборы всегда видны вам в справочнике; мастер может подключить набор к кампании, и он станет виден всем игрокам. Публичные наборы могут подключать все мастера.'), list);
-    async function load() {
-      const packs = await API.get('/api/packs?scope=' + scope.value);
-      list.innerHTML = '';
-      if (!packs.length) list.append(el('p', { class: 'muted' }, 'Пока нет наборов.'));
-      for (const p of packs) {
-        list.append(el('div', { class: 'item' }, el('span', { class: 'lst-ico' }, icon('box', 20)), el('div', { class: 'grow' }, el('b', {}, Lang.packName(p)), p.is_public ? el('span', { class: 'badge' }, 'публичный') : null, el('div', { class: 'muted small' }, `${p.entries} записей · ${p.owner_name || (p.mine ? 'мой' : '')}${p.description ? ' · ' + p.description : ''}`)),
-          el('button', { class: 'small', onclick: () => openPack(p) }, p.mine ? 'Открыть' : 'Смотреть'),
-          el('button', { class: 'small', onclick: async () => { const j = await API.get(`/api/packs/${p.id}/export`); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = el('a', { href: URL.createObjectURL(blob), download: p.name.replace(/[^\wа-яё\- ]/gi, '') + '.json' }); a.click(); } }, 'Экспорт'),
-          p.mine ? el('button', { class: 'small', onclick: async () => { const name = el('input', { value: p.name }), desc = el('input', { value: p.description || '' }), pub = el('input', { type: 'checkbox', style: 'width:auto', checked: p.is_public ? '' : null }); const ok = await modal('Настройки набора', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Название'), name), el('div', { class: 'field' }, el('label', {}, 'Описание'), desc), el('label', {}, pub, ' Публичный (любой мастер может подключить к кампании)')), [{ label: 'Сохранить', cls: 'primary', fn: () => true }]); if (ok) { await API.patch('/api/packs/' + p.id, { name: name.value, description: desc.value, is_public: pub.checked }); packsCache = null; load(); } } }, icon('settings')) : null,
-          p.mine ? el('button', { class: 'small danger', onclick: async () => { if (confirm(`Удалить набор «${p.name}» со всеми записями?`)) { await API.del('/api/packs/' + p.id); packsCache = null; load(); } } }, icon('trash')) : null));
-      }
-    }
-    function openPack(p) { floatWindow(Lang.packName(p), el('div', { style: 'height:100%;padding:8px' }, widget({ packId: p.id, packMine: p.mine })), { x: 60, y: 60, w: Math.min(900, window.innerWidth - 80), h: Math.min(640, window.innerHeight - 100) }); }
-    scope.addEventListener('change', load);
-    load();
-    return root;
-  }
-
   /// Панель подключения наборов к кампании (для мастера)
   function campaignPacksPanel(campaignId, isGM) {
     const root = el('div');
@@ -746,5 +718,5 @@ window.Compendium = (function () {
     return root;
   }
 
-  return { widget, renderData, editEntry, packsPanel, campaignPacksPanel, myPacks };
+  return { widget, renderData, editEntry, campaignPacksPanel };
 })();

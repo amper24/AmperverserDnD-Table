@@ -19,7 +19,7 @@
 window.newCharacterDialog = async function (defaults = {}) {
   const B = CharacterBuilder;
   // Внутренние помощники модуля, нужные мастеру создания персонажа.
-  const { normalizeName, classSlugOf, subclassLevel, subclassVariantGroups, weaponMasteryCount, weaponMasteryOptions, pointBuyTotal, CLASS_SLUGS_RU, POINT_BUY_COST } = B;
+  const { normalizeName, classSlugOf, subclassLevel, subclassVariantGroups, pointBuyTotal, POINT_BUY_COST } = B;
   const emptyEquipment = () => ({ choice: {}, picks: {}, exclude: {}, template: {}, qty: {}, name: {}, extras: [], gold: 0, packs: true, autoEquip: true, gmOverrides: false });
   const emptyDraft = {
     name: defaults.name || '', edition: defaultEdition(), alignment: '',
@@ -77,7 +77,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     // Fixed language proficiencies from a background or a selected module choice also
     // consume a language the player cannot select a second time.
     for (const value of B.asList(draft.selected.background?.data?.languages)) addStandard(value);
-    for (const { entry, group } of B.moduleChoices(draft)) if (group.type === 'language') {
+    for (const { group } of B.moduleChoices(draft)) if (group.type === 'language') {
       for (const id of B.asList(draft.picks?.[group.id])) {
         const option = (group.options || []).find(candidate => candidate.id === id);
         for (const value of B.asList(option?.value)) {
@@ -118,7 +118,6 @@ window.newCharacterDialog = async function (defaults = {}) {
         && !draft.selected.subclass) return 'Выберите подкласс: у вашего класса он выбирается уже на 1 уровне.';
       for (const group of subclassVariantGroups(draft.selected.subclass, 1))
         if (!group.options.includes(draft.ruleChoices?.subclassVariants?.[group.base])) return `Выберите вариант «${group.base}» подкласса.`;
-      const slug = classSlugOf(draft.selected.class);
       const classProblem = B.classChoiceProblem(draft); if (classProblem) return classProblem;
       const pending = pendingChoices();
       return pending.length ? 'Сделайте выбор в модулях: ' + pending.map(x => x.group.name || 'вариант').join(', ') + '.' : '';
@@ -394,7 +393,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   function classRuleChoiceSection() {
     const klass = draft.selected.class;
     if (!klass) return null;
-    const slug = classSlugOf(klass), choices = draft.ruleChoices || (draft.ruleChoices = {}), panels = [];
+    const choices = draft.ruleChoices || (draft.ruleChoices = {}), panels = [];
     const radioPanel = (key, title, hint, options) => {
       const selected = choices[key];
       panels.push(el('section', { class: 'builder-panel builder-class-rule-choices' },

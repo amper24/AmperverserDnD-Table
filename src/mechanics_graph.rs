@@ -13,6 +13,10 @@ const ABILITIES: &[&str] = &["str", "dex", "con", "int", "wis", "cha"];
 // Стили кнопок действия (параметр style узла «Начало действия»); совпадает с BUTTON_STYLES в node-params-form.js.
 const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage", "item", "defense"];
 const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "require", "manual", "passive"];
+// Виды настраиваемого узла «Бросок» (action.roll, параметр roll_kind) — как ROLL_KINDS в static/node-registry.js.
+const ROLL_KINDS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
+// Операции настраиваемого узла «Логика» (logic.op, параметр op) — как LOGIC_OPS в static/node-registry.js.
+const LOGIC_OPS: &[&str] = &["and", "or", "not"];
 // Действия с костью: их вход «dice» принимает кость проводом (как в static/node-registry.js DICE_KINDS).
 const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
@@ -31,7 +35,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
-        "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.op" | "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.not" => { inputs.insert("a".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "data.choice" => { outputs.insert("value".into(), "choice".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
@@ -121,6 +125,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "condition.choice" if !valid_id(&p["id"], 100) || p.get("value").is_none() => return Err(bad("Укажите ID группы и сравниваемый выбор.")),
         "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
         "condition.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
+        "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
+        "action.roll" if p.get("roll_kind").is_some() && !ROLL_KINDS.contains(&p["roll_kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
@@ -256,7 +262,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
@@ -451,6 +457,19 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             Some(json!(result))
         }
         // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
+        "logic.op" => match params["op"].as_str() {
+            Some("not") => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
+            Some("or") => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+                (Some(true), _) | (_, Some(true)) => Some(json!(true)),
+                (Some(false), Some(false)) => Some(json!(false)),
+                _ => None,
+            },
+            _ => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
+                (Some(false), _) | (_, Some(false)) => Some(json!(false)),
+                (Some(true), Some(true)) => Some(json!(true)),
+                _ => None,
+            },
+        },
         "logic.and" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
             (Some(false), _) | (_, Some(false)) => Some(json!(false)),
             (Some(true), Some(true)) => Some(json!(true)),
@@ -524,9 +543,17 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
                 }
                 continue;
             }
-            let kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("");
-            if !ACTIONS.contains(&kind) { continue; }
+            let mut kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("").to_string();
+            if !ACTIONS.contains(&kind.as_str()) { continue; }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
+            // Настраиваемый узел «Бросок»: вид блока v1 задаёт параметр roll_kind (как blockKind в клиенте).
+            if kind == "roll" {
+                if let Some(requested) = block.remove("roll_kind") {
+                    if let Some(requested) = requested.as_str() {
+                        if ROLL_KINDS.contains(&requested) { kind = requested.to_string(); }
+                    }
+                }
+            }
             if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
             // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
             if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None) { block.insert("dice".into(), value); }
@@ -590,6 +617,56 @@ mod hit_gate_tests {
             {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
             {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
         ], "frames": [], "groups": []}})
+    }
+
+    /// Настраиваемый узел «Бросок»: roll_kind задаёт вид блока v1, сам параметр в блок не попадает.
+    #[test]
+    fn configurable_roll_node_compiles_roll_kind_into_the_block_kind() {
+        let graph = json!({"version": 2, "origin": "test", "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}}},
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 1, "sides": 6, "bonus": 0, "stat": ""}}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
+            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "d", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        assert!(problems(&graph).unwrap().is_empty());
+        let v1 = to_v1(&graph);
+        let blocks = v1["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks[0]["kind"], "attack");
+        assert_eq!(blocks[1]["kind"], "damage");
+        assert!(blocks.iter().all(|block| block.get("roll_kind").is_none()));
+        // Неизвестный вид броска отклоняется при сохранении.
+        let mut bad_graph = graph.clone();
+        bad_graph["graph"]["nodes"][1]["params"]["roll_kind"] = json!("save");
+        assert!(validate(&bad_graph).is_err());
+    }
+
+    /// Настраиваемый узел «Логика»: op выбирает И / ИЛИ / НЕ, неизвестное значение отклоняется.
+    #[test]
+    fn configurable_logic_node_validates_and_evaluates_ops() {
+        let make = |op: &str| json!({"version": 2, "origin": "test", "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "lv", "type": "condition.level", "params": {"min": 1, "max": 10}},
+            {"id": "ed", "type": "condition.edition", "params": {"editions": ["2014"]}},
+            {"id": "op", "type": "logic.op", "params": {"op": op}},
+            {"id": "f", "type": "flow.if", "params": {}},
+            {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "then", "when": "always"}}
+        ], "links": [
+            {"from": {"node": "lv", "socket": "value"}, "to": {"node": "op", "socket": "a"}},
+            {"from": {"node": "ed", "socket": "value"}, "to": {"node": "op", "socket": "b"}},
+            {"from": {"node": "op", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "m", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        let graph = make("and");
+        assert!(problems(&graph).unwrap().is_empty());
+        let context = json!({"edition": "2014", "level": 5});
+        let v1 = to_v1_with_context(&graph, &context);
+        assert_eq!(v1["programs"][0]["blocks"].as_array().unwrap().len(), 1, "И с истинными входами оставляет ветвь «да»");
+        let missed = to_v1_with_context(&make("not"), &json!({"edition": "2014", "level": 5}));
+        assert_eq!(missed["programs"][0]["blocks"].as_array().unwrap().len(), 0, "НЕ по истинному входу отсекает ветвь «да»");
+        assert!(validate(&make("xor")).is_err());
     }
 
     #[test]

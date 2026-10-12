@@ -105,7 +105,6 @@ window.LevelUp = (() => {
   function spellStats(entry, edition, level, castMod = 0) {
     const prog = progression(entry, edition), row = prog?.levels?.[String(level)];
     if (!row) return null;
-    const slug = slugOf(entry);
     let prepared = row.prepared ?? null;
     if (prepared === null && edition === '2014') {
       const rule = window.ClassRules.preparedFormula(entry, edition);
@@ -627,7 +626,7 @@ window.LevelUp = (() => {
       }));
       const hpInfo = () => hpGain(st.p.hitDie, st.hp, conBefore(), modOf(newAbilities().con), st.p.total.from);
       const spellPool = () => {
-        const cls = st.p.entry.name, maxLv = st.p.spells.maxLevel, have = new Set([...sheet.spells.known.filter(x => !st.drop.includes(x.uid)).map(x => x.name), ...st.secrets.map(e => e.name)]);
+        const cls = st.p.entry.name, have = new Set([...sheet.spells.known.filter(x => !st.drop.includes(x.uid)).map(x => x.name), ...st.secrets.map(e => e.name)]);
         return (st.catalogs.spell || []).filter(e => { const c = e.data?.classes || []; return (!c.length || c.includes(cls)) && !have.has(e.name); });
       };
       const styleFeats = () => { const have = new Set((sheet.features || []).map(f => f.name)); return (st.catalogs.feat || []).filter(e => isStyleFeat(e) && !have.has(e.name) && featPrerequisitesMet(e, st.p, sheet)); };
@@ -697,7 +696,7 @@ window.LevelUp = (() => {
         return h('dl', 'lu-facts', ...rows.flatMap(([a, b]) => [h('dt', '', a), h('dd', '', b)]));
       };
       const upcoming = p => {
-        const rows = [], sub = st.subclass || p.subclass, skip = n => hasFeatureKind(n, 'invocation', edition) || hasFeatureKind(n, 'pact_boon', edition) || hasFeatureKind(n, 'style_option', edition);
+        const rows = [], sub = st.subclass || p.subclass, skip = n => hasFeatureKind(n, 'invocation', p.edition) || hasFeatureKind(n, 'pact_boon', p.edition) || hasFeatureKind(n, 'style_option', p.edition);
         for (let l = p.to + 1; l <= MAX_LEVEL && rows.length < 4; l++) {
           const names = [...classFeaturesAt(p.entry, l).map(f => f.name).filter(n => !skip(n)).map(n => [n, false]), ...subclassFeaturesAt(sub, l).map(f => [f.name, true])];
           if (names.length) rows.push(h('div', 'lu-up-row', h('span', 'lu-up-lv', h('small', '', 'ур.'), h('b', '', String(l))), h('div', 'lu-up-names', ...names.slice(0, 5).map(([n, s]) => chip((s ? '✦ ' : '') + n, s ? 'sub' : '')), names.length > 5 ? chip(`+${names.length - 5}`, 'muted') : null)));
@@ -1029,5 +1028,5 @@ window.LevelUp = (() => {
       })();
     });
   }
-  return { canonicalSkills, featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
+  return { canonicalSkills, featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, classesOf, classLabel, multiclassReq, progression, castingSummary, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, apply, canUndo, undo, open, modOf };
 })();

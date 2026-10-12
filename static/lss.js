@@ -175,5 +175,5 @@ window.LSS = (() => {
     return c;
   }
 
-  return { convert, enrichSpells, importDialog, unwrap, docText };
+  return { convert, importDialog };
 })();

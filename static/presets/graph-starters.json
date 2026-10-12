@@ -128,9 +128,10 @@
       "nodes": [
         {
           "key": "atk",
-          "type": "action.attack",
+          "type": "action.roll",
           "params": {
-            "dc": 12
+            "dc": 12,
+            "roll_kind": "attack"
           },
           "x": 0,
           "y": 0
@@ -146,14 +147,15 @@
       "nodes": [
         {
           "key": "dmg",
-          "type": "action.damage",
+          "type": "action.roll",
           "params": {
             "dice": {
               "count": 2,
               "sides": 6,
               "bonus": 0,
               "stat": ""
-            }
+            },
+            "roll_kind": "damage"
           },
           "x": 0,
           "y": 0

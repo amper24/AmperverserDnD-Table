@@ -7,7 +7,7 @@
 
 * монстры: бонус атаки `1d20+N` и кубики урона `NdM+K` из `data.actions_roll` ищутся в русском
   тексте умений записи («Рукопашная атака: +9», «14 (2к8 + 5) Звукового урона»);
-* заклинания: кубики узлов `action.damage` и `action.roll` (урон и лечение) ищутся в описании
+* заклинания: кубики узлов `action.roll` (roll_kind `damage` и `roll` — урон и лечение) ищутся в описании
   заклинания («8к6 урона огнём»); отдельные броски спасброска (`1d20`) не проверяются — их
   в описании и не должно быть;
 * с `--src <каталог с дампом>` те же броски сверяются с официальным английским текстом:
@@ -128,9 +128,10 @@ def spell_dice(rows, problems, report):
             continue
         description = compact(row['data'].get('desc'))
         for node in ((row['data'].get('mechanics') or {}).get('graph') or {}).get('nodes', []):
-            if node['type'] not in ('action.damage', 'action.roll'):
+            params = node.get('params') or {}
+            if not (node['type'] == 'action.roll' and (params.get('roll_kind') or 'roll') in ('damage', 'roll')):
                 continue
-            dice = (node.get('params') or {}).get('dice') or {}
+            dice = params.get('dice') or {}
             if not dice.get('count'):
                 continue
             base = f"{dice['count']}d{dice['sides']}"
@@ -160,9 +161,10 @@ def item_dice(rows, problems, report):
                                    ' '.join(data.get('properties') or []), data.get('category') or '',
                                    data.get('desc') or '']))
         for node in ((data.get('mechanics') or {}).get('graph') or {}).get('nodes', []):
-            if node['type'] != 'action.damage':
+            params = node.get('params') or {}
+            if not (node['type'] == 'action.roll' and params.get('roll_kind') == 'damage'):
                 continue
-            dice = (node.get('params') or {}).get('dice') or {}
+            dice = params.get('dice') or {}
             if not dice.get('count'):
                 continue
             base = f"{dice['count']}d{dice['sides']}"
@@ -198,9 +200,10 @@ def dump_spells(src, edition, problems, report):
             + list(spell.get('higher_level') or [])
         text = compact(' '.join(part for part in parts if part))
         for node in ((row['data'].get('mechanics') or {}).get('graph') or {}).get('nodes', []):
-            if node['type'] not in ('action.damage', 'action.roll'):
+            params = node.get('params') or {}
+            if not (node['type'] == 'action.roll' and (params.get('roll_kind') or 'roll') in ('damage', 'roll')):
                 continue
-            dice = (node.get('params') or {}).get('dice') or {}
+            dice = params.get('dice') or {}
             if not dice.get('count'):
                 continue
             base = f"{dice['count']}d{dice['sides']}"

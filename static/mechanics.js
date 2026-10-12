@@ -16,9 +16,6 @@ window.Mechanics = (() => {
   const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
   // Виды блоков, которых больше нет в палитре: старые записи с ними читаются и превращаются в свои действия.
   const LEGACY_KINDS = ['save'];
-  const STATS = {'':'Без модификатора',str:'Сила',dex:'Ловкость',con:'Телосложение',int:'Интеллект',wis:'Мудрость',cha:'Харизма',best:'Лучшая Сила / Ловкость',prof:'Мастерство',atk:'Оружейная атака',atk_str:'Атака Силой',atk_dex:'Атака Ловкостью',spell:'Атака заклинанием',spell_mod:'Модификатор заклинателя',level:'Уровень',dc:'СЛ заклинаний'};
-  const FIELDS = {speed:'Скорость',initiative_bonus:'Бонус инициативы','currency.gp':'Золотые','currency.sp':'Серебряные','hp.max':'Максимум хитов',...Object.fromEntries(Object.entries(window.ABIL || {}).map(([k,n])=>['abilities.'+k,n]))};
-  const PASSIVE = {speed:'Скорость',hit_die:'Кость хитов класса',spellcasting:'Характеристика заклинателя',saves:'Владение спасбросками',skills:'Навыки',languages:'Языки',armor:'Владение доспехами',weapons:'Владение оружием',...Object.fromEntries(Object.entries(window.ABIL || {}).map(([k,n])=>['asi.'+k,'Бонус: '+n]))};
   function dice(expr) {
     const text=String(expr || '0').replace(/\s/g,'').replace(/к/g,'d');
     const m=text.match(/^(?:(\d*)d(\d+))?([+-]?\d+)?(?:\+@([a-z_]+))?$/i);
@@ -147,7 +144,7 @@ window.Mechanics = (() => {
   function programSummary(p) { return p.blocks.filter(b=>b.enabled!==false).map(b=>TYPES[b.kind]?.[0]||b.kind).join(' → '); }
   function preview(m, ctx) {
     if(!m) return null;
-    return el('div',{class:'mechanics-preview'},...programsOf(m).map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+expression(b.dice):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа',onclick:e=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...window.Modules?.modeFromEvent(e)})},'Бросить отдельно · без эффектов'):null)) )));
+    return el('div',{class:'mechanics-preview'},...programsOf(m).map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+expression(b.dice):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа. Alt — преимущество, Ctrl — помеха, правая кнопка — выбрать режим',onclick:e=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...window.Modules?.modeFromEvent(e)}),oncontextmenu:e=>window.Modules?.openModeMenu?.(e,'Отдельный бросок: '+p.name,mode=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...mode}))},'Бросить отдельно · без эффектов'):null)) )));
   }
   function buttons(doc, options={}) {
     const root=el('div',{class:'action-buttons mechanics-buttons'});
@@ -161,7 +158,11 @@ window.Mechanics = (() => {
       const pure=blocks.length===1&&blocks[0].kind==='roll';
       const formula=rolls.map(b=>expression(b.dice)).join(' · ');
       const caption=pure?(blocks[0].name||p.name):p.name;
-      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:formula?`${caption} · ${formula}`:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},window.icon?.(st.icon,13),el('span',{},caption),el('small',{},formula?` ${formula}`:` ${blocks.length} блоков`));
+      const fire=mode=>{ if(options.onProgram) options.onProgram(p,mode||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.'); };
+      // Правый клик по кнопке с бросками: обычный бросок / помеха / преимущество — как у характеристик и навыков листа.
+      const modeMenu=rolls.length&&options.onProgram&&window.Modules?.openModeMenu;
+      const hint=rolls.length&&options.onProgram?'\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим':'';
+      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:(formula?`${caption} · ${formula}`:programSummary(p))+hint,onclick:e=>{e.stopPropagation(); fire(window.Modules?.modeFromEvent(e)||{});},...(modeMenu?{oncontextmenu:e=>window.Modules.openModeMenu(e,caption,fire)}:{})},window.icon?.(st.icon,13),el('span',{},caption),el('small',{},formula?` ${formula}`:` ${blocks.length} блоков`));
       root.append(program);
     }
     return root;
@@ -174,5 +175,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,STATS,block,dice,expression,starter,templates,migrate,normalize,programsOf,validate,preview,buttons,programSummary,passiveData};
+  return {forFeature,VERSION,TYPES,block,dice,expression,starter,templates,migrate,normalize,programsOf,validate,preview,buttons,passiveData};
 })();

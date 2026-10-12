@@ -1,6 +1,10 @@
 // ---------------------------------------------------------------------------
 // node-registry.js — единый реестр узлов механик v2: типы данных, входы/выходы, настройки по умолчанию,
 // категории для меню и проверка совместимости сокетов. Интерфейс и движок читают только этот реестр.
+// Набор узлов намеренно абстрактный: вместо отдельных узлов «Атака», «Урон», «Лечение» и «Временные хиты»
+// есть один настраиваемый узел «Бросок» (action.roll, параметр roll_kind), вместо «И»/«ИЛИ»/«НЕ» — один
+// узел «Логика» (logic.op, параметр op). Старые типы остаются псевдонимами (ALIASES): графы из базы и
+// шаблоны прошлых версий читаются, а редактор переводит их на абстрактные узлы при открытии.
 // Чтобы добавить узел, достаточно строки в NODE_DEFS (вход/выход/тип/категория/настройки) и обработчика
 // исполнения в движке. Загружается после mechanics.js и до mechanics-graph.js. Даёт: window.NodeRegistry.
 // ---------------------------------------------------------------------------
@@ -8,7 +12,16 @@
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
+  // Виды блоков v1: их по-прежнему понимает компиляция графа в линейные программы (toLegacy).
   const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
+  // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
+  const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
+  const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
+  // Логические операции одного узла «Логика»: НЕ использует только вход «a».
+  const LOGIC_OPS = ['and', 'or', 'not'];
+  const LOGIC_OP_LABELS = { and: 'И', or: 'ИЛИ', not: 'НЕ' };
+  // Эффекты без броска: у каждого свой набор параметров, поэтому они остаются отдельными узлами.
+  const EFFECT_KINDS = ['consume', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   const NODE_DEFS = {
@@ -31,10 +44,9 @@
     'condition.hit': { label: 'Попадание атаки', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: {} },
     // Сравнение двух чисел (данные «Число» и вычисленные значения). Операция: >=, <=, >, <, =, !=.
     'condition.compare': { label: 'Сравнить числа', group: 'Условия', inputs: { a: 'number', b: 'number' }, outputs: { value: 'bool' }, defaults: { op: '>=' } },
-    // Логика условий: И, ИЛИ, НЕ. Вход условия «попадания атаки» сюда не подключается — только ко входу «Если».
-    'logic.and': { label: 'И', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
-    'logic.or': { label: 'ИЛИ', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
-    'logic.not': { label: 'НЕ', group: 'Логика', inputs: { a: 'bool' }, outputs: { value: 'bool' }, defaults: {} },
+    // Один настраиваемый логический узел: op = and / or / not. Для «НЕ» используется только вход «a».
+    // Вход условия «попадания атаки» сюда не подключается — только ко входу «Если».
+    'logic.op': { label: 'Логика', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: { op: 'and' } },
     'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
     // Конец цепочки действия: принимает поток и ничего не исполняет. В конец может прийти несколько проводов.
     'flow.end': { label: 'Конец', group: 'Поток', inputs: { exec: 'flow' }, outputs: {}, defaults: {} },
@@ -55,23 +67,26 @@
     'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
     'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
     'action.program': { label: 'Начало действия', group: 'Действия', inputs: {}, outputs: { exec: 'flow' }, defaults: { program_id: '', name: 'Новое действие', trigger: 'use', style: 'default' } },
+    // Один настраиваемый узел всех бросков: roll_kind выбирает смысл (свободный бросок, атака, урон,
+    // лечение, временные хиты). Кость задаётся полем «dice» или проводом на вход «Кость».
+    'action.roll': { label: 'Бросок', group: 'Действия', inputs: { exec: 'flow', enabled: 'bool', dice: 'dice' }, outputs: { exec: 'flow' }, defaults: {} },
     'group.instance': { label: 'Группа', group: 'Группы', inputs: {}, outputs: {}, defaults: { group_id: '' } },
     'group.input': { label: 'Вход группы', group: 'Группы', inputs: {}, outputs: { value: 'text' }, defaults: { socket_id: '' } },
     'group.output': { label: 'Выход группы', group: 'Группы', inputs: { value: 'text' }, outputs: {}, defaults: { socket_id: '' } },
   };
-  // Действия с костью: кость можно подать проводом на вход «Кость» (иначе берётся поле «dice»).
-  const DICE_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
-  for (const kind of ACTION_KINDS) {
+  for (const kind of EFFECT_KINDS) {
     NODE_DEFS[`action.${kind}`] = {
       label: Base.TYPES[kind]?.[0] || kind, group: 'Действия',
-      inputs: { exec: 'flow', enabled: 'bool', ...(DICE_KINDS.includes(kind) ? { dice: 'dice' } : {}) }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
+      inputs: { exec: 'flow', enabled: 'bool' }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
     };
   }
+  NODE_DEFS['action.roll'].defaults = { ...actionDefaults('roll'), roll_kind: 'roll' };
   function actionDefaults(kind) {
     // Условие «попал / не попал» не хранится в действии: его задаёт узел condition.hit через flow.if.
     const base = { enabled: true };
     const defaultDice = window.Presets?.item('block_defaults', kind)?.table?.dice;
     if (defaultDice) base.dice = Base.dice(defaultDice);
+    if (kind === 'roll' && !base.dice) base.dice = Base.dice('1d20');
     if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
@@ -81,13 +96,37 @@
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
     return base;
   }
+  // Псевдонимы старых специализированных узлов: тип → [абстрактный тип, параметры, которые задаёт тип].
+  // Нужны, чтобы графы из базы, шаблоны и пресеты прошлых версий читались без миграции данных вручную.
+  const ALIASES = {
+    'action.attack': ['action.roll', { roll_kind: 'attack' }],
+    'action.damage': ['action.roll', { roll_kind: 'damage' }],
+    'action.heal': ['action.roll', { roll_kind: 'heal' }],
+    'action.temp_hp': ['action.roll', { roll_kind: 'temp_hp' }],
+    'logic.and': ['logic.op', { op: 'and' }],
+    'logic.or': ['logic.op', { op: 'or' }],
+    'logic.not': ['logic.op', { op: 'not' }],
+  };
+  const resolveType = type => (ALIASES[type] ? ALIASES[type][0] : type);
+  const aliasParams = type => (ALIASES[type] ? clone(ALIASES[type][1]) : null);
+  const nodeDef = type => NODE_DEFS[resolveType(type)];
+  // Заголовок карточки: настраиваемые узлы показывают выбранный режим («Бросок · Атака», «Логика · И»).
+  function nodeTitle(type, params = null) {
+    const resolved = resolveType(type);
+    const def = NODE_DEFS[resolved];
+    if (!def) return type;
+    const p = { ...(aliasParams(type) || {}), ...(params || {}) };
+    if (resolved === 'action.roll') return `${def.label} · ${ROLL_KIND_LABELS[p.roll_kind] || ROLL_KIND_LABELS.roll}`;
+    if (resolved === 'logic.op') return `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
+    return def.label;
+  }
   // Категории меню (порядок показа). Узел попадает в первую подходящую категорию.
   const CATEGORIES = [
     { id: 'data', title: 'Данные', match: type => type.startsWith('data.') || type === 'dice.combine' },
     { id: 'conditions', title: 'Условия', match: type => type.startsWith('condition.') },
     { id: 'logic', title: 'Логика', match: type => type.startsWith('logic.') },
     { id: 'flow', title: 'Поток управления', match: type => type.startsWith('flow.') || type === 'action.program' },
-    { id: 'combat', title: 'Бой', match: type => ['action.attack', 'action.damage', 'action.heal', 'action.temp_hp', 'action.roll'].includes(type) },
+    { id: 'combat', title: 'Броски', match: type => type === 'action.roll' },
     { id: 'effects', title: 'Эффекты', match: type => ['action.condition', 'action.adjust', 'action.grant_item', 'action.passive'].includes(type) },
     { id: 'resources', title: 'Ресурсы', match: type => ['action.consume', 'action.require'].includes(type) },
     { id: 'character', title: 'Персонаж', match: type => type.startsWith('rule.') },
@@ -95,10 +134,10 @@
     { id: 'other', title: 'Прочее', match: type => type.startsWith('action.') },
   ];
   const INTERNAL = new Set(['group.input', 'group.output']);
-  const categoryOf = type => (CATEGORIES.find(c => c.id !== 'other' && c.match(type)) || CATEGORIES[CATEGORIES.length - 1]);
+  const categoryOf = type => (CATEGORIES.find(c => c.id !== 'other' && c.match(resolveType(type))) || CATEGORIES[CATEGORIES.length - 1]);
   // Сокеты совместимы, только если типы совпадают: это же правило проверяет движок (validateGraph).
   const sameType = (fromType, toType) => Boolean(fromType) && fromType === toType;
-  // Каталог для меню: категории с узлами, внутренние узлы групп не показываются.
+  // Каталог для меню: категории с узлами, внутренние узлы групп не показываются. Псевдонимы в меню не попадают.
   function catalog(query = '') {
     const q = String(query).trim().toLocaleLowerCase();
     const items = Object.entries(NODE_DEFS)
@@ -108,5 +147,8 @@
     return CATEGORIES.map(c => ({ id: c.id, title: c.title, items: items.filter(item => item.category === c.id).sort((a, b) => a.label.localeCompare(b.label, 'ru')) }))
       .filter(section => section.items.length);
   }
-  window.NodeRegistry = { VALUE_TYPES, ACTION_KINDS, ABILITIES, NODE_DEFS, CATEGORIES, categoryOf, sameType, catalog, INTERNAL };
+  window.NodeRegistry = {
+    VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
+    NODE_DEFS, ALIASES, resolveType, aliasParams, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
+  };
 })();
