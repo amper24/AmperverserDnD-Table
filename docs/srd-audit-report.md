@@ -506,8 +506,10 @@
 | `python3 tools/srd/fix_monster_defenses.py --check` | 0 изменений, 0 замечаний (сходится с дампом) |
 | `python3 tools/srd/fix_spell_saves.py --src /tmp/srd --check` | 0 вставок, 0 ошибок, паритет редакций по спасброскам соблюдён |
 | `python3 tools/srd/fix_thunder_terms.py --check` | 0 правок; осталось только 25 имён и 6 явлений (2014), 74 имени и 6 явлений (2024) — «прочих» упоминаний типа урона нет |
-| CI GitHub на `86422b0` (прогон 38203794028) | success: «Build & smoke test (SQLite + MySQL)», «Windows build + run.bat», «Browser tests (Chromium)» |
+| CI GitHub на `86422b0` (прогон 38203794028), `7597ae9` (38204272732), `b8fc145` (38204292870) | success: «Build & smoke test (SQLite + MySQL)», «Windows build + run.bat», «Browser tests (Chromium)» |
 | CI GitHub на `fc50361` (прогон 38202066814) | success: «Build & smoke test (SQLite + MySQL)», «Windows build + run.bat», «Browser tests (Chromium)» |
 | CI GitHub на `c605b68` (прогон 38200715176), `b9f007c` (38192210457), `c8c6d30` (38194999022), `c7c4802` (38195372440) | success (сборка, клиппи, JS-тесты, `cargo test`, smoke SQLite/MySQL, браузерные тесты, Windows) |
 
-Постоянных изменений в чужих ветках нет; `main` не трогался — вся работа лежит в ветке сессии.
+Последний прогон CI — на коммите-отчёте, поэтому его номера в таблице нет: список виден в
+`gh run list --branch arena/d1296f23-amperverserdnd-table`. Постоянных изменений в чужих ветках нет;
+`main` не трогался — вся работа лежит в ветке сессии.
