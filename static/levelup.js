@@ -28,9 +28,26 @@ window.LevelUp = (() => {
   const featureTagOf = (name, edition) => featureRulesOf(edition).find(r => r.table.tag && featureRuleMatch(r, name))?.table.tag || '';
   // Прирост экспертизы по уровням — набор class_rules (expertise_levels).
   const expertiseGain = (edition, slug, level) => Number(classRulesOf(slug, edition)?.expertise_levels?.[String(level)]) || 0;
-  const SKILL_KEYS_RU = { Акробатика: 'acrobatics', 'Уход за животными': 'animal_handling', Магия: 'arcana', Атлетика: 'athletics', Обман: 'deception', История: 'history', Проницательность: 'insight', Запугивание: 'intimidation', Анализ: 'investigation', Медицина: 'medicine', Природа: 'nature', Восприятие: 'perception', Выступление: 'performance', Убеждение: 'persuasion', Религия: 'religion', 'Ловкость рук': 'sleight_of_hand', Скрытность: 'stealth', Выживание: 'survival' };
-  const skillKeyFromName = name => SKILL_KEYS_RU[name] || (typeof SKILLS !== 'undefined' ? SKILLS.find(([, label]) => label === name)?.[0] : null);
+  // Ключи навыков берутся из единственного словаря листа (window.SKILLS, static/common.js):
+  // жёсткая таблица «русское название → ключ» расходилась с ним (animal_handling вместо animal,
+  // sleight_of_hand вместо sleight), и выбранная экспертиза не находила навык на листе.
+  const SKILL_ALIASES = { 'анализ': 'investigation', animal_handling: 'animal', sleight_of_hand: 'sleight' };
+  // Английские названия нужны английскому виду наборов (data.i18n.en) — ключи навыков там английские.
+  const SKILL_NAMES_EN = { acrobatics: 'Acrobatics', animal: 'Animal Handling', arcana: 'Arcana', athletics: 'Athletics', deception: 'Deception', history: 'History', insight: 'Insight', intimidation: 'Intimidation', investigation: 'Investigation', medicine: 'Medicine', nature: 'Nature', perception: 'Perception', performance: 'Performance', persuasion: 'Persuasion', religion: 'Religion', sleight: 'Sleight of Hand', stealth: 'Stealth', survival: 'Survival' };
+  const skillDict = () => (typeof SKILLS !== 'undefined' && Array.isArray(SKILLS)) ? SKILLS : (typeof window !== 'undefined' && Array.isArray(window.SKILLS) ? window.SKILLS : []);
+  const skillKeyFromName = name => {
+    const value = String(name || '').trim();
+    if (!value) return null;
+    const found = skillDict().find(([key, label]) => key === value || label === value);
+    if (found) return found[0];
+    const alias = SKILL_ALIASES[value.toLocaleLowerCase('ru')];
+    if (alias) return alias;
+    return Object.keys(SKILL_NAMES_EN).find(key => SKILL_NAMES_EN[key].toLowerCase() === value.toLowerCase()) || null;
+  };
   const skillName = k => k === 'thieves_tools' ? 'Воровские инструменты' : (typeof SKILLS !== 'undefined' && (SKILLS.find(x => x[0] === k) || [])[1]) || k;
+  /// Приводит список навыков листа к словарю: убирает повторы и переводит старые длинные id
+  /// (animal_handling, sleight_of_hand), которые сохранили версии до 0.6.8. Неизвестные значения не трогает.
+  const canonicalSkills = list => [...new Set((Array.isArray(list) ? list : []).map(x => SKILL_ALIASES[String(x).toLocaleLowerCase('ru')] || x))];
   const modOf = n => Math.floor(((Number(n) || 10) - 10) / 2);
   const profBonus = lvl => Math.ceil(1 + lvl / 4);
   const dieOf = cls => Number(String(cls?.data?.hit_die || 'd8').replace(/\D/g, '')) || 8;
@@ -1012,5 +1029,5 @@ window.LevelUp = (() => {
       })();
     });
   }
-  return { featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
+  return { canonicalSkills, featRuleOf, featPrerequisitesMet, featAbilityRule, isStyleFeat, slugOf, sameClass, classesOf, classRow, classLabel, multiclassReq, progression, spellStats, castingSummary, optionGroups, classFeaturesAt, subclassOf, subclassFeaturesAt, subclassVariantGroups, subclassSkillChoices, subclassCantripGain, subclassLevel, plan, hpAverage, hpGain, hpChoiceValid, asiValid, expertiseCandidates, featAbilityRule, featPrerequisitesMet, apply, canUndo, undo, open, modOf, profBonus };
 })();

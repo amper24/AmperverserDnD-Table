@@ -56,6 +56,10 @@
     s.abilities = obj(s.abilities); for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) s.abilities[k] = num(s.abilities[k], 10);
     s.hp = obj(s.hp); s.hp.max = num(s.hp.max, 10); s.hp.current = num(s.hp.current, s.hp.max); s.hp.temp = num(s.hp.temp, 0); if (typeof s.hp.hit_dice !== 'string' || !s.hp.hit_dice) s.hp.hit_dice = `${s.level}d8`; s.hp.hit_dice_used = obj(s.hp.hit_dice_used); for (const k of Object.keys(s.hp.hit_dice_used)) s.hp.hit_dice_used[k] = num(s.hp.hit_dice_used[k], 0);
     for (const k of ['skills', 'expertise', 'saving_throws', 'conditions', 'attacks', 'inventory', 'features']) if (!Array.isArray(s[k])) s[k] = [];
+    // Листы, собранные до 0.6.8, могли сохранить навык/экспертизу под длинным id (animal_handling,
+    // sleight_of_hand): в словаре листа таких ключей нет, и владение не давало модификатор.
+    // Приводим к словарю на загрузке листа; неизвестные значения остаются как есть.
+    if (window.LevelUp?.canonicalSkills) { s.skills = window.LevelUp.canonicalSkills(s.skills); s.expertise = window.LevelUp.canonicalSkills(s.expertise); }
     s.death_saves = obj(s.death_saves); s.death_saves.success = num(s.death_saves.success, 0); s.death_saves.failure = num(s.death_saves.failure ?? s.death_saves.fail, 0); delete s.death_saves.fail;
     s.currency = obj(s.currency); for (const k of ['pp', 'gp', 'ep', 'sp', 'cp']) s.currency[k] = num(s.currency[k], 0);
     s.traits = obj(s.traits); s.notes_by = obj(s.notes_by);
