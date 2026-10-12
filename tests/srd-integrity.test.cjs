@@ -306,4 +306,28 @@ test('тип урона в текстах назван по словарю ли�
   assert.match(data('2014', 'srd14-staff-of-thunder-and-lightning').desc, /(?:^|\n)Гром\./, 'свойство посоха «Гром» осталось названием');
   assert.match(data('2014', 'srd14-wizard').subclasses.map(s => s.desc).join(' '), /раскатистый гром/);
   assert.match(data('2014', 'srd14-lich').traits.map(t => t.text).join(' '), /Волна грома/, 'название заклинания в списке не переименовано');
+  assert.match(data('2014', 'srd14-staff-of-thunder-and-lightning').desc, /Гром и молния/);
+  // Английское зеркало подтверждает термин: правка без подтверждения не делается.
+  assert.match(data('2024', 'srd24-air-elemental').i18n.en['actions!'][1].text, /Thunder damage/);
+  // Проза: старой формулировки типа урона не осталось ни в одной записи обеих редакций.
+  // Ищем ровно те обороты, которые правил инструмент: «урона громом», «Громового урона»,
+  // ячейку таблицы «Тип урона», выбор типа в «Радужных брызгах», иммунитет к «Грому».
+  const drift = [/урон[а-яё]*\s+громом/i, /[Гг]ромов[а-яё]*\s+урон/i, /\|\s*10\s*\|\s*Гром\s*\|/,
+    /яд или гром/i, /иммунитет[а-яё]*\s+к\s+грому/i, /сопротивлени[а-яё]*\s+к?\s*грому/i];
+  const proseOf = data => {
+    const texts = [data.desc, data.resistances, data.vulnerabilities, data.immunities];
+    for (const key of ['traits', 'actions', 'reactions', 'legendary_actions'])
+      for (const item of data[key] || []) texts.push(item.text);
+    for (const item of data.subclasses || []) texts.push(item.desc);
+    for (const node of ((data.mechanics || {}).graph || {}).nodes || []) texts.push(node.params.text);
+    return texts.filter(text => typeof text === 'string');
+  };
+  for (const edition of EDITIONS) {
+    for (const row of seeds[edition]) {
+      for (const text of proseOf(row.data)) {
+        for (const pattern of drift)
+          assert.ok(!pattern.test(text), `${row.slug}: тип урона снова назван «громом» (${pattern})`);
+      }
+    }
+  }
 });
