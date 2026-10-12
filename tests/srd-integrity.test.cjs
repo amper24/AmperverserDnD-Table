@@ -51,6 +51,85 @@ test('сводка механик (docs/mechanics-migration.json) соответ
   }
 });
 
+test('броски монстров и кубики урона заклинаний подтверждаются текстом записи', () => {
+  // Бросок обязан быть виден в тексте, из которого он взят: бонус атаки «+9» — в «атака: +9»,
+  // кубики «2к8 + 5» — в «14 (2к8 + 5)» описания умения, кубики заклинания — в его описании.
+  // Полная сверка (в том числе с официальным английским текстом) — tools/srd/audit_rolls.py.
+  // Юникодные тире дампа 2024 («1d4 − 1») приводим к ASCII; «к» — только между цифрами.
+  const compact = value => String(value || '').toLowerCase().replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/\s+/g, '').replace(/(?<=\d)к(?=\d)/g, 'd');
+  const textsOf = data => ['traits', 'actions', 'reactions', 'legendary_actions', 'bonus_actions']
+    .flatMap(key => data[key] || []).map(item => compact(item.text)).concat([compact(data.desc)])
+    .flatMap(text => [text].concat([...text.matchAll(/(?:попадание|hit)[:.]?(\d+)(?!\d)/g)]
+      .map(match => match[0])));
+  // Производный бросок: текст даёт слагаемое, справочник — итог для базового круга.
+  const DERIVED = { 'srd14-magic-missile': '3d4+3' };
+  let attacks = 0, damages = 0, dice = 0, itemDice = 0;
+  for (const edition of EDITIONS) {
+    for (const row of seeds[edition]) {
+      const data = row.data, texts = textsOf(data);
+      for (const action of data.actions_roll || []) {
+        const roll = compact(action.roll);
+        if (action.kind === 'attack') {
+          const match = /^1d20\+(\d+)$/.exec(roll);
+          if (!match) continue;
+          attacks++;
+          assert.ok(texts.some(text => text.includes('+' + match[1])),
+            `${row.slug} ${action.name}: бонус атаки +${match[1]} не найден в тексте записи`);
+        }
+        if (action.kind === 'damage') {
+          // «2к8 + 5» и «1к4 - 1» — кости с модификатором; «1» — плоский урон (барсук):
+          // у него сверяется само число после «Попадание:»/«Hit:», иначе подойдёт любая цифра.
+          const match = /^(\d+d\d+)([+-]\d+)?$/.exec(roll);
+          const flat = /^\d+$/.test(roll);
+          if (!match && !flat) continue;
+          damages++;
+          const forms = match ? [match[1] + (match[2] || '')]      // модификатор обязан быть и в тексте
+            : [`попадание:${roll}`, `hit:${roll}`];
+          assert.ok(texts.some(text => forms.some(form => text.includes(form))),
+            `${row.slug} ${action.name}: формула ${roll} не найдена в тексте записи`);
+        }
+      }
+      if (row.category === 'item') {
+        const fields = compact([data.damage, data.damage_type, (data.properties || []).join(' '),
+          data.category, data.desc].join(' '));
+        for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
+          if (node.type !== 'action.damage') continue;
+          const roll = node.params.dice || {};
+          if (!roll.count) continue;
+          const base = `${roll.count}d${roll.sides}`;
+          if (base === '1d20') continue;
+          itemDice++;
+          const full = base + (roll.bonus ? '+' + roll.bonus : '');
+          assert.ok(fields.includes(full) || fields.includes(base),
+            `${row.slug} ${node.id}: кубики ${full} не найдены в полях записи`);
+          if (data.type === 'weapon' && node.params.damage_type && data.damage_type) {
+            assert.strictEqual(node.params.damage_type, data.damage_type,
+              `${row.slug} ${node.id}: тип урона узла не совпал с типом оружия`);
+          }
+        }
+        continue;
+      }
+      if (row.category !== 'spell') continue;
+      const description = compact(data.desc);
+      for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
+        if (!['action.damage', 'action.roll'].includes(node.type)) continue;
+        const roll = node.params.dice || {};
+        if (!roll.count) continue;
+        const base = `${roll.count}d${roll.sides}`;
+        if (base === '1d20') continue;            // бросок спасброска: в описании его нет
+        dice++;
+        const full = base + (roll.bonus ? '+' + roll.bonus : '');
+        if (DERIVED[row.slug] === full) continue;
+        assert.ok(description.includes(full) || description.includes(base),
+          `${row.slug} ${node.id}: кубики ${full} не найдены в описании записи`);
+      }
+    }
+  }
+  assert.ok(attacks > 900 && damages > 1200 && dice > 150 && itemDice > 80,
+    `проверок стало меньше: атак ${attacks}, урона ${damages}, кубиков ${dice}, оружия ${itemDice}`);
+});
+
 test('заклинания: у спасброска есть характеристика, действие и программа в обеих редакциях', () => {
   for (const edition of EDITIONS) {
     for (const row of spells(edition)) {
