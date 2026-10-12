@@ -24,9 +24,11 @@ const SEED_FILES: &[(&str, &str, &str)] = &[("srd_2014.json", "SRD 2014", "2014"
 /// (tools/srd/legacy_hashes.py). По ним при обновлении находим строки БД, которые никто не менял, и переводим их на новую версию.
 type LegacyHashes = std::collections::HashMap<String, std::collections::HashMap<String, (String, String)>>;
 
-/// Прежние поставочные версии записей с механикой (tools/srd/previous_shipped.py):
-/// `{"2014": {"категория/slug": [[хеш data, хеш mechanics], ...]}}`. Нужны, чтобы обновить узлы механики в базах,
-/// где запись не менялась с прежней сборки, не трогая правки пользователя.
+/// Прежние поставочные версии записей (tools/srd/previous_shipped.py):
+/// `{"2014": {"категория/slug": [[хеш имени+data без mechanics, хеш mechanics], ...]}}`. Нужны, чтобы обновить
+/// записи в базах, где строка не менялась с прежней сборки, не трогая правки пользователя. У прежних сборок
+/// без узлов механики второй хеш пустой — такие строки (со слоем перевода, но без механики) `ReplaceLegacy`
+/// не покрывает, поэтому снимок хранит и их.
 type ShippedHashes = std::collections::HashMap<String, std::collections::HashMap<String, Vec<(String, String)>>>;
 
 /// Каноническая форма JSON: ключи по возрастанию, без пробелов, UTF-8 — совпадает с `canon()` в tools/srd/legacy_hashes.py.
@@ -81,11 +83,11 @@ fn classify(current: &serde_json::Value, row_name: &str, new_data: &serde_json::
     Upgrade::Keep
 }
 
-/// Строка совпадает с одним из прежних поставочных снимков (имя + data + механика), и в новой версии есть механика.
+/// Строка совпадает с одним из прежних поставочных снимков (имя + data + механика или пустая механика).
 /// Такую строку заменяем целиком: правок пользователя в ней нет, иначе хеши бы не совпали.
 fn matches_shipped(current: &serde_json::Value, row_name: &str, shipped: &[(String, String)]) -> bool {
     let (cd, cm) = entry_hashes(row_name, current);
-    !cm.is_empty() && shipped.iter().any(|(d, m)| *d == cd && *m == cm)
+    shipped.iter().any(|(d, m)| *d == cd && *m == cm)
 }
 
 pub async fn seed(pool: &AnyPool, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<()> {
@@ -112,7 +114,7 @@ pub async fn seed(pool: &AnyPool, img_cfg: &crate::config::ImagesCfg) -> anyhow:
                     // Only upgrade byte-semantically matching shipped definitions. Customized rows
                     // and previously edited blocks are never replaced by a later seed boot.
                     let mut upgrade = classify(&current,&row_name,&e.data,&e.name,legacy_hash);
-                    if upgrade == Upgrade::Keep && e.data.get("mechanics").is_some() && matches_shipped(&current,&row_name,shipped) {
+                    if upgrade == Upgrade::Keep && matches_shipped(&current,&row_name,shipped) {
                         upgrade = Upgrade::ReplaceShipped;
                     }
                     match upgrade {
@@ -226,7 +228,21 @@ mod tests {
         assert!(!matches_shipped(&edited, "Дротик", &shipped));
         assert!(!matches_shipped(&legacy_dart(), "Мой дротик", &shipped));
         let mut no_mech = legacy_dart(); no_mech.as_object_mut().unwrap().remove("mechanics");
-        assert!(!matches_shipped(&no_mech, "Дротик", &shipped), "без механики снимок не совпадает");
+        assert!(!matches_shipped(&no_mech, "Дротик", &shipped), "строка без механики не совпадает со снимком с механикой");
+    }
+
+    #[test]
+    fn snapshot_without_mechanics_matches_a_row_without_mechanics() {
+        let mut no_mech = legacy_dart(); no_mech.as_object_mut().unwrap().remove("mechanics");
+        // снимок прежней сборки, где у записи механики ещё не было (второй хеш пустой)
+        let shipped = vec![entry_hashes("Дротик", &no_mech)];
+        assert_eq!(shipped[0].1, "", "у записи без механики второй хеш пустой");
+        assert!(matches_shipped(&no_mech, "Дротик", &shipped));
+        // запись с механикой по такому снимку не обновляется — другая пара хешей
+        assert!(!matches_shipped(&legacy_dart(), "Дротик", &shipped));
+        // правка пользователя по-прежнему защищена
+        let mut edited = no_mech; edited["desc"] = json!("моя правка");
+        assert!(!matches_shipped(&edited, "Дротик", &shipped));
     }
 
     #[test]
