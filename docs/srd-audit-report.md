@@ -489,7 +489,7 @@
 | `9e13a6e` | Отчёт и CHANGELOG: спасброски заклинаний с несколькими эффектами | `docs/srd-audit-report.md`, `CHANGELOG.md` |
 | `86422b0` | Тип урона «звук» в текстах справочника: «гром»/«громовой» → словарь листа | `data_seed/srd_{2014,2024}.json`, `data_seed/previous_shipped.json`, `tools/srd/{fix_thunder_terms,fix_monster_defenses}.py`, `tools/srd/integrity.cjs`, `tests/srd-integrity.test.cjs` |
 | `7597ae9` | Отчёт: тип урона «звук» в текстах и защита кросс-ссылок имён | `docs/srd-audit-report.md`, `CHANGELOG.md`, `tools/srd/fix_thunder_terms.py` |
-| `HEAD` | Отчёт и CHANGELOG: последняя правка этой работы | `docs/srd-audit-report.md`, `CHANGELOG.md` |
+| `HEAD` | Последняя правка этой работы | файлы — `git show --stat HEAD` |
 
 Последний коммит — сам отчёт: его hash меняется при каждой правке этого файла, поэтому в таблице
 он помечен `HEAD` (точное значение — `git rev-parse --short HEAD`).
@@ -497,8 +497,8 @@
 Все коммиты отправлены в `origin/arena/d1296f23-amperverserdnd-table`. Отчёт и `CHANGELOG.md`
 обновляются последним коммитом («Отчёт и CHANGELOG: …»), он же попадает в CI после отправки, поэтому
 последняя строка таблицы помечена `HEAD`: точное сообщение и hash — `git log -1 --format='%h %s'`,
-полный список — `git log --format='%h %s' 544fba2..HEAD` (в таблице перечислены все коммиты ветки
-на момент этой правки плюс сам коммит-отчёт).
+изменённые файлы — `git show --stat HEAD`, полный список — `git log --format='%h %s' 544fba2..HEAD`
+(в таблице перечислены все коммиты ветки на момент этой правки плюс сам последний коммит).
 
 Проверки перед завершением (все выполнены в рабочем дереве, числа воспроизводимы):
 
