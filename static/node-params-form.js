@@ -17,7 +17,7 @@
   const ENUM_MULTI = { editions: EDITIONS };
   // Стили кнопок действия: параметр style у узла «Начало действия». Иконка — из набора ICONS (common.js).
   const BUTTON_STYLES = {
-    default: { label: 'Обычная', icon: 'dice' },
+    default: { label: 'Обычная', icon: 'd20' },
     attack: { label: 'Атака', icon: 'sword' },
     spell: { label: 'Заклинание', icon: 'star' },
     heal: { label: 'Лечение', icon: 'heart' },

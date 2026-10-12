@@ -155,7 +155,13 @@ window.Mechanics = (() => {
       if(p.trigger!=='use') continue;
       const blocks=(p.blocks||[]).filter(b=>b.enabled!==false);
       const st=window.BUTTON_STYLES?.[p.style]||window.BUTTON_STYLES?.default||{icon:'dice'};
-      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},window.icon?.(st.icon,13),el('span',{},p.name),el('small',{},` ${blocks.length} блоков`));
+      // Если в программе есть броски, на кнопке видна их формула. Одиночный бросок называем по его имени.
+      const rollKinds=['attack','damage','heal','temp_hp','roll'];
+      const rolls=blocks.filter(b=>rollKinds.includes(b.kind)&&b.dice);
+      const pure=blocks.length===1&&blocks[0].kind==='roll';
+      const formula=rolls.map(b=>expression(b.dice)).join(' · ');
+      const caption=pure?(blocks[0].name||p.name):p.name;
+      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:formula?`${caption} · ${formula}`:programSummary(p),onclick:e=>{e.stopPropagation(); if(options.onProgram) options.onProgram(p,window.Modules?.modeFromEvent(e)||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.');}},window.icon?.(st.icon,13),el('span',{},caption),el('small',{},formula?` ${formula}`:` ${blocks.length} блоков`));
       root.append(program);
     }
     return root;

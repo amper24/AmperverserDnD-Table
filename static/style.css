@@ -418,14 +418,17 @@ button.primary, .btn.primary { font-weight: 600; }
 
 /* ---- связки бросков (атака + урон) ---- */
 .act-btn.all { border-style: dashed; }
-/* Стили кнопок действий: параметр style узла «Начало действия» (см. BUTTON_STYLES). */
-.act-btn[class*="btn-style-"] { font-weight: 600; }
-.act-btn.btn-style-attack { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--panel2)); }
-.act-btn.btn-style-spell { border-color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 16%, var(--panel2)); }
-.act-btn.btn-style-heal { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, var(--panel2)); }
-.act-btn.btn-style-damage { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--panel2)); }
-.act-btn.btn-style-item { border-color: #d97706; background: color-mix(in srgb, #d97706 16%, var(--panel2)); }
-.act-btn.btn-style-defense { border-color: #0891b2; background: color-mix(in srgb, #0891b2 16%, var(--panel2)); }
+/* Кнопки действий в духе D&D: карточка как статблок — шрифт с засечками, красная линия сверху, цвет по типу (параметр style, см. BUTTON_STYLES). */
+.act-btn[class*="btn-style-"] { font-family: Georgia, 'Times New Roman', serif; font-weight: 600; letter-spacing: .01em; border-radius: 2px; border-top: 2px solid var(--dnd-rule, #922610); background: var(--panel2); }
+.act-btn[class*="btn-style-"] small { font-style: italic; font-weight: 400; }
+.act-btn[class*="btn-style-"]:hover { border-top-color: var(--dnd-rule, #922610); }
+.act-btn.btn-style-default { --dnd-rule: #5c4a32; }
+.act-btn.btn-style-attack { --dnd-rule: #922610; background: color-mix(in srgb, #922610 12%, var(--panel2)); }
+.act-btn.btn-style-spell { --dnd-rule: #5b3a8c; background: color-mix(in srgb, #5b3a8c 14%, var(--panel2)); }
+.act-btn.btn-style-heal { --dnd-rule: #2f6b3a; background: color-mix(in srgb, #2f6b3a 14%, var(--panel2)); }
+.act-btn.btn-style-damage { --dnd-rule: #b45309; background: color-mix(in srgb, #b45309 14%, var(--panel2)); }
+.act-btn.btn-style-item { --dnd-rule: #8a6d3b; background: color-mix(in srgb, #8a6d3b 14%, var(--panel2)); }
+.act-btn.btn-style-defense { --dnd-rule: #1f5f73; background: color-mix(in srgb, #1f5f73 14%, var(--panel2)); }
 .action-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; margin-bottom: 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); }
 .action-row .row select { flex: 0 0 110px; } .action-row .row input { flex: 1; min-width: 60px; } .action-row .row button { flex: 0 0 auto; }
 .action-row .action-note { font-size: 12px; }
