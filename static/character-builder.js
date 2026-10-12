@@ -53,6 +53,8 @@ window.CharacterBuilder = (() => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name; if (d.speed) s.speed = d.speed;
     if (s.edition === '2014') for (const k of keys) s.abilities[k] += Number(d.asi?.[k]) || 0;
     appendProficiency(s, 'Языки расы', d.languages);
+    // Фиксированные навыки расы (например, Острые чувства эльфа — Восприятие) из данных или пассивного блока.
+    for (const name of Array.isArray(d.skills) ? d.skills : []) { const key = skillKey(name); if (key && !s.skills.includes(key)) s.skills.push(key); }
   });
   register('class', (s, e) => {
     const d = e.data || {}; s.class = e.name; s.saving_throws = [...(d.saves || [])];
@@ -93,9 +95,12 @@ window.CharacterBuilder = (() => {
   const asList = v => Array.isArray(v) ? v : (v === undefined || v === null || v === '') ? [] : [v];
   const clip = (v, n) => String(v === undefined || v === null ? '' : v).slice(0, n);
   const SKILL_NAME_ALIASES = { 'анализ': 'investigation' };
+  // Английские названия навыков (английский вид наборов): ключ навыка → название.
+  const SKILL_NAMES_EN = { acrobatics: 'Acrobatics', animal: 'Animal Handling', arcana: 'Arcana', athletics: 'Athletics', deception: 'Deception', history: 'History', insight: 'Insight', intimidation: 'Intimidation', investigation: 'Investigation', medicine: 'Medicine', nature: 'Nature', perception: 'Perception', performance: 'Performance', persuasion: 'Persuasion', religion: 'Religion', sleight: 'Sleight of Hand', stealth: 'Stealth', survival: 'Survival' };
   const skillKey = name => {
     const value = String(name || '').trim();
-    return (SKILLS || []).find(([k, n]) => k === value || n === value)?.[0] || SKILL_NAME_ALIASES[value.toLocaleLowerCase('ru')];
+    return (SKILLS || []).find(([k, n]) => k === value || n === value)?.[0] || SKILL_NAME_ALIASES[value.toLocaleLowerCase('ru')]
+      || Object.keys(SKILL_NAMES_EN).find(k => SKILL_NAMES_EN[k].toLowerCase() === value.toLowerCase());
   };
   const skillName = key => (SKILLS || []).find(([k]) => k === key)?.[1] || key;
   const uid = p => p + Math.random().toString(36).slice(2, 9);
