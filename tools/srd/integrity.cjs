@@ -90,6 +90,29 @@ const nameOf = e => e.name;
 const ABILITY_CODES = ['СИЛ', 'ЛОВ', 'ТЕЛ', 'ИНТ', 'МДР', 'ХАР'];
 // Тип урона — отображаемая строка (dtype/damage_type), сравнений по ней в коде нет.
 const DAMAGE_TYPES_RU = ['кислота', 'дробящий', 'холод', 'огонь', 'силовое поле', 'электричество', 'некротический', 'колющий', 'яд', 'психический', 'излучение', 'рубящий', 'звук'];
+// Написания, встречавшиеся в корпусе переводов: тип урона в полях монстра писали по-разному
+// («Гром» в 2014 и «Громовой» в 2024 вместо «Звук»). Канон — общий словарь проекта (DAMAGE_TYPES_RU).
+const DAMAGE_TYPES_VARIANTS = { 'гром': 'звук', 'громовой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
+
+/// Типы урона в русском тексте → английские имена (для сверки русского поля монстра с английским слоем).
+function damageKeysRu(text) {
+  const out = new Set();
+  const low = String(text || '').toLowerCase();
+  for (const term of [...DAMAGE_TYPES_RU, ...Object.keys(DAMAGE_TYPES_VARIANTS)]) {
+    if (new RegExp(`(^|[^а-яё])${term}([^а-яё]|$)`, 'i').test(low)) out.add(DAMAGE_TYPES_EN[DAMAGE_TYPES_VARIANTS[term] || term]);
+  }
+  return out;
+}
+
+function damageKeysEn(text) {
+  const out = new Set();
+  const low = String(text || '').toLowerCase();
+  for (const en of Object.values(DAMAGE_TYPES_EN)) {
+    if (new RegExp(`(^|[^a-z])${en}([^a-z]|$)`).test(low)) out.add(en);
+  }
+  return out;
+}
+
 const DAMAGE_TYPES_EN = { 'кислота': 'acid', 'дробящий': 'bludgeoning', 'холод': 'cold', 'огонь': 'fire', 'силовое поле': 'force', 'электричество': 'lightning', 'некротический': 'necrotic', 'колющий': 'piercing', 'яд': 'poison', 'психический': 'psychic', 'излучение': 'radiant', 'рубящий': 'slashing', 'звук': 'thunder' };
 // Карты «ключ — содержимое»: в английском слое ключи намеренно английские (умения классов),
 // поэтому висячий ключ там не ошибка (см. src/i18n.rs merge и docs/localization.md).
@@ -154,6 +177,9 @@ function checkSeed(edition, opts = {}) {
   const DiceEngine = runtime.DiceEngine;
   const Mechanics = runtime.Mechanics;
 
+  // Состояния редакции: пары «русское название — английское» из самих записей категории condition.
+  const conditionPairs = rows.filter(r => r.category === 'condition')
+    .map(r => [r.name, ((r.data.i18n || {}).en || {}).name]).filter(([, en]) => isStr(en));
   const byCategory = new Map();
   for (const row of rows) {
     if (!byCategory.has(row.category)) byCategory.set(row.category, []);
@@ -311,6 +337,30 @@ function checkSeed(edition, opts = {}) {
       const enRoll = (row.data.i18n && row.data.i18n.en && (row.data.i18n.en['actions_roll!'] || row.data.i18n.en.actions_roll)) || null;
       if (isArr(enRoll)) for (const [i, a] of enRoll.entries()) {
         if (isStr(a.dtype) && CJK_CYR.test(a.dtype)) report.warn('localization', where, `data.i18n.en.actions_roll[${i}].dtype`, `в английском виде остался русский тип урона «${a.dtype}»`);
+      }
+      // Защиты монстра: русское поле и английский слой перечисляют одни и те же термины, а состояние
+      // не стоит в поле типов урона. Ловится и посторонний текст вместо терминов (голем из плоти).
+      const enMon = (row.data.i18n && row.data.i18n.en) || null;
+      for (const field of ['vulnerabilities', 'resistances', 'immunities']) {
+        const ruText = isStr(d[field]) ? d[field] : '';
+        const enText = isStr(enMon && enMon[field]) ? enMon[field] : '';
+        if (!ruText && !enText) continue;
+        const ruKeys = damageKeysRu(ruText), enKeys = damageKeysEn(enText);
+        const same = ruKeys.size === enKeys.size && [...ruKeys].every(k => enKeys.has(k));
+        if (!same) report.error('monster-defense-mismatch', where, `data.${field}`, `наборы типов урона в русском поле и английском слое разошлись: {${[...ruKeys].join(', ')}} ≠ {${[...enKeys].join(', ')}}`, 'сверьте с официальным дампом: python3 tools/srd/fix_monster_defenses.py');
+        for (const [ruCond, enCond] of conditionPairs) if (new RegExp(`(^|[^а-яё])${ruCond.toLowerCase()}([^а-яё]|$)`).test(ruText.toLowerCase()))
+          report.error('monster-defense-wrong-field', where, `data.${field}`, `в поле типов урона стоит состояние «${ruCond}» (EN ${enCond})`);
+      }
+      const ruCondText = isStr(d.condition_immunities) ? d.condition_immunities : '';
+      const enCondText = isStr(enMon && enMon.condition_immunities) ? enMon.condition_immunities : '';
+      if (ruCondText || enCondText) {
+        const ruConds = new Set(), enConds = new Set();
+        for (const [ruCond, enCond] of conditionPairs) {
+          if (ruCondText.toLowerCase().includes(ruCond.toLowerCase())) ruConds.add(enCond);
+          if (new RegExp(`(^|[^a-z])${enCond.toLowerCase()}([^a-z]|$)`).test(enCondText.toLowerCase())) enConds.add(enCond);
+        }
+        const sameConds = ruConds.size === enConds.size && [...ruConds].every(k => enConds.has(k));
+        if (!sameConds) report.error('monster-defense-mismatch', where, 'data.condition_immunities', `наборы состояний в русском поле и английском слое разошлись: {${[...ruConds].join(', ')}} ≠ {${[...enConds].join(', ')}}`);
       }
     }
     if (row.category === 'class') {

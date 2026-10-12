@@ -114,3 +114,39 @@ test('механики: используются только узлы, изве
     }
   }
 });
+
+test('защиты монстров: термины приведены к словарю листа, состояния не в поле урона', () => {
+  // Регрессия по исправленным записям: до этой работы в русских полях стояли чужие термины
+  // («Холод» вместо «Кислота» у куба и мимика, «Гром»/«Громовой» вместо «Звук»), терялся «Огонь»
+  // у демонов 2014, у оборотней был лишний «Холод», а у голема из плоти — название умения.
+  const monster = (edition, slug) => seeds[edition].find(row => row.category === 'monster' && row.slug === slug).data;
+  assert.equal(monster('2014', 'srd14-gelatinous-cube').immunities, '', 'https://www.aidedd.org — у куба 2014 иммунитета к урону нет');
+  assert.equal(monster('2014', 'srd14-mimic').immunities, 'Кислота');
+  assert.equal(monster('2024', 'srd24-gelatinous-cube').immunities, 'Кислота');
+  assert.equal(monster('2024', 'srd24-mimic').immunities, 'Кислота');
+  assert.equal(monster('2024', 'srd24-vampire-vampire').resistances, 'Некротический');
+  assert.equal(monster('2024', 'srd24-flesh-golem').immunities, 'Электричество, Яд');
+  assert.equal(monster('2024', 'srd24-ice-devil').immunities, 'Холодный, Огненный, Ядовитый',
+    '«Отравленный» — состояние, его место в condition_immunities');
+  assert.equal(monster('2024', 'srd24-clay-golem').immunities, 'Кислота, Яд, Психический');
+  assert.ok(monster('2014', 'srd14-glabrezu').resistances.startsWith('Холод, Огонь, Электричество'));
+  assert.ok(!monster('2014', 'srd14-androsphinx').immunities.includes('Яд'));
+  assert.ok(!monster('2014', 'srd14-werewolf-hybrid').immunities.includes('Холод'));
+  // общий инвариант: у каждой записи с текстом в русском поле есть тот же набор в английском слое
+  const ruDamage = { 'кислота': 'acid', 'дробящий': 'bludgeoning', 'холод': 'cold', 'огонь': 'fire', 'силовое поле': 'force', 'электричество': 'lightning', 'некротический': 'necrotic', 'колющий': 'piercing', 'яд': 'poison', 'психический': 'psychic', 'излучение': 'radiant', 'рубящий': 'slashing', 'звук': 'thunder' };
+  const variants = { 'гром': 'звук', 'громовой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
+  const keysRu = text => new Set([...Object.keys(ruDamage), ...Object.keys(variants)]
+    .filter(term => new RegExp(`(^|[^а-яё])${term}([^а-яё]|$)`, 'i').test(String(text).toLowerCase()))
+    .map(term => ruDamage[variants[term] || term]));
+  const keysEn = text => new Set(Object.values(ruDamage)
+    .filter(en => new RegExp(`(^|[^a-z])${en}([^a-z]|$)`).test(String(text).toLowerCase())));
+  for (const edition of EDITIONS) {
+    for (const row of seeds[edition].filter(r => r.category === 'monster')) {
+      const en = (row.data.i18n || {}).en || {};
+      for (const field of ['vulnerabilities', 'resistances', 'immunities']) {
+        const ru = keysRu(row.data[field] || ''), e = keysEn(en[field] || '');
+        assert.deepEqual([...ru].sort(), [...e].sort(), `${row.slug}: наборы типов урона в data.${field} и data.i18n.en.${field} разошлись`);
+      }
+    }
+  }
+});
