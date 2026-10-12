@@ -134,8 +134,20 @@ const WAND = {
     assert.equal(sent.program_id, 'use');
     assert.equal(sent.blocks, undefined, 'клиент не присылает эффекты: сервер исполняет программу по её ссылке');
     assert.equal(sent.target_id, 'hero');
+
+    // ---- 3. Правый клик по кнопке предмета: меню режима броска, как у характеристик листа ------
+    await wandRow.locator('.act-btn').click({ button: 'right' });
+    const modeMenu = page.locator('.roll-mode-menu');
+    await modeMenu.waitFor();
+    assert.deepEqual(await modeMenu.getByRole('menuitem').allTextContents(), ['Обычный бросок', 'С помехой', 'С преимуществом'], 'три режима броска у кнопки предмета');
+    await modeMenu.getByRole('menuitem', { name: 'С преимуществом', exact: true }).click();
+    await page.waitForTimeout(400);
+    assert.equal(requests.length, 2, 'выбор режима отправил вторую операцию');
+    assert.equal(requests[1].op, 'program');
+    assert.equal(requests[1].mode, 'adv', 'режим «преимущество» ушёл на сервер в операции программы');
+    assert.equal(await page.locator('.roll-mode-menu').count(), 0, 'меню закрылось после выбора');
     assert.deepEqual(errors, [], 'страница без ошибок');
-    console.log('PASS node card browser: parameter edited on the canvas card (drag and wire intact), hit-to-damage chain sent by the sheet button');
+    console.log('PASS node card browser: parameter edited on the canvas card (drag and wire intact), hit-to-damage chain sent by the sheet button, advantage via right-click mode menu');
   } finally {
     await browser.close();
   }

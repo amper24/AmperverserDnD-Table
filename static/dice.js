@@ -273,7 +273,6 @@ window.DiceEngine = (() => {
   /// Возвращает false, если док уже установлен на странице.
   function dock(opts = {}) {
     if (document.querySelector('.dice-dock')) return false;
-    const cfg = settings();
     const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', 'aria-label': 'Модификатор', style: 'width:54px' });
     const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', 'aria-label': 'Формула броска', style: 'width:132px' });
     const audience = audienceSelect();

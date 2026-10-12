@@ -65,7 +65,7 @@ const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-p
     await page.locator('.node-menu').waitFor();
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
-    for (const title of ['Данные', 'Условия', 'Поток управления', 'Бой', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), `категория «${title}»`);
+    for (const title of ['Данные', 'Условия', 'Логика', 'Поток управления', 'Броски', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), `категория «${title}»`);
     await page.locator('.node-menu-search').fill('уровень');
     const filtered = await page.locator('.node-menu-title').allTextContents();
     assert.deepEqual(filtered, ['Условия'], 'поиск оставляет подходящую категорию');

@@ -21,14 +21,12 @@
     "programs": 3833,
     "records_with_programs": 977,
     "node_types": {
-      "action.attack": 586,
       "action.condition": 30,
       "action.consume": 384,
-      "action.damage": 725,
       "action.manual": 3813,
       "action.passive": 113,
       "action.program": 3833,
-      "action.roll": 143,
+      "action.roll": 1454,
       "rule.class_progression": 12,
       "rule.class_rules": 12
     }
@@ -55,14 +53,12 @@
     "programs": 3598,
     "records_with_programs": 981,
     "node_types": {
-      "action.attack": 499,
       "action.condition": 30,
       "action.consume": 373,
-      "action.damage": 811,
       "action.manual": 3587,
       "action.passive": 92,
       "action.program": 3598,
-      "action.roll": 147,
+      "action.roll": 1457,
       "rule.class_progression": 12,
       "rule.class_rules": 12
     }

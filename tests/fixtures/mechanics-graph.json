@@ -910,6 +910,317 @@
           "groups": []
         }
       }
+    },
+    {
+      "name": "configurable-roll-kind",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r",
+              "type": "action.roll",
+              "params": {
+                "block_id": "r",
+                "roll_kind": "damage",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "r",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "configurable-roll-unknown-kind",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r",
+              "type": "action.roll",
+              "params": {
+                "block_id": "r",
+                "roll_kind": "save",
+                "enabled": true,
+                "dice": {
+                  "count": 1,
+                  "sides": 6,
+                  "bonus": 0,
+                  "stat": ""
+                }
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "r",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "logic-op-node",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "lv",
+              "type": "condition.level",
+              "params": {
+                "min": 1,
+                "max": 20
+              }
+            },
+            {
+              "id": "ed",
+              "type": "condition.edition",
+              "params": {
+                "editions": [
+                  "2014"
+                ]
+              }
+            },
+            {
+              "id": "op",
+              "type": "logic.op",
+              "params": {
+                "op": "and"
+              }
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "then",
+                "when": "always"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "lv",
+                "socket": "value"
+              },
+              "to": {
+                "node": "op",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "ed",
+                "socket": "value"
+              },
+              "to": {
+                "node": "op",
+                "socket": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "op",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "logic-op-unknown-operation",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "lv",
+              "type": "condition.level",
+              "params": {
+                "min": 1,
+                "max": 20
+              }
+            },
+            {
+              "id": "op",
+              "type": "logic.op",
+              "params": {
+                "op": "xor"
+              }
+            },
+            {
+              "id": "f",
+              "type": "flow.if",
+              "params": {}
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "then",
+                "when": "always"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "lv",
+                "socket": "value"
+              },
+              "to": {
+                "node": "op",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "op",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            },
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "then"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
     }
   ]
 }

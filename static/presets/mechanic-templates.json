@@ -32,7 +32,7 @@
             },
             {
               "id": "action-weapon-1",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -42,7 +42,8 @@
                   "bonus": 0,
                   "stat": "atk"
                 },
-                "block_id": "2b737394-063e-4f26-a554-970acd1db916"
+                "block_id": "2b737394-063e-4f26-a554-970acd1db916",
+                "roll_kind": "attack"
               },
               "position": {
                 "x": 330,
@@ -101,7 +102,7 @@
             },
             {
               "id": "action-weapon_damage-1",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -111,7 +112,8 @@
                   "bonus": 0,
                   "stat": ""
                 },
-                "block_id": "8ad70e7e-aabd-4dc1-afff-5b140478a99b"
+                "block_id": "8ad70e7e-aabd-4dc1-afff-5b140478a99b",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 330,
@@ -165,7 +167,7 @@
             },
             {
               "id": "action-spell_attack-1",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -175,7 +177,8 @@
                   "bonus": 0,
                   "stat": "spell"
                 },
-                "block_id": "422bb85f-9ec4-4b30-8f03-65822e4146ee"
+                "block_id": "422bb85f-9ec4-4b30-8f03-65822e4146ee",
+                "roll_kind": "attack"
               },
               "position": {
                 "x": 330,
@@ -232,7 +235,7 @@
             },
             {
               "id": "action-spell_damage-1",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -242,7 +245,8 @@
                   "bonus": 0,
                   "stat": "spell_mod"
                 },
-                "block_id": "7c7517d3-d91e-48ea-9a3f-c68515dd393a"
+                "block_id": "7c7517d3-d91e-48ea-9a3f-c68515dd393a",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 330,
@@ -316,7 +320,7 @@
             },
             {
               "id": "action-1x8qqng-2",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -326,7 +330,8 @@
                   "bonus": 0,
                   "stat": ""
                 },
-                "block_id": "828aa17a-b64d-4d09-8c23-1176659ea25b"
+                "block_id": "828aa17a-b64d-4d09-8c23-1176659ea25b",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 590,
@@ -409,7 +414,7 @@
             },
             {
               "id": "action-1al9o8c-2",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -419,7 +424,8 @@
                   "bonus": 0,
                   "stat": "atk"
                 },
-                "block_id": "7f4f1bee-7cf9-4b2f-8bb1-451315723187"
+                "block_id": "7f4f1bee-7cf9-4b2f-8bb1-451315723187",
+                "roll_kind": "attack"
               },
               "position": {
                 "x": 590,
@@ -428,7 +434,7 @@
             },
             {
               "id": "action-1al9o8c-3",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -438,7 +444,8 @@
                   "bonus": 0,
                   "stat": ""
                 },
-                "block_id": "7f063b84-3ab7-490e-b88d-524a99386bf8"
+                "block_id": "7f063b84-3ab7-490e-b88d-524a99386bf8",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 850,
@@ -514,7 +521,7 @@
             },
             {
               "id": "action-hm02nh-1",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -524,7 +531,8 @@
                   "bonus": 0,
                   "stat": "atk"
                 },
-                "block_id": "9e4ce6f3-d6a1-4bec-9313-4c3b5c7b43e6"
+                "block_id": "9e4ce6f3-d6a1-4bec-9313-4c3b5c7b43e6",
+                "roll_kind": "attack"
               },
               "position": {
                 "x": 330,
@@ -533,7 +541,7 @@
             },
             {
               "id": "action-hm02nh-2",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -543,7 +551,8 @@
                   "bonus": 0,
                   "stat": ""
                 },
-                "block_id": "b81595ae-8b30-400f-bdd2-6b41688c5238"
+                "block_id": "b81595ae-8b30-400f-bdd2-6b41688c5238",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 590,
@@ -552,7 +561,7 @@
             },
             {
               "id": "action-hm02nh-3",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -562,7 +571,8 @@
                   "bonus": 0,
                   "stat": "atk"
                 },
-                "block_id": "ea48e545-dce2-4d51-9be1-c551253e1985"
+                "block_id": "ea48e545-dce2-4d51-9be1-c551253e1985",
+                "roll_kind": "attack"
               },
               "position": {
                 "x": 850,
@@ -571,7 +581,7 @@
             },
             {
               "id": "action-hm02nh-4",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -581,7 +591,8 @@
                   "bonus": 0,
                   "stat": ""
                 },
-                "block_id": "571980e6-7fdf-4145-99b4-b5c2e8b8834b"
+                "block_id": "571980e6-7fdf-4145-99b4-b5c2e8b8834b",
+                "roll_kind": "damage"
               },
               "position": {
                 "x": 1110,
@@ -687,7 +698,7 @@
             },
             {
               "id": "action-1gpnlyi-2",
-              "type": "action.heal",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -699,7 +710,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "bd6db8ba-e035-443e-9161-bbe046eb0feb"
+                "block_id": "bd6db8ba-e035-443e-9161-bbe046eb0feb",
+                "roll_kind": "heal"
               },
               "position": {
                 "x": 590,
@@ -818,7 +830,7 @@
             },
             {
               "id": "action-1b0gdzd-2",
-              "type": "action.heal",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -830,7 +842,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "56086e14-1075-4799-9d46-e407894ae259"
+                "block_id": "56086e14-1075-4799-9d46-e407894ae259",
+                "roll_kind": "heal"
               },
               "position": {
                 "x": 590,
@@ -896,7 +909,7 @@
             },
             {
               "id": "action-qzl8vk-1",
-              "type": "action.temp_hp",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -908,7 +921,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "11071224-f213-4ddc-9a1d-b27cf3a474cd"
+                "block_id": "11071224-f213-4ddc-9a1d-b27cf3a474cd",
+                "roll_kind": "temp_hp"
               },
               "position": {
                 "x": 330,
@@ -962,7 +976,7 @@
             },
             {
               "id": "action-unn5oa-1",
-              "type": "action.heal",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -974,7 +988,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "d9566532-b525-496e-ab95-eba1595b4e21"
+                "block_id": "d9566532-b525-496e-ab95-eba1595b4e21",
+                "roll_kind": "heal"
               },
               "position": {
                 "x": 330,
@@ -983,7 +998,7 @@
             },
             {
               "id": "action-unn5oa-2",
-              "type": "action.temp_hp",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -995,7 +1010,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "8880643c-d1f3-4b86-b950-4f8af816f78f"
+                "block_id": "8880643c-d1f3-4b86-b950-4f8af816f78f",
+                "roll_kind": "temp_hp"
               },
               "position": {
                 "x": 590,
@@ -1076,7 +1092,7 @@
             },
             {
               "id": "action-nf8xl4-2",
-              "type": "action.heal",
+              "type": "action.roll",
               "params": {
                 "enabled": true,
                 "when": "always",
@@ -1088,7 +1104,8 @@
                 },
                 "target": "self",
                 "apply": true,
-                "block_id": "f6872e07-e395-4bea-b1df-30a1585f7891"
+                "block_id": "f6872e07-e395-4bea-b1df-30a1585f7891",
+                "roll_kind": "heal"
               },
               "position": {
                 "x": 590,
@@ -1575,7 +1592,8 @@
                   "bonus": 0,
                   "stat": "str"
                 },
-                "block_id": "12a6e896-1ad4-4551-b699-645b5b45a59e"
+                "block_id": "12a6e896-1ad4-4551-b699-645b5b45a59e",
+                "roll_kind": "roll"
               },
               "position": {
                 "x": 330,

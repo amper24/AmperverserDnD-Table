@@ -610,7 +610,7 @@
           const d = el('div', { class: 'asset', draggable: 'true', title: a.name + (a.builtin ? ' (встроенный)' : '') }, el('span', {}, a.name));
           assetURL(a.id).then(u => d.prepend(el('img', { src: u })));
           d.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-asset', JSON.stringify(a)); ev.dataTransfer.effectAllowed = 'copy'; });
-          d.addEventListener('dblclick', () => { const st = Table.state(); const c = { x: (st.w / 2 - st.cam.x) / st.cam.k, y: (st.h / 2 - st.cam.y) / st.cam.k }; const ev = new DragEvent('drop', { dataTransfer: new DataTransfer() }); ev.dataTransfer.setData('application/x-asset', JSON.stringify(a)); Object.defineProperty(ev, 'offsetX', { value: st.w / 2 }); Object.defineProperty(ev, 'offsetY', { value: st.h / 2 }); st.canvas.dispatchEvent(ev); });
+          d.addEventListener('dblclick', () => { const st = Table.state(); const ev = new DragEvent('drop', { dataTransfer: new DataTransfer() }); ev.dataTransfer.setData('application/x-asset', JSON.stringify(a)); Object.defineProperty(ev, 'offsetX', { value: st.w / 2 }); Object.defineProperty(ev, 'offsetY', { value: st.h / 2 }); st.canvas.dispatchEvent(ev); });
           if (!a.builtin) d.append(el('span', { class: 'del', onclick: async e => { e.stopPropagation(); if (confirm('Удалить ассет?')) { await API.del('/api/assets/' + a.id); refresh(); } } }, icon('close')));
           gridEl.append(d);
         }

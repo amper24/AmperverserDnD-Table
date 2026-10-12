@@ -29,12 +29,14 @@ for (const edition of ['2014', '2024']) {
       assert.equal(damage?.params.style, 'damage', `${row.slug}: damage style`);
       const first = id => g.links.find(l => l.from.node === id && l.from.socket === 'exec')?.to.node;
       const typeOf = id => g.nodes.find(n => n.id === id).type;
+      // Все броски — один настраиваемый узел action.roll; смысл задаёт параметр roll_kind.
+      const kindOf = id => { const n = g.nodes.find(x => x.id === id); return n.type === 'action.roll' ? `roll:${n.params.roll_kind || 'roll'}` : n.type; };
       const attackChain = [];
-      for (let id = first(attack.id); id; id = first(id)) attackChain.push(typeOf(id));
+      for (let id = first(attack.id); id; id = first(id)) attackChain.push(kindOf(id));
       const damageChain = [];
-      for (let id = first(damage.id); id; id = first(id)) damageChain.push(typeOf(id));
-      assert.ok(attackChain.includes('action.attack') && !attackChain.includes('action.damage'), `${row.slug}: attack chain ${attackChain}`);
-      assert.ok(damageChain.length && damageChain.every(t => t === 'action.damage' || t === 'action.manual'), `${row.slug}: damage chain ${damageChain}`);
+      for (let id = first(damage.id); id; id = first(id)) damageChain.push(kindOf(id));
+      assert.ok(attackChain.includes('roll:attack') && !attackChain.includes('roll:damage'), `${row.slug}: attack chain ${attackChain}`);
+      assert.ok(damageChain.length && damageChain.every(t => t === 'roll:damage' || t === 'action.manual'), `${row.slug}: damage chain ${damageChain}`);
       assert.equal(M.problems(row.data.mechanics).length, 0, `${row.slug}: graph is valid`);
     }
   });

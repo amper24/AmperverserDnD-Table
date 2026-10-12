@@ -14,13 +14,32 @@
   const GRAPH_VERSION = 2;
   const NodeRegistry = window.NodeRegistry;
   if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
-  const { ACTION_KINDS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
-  const nodeLabel = type => NODE_DEFS[type]?.label || type;
+  const { ACTION_KINDS, ROLL_KINDS, LOGIC_OPS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
+  // Определение узла с учётом псевдонимов: старые типы (action.attack, logic.and, …) читаются как абстрактные узлы.
+  const defOf = type => NodeRegistry.nodeDef(type);
+  const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
+  // Перевод узла на абстрактный тип на месте: параметры псевдонима (roll_kind, op) задаёт сам тип.
+  function upgradeNode(node) {
+    const target = NodeRegistry.resolveType(node.type);
+    if (target === node.type) return false;
+    node.params = { ...(node.params || {}), ...(NodeRegistry.aliasParams(node.type) || {}) };
+    node.type = target;
+    return true;
+  }
+  // Перевод всего графа (включая узлы групп) на абстрактные узлы. Возвращает, были ли замены.
+  function upgradeGraph(graph) {
+    let changed = false;
+    for (const node of graph?.nodes || []) changed = upgradeNode(node) || changed;
+    for (const group of graph?.groups || []) for (const node of group.nodes || []) changed = upgradeNode(node) || changed;
+    return changed;
+  }
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
+  // Вид блока v1 для узла действия: настраиваемый «Бросок» берёт вид из параметра roll_kind.
+  const blockKind = (type, p) => (type === 'action.roll' && ROLL_KINDS.includes(p?.roll_kind) ? p.roll_kind : type.slice(7));
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.and', 'logic.or', 'logic.not']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
   const STAT_MODES = ['bonus', 'score'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
@@ -40,9 +59,14 @@
     if (type === 'data.stat') return statDice(p);
     if (type === 'dice.combine') { const a = get('a'), b = get('b'); return a && b ? { count: 0, sides: 6, bonus: 0, stat: '', advanced: `${diceTerm(a)}+${diceTerm(b)}` } : undefined; }
     if (type === 'condition.compare') { const a = get('a'), b = get('b'); return typeof a === 'number' && typeof b === 'number' && COMPARE_OPS[p.op] ? COMPARE_OPS[p.op](a, b) : undefined; }
-    if (type === 'logic.and') { const a = get('a'), b = get('b'); if (a === false || b === false) return false; return a === true && b === true ? true : undefined; }
-    if (type === 'logic.or') { const a = get('a'), b = get('b'); if (a === true || b === true) return true; return a === false && b === false ? false : undefined; }
-    if (type === 'logic.not') { const a = get('a'); return typeof a === 'boolean' ? !a : undefined; }
+    if (type === 'logic.op') {
+      const a = get('a');
+      if (p.op === 'not') return typeof a === 'boolean' ? !a : undefined;
+      const b = get('b');
+      if (p.op === 'or') { if (a === true || b === true) return true; return a === false && b === false ? false : undefined; }
+      if (a === false || b === false) return false;
+      return a === true && b === true ? true : undefined;
+    }
     return undefined;
   }
 
@@ -74,7 +98,10 @@
         const id = `action-${stableHash(programKey)}-${++blockIndex}`;
         const params = { ...clone(b), block_id: b.id || mkId('b') };
         delete params.id; delete params.kind;
-        nodes.push({ id, type: `action.${kind}`, params, position: { x, y } });
+        // Все броски v1 становятся одним настраиваемым узлом «Бросок» с параметром roll_kind.
+        const type = ROLL_KINDS.includes(kind) ? 'action.roll' : `action.${kind}`;
+        if (type === 'action.roll') params.roll_kind = kind;
+        nodes.push({ id, type, params, position: { x, y } });
         links.push({ from: { node: previous, socket: 'exec' }, to: { node: id, socket: 'exec' } });
         previous = id; x += 260;
       }
@@ -182,7 +209,8 @@
     function collect(ctx, path) {
       for (const node of ctx.nodes) {
         if (node.type === 'group.instance') { const child = ctx.children.get(node.id); if (child) collect(child, [...path, child]); continue; }
-        if (!boundaryTypes.has(node.type)) nodes.push({ ...clone(node), id: `${ctx.prefix}${node.id}` });
+        // Развёрнутые узлы сразу переводятся на абстрактные типы: исполнение и компиляция видят только их.
+        if (!boundaryTypes.has(node.type)) { const expandedNode = { ...clone(node), id: `${ctx.prefix}${node.id}` }; upgradeNode(expandedNode); nodes.push(expandedNode); }
       }
       for (const link of ctx.links) {
         const fromNode = ctx.nodes.find(node => node.id === link.from.node), toNode = ctx.nodes.find(node => node.id === link.to.node);
@@ -248,14 +276,14 @@
           continue;
         }
         if (!actionType(node.type)) continue;
-        const kind = node.type.slice(7), ap = clone(node.params || {}), blockId = ap.block_id || node.id;
+        const ap = clone(node.params || {}), kind = blockKind(node.type, ap), blockId = ap.block_id || node.id;
         if (gate && (ap.when === undefined || ap.when === 'always')) ap.when = gate;
         // Кость, поданная проводом на вход «Кость», заменяет поле dice блока.
         const diceIn = inputValue(node, 'dice', undefined); if (diceIn !== undefined) ap.dice = diceIn;
         const enabled = inputValue(node, 'enabled', ap.enabled);
         if (enabled !== false) {
           if (enabled !== undefined) ap.enabled = enabled;
-          delete ap.block_id; delete ap.enabled_input;
+          delete ap.block_id; delete ap.enabled_input; delete ap.roll_kind;
           p.blocks.push({ ...ap, id: blockId, kind });
         }
         for (const target of [...(outgoing.get(`${node.id}:exec`) || [])].reverse()) pending.push([target, null]);
@@ -282,7 +310,7 @@
       if (!item) return { inputs: {}, outputs: {} };
       return node.type === 'group.input' ? { inputs: {}, outputs: { value: item.type } } : { inputs: { value: item.type }, outputs: {} };
     }
-    const def = NODE_DEFS[node.type];
+    const def = defOf(node.type);
     return def ? { inputs: def.inputs, outputs: def.outputs } : { inputs: {}, outputs: {} };
   }
   const fail = message => message;
@@ -318,7 +346,7 @@
     }
     const nodeIds = new Set();
     for (const node of nodes) {
-      if (!node || !idText(node.id, 100) || nodeIds.has(node.id) || !NODE_DEFS[node.type]) return fail('Неизвестный узел или повторяющийся ID.');
+      if (!node || !idText(node.id, 100) || nodeIds.has(node.id) || !defOf(node.type)) return fail('Неизвестный узел или повторяющийся ID.');
       nodeIds.add(node.id);
       if (node.params !== undefined && (!node.params || typeof node.params !== 'object' || Array.isArray(node.params) || JSON.stringify(node.params).length > 100000)) return fail('Параметры узла должны быть ограниченным JSON-объектом.');
       if (node.position !== undefined && (!node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y) || Math.abs(node.position.x) > 100000 || Math.abs(node.position.y) > 100000)) return fail('Координаты узла вне допустимых пределов.');
@@ -384,7 +412,9 @@
     return '';
   }
   function validateNodeParams(node) {
-    const p = node.params || {}, type = node.type;
+    // Псевдонимы проверяются как их абстрактный узел: параметры типа (roll_kind, op) добавляются сами.
+    const type = NodeRegistry.resolveType(node.type);
+    const p = { ...(node.params || {}), ...(NodeRegistry.aliasParams(node.type) || {}) };
     const stringList = value => Array.isArray(value) && value.length <= 100 && value.every(item => typeof item === 'string' && item.length <= 200);
     const tableValue = value => value && typeof value === 'object' && !Array.isArray(value) && JSON.stringify(value).length <= 100000;
     if (type === 'data.number' && !Number.isFinite(p.value)) return 'Числовой узел должен содержать конечное число.';
@@ -399,14 +429,16 @@
     if (type === 'condition.choice' && (!idText(p.id, 100) || !Object.hasOwn(p, 'value'))) return 'Укажите ID группы и сравниваемый выбор.';
     if (type === 'data.stat' && (!isStatId(p.id) || !STAT_MODES.includes(p.mode))) return 'Выберите характеристику или навык и режим: бонус или значение.';
     if (type === 'condition.compare' && !Object.hasOwn(COMPARE_OPS, p.op)) return 'Сравнение: допустимы >=, <=, >, <, = и !=.';
+    if (type === 'logic.op' && p.op !== undefined && !LOGIC_OPS.includes(p.op)) return 'Логический узел: операция И, ИЛИ или НЕ.';
     if (type === 'flow.if' && Object.keys(p).length > 8) return 'Условный узел содержит лишние параметры.';
     if (type === 'action.program' && p.style !== undefined && !window.BUTTON_STYLES?.[p.style]) return 'Неизвестный стиль кнопки.';
     if (type === 'action.program' && (!idText(p.program_id, 100) || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || !['use', 'passive'].includes(p.trigger))) return 'Программе нужны ID, название и допустимый триггер.';
     if (['group.input', 'group.output'].includes(type) && !idText(p.socket_id, 64)) return 'Узел границы группы должен ссылаться на сокет интерфейса.';
     if (actionType(type)) {
       if (!idText(p.block_id, 100)) return 'Узел действия должен иметь стабильный block_id.';
-      const kind = type.slice(7);
-      if (['attack', 'damage', 'heal', 'temp_hp', 'roll'].includes(kind)) {
+      if (type === 'action.roll' && p.roll_kind !== undefined && !ROLL_KINDS.includes(p.roll_kind)) return 'Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.';
+      const kind = blockKind(type, p);
+      if (ROLL_KINDS.includes(kind)) {
         const error = Base.validate({ version: 1, programs: [{ id: 'p', name: 'p', trigger: 'use', blocks: [{ id: 'b', kind, dice: p.dice || { count: 0, sides: 6, bonus: 0 }, enabled: p.enabled, when: p.when }] }] });
         if (error && !p.dice?.advanced) return error;
       }
@@ -475,7 +507,7 @@
   }
   function orderedNodes(graph, groups) {
     const expanded = expandGroups(graph, groups);
-    const incoming = new Map(), adjacency = new Map(), indegree = new Map();
+    const adjacency = new Map(), indegree = new Map();
     for (const n of expanded.nodes) { adjacency.set(n.id, []); indegree.set(n.id, 0); }
     const linksByTarget = new Map();
     for (const l of expanded.links) {
@@ -634,9 +666,7 @@
   // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
   const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
-  const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.attack', 'action.damage', 'action.heal', 'action.consume', 'condition.hit'];
-  // Граф без содержательных узлов: пусто или только служебная программа «Использовать» с выключенным расходом.
-  const isBlankGraph = graph => graph.nodes.every(n => n.type === 'action.program' || (n.type === 'action.consume' && n.params?.enabled === false));
+  const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.roll', 'action.consume', 'condition.hit', 'logic.op'];
   // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).
   // Узел принадлежит действию по полю action (его ставит редактор). У старых графов поля нет:
   // узел относится к действию, с которым связан проводами; если связей нет — к первому действию.
@@ -672,6 +702,8 @@
     if (mechanics.version !== GRAPH_VERSION) mechanics = v1ToV2(seed);
     // Записи, сохранённые с полем «Когда», переводятся в узлы при открытии (см. liftWhenGates).
     const liftedWhen = liftWhenGates(mechanics.graph);
+    // Специализированные узлы прошлых версий (атака/урон/лечение, И/ИЛИ/НЕ) становятся абстрактными при открытии.
+    const liftedAliases = upgradeGraph(mechanics.graph);
     // Форма вызывается с копией записи; исходник не отправляется на сервер до внешнего «Сохранить».
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
@@ -681,7 +713,8 @@
     window.addEventListener('presets:changed', onPresets);
     // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
     root.getGraph = () => graph;
-    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null, status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
+    const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null,
+      status = [liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', liftedAliases ? 'Узлы переведены на абстрактные: настраиваемый «Бросок» и «Логика».' : ''].filter(Boolean).join(' '), search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     // Активное действие и id узлов, которые сейчас показаны на холсте (пересчитываются в render).
     let activeAction = '', shownIds = new Set();
@@ -730,9 +763,12 @@
       for (const n of starter.nodes) {
         const id = mkId('node'); ids.set(n.key, id);
         // Значения по умолчанию реестра + отличия из пресета; block_id действия создаётся заново (уникален в графе).
-        const params = { ...clone(NODE_DEFS[n.type]?.defaults || {}), ...clone(n.params || {}) };
+        const params = { ...clone(defOf(n.type)?.defaults || {}), ...clone(n.params || {}) };
         if (actionType(n.type)) params.block_id = mkId('b');
-        graph.nodes.push({ id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y }, action: activeAction });
+        const inserted = { id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y }, action: activeAction };
+        // Шаблоны прошлых версий могли хранить специализированные узлы: они вставляются уже абстрактными.
+        upgradeNode(inserted);
+        graph.nodes.push(inserted);
       }
       for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
       // Вариант «с подключением»: первый узел без входящих связей пресета встаёт после программы «Использовать».
@@ -740,7 +776,7 @@
       // Стиль кнопки (иконка) задаётся в «Начале»; меняем его, только если там стиль по умолчанию.
       if (starter.style && program && (!program.params?.style || program.params.style === 'default')) program.params = { ...program.params, style: starter.style };
       const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
-      if (starter.attach && program && head && NODE_DEFS[head.type]?.inputs?.exec && !graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec')) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
+      if (starter.attach && program && head && defOf(head.type)?.inputs?.exec && !graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec')) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
     }
     // Шаблоны графов: свои цепочки хранятся в наборе graph_starter пользовательского слоя Presets (в этом браузере).
@@ -761,7 +797,7 @@
         return { key: ids.get(n.id), type: n.type, params: clone(params), x: (n.position?.x || 0) - minX, y: (n.position?.y || 0) - minY };
       });
       const links = graph.links.filter(l => ids.has(l.from.node) && ids.has(l.to.node)).map(l => [ids.get(l.from.node), l.from.socket, ids.get(l.to.node), l.to.socket]);
-      const head = body.find(n => NODE_DEFS[n.type]?.inputs?.exec && !links.some(([, , to]) => to === ids.get(n.id)));
+      const head = body.find(n => defOf(n.type)?.inputs?.exec && !links.some(([, , to]) => to === ids.get(n.id)));
       const item = { id: 'my-' + Date.now().toString(36), name: name.trim(), hint: `Свой шаблон: ${body.length} узл.`, attach: Boolean(head), nodes, links };
       try { window.Presets.upsertUserItem('graph_starter', item); } catch (e) { status = e.message; return render(); }
       status = `Шаблон «${item.name}» сохранён.`; render();
@@ -1032,7 +1068,7 @@
         ],
           onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         el('header', { class: 'graph-node-head' },
-          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
+          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type, node.params)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), groupExtras(node), nodeRaw(node), sockets);
       return card;
     }
@@ -1214,6 +1250,7 @@
     GRAPH_VERSION,
     NODE_DEFS,
     nodeLabel,
+    upgradeGraph,
     toGraph,
     toLegacy: v2ToV1,
     validateGraph,

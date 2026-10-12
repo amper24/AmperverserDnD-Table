@@ -18,7 +18,7 @@ test('every node definition has a category and the menu lists only registry node
 
 test('menu categories cover the agreed groups in order', () => {
   const titles = plain(R.catalog('').map(section => section.title));
-  for (const title of ['Данные', 'Условия', 'Поток управления', 'Бой', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), title);
+  for (const title of ['Данные', 'Условия', 'Логика', 'Поток управления', 'Броски', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), title);
   const order = plain(R.catalog('').map(section => section.id));
   assert.ok(order.indexOf('data') < order.indexOf('conditions'));
 });

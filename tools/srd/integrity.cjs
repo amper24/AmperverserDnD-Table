@@ -63,6 +63,7 @@ function rustConstants() {
   };
   return {
     NODE_TYPES: list('NODE_TYPES'), ABILITIES: list('ABILITIES'), ACTIONS: list('ACTIONS'),
+    ROLL_KINDS: list('ROLL_KINDS'), LOGIC_OPS: list('LOGIC_OPS'),
     DICE_ACTIONS: list('DICE_ACTIONS'), SKILL_IDS: list('SKILL_IDS'), BUTTON_STYLES: list('BUTTON_STYLES'), SOCKET_TYPES: list('SOCKET_TYPES'),
   };
 }
@@ -551,6 +552,10 @@ function checkSeed(edition, opts = {}) {
         const STATS = ['', 'best', 'prof', 'atk', 'atk_str', 'atk_dex', 'spell', 'spell_mod', 'level', 'dc', 'str', 'dex', 'con', 'int', 'wis', 'cha'];
         if (stat !== undefined && !STATS.includes(stat)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.dice.stat`, `неизвестный модификатор «${stat}»`);
       }
+      if (node.type === 'action.roll') {
+        const rollKind = (node.params || {}).roll_kind;
+        if (rollKind !== undefined && !rust.ROLL_KINDS.includes(rollKind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.roll_kind`, `неизвестный тип броска «${rollKind}»`);
+      }
       if (node.type === 'condition.edition') {
         const editions = (node.params || {}).editions;
         if (!isArr(editions) || !editions.length) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, 'не указаны редакции условия');
@@ -678,16 +683,21 @@ function checkRuntime(opts = {}) {
     if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/mechanics_graph.rs NODE_TYPES)`);
   }
   // Внутренние узлы (group.input/group.output) намеренно вне палитры, но обязаны быть в реестре и на сервере.
+  // Сервер дополнительно принимает устаревшие типы-псевдонимы (ALIASES): клиент читает их как абстрактные узлы.
   for (const type of rust.NODE_TYPES) {
-    if (!defs.includes(type)) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
+    if (!defs.includes(type) && !(Registry.ALIASES && Registry.ALIASES[type])) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
   }
   for (const type of Registry.INTERNAL) {
     if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
   }
-  const actionKinds = defs.filter(t => t.startsWith('action.') && t !== 'action.program').map(t => t.slice(7));
+  // Настраиваемый узел «Бросок» (action.roll) покрывает все виды бросков сервера через параметр roll_kind.
+  const expandRoll = t => (t === 'action.roll' ? (Registry.ROLL_KINDS || ['roll']) : [t.slice(7)]);
+  const actionKinds = [...new Set(defs.filter(t => t.startsWith('action.') && t !== 'action.program').flatMap(expandRoll))];
   if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);
-  const diceKinds = defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).map(t => t.slice(7));
+  const diceKinds = [...new Set(defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).flatMap(expandRoll))];
   if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
+  if ((Registry.ROLL_KINDS || []).slice().sort().join() !== rust.ROLL_KINDS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ROLL_KINDS', `виды настраиваемого броска клиента (${(Registry.ROLL_KINDS || []).join(',')}) и сервера (${rust.ROLL_KINDS.join(',')}) различаются`);
+  if ((Registry.LOGIC_OPS || []).slice().sort().join() !== rust.LOGIC_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'LOGIC_OPS', `операции логики клиента (${(Registry.LOGIC_OPS || []).join(',')}) и сервера (${rust.LOGIC_OPS.join(',')}) различаются`);
   const skillIds = (runtime.SKILLS || []).map(([id]) => id);
   if (skillIds.slice().sort().join() !== rust.SKILL_IDS.slice().sort().join()) {
     const only = (a, b) => a.filter(x => !b.includes(x)).join(',');

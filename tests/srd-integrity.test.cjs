@@ -94,7 +94,7 @@ test('броски монстров и кубики урона заклинан�
         const fields = compact([data.damage, data.damage_type, (data.properties || []).join(' '),
           data.category, data.desc].join(' '));
         for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
-          if (node.type !== 'action.damage') continue;
+          if (!(node.type === 'action.roll' && node.params.roll_kind === 'damage')) continue;
           const roll = node.params.dice || {};
           if (!roll.count) continue;
           const base = `${roll.count}d${roll.sides}`;
@@ -113,7 +113,7 @@ test('броски монстров и кубики урона заклинан�
       if (row.category !== 'spell') continue;
       const description = compact(data.desc);
       for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
-        if (!['action.damage', 'action.roll'].includes(node.type)) continue;
+        if (!(node.type === 'action.roll' && ['damage', 'roll'].includes(node.params.roll_kind || 'roll'))) continue;
         const roll = node.params.dice || {};
         if (!roll.count) continue;
         const base = `${roll.count}d${roll.sides}`;

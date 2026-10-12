@@ -34,6 +34,13 @@
     'action.program': { style: BUTTON_STYLE_OPTIONS },
     'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
     'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
+    // Один настраиваемый узел всех бросков: тип броска выбирается выпадающим списком прямо на карточке.
+    'action.roll': { roll_kind: [
+      { value: 'roll', label: 'Свободный бросок' }, { value: 'attack', label: 'Бросок атаки' }, { value: 'damage', label: 'Урон' },
+      { value: 'heal', label: 'Лечение' }, { value: 'temp_hp', label: 'Временные хиты' },
+    ] },
+    // Один логический узел: операция И / ИЛИ / НЕ («НЕ» использует только вход «a»).
+    'logic.op': { op: [{ value: 'and', label: 'И — оба условия' }, { value: 'or', label: 'ИЛИ — хотя бы одно' }, { value: 'not', label: 'НЕ — обратное значение' }] },
   };
   // Список характеристик и навыков для узла «Характеристика / навык»: навыки берутся из набора SKILLS (common.js).
   const statIdOptions = () => [...ABILS, ...(window.SKILLS || []).map(([value, label]) => ({ value, label: `${label} (навык)` }))];
@@ -64,6 +71,7 @@
     feature_name: 'Имя умения', item: 'Предмет', dice: 'Кость', enabled: 'Включено', minimum: 'Минимум', choice: 'Выбор',
     subclass: 'Подкласс', level: 'Уровень', edition: 'Редакция', hp: 'Хиты', program_id: 'ID программы', block_id: 'ID блока',
     choices: 'Выборы', spell: 'Заклинание', mode_label: 'Режим', prompt: 'Подсказка', description: 'Описание',
+    roll_kind: 'Тип броска', op: 'Операция', damage_type: 'Тип урона', grip: 'Хват', apply: 'Применить к листу',
   };
   const labelOf = key => LABELS[key] || key;
 

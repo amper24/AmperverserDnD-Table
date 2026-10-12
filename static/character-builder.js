@@ -1008,7 +1008,7 @@ window.CharacterBuilder = (() => {
     if (!random) DiceEngine.present({ label: 'Характеристики персонажа · 6 × 1d20 (вариант стола)', rolls: results.map((r, i) => ({ ...r, name: `${ABIL[keys[i]] || keys[i]}` })) }, { local: true });
     return results.map(r => ({ dice: r.parts[0].rolls, dropped: -1, total: r.total }));
   }
-  return { register, build, raceChoices, raceChoiceProblem, classChoices, classChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, CHOICE_MAX, validateChoices, applyChoice, choiceState, newChoiceGroup, newChoiceOption, choiceEditor, choiceHint, asList, moduleChoices,
-    parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, startingInventory, packContents, skillsState, passiveSkills, itemKind, PICK_FILTERS, SKILL_SOURCES, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
+  return { register, build, raceChoices, raceChoiceProblem, classChoices, classChoiceProblem, rollStats, rollD20Stats, keys, short, ALIGNMENTS, LANGUAGES, LANGUAGES_2024_STANDARD, CHOICE_TYPES, validateChoices, choiceState, choiceEditor, choiceHint, asList, moduleChoices,
+    parseEquipmentText, parseItemList, parseItemToken, findItemTemplate, equipmentPlan, equipmentItems, skillsState, PICK_FILTERS, sourceLabel, subclassLevel, subclassModule, subclassVariantGroups, backgroundFeatModule, pointBuyTotal, pointBuyValid, spellLimits,
     normalizeName, classSlugOf, weaponMasteryCount, weaponMasteryOptions, spellChoiceOf, CLASS_SLUGS_RU, POINT_BUY_COST };
 })();

@@ -21,7 +21,6 @@ window.Modules = (function () {
   const RARITY_COLORS = { 'Обычный': '#9aa0ad', 'Необычный': '#46a758', 'Редкий': '#3e9bff', 'Очень редкий': '#7c5cff', 'Легендарный': '#f5a524', 'Артефакт': '#e5484d' };
   const ACTION_KINDS = { attack: 'Атака', damage: 'Урон', heal: 'Лечение', save: 'Спасбросок', check: 'Проверка', other: 'Другое' };
   const ACTION_ICONS = { attack: 'target', damage: 'zap', heal: 'heart', save: 'shield', check: 'dice', other: 'dice' };
-  const DAMAGE_TYPES = ['', 'рубящий', 'колющий', 'дробящий', 'огонь', 'холод', 'электричество', 'кислота', 'яд', 'звук', 'некротический', 'излучение', 'силовое поле', 'психический'];
   // Школы магии — из набора spell_schools (порядок набора; список обновляется при загрузке наборов).
   const SCHOOLS = window.Presets?.liveList('spell_schools') || [];
   // Школа по ключу набора (запасом — сам ключ).
@@ -283,13 +282,6 @@ window.Modules = (function () {
       it.mechanics?Mechanics.preview(it.mechanics,ctx):null, actionButtons(it, ctx, it.name));
     return body;
   }
-  function spellCardBody(sp, ctx) {
-    const meta = [sp.level === 0 ? 'Заговор' : `${sp.level} круг`, sp.school, sp.casting_time, sp.range, sp.components, (sp.concentration ? 'Концентрация, ' : '') + (sp.duration || ''), sp.ritual ? 'ритуал' : null].filter(Boolean).join(' · ');
-    return el('div', { class: 'card-body' },
-      el('div', { class: 'card-head' }, el('span', { class: 'card-icon' }, docIcon(sp, 'star')), el('div', { class: 'grow' }, el('b', {}, sp.name), el('div', { class: 'muted small' }, meta))),
-      sp.desc ? el('div', { class: 'card-desc' }, rich(sp.desc, ctx, { prose:!!sp.mechanics, prefix: sp.name })) : null,
-      sp.mechanics?Mechanics.preview(sp.mechanics,ctx):null, actionButtons(sp, ctx, sp.name));
-  }
   function toChatCard(doc, kind) {
     return { mechanics:doc.mechanics, name: doc.name, kind, desc: doc.desc || '', actions: (doc.actions || []).map(a => ({ name: a.name, kind: a.kind, roll: a.roll })), icon: kind === 'spell' ? 'star' : (doc.icon || itemIconName(doc)), asset_id: doc.asset_id || null,
       ...(kind === 'spell' && doc.spell_ability ? { spell_ability: doc.spell_ability } : {}),
@@ -337,8 +329,6 @@ window.Modules = (function () {
     return el('div', { class: 'row visuals' }, imagePicker(doc, 'asset_id', { kind: window.AssetKinds.forUsage('item'), label: o.imageLabel || 'Изображение (карточка, инвентарь)', icon: o.icon }), o.noToken ? null : imagePicker(doc, 'token_asset_id', { kind: window.AssetKinds.forUsage('token'), label: o.tokenLabel || 'Токен на карте', icon: 'map' }));
   }
 
-  // ---------- редактор действий (кнопок бросков) ----------
-  function actionsEditor(doc) { return Mechanics.editor(doc,{category:'feature'}); }
   function descEditor(doc, key='desc') {
     return el('div', {}, el('textarea', {class:'description-only', rows:6, oninput:e=>doc[key]=e.target.value}, doc[key]||''), el('p',{class:'muted small'},'Художественное описание и пояснения. Броски, расходы и эффекты задаются отдельно — блоками ниже.'));
   }
@@ -497,5 +487,5 @@ window.Modules = (function () {
   function getDrag(ev, type) { const raw = ev.dataTransfer.getData(type); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
   function hasType(ev, ...types) { const t = [...(ev.dataTransfer?.types || [])]; return types.some(x => t.includes(x)); }
 
-  return { uid, fillDefaults, ITEM_TYPES, ITEM_ICONS, RACE_ICONS, raceIcon, ACTION_ICONS, itemIconName, RARITIES, RARITY_COLORS, ACTION_KINDS, DAMAGE_TYPES, diceExpressions, rollMulti, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, visualsRow, docIcon, evalConst, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, openModeMenu, itemIcon, itemCardBody, spellCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, actionsEditor, descEditor, setDrag, getDrag, hasType };
+  return { uid, fillDefaults, ITEM_TYPES, raceIcon, itemIconName, RARITY_COLORS, ACTION_KINDS, renderMulti, withMode, modeFromEvent, newItem, newSpell, newFeature, editFeature, imagePicker, docIcon, itemFromCompendium, spellFromCompendium, ctxFromSheet, resolve, roll, sendCard, rich, rollBtn, openModeMenu, itemIcon, itemCardBody, actionButtons, toChatCard, renderChatCard, editItem, editSpell, editGeneric, descEditor, setDrag, getDrag, hasType };
 })();

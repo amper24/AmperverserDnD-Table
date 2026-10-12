@@ -319,7 +319,7 @@ def program_nodes(program_id, suffix, name_ru=PROGRAM_RU, name_en=PROGRAM_EN):
     nodes = [
         {'id': f'program-{suffix}', 'type': 'action.program', 'params': {'program_id': program_id, 'name': name_ru, 'trigger': 'use', 'roll_only': True}, 'position': {'x': 60, 'y': y}},
         {'id': f'action-{suffix}-1', 'type': 'action.manual', 'params': {'enabled': True, 'when': 'always', 'text': ROLL_ONLY_RU, 'block_id': 'b1'}, 'position': {'x': 330, 'y': y}},
-        {'id': f'action-{suffix}-2', 'type': 'action.roll', 'params': {'enabled': True, 'when': 'always', 'dice': {'count': 1, 'sides': 20, 'bonus': 0, 'stat': ''}, 'damage_type': '', 'block_id': 'b2'}, 'position': {'x': 590, 'y': y}},
+        {'id': f'action-{suffix}-2', 'type': 'action.roll', 'params': {'enabled': True, 'when': 'always', 'roll_kind': 'roll', 'dice': {'count': 1, 'sides': 20, 'bonus': 0, 'stat': ''}, 'damage_type': '', 'block_id': 'b2'}, 'position': {'x': 590, 'y': y}},
     ]
     links = [
         {'from': {'node': f'program-{suffix}', 'socket': 'exec'}, 'to': {'node': f'action-{suffix}-1', 'socket': 'exec'}},

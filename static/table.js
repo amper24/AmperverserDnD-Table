@@ -53,7 +53,6 @@ window.Table = (function () {
     S.w = r.width; S.h = r.height;
   }
   const toWorld = (sx, sy) => ({ x: (sx - S.cam.x) / S.cam.k, y: (sy - S.cam.y) / S.cam.k });
-  const toScreen = (wx, wy) => ({ x: wx * S.cam.k + S.cam.x, y: wy * S.cam.k + S.cam.y });
   const grid = () => S.scene.grid?.size || 70;
   // --- гекс-сетка (pointy-top): size = ширина гекса ---
   // ---------- Сетка: квадраты и гексы, привязка позиций ----------
@@ -626,5 +625,5 @@ window.Table = (function () {
     if (o.monster) data.monster = o.monster;
     upsert({ layer: LAYER.character, z: 1, data });
   }
-  return { init, setScene, onMessage, setTool, fitToMap, setActiveLayer, getScene, sendScene, upsert, state, LAYER_NAMES, condShort, condIcon, dropLootAtCenter, placeTokenAtCenter };
+  return { init, setScene, onMessage, setActiveLayer, getScene, sendScene, state, LAYER_NAMES, dropLootAtCenter, placeTokenAtCenter };
 })();

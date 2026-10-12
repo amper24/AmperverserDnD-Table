@@ -17,7 +17,6 @@ window.Equipment = (() => {
     '': 'Нельзя экипировать', armor: 'Доспех (тело)', head: 'Голова', neck: 'Шея', cloak: 'Плащ',
     gloves: 'Перчатки', belt: 'Пояс', feet: 'Обувь', ring: 'Кольцо',
   };
-  const WORN_SLOTS = ['armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring'];
   const SLOTS_V = 2;
   const wornSlots = kind => ({ armor: ['armor'], head: ['head'], neck: ['neck'], cloak: ['cloak'], gloves: ['gloves'], belt: ['belt'], feet: ['feet'], ring: ['ring1', 'ring2'] }[kind] || []);
   const itemWords = value => Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
@@ -268,5 +267,5 @@ window.Equipment = (() => {
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, wearKinds, WORN_SLOTS, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
 })();
