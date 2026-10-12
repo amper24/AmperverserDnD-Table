@@ -35,6 +35,22 @@ test('справочник SRD: у проверки целостности не�
   }
 });
 
+test('сводка механик (docs/mechanics-migration.json) соответствует данным', () => {
+  // Сводку собирает tools/srd/mechanics_summary.cjs; --check ловит забытую пересборку.
+  const out = execFileSync(process.execPath, [path.join(ROOT, 'tools', 'srd', 'mechanics_summary.cjs'), '--check']).toString();
+  assert.match(out, /сводка механик совпадает с данными/);
+  const summary = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'mechanics-migration.json'), 'utf8'));
+  assert.equal(summary.format, 'v2-graph');
+  for (const edition of EDITIONS) {
+    const actual = seeds[edition].filter(row => row.data.mechanics);
+    assert.equal(summary[edition].mechanics_records, actual.length, `записей с механикой ${edition}`);
+    const nodes = actual.reduce((sum, row) => sum + (row.data.mechanics.graph.nodes || []).length, 0);
+    assert.equal(summary[edition].nodes, nodes, `узлов ${edition}`);
+    const programs = actual.reduce((sum, row) => sum + (row.data.mechanics.graph.nodes || []).filter(n => n.type === 'action.program').length, 0);
+    assert.equal(summary[edition].programs, programs, `программ ${edition}`);
+  }
+});
+
 test('заклинания: у спасброска есть характеристика, действие и программа в обеих редакциях', () => {
   for (const edition of EDITIONS) {
     for (const row of spells(edition)) {
