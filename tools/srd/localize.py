@@ -30,6 +30,10 @@ CAT_FILES = {
 TERM_FIX = [  # терминология проекта (лист персонажа) ← терминология корпуса
     (r'\bВнимательност(ь|и|ью)\b', lambda m: {'ь': 'Восприятие', 'и': 'Восприятия', 'ью': 'Восприятием'}[m.group(1)]),
     (r'\bвнимательност(ь|и|ью)\b', lambda m: {'ь': 'восприятие', 'и': 'восприятия', 'ью': 'восприятием'}[m.group(1)]),
+    # Навык Investigation в корпусе звался «Анализ», а на листе, в формулах и на сервере он «Расследование»
+    # (static/common.js SKILLS, src/mechanics_graph.rs SKILL_IDS). Формы слова — по падежам.
+    (r'\bАнализ(а|у|ом|е)?\b', lambda m: {'': 'Расследование', 'а': 'Расследования', 'у': 'Расследованию', 'ом': 'Расследованием', 'е': 'Расследовании'}[m.group(1) or '']),
+    (r'\bанализ(а|у|ом|е)?\b', lambda m: {'': 'расследование', 'а': 'расследования', 'у': 'расследованию', 'ом': 'расследованием', 'е': 'расследовании'}[m.group(1) or '']),
 ]
 
 
@@ -522,9 +526,10 @@ def pair_monster_fields(tr, d, ru, en):
     ru['senses'] = ru_sn
     e_sn = re.sub(r'слепое зрение|тёмное зрение|истинное зрение|чувство вибрации|пассивное Восприятие', lambda m: T.SENSE_EN[m.group(0)], sn)
     en['senses'] = re.sub(r'(\d+) фт', r'\1 ft.', e_sn)
-    for k, tab in (('skills', T.SKILL_EN), ('saves', T.ABIL_EN)):
+    for k, tab in (('skills', None), ('saves', T.ABIL_EN)):
         v = d.get(k, '')
-        if v: en[k] = ', '.join(re.sub(r'^(.*?) (\+\d+)$', lambda m: tab.get(m.group(1), m.group(1)) + ' ' + m.group(2), x.strip()) for x in v.split(','))
+        lookup = (lambda name: T.skill_en(name)) if k == 'skills' else (lambda name: tab.get(name, name))
+        if v: en[k] = ', '.join(re.sub(r'^(.*?) (\+\d+)$', lambda m: lookup(m.group(1)) + ' ' + m.group(2), x.strip()) for x in v.split(','))
     if d.get('condition_immunities'): en['condition_immunities'] = rus_list_en(d['condition_immunities'], T.CONDITION_EN)
     if d.get('hp'): en['hp'] = d['hp'].replace('к', 'd')
     for k in ('languages', 'vulnerabilities', 'resistances', 'immunities'):
@@ -617,7 +622,7 @@ def pair_item_fields(tr, ed, e, d, ru, en, ctx_names):
 
 
 def pair_class_fields(tr, d, ru, en):
-    en['skills'] = {**d['skills'], 'from': [T.SKILL_EN.get(x, x) for x in d['skills']['from']]}
+    en['skills'] = {**d['skills'], 'from': [T.skill_en(x) for x in d['skills']['from']]}
     p = d.get('primary', '')
     def pr(x):
         x = re.sub(r'\bили\b', 'or', x); x = re.sub(r'\bи\b', 'and', x)
@@ -633,7 +638,7 @@ def pair_race_fields(tr, d, ru, en, names):
 
 
 def pair_background_fields(tr, d, ru, en):
-    if d.get('skills'): en['skills'] = [T.SKILL_EN.get(x, x) for x in d['skills']]
+    if d.get('skills'): en['skills'] = [T.skill_en(x) for x in d['skills']]
     if d.get('asi_options'): en['asi_options'] = [T.ABIL_EN.get(x, x) for x in d['asi_options']]
     f = d.get('feat')
     if f:

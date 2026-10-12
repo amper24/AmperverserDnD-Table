@@ -265,7 +265,7 @@ ALIGN = {'lawful good': 'законно-добрый', 'neutral good': 'нейт
          'any non-lawful alignment': 'любое незаконное', 'any chaotic alignment': 'любое хаотичное'}
 ABIL = {'STR': 'СИЛ', 'DEX': 'ЛОВ', 'CON': 'ТЕЛ', 'INT': 'ИНТ', 'WIS': 'МДР', 'CHA': 'ХАР'}
 SKILLS = {'Acrobatics': 'Акробатика', 'Animal Handling': 'Уход за животными', 'Arcana': 'Магия', 'Athletics': 'Атлетика', 'Deception': 'Обман', 'History': 'История', 'Insight': 'Проницательность', 'Intimidation': 'Запугивание',
-          'Investigation': 'Анализ', 'Medicine': 'Медицина', 'Nature': 'Природа', 'Perception': 'Восприятие', 'Performance': 'Выступление', 'Persuasion': 'Убеждение', 'Religion': 'Религия', 'Sleight of Hand': 'Ловкость рук', 'Stealth': 'Скрытность', 'Survival': 'Выживание'}
+          'Investigation': 'Расследование', 'Medicine': 'Медицина', 'Nature': 'Природа', 'Perception': 'Восприятие', 'Performance': 'Выступление', 'Persuasion': 'Убеждение', 'Religion': 'Религия', 'Sleight of Hand': 'Ловкость рук', 'Stealth': 'Скрытность', 'Survival': 'Выживание'}
 DMG_TYPES = {'acid': 'кислота', 'bludgeoning': 'дробящий', 'cold': 'холод', 'fire': 'огонь', 'force': 'силовое поле', 'lightning': 'электричество', 'necrotic': 'некротический', 'piercing': 'колющий', 'poison': 'яд', 'psychic': 'психический',
              'radiant': 'излучение', 'slashing': 'рубящий', 'thunder': 'звук'}
 WPROPS = {'Ammunition': 'боеприпас', 'Finesse': 'фехтовальное', 'Heavy': 'тяжёлое', 'Light': 'лёгкое', 'Loading': 'перезарядка', 'Range': 'дальнобойное', 'Reach': 'досягаемость', 'Special': 'особое', 'Thrown': 'метательное', 'Two-Handed': 'двуручное',

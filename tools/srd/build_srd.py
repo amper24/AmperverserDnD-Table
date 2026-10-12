@@ -12,6 +12,7 @@
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import ru_names as R
+import fix_spell_saves as FS  # спасброски заклинаний из текста SRD: у дампа 2024 нет машинного поля dc
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/home/user/srd'
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(__file__), '..', '..', 'data_seed')
@@ -71,9 +72,17 @@ def spells(ed):
                 first = list(table.values())[0]
                 formula = re.sub(r'\s*\+\s*MOD', '+@spell', first).replace(' ', '')
                 if re.match(r'^[\dd+@a-z_]+$', formula): acts.append({'name': 'Урон', 'kind': 'damage', 'roll': formula, 'dtype': dt or None})
+        # Спасбросок: в дампе 5.1 это машинное поле dc, в дампе 5.2 его нет — характеристику и
+        # собственную СЛ берём из официального текста (те же правила, что в tools/srd/fix_spell_saves.py).
+        ability, dc_value, ambiguous = '', 0, []
         if s.get('dc'):
-            acts.append({'name': 'Спасбросок', 'kind': 'save', 'roll': '1d20', 'note': f"СЛ {{{{@dc}}}} {R.ABIL.get(s['dc']['dc_type']['name'], s['dc']['dc_type']['name'])}"})
-            d['save_ability'] = R.ABIL.get(s['dc']['dc_type']['name'], '')
+            dc_type = s['dc']['dc_type']['name']
+            ability, ambiguous = R.ABIL.get(dc_type, dc_type), []
+        else:
+            ability, dc_value, ambiguous = FS.forced_save(s)
+        if ability and not ambiguous:
+            acts.append({'name': 'Спасбросок', 'kind': 'save', 'roll': '1d20', 'note': f"СЛ {dc_value if dc_value else '{{@dc}}'} {ability}"})
+            d['save_ability'] = ability
         heal = s.get('heal_at_slot_level')
         if heal:
             first = list(heal.values())[0]

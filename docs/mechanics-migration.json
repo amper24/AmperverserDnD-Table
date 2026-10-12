@@ -1,48 +1,73 @@
 {
   "2014": {
+    "version": 2,
     "records": 1294,
     "categories": {
-      "spell": 319,
-      "monster": 334,
-      "item": 599,
-      "class": 12,
-      "race": 13,
       "background": 1,
+      "class": 12,
+      "condition": 15,
       "feat": 1,
-      "condition": 15
+      "item": 599,
+      "monster": 334,
+      "race": 13,
+      "spell": 319
     },
     "mechanics_records": 981,
-    "blocks": {
-      "consume": 384,
-      "manual": 3776,
-      "attack": 586,
-      "damage": 725,
-      "roll": 106,
-      "passive": 109,
-      "condition": 30
+    "origin": {
+      "srd-graph-v2": 981
+    },
+    "nodes": 9651,
+    "links": 5794,
+    "programs": 3833,
+    "records_with_programs": 977,
+    "node_types": {
+      "action.attack": 586,
+      "action.condition": 30,
+      "action.consume": 384,
+      "action.damage": 725,
+      "action.manual": 3813,
+      "action.passive": 113,
+      "action.program": 3833,
+      "action.roll": 143,
+      "rule.class_progression": 12,
+      "rule.class_rules": 12
     }
   },
   "2024": {
+    "version": 2,
     "records": 1205,
     "categories": {
-      "spell": 339,
-      "monster": 341,
-      "item": 444,
-      "class": 12,
-      "race": 33,
       "background": 4,
+      "class": 12,
+      "condition": 15,
       "feat": 17,
-      "condition": 15
+      "item": 444,
+      "monster": 341,
+      "race": 33,
+      "spell": 339
     },
     "mechanics_records": 986,
-    "blocks": {
-      "consume": 373,
-      "manual": 3443,
-      "attack": 499,
-      "damage": 811,
-      "roll": 3,
-      "passive": 90,
-      "condition": 30
+    "origin": {
+      "srd-graph-v2": 986
+    },
+    "nodes": 9161,
+    "links": 5539,
+    "programs": 3598,
+    "records_with_programs": 981,
+    "node_types": {
+      "action.attack": 499,
+      "action.condition": 30,
+      "action.consume": 373,
+      "action.damage": 811,
+      "action.manual": 3587,
+      "action.passive": 92,
+      "action.program": 3598,
+      "action.roll": 147,
+      "rule.class_progression": 12,
+      "rule.class_rules": 12
     }
-  }
+  },
+  "format": "v2-graph",
+  "generated_by": "node tools/srd/mechanics_summary.cjs",
+  "note": "Сводка графов v2 (узел-связь). Прежний файл описывал блоки v1 — формат блоков в данных больше нет."
 }

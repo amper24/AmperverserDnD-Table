@@ -39,3 +39,30 @@ test('version 1 records have no graph progression', () => {
   assert.equal(M.classProgression({ version: 1, programs: [] }, '2014'), null);
   assert.equal(M.classProgression(undefined, '2014'), null);
 });
+
+// Регрессия: узлы SRD-классов собираются из наборов static/presets/ (tools/srd/add_class_progression_nodes.cjs).
+// Если генератор устарел или наборы правят в одном месте, лист читает узел и расходится с таблицами классов.
+const classRows = ['2014', '2024'].flatMap(edition => JSON.parse(fs.readFileSync(`data_seed/srd_${edition}.json`, 'utf8'))
+  .filter(row => row.category === 'class').map(row => [edition, row]));
+const presetCtx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
+vm.createContext(presetCtx);
+const presetsLoaded = require('../tools/presets/node-loader.cjs').loadPresets(presetCtx);
+
+test('узлы rule.class_progression и rule.class_rules совпадают с наборами классов', async () => {
+  await presetsLoaded;
+  let checked = 0;
+  for (const [edition, row] of classRows) {
+    const slug = String(row.data.i18n?.en?.name || row.data.name_en || '').toLowerCase();
+    const node = type => (row.data.mechanics?.graph?.nodes || []).find(n => n.type === type)?.params?.table;
+    assert.deepEqual(plain(node('rule.class_progression')), plain(presetCtx.window.Presets.classProgression(edition, slug)), `${row.slug}: таблица развития`);
+    const rules = presetCtx.window.Presets.classRules(edition, slug);
+    const expected = {
+      ...(rules.caster ? { caster: rules.caster } : {}),
+      multiclass: { requirements: rules.multiclass?.requirements || [] },
+      ...(rules.weapon_mastery !== undefined ? { weapon_mastery: rules.weapon_mastery } : {}),
+    };
+    assert.deepEqual(plain(node('rule.class_rules')), expected, `${row.slug}: правила класса`);
+    checked++;
+  }
+  assert.equal(checked, 24, 'по 12 классов в каждой редакции');
+});

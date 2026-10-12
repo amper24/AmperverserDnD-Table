@@ -21,6 +21,16 @@ test('SRD fallback reproduces the former slug lists', async () => {
   assert.equal(R.startMode(srd('wizard'), '2014'), 'book');
   assert.equal(R.preparedFormula(srd('paladin'), '2014'), 'half');
   assert.equal(R.preparedFormula(srd('paladin'), '2024'), '', 'the 2014 counting rule does not leak into 2024');
+  // Подготовленные заклинания 1 уровня: SRD 5.1 — формула «уровень + модификатор», SRD 5.2.1 — фиксированное число.
+  assert.equal(R.startPrepared(srd('Cleric'), '2014'), 'level');
+  assert.equal(R.startPrepared(srd('Cleric'), '2024'), 4);
+  assert.equal(R.startPrepared(srd('Druid'), '2024'), 4);
+  assert.equal(R.startPrepared(srd('Paladin'), '2024'), 2);
+  assert.equal(R.startPrepared(srd('Ranger'), '2024'), 2);
+  assert.equal(R.startPrepared(srd('Wizard'), '2024'), 4);
+  // Мастерство оружия в SRD 5.2.1 дают пять классов; у монаха его нет.
+  assert.deepEqual(Object.values(R.RU_NAMES).filter(s => R.rulesOf(srd(s), '2024').weapon_mastery)
+    .sort(), ['barbarian', 'fighter', 'paladin', 'ranger', 'rogue']);
 });
 
 test('a class record with its own caster block overrides the SRD table', async () => {

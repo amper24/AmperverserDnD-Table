@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const loadSrd = require('./fixtures/srd.cjs');
 const vm = require('node:vm');
-const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
+// Словари листа — как в браузере: common.js загружается раньше levelup.js (слой 1 → слой 5).
+const dictionaries = require('./fixtures/dictionaries.cjs')();
+const ctx = { window: { ...dictionaries }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
@@ -104,6 +106,24 @@ test('план: магия договора колдуна и известные
   const w = cls('2014', 'warlock'), p = L.plan(sheet({ level: 4, class: w.name, subclass: 'Исчадие' }), w);
   assert.deepEqual(plain(p.pactTo), { count: 2, level: 3 }); assert.equal(p.spells.mode, 'known'); assert.equal(p.spells.spells, 1); assert.equal(p.spells.maxLevel, 3);
 });
+test('компетентность: ключи навыков берутся из словаря листа (регрессия длинных id)', () => {
+  // Регрессия: levelup.js держал свою таблицу «русское название → ключ» с длинными id
+  // (animal_handling, sleight_of_hand), которых нет в словаре листа (window.SKILLS: animal, sleight).
+  // Выбранная компетентность тогда не находилась на листе и не давала модификатор.
+  const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'static', 'levelup.js'), 'utf8');
+  assert.ok(!/SKILL_KEYS_RU/.test(source), 'в levelup.js осталась своя таблица «название → ключ»');
+  const canonical = new Set(dictionaries.SKILLS.map(([key]) => key));
+  const wizard = cls('2024', 'wizard');
+  const p = L.plan(sheet({ level: 1, class: wizard.name, edition: '2024' }), wizard, '2024');
+  assert.ok(p.expertiseFrom && p.expertiseFrom.length, 'компетентность волшебника 2024 пуста');
+  for (const key of p.expertiseFrom) assert.ok(canonical.has(key), `неканонический ключ навыка «${key}»`);
+  assert.ok(p.expertiseFrom.includes('investigation'), 'навык «Расследование» не превратился в investigation');
+  assert.deepEqual(plain(L.expertiseCandidates({ skills: ['arcana', 'sleight'], expertise: [] }, [], p.expertiseFrom)), ['arcana']);
+  // Старые листы: длинные id приводятся к словарю, повторы убираются, неизвестное остаётся.
+  assert.deepEqual(plain(L.canonicalSkills(['animal_handling', 'stealth', 'sleight_of_hand', 'stealth', 'своё'])), ['animal', 'stealth', 'sleight', 'своё']);
+  assert.deepEqual(plain(L.canonicalSkills(undefined)), []);
+});
+
 test('план: компетентность во всех классах и редакциях по таблице уровней', () => {
   assert.equal(L.plan(sheet({ level: 2, class: 'Бард' }), cls('2014', 'bard')).expertise, 2);
   assert.equal(L.plan(sheet({ level: 1, class: 'Бард', edition: '2024' }), cls('2024', 'bard'), '2024').expertise, 2);
