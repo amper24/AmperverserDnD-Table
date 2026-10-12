@@ -61,7 +61,12 @@ SKILL_EN = {'Акробатика': 'Acrobatics', 'Уход за животны�
             'Природа': 'Nature', 'Восприятие': 'Perception', 'Выступление': 'Performance', 'Убеждение': 'Persuasion', 'Религия': 'Religion',
             'Ловкость рук': 'Sleight of Hand', 'Скрытность': 'Stealth', 'Выживание': 'Survival'}
 # Старое написание навыка «Расследование» в корпусе переводов: остаётся только для чтения старых текстов.
-SKILL_EN_ALIASES = {'Анализ': 'Investigation'}
+SKILL_EN_ALIASES = {'Анализ': 'Investigation'}  # как назывался навык в корпусе до выравнивания словаря
+
+
+def skill_en(name):
+    """Английское название навыка: каноническое написание, известный синоним из корпуса или исходное."""
+    return SKILL_EN.get(name) or SKILL_EN_ALIASES.get(name) or name
 CONDITION_EN = {'Ослеплённый': 'Blinded', 'Очарованный': 'Charmed', 'Оглохший': 'Deafened', 'Истощение': 'Exhaustion', 'Испуганный': 'Frightened',
                 'Схваченный': 'Grappled', 'Недееспособный': 'Incapacitated', 'Невидимый': 'Invisible', 'Парализованный': 'Paralyzed',
                 'Окаменевший': 'Petrified', 'Отравленный': 'Poisoned', 'Сбитый с ног': 'Prone', 'Опутанный': 'Restrained', 'Ошеломлённый': 'Stunned',
