@@ -274,9 +274,9 @@
   `ClassRules.startPrepared` по редакциям (`tests/class-rules.test.cjs`).
 * CI (`.github/workflows/ci.yml`): сборка, клиппи, JS-тесты, `cargo test`, smoke-тесты на SQLite
   и MySQL, браузерные тесты, Windows-сборка. Наблюдались прогоны на этой ветке: `b9f007c`
-  (прогон 38192210457) и `c8c6d30` (прогон 38194999022, включает правку `src/seed.rs` и новый
-  Rust-тест) — оба успешны, шаги «Clippy», «JavaScript tests», «Unit tests», «Smoke test (SQLite)»,
-  «Smoke test (MySQL)» — success.
+  (прогон 38192210457), `c8c6d30` (прогон 38194999022, включает правку `src/seed.rs` и новый
+  Rust-тест) и `c7c4802` (прогон 38195372440) — все успешны, шаги «Clippy», «JavaScript tests»,
+  «Unit tests», «Smoke test (SQLite)», «Smoke test (MySQL)» — success.
 * В песочнице без Rust: Rust-тесты и smoke прогоняются в CI GitHub, локально проверены JS-тесты
   (343 из 343), проверка целостности (0 ошибок), сверка с дампом SRD и покрытие обновления баз
   (0 проблем по 28 релизам).
@@ -372,6 +372,6 @@
 | `node --test tests/*.test.cjs` | 343 из 343 |
 | `python3 tools/srd/compare_upstream.py --src /tmp/srd/src --max 0` | 11 896 сверок, 0 расхождений набора, 9 известных ошибок дампа |
 | `python3 tools/srd/verify_migration.py --prev-json-dir /tmp/prevall` | 0 проблем, маршрут есть у всех строк всех 28 релизов |
-| CI GitHub на `b9f007c` и `c8c6d30` | success (сборка, клиппи, JS-тесты, `cargo test`, smoke SQLite/MySQL, браузерные тесты, Windows) |
+| CI GitHub на `b9f007c`, `c8c6d30`, `c7c4802` | success (сборка, клиппи, JS-тесты, `cargo test`, smoke SQLite/MySQL, браузерные тесты, Windows) |
 
 Постоянных изменений в чужих ветках нет; `main` не трогался — вся работа лежит в ветке сессии.
