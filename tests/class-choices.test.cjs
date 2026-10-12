@@ -89,6 +89,31 @@ test('мастерство оружия 2024 и экспертиза плута 
   assert.match(B.classChoiceProblem({ ...rogue, ruleChoices: { expertise: ['acrobatics'] } }, avail), /экспертиз/i);
 });
 
+test('мастерство оружия 2024 есть только у классов SRD, у монаха его нет', () => {
+  // В SRD 5.2.1 свойство мастерства дают варвар, воин, паладин, следопыт и плут.
+  // У монаха мастерства нет: «владение боевыми стилями» из «Боевых искусств» — это про оружие монаха.
+  assert.deepEqual(['barbarian', 'fighter', 'monk', 'paladin', 'ranger', 'rogue'].map(s => [s, B.weaponMasteryCount('2024', s)]),
+    [['barbarian', 2], ['fighter', 3], ['monk', 0], ['paladin', 2], ['ranger', 2], ['rogue', 2]]);
+  const monk = draft('2024', 'monk');
+  assert.equal(B.classChoices(monk).some(c => c.key === 'weaponMasteries'), false, 'у монаха нет выбора мастерств');
+  assert.equal(B.weaponMasteryCount('2014', 'fighter'), 0, 'в SRD 5.1 мастерства оружия нет ни у кого');
+});
+
+test('подготовленные заклинания 1 уровня: фиксированные числа 2024 и формула 2014', () => {
+  const cleric24 = seed('2024').find(e => e.category === 'class' && e.slug === 'srd24-cleric');
+  const paladin24 = seed('2024').find(e => e.category === 'class' && e.slug === 'srd24-paladin');
+  const ranger24 = seed('2024').find(e => e.category === 'class' && e.slug === 'srd24-ranger');
+  // SRD 5.2.1: жрец и друид начинают с четырьмя заклинаниями, паладин и следопыт — с двумя (не от модификатора).
+  assert.equal(B.spellLimits(cleric24, '2024', { wis: 18 }).spells, 4);
+  assert.equal(B.spellLimits(cleric24, '2024', { wis: 8 }).spells, 4);
+  assert.equal(B.spellLimits(paladin24, '2024', { cha: 18 }).spells, 2);
+  assert.equal(B.spellLimits(ranger24, '2024', { wis: 18 }).spells, 2);
+  // SRD 5.1: число подготовленных = уровень + модификатор (не меньше 1).
+  const cleric14 = seed('2014').find(e => e.category === 'class' && e.slug === 'srd14-cleric');
+  assert.equal(B.spellLimits(cleric14, '2014', { wis: 16 }).spells, 4);
+  assert.equal(B.spellLimits(cleric14, '2014', { wis: 8 }).spells, 1);
+});
+
 test('домен жизни 2014: тяжёлые доспехи из subclass_grants набора, другой домен — нет', () => {
   const cleric = seed('2014').find(e => e.category === 'class' && e.slug === 'srd14-cleric');
   const life = cleric.data.subclasses.find(s => s.name_en === 'Life');

@@ -110,7 +110,7 @@
         "caster": {
           "level": "full",
           "start": "prepared",
-          "start_prepared": "level"
+          "start_prepared": 4
         },
         "multiclass": {
           "requirements": [
@@ -160,7 +160,7 @@
         "caster": {
           "level": "full",
           "start": "prepared",
-          "start_prepared": "level"
+          "start_prepared": 4
         },
         "multiclass": {
           "requirements": [
@@ -292,36 +292,11 @@
           ],
           "proficiencies": "простое оружие, короткие мечи"
         },
-        "weapon_mastery": 2,
         "legacy_unarmored": {
           "formula": "10 + @dex + @wis",
           "name": "Защита без доспехов (монах)",
           "no_shield": true
-        },
-        "weapon_mastery_rules": [
-          {
-            "category": "Простое рукопашное"
-          },
-          {
-            "category": "Воинское рукопашное",
-            "property": "лёгкое"
-          }
-        ],
-        "choices": [
-          {
-            "key": "weaponMasteries",
-            "kind": "items",
-            "title": "Мастерство оружия · 2",
-            "count": 2,
-            "hint": "Выберите разные виды оружия, которыми владеет класс.",
-            "filter": {
-              "weapon_mastery": true
-            },
-            "feature_name": "Выбранное мастерство оружия",
-            "feature_text": "Выбранные виды оружия: {names}.",
-            "problem": "Выберите 2 разных вида оружия для мастерства."
-          }
-        ]
+        }
       }
     },
     {
@@ -332,7 +307,7 @@
         "caster": {
           "level": "half",
           "start": "prepared",
-          "start_prepared": "level"
+          "start_prepared": 2
         },
         "multiclass": {
           "requirements": [
@@ -393,7 +368,7 @@
           "level": "half",
           "picker": true,
           "start": "prepared",
-          "start_prepared": "level"
+          "start_prepared": 2
         },
         "multiclass": {
           "requirements": [
@@ -576,7 +551,7 @@
             "start": 6,
             "per_level": 2
           },
-          "start_prepared": "level"
+          "start_prepared": 4
         },
         "multiclass": {
           "requirements": [

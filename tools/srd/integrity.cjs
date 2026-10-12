@@ -101,6 +101,50 @@ const FORCED_SAVE_RU = /(?:соверша\w+|совершить|преуспе\w
 const stripVars = expr => String(expr).replace(/@[a-z_0-9]+/gi, '0').replace(/\{\{[^}]*\}\}/g, '0');
 
 // ---------- проверка одной редакции ----------
+
+// ---------- пресеты классов (запасные таблицы развития, static/levelup.js::progression) ----------
+const presetCache = new Map();
+function presetFor(edition) {
+  if (!presetCache.has(edition)) {
+    try { presetCache.set(edition, readJson(`static/presets/class-progression-${edition}.json`)); }
+    catch { presetCache.set(edition, { items: [] }); }
+  }
+  return presetCache.get(edition);
+}
+
+function rulesPresetFor(edition) {
+  const key = `class-rules-${edition}`;
+  if (!presetCache.has(key)) {
+    try { presetCache.set(key, readJson(`static/presets/${key}.json`)); }
+    catch { presetCache.set(key, { items: [] }); }
+  }
+  return presetCache.get(key);
+}
+
+/// Таблица правил класса в той форме, в которой она лежит в узле (см. add_class_progression_nodes.cjs).
+function rulesNodeTable(table) {
+  if (!table) return null;
+  return {
+    ...(table.caster ? { caster: table.caster } : {}),
+    multiclass: { requirements: table.multiclass?.requirements || [] },
+    ...(table.weapon_mastery !== undefined ? { weapon_mastery: table.weapon_mastery } : {}),
+  };
+}
+
+/// Расхождение таблиц развития: null, если объект уровней совпадает, иначе описание первого различия.
+function progressionDiff(nodeLevels, presetLevels) {
+  const levels = new Set([...Object.keys(nodeLevels), ...Object.keys(presetLevels)]);
+  for (const level of [...levels].sort((a, b) => Number(a) - Number(b))) {
+    const a = nodeLevels[level] || {}, b = presetLevels[level] || {};
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+      const av = JSON.stringify(a[key] ?? null), bv = JSON.stringify(b[key] ?? null);
+      if (av !== bv) return `уровень ${level}, поле «${key}»: в узле ${av}, в пресете ${bv}`;
+    }
+  }
+  return null;
+}
+
 function checkSeed(edition, opts = {}) {
   const runtime = opts.runtime || loadRuntime();
   const rust = opts.rust || rustConstants();
@@ -284,6 +328,35 @@ function checkSeed(edition, opts = {}) {
       if (levels.length && Math.min(...levels) !== 1) report.error('missing-feature-text', where, 'data.features', 'нет умений 1-го уровня');
       for (const s of d.subclasses || []) if (!isObj(s) || !isStr(s.name) || !isStr(s.name_en) || !s.name.trim()) report.error('field-type', where, 'data.subclasses', 'подкласс должен быть {name, name_en, …}');
       if (isStr(d.spellcasting) && !['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(d.spellcasting)) report.error('enum-values', where, 'data.spellcasting', `характеристика заклинаний «${d.spellcasting}»`);
+      // Таблица развития класса живёт в узле rule.class_progression (её и читает лист), а встроенный
+      // пресет static/presets/class-progression-<edition>.json — запасной вариант того же правила
+      // (static/levelup.js::progression). Проверяем, что копии не разошлись.
+      const node = ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === 'rule.class_progression');
+      const presetRow = (presetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
+      const nodeLevels = node?.params?.table?.levels;
+      const presetLevels = presetRow?.table?.levels;
+      if (nodeLevels && presetLevels) {
+        const diff = progressionDiff(nodeLevels, presetLevels);
+        if (diff) report.error('class-progression-mismatch', where, 'data.mechanics.graph.nodes[rule.class_progression].params.table.levels', diff);
+      } else if (nodeLevels && !presetRow) {
+        report.warn('class-progression-missing', where, 'static/presets/class-progression-' + edition + '.json', 'у класса есть таблица развития в узле, но нет записи в пресете (листу нечего взять в запасном варианте)');
+      } else if (!nodeLevels && presetRow) {
+        report.warn('class-progression-missing', where, 'data.mechanics.graph.nodes[rule.class_progression].params.table.levels', 'таблицы развития в узле нет: уровень берётся из пресета, а не из записи класса');
+      }
+      // Те же правила класса лежат в узле rule.class_rules — он первичен для листа (static/class-rules.js::rulesOf),
+      // а набор class-rules-<редакция>.json — запасной вариант. Узел собирается из набора полями caster,
+      // multiclass.requirements и weapon_mastery (tools/srd/add_class_progression_nodes.cjs): сверяем, что копии равны.
+      const rulesRow = (rulesPresetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
+      const rulesNode = ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === 'rule.class_rules');
+      const wantRules = rulesRow && rulesNodeTable(rulesRow.table);
+      const gotRules = rulesNode && rulesNodeTable(rulesNode.params?.table);
+      if (wantRules && gotRules) {
+        const diff = JSON.stringify(wantRules) === JSON.stringify(gotRules) ? null
+          : `в узле ${JSON.stringify(gotRules)}, в наборе ${JSON.stringify(wantRules)}`;
+        if (diff) report.error('class-rules-mismatch', where, 'data.mechanics.graph.nodes[rule.class_rules].params.table', diff);
+      } else if (wantRules && !rulesNode) {
+        report.warn('class-rules-missing', where, 'data.mechanics.graph.nodes[rule.class_rules]', 'правил класса нет в узле: лист возьмёт их из набора');
+      }
     }
     if (row.category === 'race') {
       // В дампе SRD 5.2.1 у видов нет описания: содержание — в traits. Пустой desc — не потеря данных.
@@ -451,7 +524,9 @@ function checkSeed(edition, opts = {}) {
     const [category, slug] = key.split('/');
     if (!byCategory.get(category)?.some(r => r.slug === slug)) report.warn('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимок для записи, которой нет в наборе');
     if (!isArr(snaps)) { report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимки должны быть массивом пар'); continue; }
-    for (const pair of snaps) if (!isArr(pair) || pair.length !== 2 || pair.some(h => !isStr(h) || !/^[0-9a-f]{16}$/.test(h))) report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, `пара хешей «${JSON.stringify(pair)}» неверна`);
+    // Второй хеш — механика: пустая строка означает запись прежней сборки без узлов механики (см. src/seed.rs).
+    const hex = (h, allowEmpty) => isStr(h) && (allowEmpty ? /^(?:[0-9a-f]{16})?$/.test(h) : /^[0-9a-f]{16}$/.test(h));
+    for (const pair of snaps) if (!isArr(pair) || pair.length !== 2 || !hex(pair[0], false) || !hex(pair[1], true)) report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, `пара хешей «${JSON.stringify(pair)}» неверна`);
   }
   return report;
 }

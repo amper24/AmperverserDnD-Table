@@ -4,11 +4,15 @@
 //   rule.class_rules — кастеры, мультикласс и мастерства оружия (class-rules-<редакция>.json, без ru, color, legacy_unarmored).
 // Идемпотентно: существующий узел получает актуальную таблицу, английский оверлей обновляется.
 //   node tools/srd/add_class_progression_nodes.cjs
-// Ключ таблицы — как у ClassRules.slugOf: name_en в нижнем регистре. Редакция — data.edition.
+// Ключ таблицы — как у ClassRules.slugOf: английское название в нижнем регистре. Редакция — data.edition.
+// Английское название лежит в data.i18n.en.name (слой перевода); data.name_en — старые сборки до перехода
+// на слой i18n, оставлен запасным вариантом.
 const fs = require('node:fs'), vm = require('node:vm');
 const { loadPresets } = require('../presets/node-loader.cjs');
 
 const MAX_TABLE_BYTES = 100_000; // лимит таблицы в src/mechanics_graph.rs
+// English-название записи: слой перевода или старое поле data.name_en.
+const nameEnOf = rec => String(rec.data?.i18n?.en?.name || rec.data?.name_en || '');
 // Английский текст владений для мультикласса (SRD 5.1, «Multiclassing»). Русский текст не должен попадать в en-вид.
 const EN_PROFICIENCIES = {
   barbarian: 'shields, simple and martial weapons', bard: 'light armor, one skill of your choice, one musical instrument',
@@ -54,7 +58,7 @@ async function main() {
     for (const rec of records) {
       if (rec.category !== 'class') continue;
       const edition = String(rec.data?.edition || '');
-      const key = String(rec.data?.name_en || '').toLowerCase();
+      const key = nameEnOf(rec).toLowerCase();
       if (rec.data?.mechanics?.version !== 2) { console.error(`не граф v2: ${rec.slug}`); problems++; continue; }
       const graph = rec.data.mechanics.graph;
       for (const node of NODES) {
@@ -80,7 +84,7 @@ async function main() {
       }
       changed++;
     }
-    fs.writeFileSync(file, JSON.stringify(records, null, 0) + '\n');
+    fs.writeFileSync(file, JSON.stringify(records, null, 0)); // без перевода строки: файл — одна строка
     console.log(`${file}: классов с узлами механики ${changed}`);
   }
   // Проверка: граф валиден и отдаёт те же таблицы, что наборы той же редакции.
@@ -88,7 +92,7 @@ async function main() {
     for (const rec of JSON.parse(fs.readFileSync(file, 'utf8'))) {
       if (rec.category !== 'class') continue;
       const err = M.validate(rec.data.mechanics);
-      const key = rec.data.name_en.toLowerCase();
+      const key = nameEnOf(rec).toLowerCase();
       const gotP = M.classProgression(rec.data.mechanics, rec.data.edition);
       const wantP = Presets.classProgression(rec.data.edition, key);
       const gotR = M.classRules(rec.data.mechanics, rec.data.edition);

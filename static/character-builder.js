@@ -545,9 +545,11 @@ window.CharacterBuilder = (() => {
     const mod = modifier(abilities[classEntry?.data?.spellcasting || 'int'] ?? 10);
     let spells = 0, mode = 'none';
     const start = window.ClassRules.startMode(classEntry, edition);
-    // Размер книги и формула подготовки — из набора class_rules (caster.book, caster.start_prepared).
+    // Размер книги и число подготовленных на 1 уровне — из набора class_rules (caster.book, caster.start_prepared).
+    // 'level' — правило SRD 5.1 (уровень + модификатор, не меньше 1), число — фиксированное правило SRD 2024.
     const book = window.ClassRules.startBook(classEntry, edition);
-    const startPrepared = window.ClassRules.startPrepared(classEntry, edition) === 'level' ? Math.max(1, 1 + mod) : 0;
+    const startRule = window.ClassRules.startPrepared(classEntry, edition);
+    const startPrepared = startRule === 'level' ? Math.max(1, 1 + mod) : Math.max(0, Number(startRule) || 0);
     if (start === 'book') { spells = Number(book?.start) || 0; mode = 'book'; } // стартовая книга заклинаний
     else if (start === 'prepared') { spells = startPrepared; mode = 'prepared'; }
     else if (row.known !== null && row.known !== undefined) { spells = Math.max(0, Number(row.known) || 0); mode = spells ? 'known' : 'none'; }
