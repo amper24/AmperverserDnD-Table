@@ -150,3 +150,84 @@ test('защиты монстров: термины приведены к сло
     }
   }
 });
+
+// Заклинания с разными спасбросками для разных эффектов («Символ», «Радужная стена», «Землетрясение»):
+// у каждого спасброска своё действие и своя программа, а data.save_ability — основной (первый) спасбросок.
+const MULTI_SAVES = {
+  '2014': {
+    'srd14-earthquake': ['ЛОВ', 'ТЕЛ'],
+    'srd14-prismatic-wall': ['ЛОВ', 'ТЕЛ', 'МДР'],
+    'srd14-symbol': ['ТЕЛ', 'МДР', 'ХАР', 'ИНТ'],
+  },
+  '2024': {
+    'srd24-arcane-hand': ['СИЛ', 'ЛОВ'],
+    'srd24-prismatic-spray': ['ЛОВ', 'ТЕЛ', 'МДР'],
+    'srd24-prismatic-wall': ['ЛОВ', 'ТЕЛ', 'МДР'],
+    'srd24-storm-of-vengeance': ['ЛОВ', 'ТЕЛ'],
+    'srd24-symbol': ['ТЕЛ', 'МДР'],
+    'srd24-wall-of-ice': ['ЛОВ', 'ТЕЛ'],
+  },
+};
+const ABILITY_EN = { 'СИЛ': 'STR', 'ЛОВ': 'DEX', 'ТЕЛ': 'CON', 'ИНТ': 'INT', 'МДР': 'WIS', 'ХАР': 'CHA' };
+
+test('заклинания с несколькими спасбросками: у каждого своё действие, программа и характеристика', () => {
+  const checked = [];
+  for (const edition of EDITIONS) {
+    for (const row of spells(edition)) {
+      const data = row.data;
+      const saves = (data.actions || []).filter(a => a.kind === 'save');
+      if (saves.length < 2) continue;
+      checked.push(row.slug);
+      const ids = new Set(), names = new Set();
+      for (const action of saves) {
+        const ability = action.note.split(' ').at(-1);
+        assert.ok(ABILITY_CODES.includes(ability), `${row.slug}: подсказка «${action.note}» без характеристики`);
+        assert.match(action.note, /СЛ (\{\{@dc\}\}|\d+) /, `${row.slug}: подсказка спасброска «${action.note}»`);
+        assert.ok(!names.has(action.name), `${row.slug}: два действия спасброска с именем «${action.name}»`);
+        names.add(action.name);
+        const label = action.name === 'Спасбросок' ? '' : action.name.replace('Спасбросок: ', '');
+        const programName = label ? `${SAVE_PROGRAM}: ${label}` : SAVE_PROGRAM;
+        const program = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.program' && n.params.name === programName);
+        assert.ok(program, `${row.slug}: нет программы «${programName}»`);
+        assert.equal(program.params.roll_only, true, `${row.slug}: программа «${programName}» не помечена roll_only`);
+        const suffix = program.id.replace('program-', '');
+        assert.ok(!ids.has(suffix), `${row.slug}: программы спасбросков делят id узла ${program.id}`);
+        ids.add(suffix);
+        const roll = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.roll' && n.id === `action-${suffix}-2`);
+        assert.ok(roll, `${row.slug}: в программе «${programName}» нет узла броска`);
+      }
+      // основной спасбросок (data.save_ability) — действие «Спасбросок» без метки эффекта
+      const primary = saves.find(a => a.name === 'Спасбросок');
+      assert.ok(primary, `${row.slug}: нет основного действия «Спасбросок»`);
+      assert.ok(primary.note.endsWith(` ${data.save_ability}`), `${row.slug}: data.save_ability=${data.save_ability}, а основной спасбросок «${primary.note}»`);
+      // английское зеркало: столько же действий и те же характеристики
+      const en = (data.i18n || {}).en || {};
+      const enActions = en['actions!'] || [];
+      assert.equal(enActions.length, (data.actions || []).length, `${row.slug}: английских действий ${enActions.length}, русских ${(data.actions || []).length}`);
+      const enSaves = enActions.filter(a => a.kind === 'save');
+      assert.equal(enSaves.length, saves.length, `${row.slug}: спасбросков в английском слое ${enSaves.length}, в русском ${saves.length}`);
+      for (let i = 0; i < enSaves.length; i++) {
+        const ruAbility = saves[i].note.split(' ').at(-1), enAbility = enSaves[i].note.split(' ').at(-1);
+        assert.equal(enAbility, ABILITY_EN[ruAbility], `${row.slug}: в английском слое «${enSaves[i].note}» вместо ${ABILITY_EN[ruAbility]}`);
+      }
+    }
+  }
+  assert.deepEqual(checked.sort(), Object.values(MULTI_SAVES).flatMap(Object.keys).sort(),
+    'набор заклинаний с несколькими спасбросками изменился — сверьте с официальным SRD');
+});
+
+test('заклинания с несколькими спасбросками: набор характеристик совпадает с официальным текстом', () => {
+  for (const [edition, expected] of Object.entries(MULTI_SAVES)) {
+    for (const [slug, abilities] of Object.entries(expected)) {
+      const row = seeds[edition].find(r => r.slug === slug);
+      assert.ok(row, `${edition}: нет записи ${slug}`);
+      const saves = (row.data.actions || []).filter(a => a.kind === 'save');
+      const got = [...new Set(saves.map(a => a.note.split(' ').at(-1)))].sort();
+      assert.deepEqual(got, [...new Set(abilities)].sort(), `${slug}: характеристики спасбросков`);
+    }
+  }
+  // редакции не смешиваются: у «Символа» 2014 шесть разных эффектов, у 2024 — пять
+  const count = (edition, slug) => seeds[edition].find(r => r.slug === slug).data.actions.filter(a => a.kind === 'save').length;
+  assert.equal(count('2014', 'srd14-symbol'), 8, '2014 «Символ»: Смерть, Раздор, Страх, Безнадёжность, Безумие, Боль, Сон, Ошеломление');
+  assert.equal(count('2024', 'srd24-symbol'), 6, '2024 «Символ»: Смерть, Раздор, Страх, Боль, Сон, Ошеломление');
+});

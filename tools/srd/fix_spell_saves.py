@@ -12,8 +12,12 @@
 Скрипт восстанавливает паритет по официальному английскому тексту SRD 5.2.1:
 
 * берутся только фразы, где спасбросок ВЫНУЖДЕН («must make/must succeed on/makes a … saving throw»);
-* характеристика принимается, только если она единственная в заклинании — спорные записи
-  (несколько разных спасбросков, напр. «Радужная стена») не меняются и печатаются в отчёте как «не установлено»;
+* характеристика принимается, только если она единственная в заклинании; заклинания с разными спасбросками
+  для разных эффектов («Символ», «Радужная стена», «Радужные брызги», «Стена льда», «Землетрясение»,
+  «Волшебная рука», «Гроза мщения») описаны таблицей MULTI_SAVES: первый спасбросок — основной
+  (`data.save_ability`), каждый следующий получает своё действие «Спасбросок: <эффект>» и свою программу
+  «Отдельный бросок: Спасбросок: <эффект>», чтобы кнопка считала нужную характеристику, а не первую;
+  набор характеристик из таблицы сверяется с официальным текстом дампа (иначе — ошибка);
 * если текст задаёт собственную СЛ («DC 15 Intelligence saving throw»), в подсказке ставится число,
   иначе используется СЛ заклинателя `{{@dc}}`;
 * в запись добавляются `data.save_ability`, действие вида `save`, зеркальная английская строка в
@@ -56,8 +60,8 @@ ROLL_ONLY_RU = ('Только отдельный бросок кубиков: н
 ROLL_ONLY_EN = ('A separate dice roll only: it spends no slot, charge or action and applies nothing to anyone — the GM '
                 'applies the result. Check the timing, count and damage conditions against the full description; delayed '
                 'and alternative damage are not rolled together.')
-# id программ в графах записей справочника: базовый круг, второй бросок, третий бросок.
-P1, P2, P3 = '18h9rwa', '187a67b', '17xakic'
+# id узлов программ: соответствие «номер программы → суффикс id» берётся из самого справочника
+# (slot_suffixes), как оно сложилось у всех записей; для невиданных слотов суффикс считается из слага.
 
 
 def upstream_spells(src, edition):
@@ -100,14 +104,14 @@ def forced_save(spell):
     return (ABILITIES[found.pop()], (fixed.pop() if len(fixed) == 1 else 0), [])
 
 
-def save_action(ability, dc):
+def save_action(ability, dc, name='Спасбросок'):
     note = f'СЛ {dc if dc else "{{@dc}}"} {ability}'
-    return {'name': 'Спасбросок', 'kind': 'save', 'roll': '1d20', 'note': note}
+    return {'name': name, 'kind': 'save', 'roll': '1d20', 'note': note}
 
 
-def save_action_en(ability, dc):
+def save_action_en(ability, dc, name=None):
     note = f'DC {dc if dc else "{{@dc}}"} {T.ABIL_EN[ability]}'
-    return {'name': T.SPELL_ACTION_LABEL['Спасбросок'], 'kind': 'save', 'roll': '1d20', 'note': note}
+    return {'name': name or T.SPELL_ACTION_LABEL['Спасбросок'], 'kind': 'save', 'roll': '1d20', 'note': note}
 
 
 def action_en(action):
@@ -121,13 +125,85 @@ def action_en(action):
     return out
 
 
-def program_suffix(slug, program_id):
-    """Суффикс id программы: у программ 2014/2024 он фиксирован, для лишних — из слага (детерминированно)."""
-    fixed = {'p2': P2, 'p3': P3}
-    if program_id in fixed:
-        return fixed[program_id]
+def slot_suffixes():
+    """Соответствие «номер программы → суффикс id узла», как оно сложилось в справочнике.
+
+    У всех записей программы одного номера носят один и тот же суффикс (p1 → 18h9rwa и т. д.),
+    поэтому новые узлы берут суффикс своего слота, а не выдуманный id. Для слотов, которых в
+    справочнике ещё нет, суффикс считается из слага детерминированно.
+    """
+    counts = {}
+    for edition in ('2014', '2024'):
+        try:
+            rows = json.load(open(os.path.join(ROOT, 'data_seed', f'srd_{edition}.json'), encoding='utf-8'))
+        except OSError:
+            continue
+        for row in rows:
+            graph = (row.get('data') or {}).get('mechanics', {}).get('graph') or {}
+            for node in graph.get('nodes', []):
+                if node['type'] != 'action.program':
+                    continue
+                program_id = node['params'].get('program_id') or ''
+                if not (program_id.startswith('p') and program_id[1:].isdigit()):
+                    continue
+                suffix = node['id'].replace('program-', '', 1)
+                counts.setdefault(int(program_id[1:]), {}).setdefault(suffix, 0)
+                counts[int(program_id[1:])][suffix] += 1
+    table = {}
+    for slot, variants in counts.items():
+        table[slot] = max(sorted(variants), key=lambda name: variants[name])
+    return table
+
+
+SLOT_SUFFIX = slot_suffixes()
+
+
+# Родительный падеж русских названий характеристик — как они стоят в текстах справочника («спасбросок Мудрости»).
+RU_SAVE_FORMS = {'Силы': 'СИЛ', 'Ловкости': 'ЛОВ', 'Телосложения': 'ТЕЛ', 'Интеллекта': 'ИНТ', 'Мудрости': 'МДР', 'Харизмы': 'ХАР'}
+
+
+def record_evidence(data):
+    """Спасброски, названные в переводе записи: у 2024 в дампе нет таблицы «Радужные слои».
+
+    Официальный текст 5.2.1 держит часть спасбросков в таблицах («Радужные слои»), которых в
+    дампе заклинаний нет, поэтому вторая опора — уже переведённый текст самой записи справочника.
+    """
+    text = data.get('desc') or ''
+    found, sentences = set(), []
+    for sentence in re.split(r'(?<=[.!?])\s+', text):
+        abilities = {ability for form, ability in RU_SAVE_FORMS.items()
+                     if re.search(rf'[Сс]пасброс\w*\s+(?:в\s+)?{form}\b', sentence)}
+        if abilities:
+            found |= abilities
+            sentences.append(' '.join(sentence.split())[:160])
+    return sentences, found
+
+
+def table_evidence(spell, abilities_ru):
+    """Проверка таблицы MULTI_SAVES по официальному тексту: все ли характеристики эффектов там есть.
+
+    Возвращает (список предложений-подтверждений, список отсутствующих характеристик). Таблица
+    заполняется человеком, поэтому каждая её характеристика обязана найтись в дампе SRD — иначе
+    в справочник попали бы правила, которых в источнике нет.
+    """
+    text = txt(spell.get('description') or spell.get('desc')) + '\n' + txt(spell.get('higher_level'))
+    sentences, found = [], set()
+    for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
+        for ability_en, ability in ABILITIES.items():
+            if re.search(rf'{ability_en}\s+saving\s+throw', sentence, re.I):
+                found.add(ability)
+                sentences.append(' '.join(sentence.split())[:160])
+    missing = [ability for ability in abilities_ru if ability not in found]
+    return sentences, missing
+
+
+def program_suffix(slug, program_id, salt=''):
+    """Суффикс id программы: по слоту из справочника, иначе — из слага (детерминированно)."""
+    slot = int(program_id[1:])
+    if slot in SLOT_SUFFIX:
+        return SLOT_SUFFIX[slot]
     import zlib
-    value, digits = zlib.crc32(f'save:{slug}'.encode('utf-8')), '0123456789abcdefghijklmnopqrstuvwxyz'
+    value, digits = zlib.crc32(f'save:{slug}{salt}'.encode('utf-8')), '0123456789abcdefghijklmnopqrstuvwxyz'
     out = ''
     while value:
         value, rest = divmod(value, 36)
@@ -135,22 +211,22 @@ def program_suffix(slug, program_id):
     return (out or '0')[:7].rjust(7, '0')
 
 
-def next_program(graph, slug):
+def next_program(graph, slug, salt=''):
     """Свободный номер программы спасброска: p2 у заклинаний без второго броска, иначе следующий свободный."""
     used = {n['params'].get('program_id') for n in graph.get('nodes', []) if n['type'] == 'action.program'}
     index = 2
     while f'p{index}' in used:
         index += 1
     program_id = f'p{index}'
-    return program_id, program_suffix(slug, program_id)
+    return program_id, program_suffix(slug, program_id, salt)
 
 
-def program_nodes(program_id, suffix):
+def program_nodes(program_id, suffix, name_ru=PROGRAM_RU, name_en=PROGRAM_EN):
     """Узлы и связи программы спасброска (копия программы 2014 у «Огненного шара»)."""
     number = int(program_id[1:])
     y = 70 + (number - 1) * 170
     nodes = [
-        {'id': f'program-{suffix}', 'type': 'action.program', 'params': {'program_id': program_id, 'name': PROGRAM_RU, 'trigger': 'use', 'roll_only': True}, 'position': {'x': 60, 'y': y}},
+        {'id': f'program-{suffix}', 'type': 'action.program', 'params': {'program_id': program_id, 'name': name_ru, 'trigger': 'use', 'roll_only': True}, 'position': {'x': 60, 'y': y}},
         {'id': f'action-{suffix}-1', 'type': 'action.manual', 'params': {'enabled': True, 'when': 'always', 'text': ROLL_ONLY_RU, 'block_id': 'b1'}, 'position': {'x': 330, 'y': y}},
         {'id': f'action-{suffix}-2', 'type': 'action.roll', 'params': {'enabled': True, 'when': 'always', 'dice': {'count': 1, 'sides': 20, 'bonus': 0, 'stat': ''}, 'damage_type': '', 'block_id': 'b2'}, 'position': {'x': 590, 'y': y}},
     ]
@@ -159,17 +235,23 @@ def program_nodes(program_id, suffix):
         {'from': {'node': f'action-{suffix}-1', 'socket': 'exec'}, 'to': {'node': f'action-{suffix}-2', 'socket': 'exec'}},
     ]
     overlay = [
-        {'id': f'program-{suffix}', 'params': {'program_id': program_id, 'name': PROGRAM_EN, 'trigger': 'use', 'roll_only': True}},
+        {'id': f'program-{suffix}', 'params': {'program_id': program_id, 'name': name_en, 'trigger': 'use', 'roll_only': True}},
         {'id': f'action-{suffix}-1', 'params': {'enabled': True, 'when': 'always', 'text': ROLL_ONLY_EN, 'block_id': 'b1'}},
     ]
     return nodes, links, overlay
 
 
-def patch_spell(row, data, ability, dc, report):
-    """Добавляет данные спасброска 2024. Возвращает число вставок."""
+def patch_spell(row, data, saves, report):
+    """Добавляет данные спасбросков. `saves` — список (характеристика, СЛ, метка RU, метка EN).
+
+    Первый спасбросок — основной (`data.save_ability`, действие «Спасбросок»); у заклинаний с разными
+    спасбросками для разных эффектов («Символ», «Радужная стена») каждый получает своё действие и
+    свою программу: тогда кнопка броска на карточке считает нужную характеристику, а не первую.
+    """
     added = 0
-    if data.get('save_ability') != ability:
-        data['save_ability'] = ability
+    primary = saves[0][0]
+    if data.get('save_ability') != primary:
+        data['save_ability'] = primary
         added += 1
     actions = data.setdefault('actions', [])
     en = data.setdefault('i18n', {}).setdefault('en', {})
@@ -178,20 +260,26 @@ def patch_spell(row, data, ability, dc, report):
         # Английский слой строится из базовых действий: старые строки уже переведены, новые — по словарям.
         en_actions = [action_en(a) for a in actions]
         en['actions!'] = en_actions
-    if not any(a.get('kind') == 'save' for a in actions):
-        actions.append(save_action(ability, dc))
-        en_actions.append(save_action_en(ability, dc))
-        added += 1
     graph = data.setdefault('mechanics', {}).setdefault('graph', {})
-    has_program = any(n['type'] == 'action.program' and n['params'].get('name') == PROGRAM_RU for n in graph.get('nodes', []))
-    program_id, suffix = next_program(graph, row['slug'])
-    nodes, links, overlay = program_nodes(program_id, suffix)
-    if not has_program:
-        graph.setdefault('nodes', []).extend(nodes)
-        graph.setdefault('links', []).extend(links)
-        en_graph = en.setdefault('mechanics', {}).setdefault('graph', {})
-        en_graph.setdefault('nodes', []).extend(overlay)
-        added += 1
+    en_graph = en.setdefault('mechanics', {}).setdefault('graph', {})
+    for ability, dc, label_ru, label_en in saves:
+        # Действие называется «Спасбросок» (у эффектов — «Спасбросок: <эффект>»), программа —
+        # «Отдельный бросок: Спасбросок»: так же, как у заклинаний с одним спасброском.
+        action_ru = f'Спасбросок: {label_ru}' if label_ru else 'Спасбросок'
+        action_en = f'Saving throw: {label_en}' if label_en else T.SPELL_ACTION_LABEL['Спасбросок']
+        program_ru = f'{PROGRAM_RU}: {label_ru}' if label_ru else PROGRAM_RU
+        program_en = f'{PROGRAM_EN}: {label_en}' if label_en else PROGRAM_EN
+        if not any(a.get('kind') == 'save' and a.get('name') == action_ru for a in actions):
+            actions.append(save_action(ability, dc, action_ru))
+            en_actions.append(save_action_en(ability, dc, action_en))
+            added += 1
+        if not any(n['type'] == 'action.program' and n['params'].get('name') == program_ru for n in graph.get('nodes', [])):
+            program_id, suffix = next_program(graph, row['slug'], f':{label_ru}')
+            nodes, links, overlay = program_nodes(program_id, suffix, program_ru, program_en)
+            graph.setdefault('nodes', []).extend(nodes)
+            graph.setdefault('links', []).extend(links)
+            en_graph.setdefault('nodes', []).extend(overlay)
+            added += 1
     report['patched'] += 1
     return added
 
@@ -203,6 +291,19 @@ def check_edition(rows, report, edition):
             continue
         data = row['data']
         has_action = any(a.get('kind') == 'save' for a in (data.get('actions') or []))
+        expected = MULTI_SAVES.get(edition, {}).get(row['slug'])
+        if expected:
+            save_names = {('Спасбросок: ' + label) if label else 'Спасбросок' for _a, _dc, label, _en in expected}
+            program_names = {f'{PROGRAM_RU}: {label}' if label else PROGRAM_RU for _a, _dc, label, _en in expected}
+            present = {a.get('name') for a in (data.get('actions') or []) if a.get('kind') == 'save'}
+            missing = save_names - present
+            if missing:
+                report['problems'].append(f'{edition}: {row["slug"]} — нет действий-спасбросков: {", ".join(sorted(missing))}')
+            programs = {n['params'].get('name') for n in (data.get('mechanics', {}).get('graph', {}).get('nodes') or [])
+                        if n['type'] == 'action.program'}
+            missing_programs = program_names - programs
+            if missing_programs:
+                report['problems'].append(f'{edition}: {row["slug"]} — нет программ спасброска: {", ".join(sorted(missing_programs))}')
         has_program = any(n['type'] == 'action.program' and n['params'].get('name') == PROGRAM_RU
                           for n in (data.get('mechanics', {}).get('graph', {}).get('nodes') or []))
         if bool(data.get('save_ability')) != has_action:
@@ -211,13 +312,77 @@ def check_edition(rows, report, edition):
             report['problems'].append(f'{edition}: {row["slug"]} — есть спасбросок, но нет программы «{PROGRAM_RU}»')
 
 
+# Заклинания, у которых спасброски зависят от эффекта: один и тот же текст вынуждает разные спасброски
+# для разных частей заклинания (слои «Радужной стены», знаки «Символа», лучи «Радужных брызг»).
+# Первый в списке — основной (data.save_ability, действие «Спасбросок»), остальные получают своё
+# действие и программу. Метки взяты из официального текста SRD (названия знаков и эффектов),
+# русские — из уже переведённого описания заклинания в справочнике.
+MULTI_SAVES = {
+    '2014': {
+        'srd14-earthquake': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'поддержание концентрации', 'concentration'),
+        ],
+        'srd14-prismatic-wall': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'ослепление вблизи стены', 'blinded near the wall'),
+            ('ТЕЛ', 0, 'опутанный: конец каждого хода', 'restrained: end of each turn'),
+            ('МДР', 0, 'ослеплённый: начало следующего хода', 'blinded: start of next turn'),
+        ],
+        'srd14-symbol': [
+            ('ТЕЛ', 0, '', ''),
+            ('ТЕЛ', 0, 'Раздор', 'Discord'),
+            ('МДР', 0, 'Страх', 'Fear'),
+            ('ХАР', 0, 'Безнадёжность', 'Despair'),
+            ('ИНТ', 0, 'Безумие', 'Insanity'),
+            ('ТЕЛ', 0, 'Боль', 'Pain'),
+            ('МДР', 0, 'Сон', 'Sleep'),
+            ('МДР', 0, 'Ошеломление', 'Stunning'),
+        ],
+    },
+    '2024': {
+        'srd24-arcane-hand': [
+            ('СИЛ', 0, '', ''),
+            ('ЛОВ', 0, 'захват', 'grapple'),
+        ],
+        'srd24-prismatic-spray': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'опутанный: конец каждого хода', 'restrained: end of each turn'),
+            ('МДР', 0, 'ослеплённый: начало следующего хода', 'blinded: start of next turn'),
+        ],
+        'srd24-prismatic-wall': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'ослепление вблизи стены', 'blinded near the wall'),
+            ('ТЕЛ', 0, 'опутанный: конец каждого хода', 'restrained: end of each turn'),
+            ('МДР', 0, 'ослеплённый: начало следующего хода', 'blinded: start of next turn'),
+        ],
+        'srd24-storm-of-vengeance': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'появление тучи', 'when the cloud appears'),
+        ],
+        'srd24-symbol': [
+            ('ТЕЛ', 0, '', ''),
+            ('МДР', 0, 'Раздор', 'Discord'),
+            ('МДР', 0, 'Страх', 'Fear'),
+            ('ТЕЛ', 0, 'Боль', 'Pain'),
+            ('МДР', 0, 'Сон', 'Sleep'),
+            ('МДР', 0, 'Ошеломление', 'Stunning'),
+        ],
+        'srd24-wall-of-ice': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'пелена ледяного воздуха', 'sheet of frigid air'),
+        ],
+    },
+}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default='/tmp/srd', help='каталог с дампами SRD: <src>/2014|2024/5e-SRD-Spells.json')
     ap.add_argument('--check', action='store_true', help='только проверить, ничего не писать')
     ap.add_argument('--list', action='store_true', help='напечатать все найденные спасброски с предложением-источником')
     args = ap.parse_args()
-    report = {'patched': 0, 'problems': [], 'ambiguous': [], 'nosave': 0, 'fixed_dc': [], 'mismatch': [], 'found': []}
+    report = {'patched': 0, 'problems': [], 'ambiguous': [], 'nosave': 0, 'fixed_dc': [], 'mismatch': [], 'found': [], 'evidence': []}
     for edition in ('2014', '2024'):
         path = os.path.join(ROOT, 'data_seed', f'srd_{edition}.json')
         rows = json.load(open(path, encoding='utf-8'))
@@ -229,6 +394,35 @@ def main():
             spell = spells.get(row['slug'].split('-', 1)[1])
             if not spell:
                 report['problems'].append(f'{edition}: нет дампа SRD для {row["slug"]}')
+                continue
+            forced = MULTI_SAVES.get(edition, {}).get(row['slug'])
+            if forced:
+                abilities = [a for a, _dc, _label, _en in forced]
+                sentences, missing = table_evidence(spell, abilities)
+                own_sentences, own = record_evidence(row['data'])
+                missing = [ability for ability in missing if ability not in own]
+                if missing:
+                    report['problems'].append(
+                        f'{edition}: {row["slug"]} — таблица MULTI_SAVES называет {", ".join(missing)}, '
+                        'а ни в официальном тексте, ни в переводе записи этих спасбросков нет')
+                report['evidence'].extend(f'{edition}: {row["slug"]} (текст записи) — {sentence}'
+                                          for sentence in own_sentences)
+                # Обратная сверка: спасброска из источников, забытого в таблице, быть не должно.
+                in_sources = own | {ability for ability in ABILITIES.values()
+                                    if re.search(rf'{ability}\s+saving\s+throw', txt(spell.get('description')
+                                                                                      or spell.get('desc')), re.I)}
+                forgotten = sorted(in_sources - set(abilities))
+                if forgotten:
+                    report['problems'].append(
+                        f'{edition}: {row["slug"]} — в источниках есть спасбросок {", ".join(forgotten)}, '
+                        'которого нет в таблице MULTI_SAVES')
+                report['found'].append(f'{edition}: {row["slug"]} — спасброски эффектов: ' +
+                                       ', '.join(f'{a} ({label or "основной"})' for a, _dc, label, _en in forced))
+                for sentence in sentences:
+                    report['evidence'].append(f'{edition}: {row["slug"]} — {sentence}')
+                if not args.check:
+                    changed += patch_spell(row, row['data'], forced, report)
+                found += 1
                 continue
             ability, dc, ambiguous = forced_save(spell)
             # Машинное поле dc (есть только в дампе SRD 5.1) главнее текста: оно и было источником данных 2014.
@@ -249,7 +443,7 @@ def main():
             if dc:
                 report['fixed_dc'].append(f'{edition}: {row["slug"]} — своя СЛ {dc}')
             if not args.check:
-                changed += patch_spell(row, row['data'], ability, dc, report)
+                changed += patch_spell(row, row['data'], [(ability, dc, '', '')], report)
         print(f'{edition}: вынужденный спасбросок в источнике у {found} заклинаний; вставок: {changed}')
         if changed and not args.check:
             open(path, 'w', encoding='utf-8').write(json.dumps(rows, ensure_ascii=False, separators=(',', ':')))
@@ -264,6 +458,8 @@ def main():
     if args.list:
         for note in report['found']:
             print(note)
+        for note in report['evidence']:
+            print('источник:', note)
     if report['problems']:
         for problem in report['problems'][:40]:
             print('ОШИБКА:', problem, file=sys.stderr)
