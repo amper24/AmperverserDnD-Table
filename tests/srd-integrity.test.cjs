@@ -156,8 +156,12 @@ test('защиты монстров: термины приведены к сло
 const MULTI_SAVES = {
   '2014': {
     'srd14-earthquake': ['ЛОВ', 'ТЕЛ'],
+    'srd14-prismatic-spray': ['ЛОВ', 'ТЕЛ', 'МДР'],
     'srd14-prismatic-wall': ['ЛОВ', 'ТЕЛ', 'МДР'],
+    'srd14-sleet-storm': ['ЛОВ', 'ТЕЛ'],
+    'srd14-storm-of-vengeance': ['ТЕЛ', 'ЛОВ'],
     'srd14-symbol': ['ТЕЛ', 'МДР', 'ХАР', 'ИНТ'],
+    'srd14-wall-of-ice': ['ЛОВ', 'ТЕЛ'],
   },
   '2024': {
     'srd24-arcane-hand': ['СИЛ', 'ЛОВ'],
@@ -214,6 +218,28 @@ test('заклинания с несколькими спасбросками: �
   }
   assert.deepEqual(checked.sort(), Object.values(MULTI_SAVES).flatMap(Object.keys).sort(),
     'набор заклинаний с несколькими спасбросками изменился — сверьте с официальным SRD');
+});
+
+test('2014: спасброски эффектов, найденные сверкой с официальным текстом', () => {
+  const spell = slug => seeds['2014'].find(r => r.slug === slug).data;
+  // «Радужные брызги»: зелёный луч — ЛОВ (основной), индиго — ТЕЛ, фиолетовый — МДР
+  const spray = spell('srd14-prismatic-spray');
+  assert.deepEqual(spray.actions.filter(a => a.kind === 'save').map(a => a.note.split(' ').at(-1)), ['ЛОВ', 'ТЕЛ', 'МДР']);
+  assert.match(spray.desc, /спасбросок Телосложения в конце каждого своего хода/);
+  assert.match(spray.desc, /спасбросок Мудрости в начале вашего следующего хода/);
+  // «Ледяной шторм»: второй спасбросок — ТЕЛ, поддержание концентрации
+  const sleet = spell('srd14-sleet-storm');
+  assert.ok(sleet.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: поддержание концентрации' && a.note.endsWith(' ТЕЛ')));
+  assert.match(sleet.desc, /должно совершить успешный спасбросок Телосложения против СЛ спасброска/);
+  // «Гроза мщения»: молнии третьего раунда — ЛОВ, основной спасбросок тучи — ТЕЛ
+  const storm = spell('srd14-storm-of-vengeance');
+  assert.equal(storm.save_ability, 'ТЕЛ');
+  assert.ok(storm.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: молния' && a.note.endsWith(' ЛОВ')));
+  assert.match(storm.desc, /Поражённое существо должно совершить спасбросок Ловкости/);
+  // «Ледяная стена»: слой ледяного воздуха — второй спасбросок ТЕЛ
+  const wall = spell('srd14-wall-of-ice');
+  assert.ok(wall.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: слой ледяного воздуха' && a.note.endsWith(' ТЕЛ')));
+  assert.match(wall.desc, /проходящее через слой ледяного воздуха, должно совершить спасбросок Телосложения/);
 });
 
 test('заклинания с несколькими спасбросками: набор характеристик совпадает с официальным текстом', () => {

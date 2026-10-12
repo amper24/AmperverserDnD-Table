@@ -43,14 +43,44 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 # Характеристика в официальном английском тексте → код в данных проекта.
 ABILITIES = {'Strength': 'СИЛ', 'Dexterity': 'ЛОВ', 'Constitution': 'ТЕЛ', 'Intelligence': 'ИНТ', 'Wisdom': 'МДР', 'Charisma': 'ХАР'}
 # Фразы, где спасбросок вынуждает заклинание (а не «спасброски» вообще, как у bless или haste:
-# «Advantage on Dexterity saving throws» — это не вынужденный спасбросок и не должно попадать сюда).
+# «Advantage on Dexterity saving throws» — это не вынужденный спасбросок и не должен попадать сюда).
+# Формулировки разные даже внутри одной редакции: «must make a dexterity saving throw», «must then make
+# a constitution saving throw», «must make a successful constitution saving throw», а у 2014 местами
+# «must make a saving throw of Wisdom». Проверяются именно глаголы вынуждения, поэтому преимущества,
+# помехи и штрафы к спасброскам сюда не попадают.
 FORCED = [
-    re.compile(r'must\s+(?:also\s+)?(?:make|succeed\s+on)\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
-    re.compile(r'\bmakes?\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
-    re.compile(r'succeeds?\s+on\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
-    re.compile(r'fails?\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
-    re.compile(r'must\s+first\s+make\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
+    re.compile(r'must\s+(?:also\s+|then\s+|first\s+)?(?:make|succeed\s+on)\s+an?\s+(?:successful\s+)?'
+               r'(?:DC\s+(?P<dc>\d+)\s+)?(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)'
+               r'\s+saving\s+throw', re.I),
+    re.compile(r'\bmakes?\s+an?\s+(?:successful\s+)?(?:DC\s+(?P<dc>\d+)\s+)?'
+               r'(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
+    re.compile(r'succeeds?\s+on\s+an?\s+(?:successful\s+)?(?:DC\s+(?P<dc>\d+)\s+)?'
+               r'(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
+    re.compile(r'fails?\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?'
+               r'(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
+    re.compile(r'must\s+first\s+make\s+an?\s+(?:DC\s+(?P<dc>\d+)\s+)?'
+               r'(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s+saving\s+throw', re.I),
+    # «must make a saving throw of Wisdom or be paralyzed» — формулировка SRD 5.1 («Удержание чудовища»)
+    re.compile(r'saving\s+throw\s+of\s+(?P<ability>Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)', re.I),
 ]
+
+
+def forced_saves(text):
+    """Характеристики вынужденных спасбросков и предложение-источник по официальному тексту.
+
+    Возвращает {код характеристики: предложение}. Один спасбросок часто упоминается несколько раз
+    (повтор броска, последствия провала) — остаётся первое предложение, чтобы отчёт читался человеком.
+    """
+    found = {}
+    for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
+        for pattern in FORCED:
+            for match in pattern.finditer(sentence):
+                ability = match.group('ability').capitalize()  # в дампе 5.1 характеристики со строчной буквы
+                if ability in ABILITIES:
+                    found.setdefault(ABILITIES[ability], ' '.join(sentence.split())[:200])
+    return found
+
+
 # Узлы программы спасброска и её английская подпись — те же, что у 2014 (tools/srd/mechanics.py).
 PROGRAM_RU = 'Отдельный бросок: Спасбросок'
 PROGRAM_EN = 'Separate roll: Saving throw'
@@ -89,19 +119,14 @@ def evidence(spell, ability):
 
 
 def forced_save(spell):
-    """(код характеристики, СЛ из текста или 0) для единственного вынужденного спасброска."""
+    """(код характеристики, СЛ из текста или 0, набор всех найденных) для единственного вынужденного спасброска."""
     text = txt(spell.get('description') or spell.get('desc')) + '\n' + txt(spell.get('higher_level'))
-    found, fixed = set(), set()
-    for pattern in FORCED:
-        for match in pattern.finditer(text):
-            ability = match.group('ability').capitalize()  # в дампе 5.1 характеристики в тексте со строчной буквы
-            if ability in ABILITIES:
-                found.add(ability)
-                if match.group('dc'):
-                    fixed.add(int(match.group('dc')))
-    if len(found) != 1:
-        return (None, 0, sorted(found))
-    return (ABILITIES[found.pop()], (fixed.pop() if len(fixed) == 1 else 0), [])
+    saves = forced_saves(text)
+    fixed = {int(match.group('dc')) for pattern in FORCED for match in pattern.finditer(text)
+             if 'dc' in pattern.groupindex and match.group('dc')}
+    if len(saves) != 1:
+        return (None, 0, sorted(saves))
+    return (next(iter(saves)), (fixed.pop() if len(fixed) == 1 else 0), [])
 
 
 def save_action(ability, dc, name='Спасбросок'):
@@ -179,6 +204,77 @@ def record_evidence(data):
     return sentences, found
 
 
+# Вынуждение в русском тексте: «должно совершить спасбросок Телосложения», «совершает спасбросок
+# Ловкости», «должно преуспеть в спасброске Силы». Преимущества и штрафы к спасброскам
+# («преимущество на спасброски Силы») сюда не попадают — проверяются глаголы вынуждения.
+RU_FORCE = re.compile(r'(?:должн\w*|обязан\w*)\s+(?:также\s+)?(?:совершить|преуспеть\s+в|пройти|сделать)\s+'
+                      r'(?:успешн\w+\s+)?спасброс\w*'
+                      r'|(?:заставля\w+|заставить|может|можете|могут)\s+[^.]{0,40}?совершить\s+(?:успешн\w+\s+)?спасброс\w*'
+                      r'|совершает\s+(?:успешн\w+\s+)?спасбросок'
+                      r'|преуспева\w+\s+в\s+спасброске'
+                      r'|провалива\w+\s+спасброс\w*'
+                      r'|повторя\w+\s+спасброс\w*')
+
+
+# «спасброски Силы с преимуществом» — свои броски заклинателя, а не вынужденные
+RU_ADVANTAGE = re.compile(r'спасброс\w*\s+(?:Силы|Ловкости|Телосложения|Интеллекта|Мудрости|Харизмы)\s+'
+                          r'с\s+(?:преимуществом|помехой)')
+
+
+def forced_saves_ru(data):
+    """Спасброски, которые вынуждает русский текст записи: {код: предложение}."""
+    found = {}
+    for sentence in re.split(r'(?<=[.!?])\s+', data.get('desc') or ''):
+        if not RU_FORCE.search(sentence) or RU_ADVANTAGE.search(sentence):
+            continue
+        for form, ability in RU_SAVE_FORMS.items():
+            if re.search(rf'[Сс]пасброс\w*\s+(?:в\s+)?{form}\b', sentence):
+                found.setdefault(ability, ' '.join(sentence.split())[:160])
+    return found
+
+
+def recorded_saves(data):
+    """Характеристики спасбросков, записанные в данных: подсказки действий вида `save`."""
+    found = set()
+    for action in data.get('actions') or []:
+        if action.get('kind') != 'save':
+            continue
+        note = action.get('note') or ''
+        for ability in ABILITIES.values():
+            if re.search(r'\b' + ability + r'\b', note):
+                found.add(ability)
+    return found
+
+
+def check_save_coverage(row, spell, edition, report):
+    """Полнота спасбросков: набор в данных обязан совпасть с набором из источников.
+
+    Источники — официальный английский текст (и машинное поле `dc` у 2014) плюс перевод записи:
+    в дампе 2024 таблицы «Радужные слои» и «Радужные лучи» урезаны, поэтому часть спасбросков
+    доказывается только текстом самой записи. Так проверка ловит и потерянный спасбросок
+    («Удержание чудовища», «Ледяной шторм», где текст вынуждает второй бросок), и лишний,
+    которого в правилах нет.
+    """
+    data = row['data']
+    data_set = recorded_saves(data)
+    if not data_set and not data.get('save_ability'):
+        return                      # заклинания без спасбросков ведёт основной проход
+    text = set(forced_saves(txt(spell.get('description') or spell.get('desc')) + '\n' + txt(spell.get('higher_level'))))
+    if edition == '2014':
+        machine = R.ABIL.get(((spell.get('dc') or {}).get('dc_type') or {}).get('name', ''), '')
+        if machine:
+            text.add(machine)
+    allowed = text | set(forced_saves_ru(data))
+    missing = sorted(allowed - data_set)
+    extra = sorted(data_set - allowed)
+    if missing:
+        report['problems'].append(f'{edition}: {row["slug"]} — источники вынуждают спасбросок '
+                                  f'{", ".join(missing)}, которого нет в данных')
+    if extra:
+        report['problems'].append(f'{edition}: {row["slug"]} — в данных есть спасбросок '
+                                  f'{", ".join(extra)}, которого нет в источниках')
+
+
 def table_evidence(spell, abilities_ru):
     """Проверка таблицы MULTI_SAVES по официальному тексту: все ли характеристики эффектов там есть.
 
@@ -187,14 +283,9 @@ def table_evidence(spell, abilities_ru):
     в справочник попали бы правила, которых в источнике нет.
     """
     text = txt(spell.get('description') or spell.get('desc')) + '\n' + txt(spell.get('higher_level'))
-    sentences, found = [], set()
-    for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
-        for ability_en, ability in ABILITIES.items():
-            if re.search(rf'{ability_en}\s+saving\s+throw', sentence, re.I):
-                found.add(ability)
-                sentences.append(' '.join(sentence.split())[:160])
+    found = forced_saves(text)
     missing = [ability for ability in abilities_ru if ability not in found]
-    return sentences, missing
+    return list(found.values()), missing
 
 
 def program_suffix(slug, program_id, salt=''):
@@ -284,12 +375,20 @@ def patch_spell(row, data, saves, report):
     return added
 
 
-def check_edition(rows, report, edition):
-    """Паритет редакций: у заклинания со спасброском обязаны быть данные и программа."""
+def check_edition(rows, report, edition, spells=None):
+    """Паритет редакций и полнота спасбросков: данные обязаны совпасть с источниками.
+
+    Проверяются: наличие действия и программы у каждого записанного спасброска, согласие
+    `data.save_ability` с действиями и набор характеристик — с официальным текстом (см.
+    `check_save_coverage`).
+    """
     for row in rows:
         if row['category'] != 'spell':
             continue
         data = row['data']
+        spell = (spells or {}).get(row['slug'].split('-', 1)[1])
+        if spell:
+            check_save_coverage(row, spell, edition, report)
         has_action = any(a.get('kind') == 'save' for a in (data.get('actions') or []))
         expected = MULTI_SAVES.get(edition, {}).get(row['slug'])
         if expected:
@@ -328,6 +427,23 @@ MULTI_SAVES = {
             ('ТЕЛ', 0, 'ослепление вблизи стены', 'blinded near the wall'),
             ('ТЕЛ', 0, 'опутанный: конец каждого хода', 'restrained: end of each turn'),
             ('МДР', 0, 'ослеплённый: начало следующего хода', 'blinded: start of next turn'),
+        ],
+        'srd14-prismatic-spray': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'опутанный: конец каждого хода', 'restrained: end of each turn'),
+            ('МДР', 0, 'ослеплённый: начало следующего хода', 'blinded: start of next turn'),
+        ],
+        'srd14-sleet-storm': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'поддержание концентрации', 'concentration'),
+        ],
+        'srd14-wall-of-ice': [
+            ('ЛОВ', 0, '', ''),
+            ('ТЕЛ', 0, 'слой ледяного воздуха', 'sheet of frigid air'),
+        ],
+        'srd14-storm-of-vengeance': [
+            ('ТЕЛ', 0, '', ''),
+            ('ЛОВ', 0, 'молния', 'lightning bolt'),
         ],
         'srd14-symbol': [
             ('ТЕЛ', 0, '', ''),
@@ -408,9 +524,7 @@ def main():
                 report['evidence'].extend(f'{edition}: {row["slug"]} (текст записи) — {sentence}'
                                           for sentence in own_sentences)
                 # Обратная сверка: спасброска из источников, забытого в таблице, быть не должно.
-                in_sources = own | {ability for ability in ABILITIES.values()
-                                    if re.search(rf'{ability}\s+saving\s+throw', txt(spell.get('description')
-                                                                                      or spell.get('desc')), re.I)}
+                in_sources = own | set(forced_saves(txt(spell.get('description') or spell.get('desc'))))
                 forgotten = sorted(in_sources - set(abilities))
                 if forgotten:
                     report['problems'].append(
@@ -447,7 +561,7 @@ def main():
         print(f'{edition}: вынужденный спасбросок в источнике у {found} заклинаний; вставок: {changed}')
         if changed and not args.check:
             open(path, 'w', encoding='utf-8').write(json.dumps(rows, ensure_ascii=False, separators=(',', ':')))
-        check_edition(rows, report, edition)
+        check_edition(rows, report, edition, spells)
     print(f'записей с данными спасброска: {report["patched"]}; заклинаний без вынужденного спасброска: {report["nosave"]}')
     for note in report['ambiguous']:
         print('не установлено однозначно:', note)
