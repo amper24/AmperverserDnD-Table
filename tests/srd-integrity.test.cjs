@@ -134,7 +134,7 @@ test('защиты монстров: термины приведены к сло
   assert.ok(!monster('2014', 'srd14-werewolf-hybrid').immunities.includes('Холод'));
   // общий инвариант: у каждой записи с текстом в русском поле есть тот же набор в английском слое
   const ruDamage = { 'кислота': 'acid', 'дробящий': 'bludgeoning', 'холод': 'cold', 'огонь': 'fire', 'силовое поле': 'force', 'электричество': 'lightning', 'некротический': 'necrotic', 'колющий': 'piercing', 'яд': 'poison', 'психический': 'psychic', 'излучение': 'radiant', 'рубящий': 'slashing', 'звук': 'thunder' };
-  const variants = { 'гром': 'звук', 'громовой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
+  const variants = { 'гром': 'звук', 'громовой': 'звук', 'звуковой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
   const keysRu = text => new Set([...Object.keys(ruDamage), ...Object.keys(variants)]
     .filter(term => new RegExp(`(^|[^а-яё])${term}([^а-яё]|$)`, 'i').test(String(text).toLowerCase()))
     .map(term => ruDamage[variants[term] || term]));
@@ -230,4 +230,54 @@ test('заклинания с несколькими спасбросками: �
   const count = (edition, slug) => seeds[edition].find(r => r.slug === slug).data.actions.filter(a => a.kind === 'save').length;
   assert.equal(count('2014', 'srd14-symbol'), 8, '2014 «Символ»: Смерть, Раздор, Страх, Безнадёжность, Безумие, Боль, Сон, Ошеломление');
   assert.equal(count('2024', 'srd24-symbol'), 6, '2024 «Символ»: Смерть, Раздор, Страх, Боль, Сон, Ошеломление');
+});
+
+// Тип урона в справочнике называется по словарю листа: «звук» (thunder). Перевод «гром»/«громовой»
+// остаётся только в именах («Волна грома», «Громовой удар», свойства посоха) и явлениях
+// («гремит гром»): по именам идут кросс-ссылки, а явление — не тип урона.
+test('тип урона в текстах назван по словарю листа, а имена и явления не тронуты', () => {
+  const data = (edition, slug) => {
+    const row = seeds[edition].find(r => r.slug === slug);
+    assert.ok(row, `${edition}: нет записи ${slug}`);
+    return row.data;
+  };
+  // Проза, таблицы «Тип урона» и поля защит читаются по словарю листа.
+  assert.match(data('2014', 'srd14-androsphinx').actions[2].text, /урона Звуком/);
+  assert.match(data('2024', 'srd24-air-elemental').actions[1].text, /Звукового урона/);
+  assert.match(data('2014', 'srd14-armor-of-resistance').desc, /\|\s*10\s*\|\s*Звук\s*\|/);
+  assert.match(data('2014', 'srd14-ring-of-resistance').desc, /\|\s*10\s*\|\s*Звук\s*\|\s*Шпинель/);
+  assert.match(data('2014', 'srd14-ghost').resistances, /Звук/);
+  assert.match(data('2024', 'srd24-ghost').resistances, /Звуковой/);
+  assert.match(data('2024', 'srd24-horn-of-blasting').desc, /Звукового урона/);
+  assert.match(data('2014', 'srd14-shatter').desc, /урона звуком/);
+  // Машинные поля типов урона знают только словарь листа.
+  const walk = (node, path, bad) => {
+    if (Array.isArray(node)) node.forEach((item, i) => walk(item, `${path}[${i}]`, bad));
+    else if (node && typeof node === 'object') for (const [key, value] of Object.entries(node)) walk(value, path ? `${path}.${key}` : key, bad);
+    else if (typeof node === 'string' && /(damage_type|dtype|damage)$/.test(path) && /гром/i.test(node)) bad.push(`${path}=«${node}»`);
+  };
+  for (const edition of EDITIONS) {
+    for (const row of seeds[edition]) {
+      const bad = [];
+      walk(row.data, '', bad);
+      assert.deepEqual(bad, [], `${row.slug}: тип урона назван «громом» в машинном поле`);
+    }
+  }
+  // Имена действий не переименованы: на них ссылаются броски и узлы графа.
+  const air = data('2024', 'srd24-air-elemental');
+  const name = air.actions[1].name;
+  assert.equal(name, 'Громовой удар', 'имя действия-атаки элементаля воздуха');
+  assert.ok(air.actions_roll.some(r => String(r.name).startsWith(name)), 'выпадающий бросок ссылается на имя действия');
+  assert.ok((air.mechanics.graph.nodes || []).some(n => n.params.feature_name === name), 'узел графа ссылается на имя действия');
+  const giant = data('2024', 'srd24-cloud-giant');
+  assert.equal(giant.actions[1].name, 'Громовая булава', 'имя действия великана');
+  assert.ok(giant.actions_roll.some(r => String(r.name).startsWith(giant.actions[1].name)), 'бросок великана ссылается на имя действия');
+  assert.ok((giant.mechanics.graph.nodes || []).some(n => n.params.feature_name === giant.actions[1].name), 'узел графа великана ссылается на имя действия');
+  // Явления и названия свойств предметов остаются как были — это не тип урона.
+  assert.match(data('2014', 'srd14-storm-of-vengeance').desc, /гремит гром/);
+  assert.match(data('2024', 'srd24-thunderwave').desc, /волну громовой энергии/);
+  assert.match(data('2014', 'srd14-staff-of-thunder-and-lightning').desc, /Раскат грома/);
+  assert.match(data('2014', 'srd14-staff-of-thunder-and-lightning').desc, /(?:^|\n)Гром\./, 'свойство посоха «Гром» осталось названием');
+  assert.match(data('2014', 'srd14-wizard').subclasses.map(s => s.desc).join(' '), /раскатистый гром/);
+  assert.match(data('2014', 'srd14-lich').traits.map(t => t.text).join(' '), /Волна грома/, 'название заклинания в списке не переименовано');
 });

@@ -41,6 +41,7 @@ DAMAGE_FIELDS = ('vulnerabilities', 'resistances', 'immunities')
 DAMAGE_VARIANTS = {
     'гром': 'звук',
     'громовой': 'звук',
+    'звуковой': 'звук',
     'огненный': 'огонь',
     'холодный': 'холод',
     'кислотный': 'кислота',

@@ -92,7 +92,7 @@ const ABILITY_CODES = ['СИЛ', 'ЛОВ', 'ТЕЛ', 'ИНТ', 'МДР', 'ХАР
 const DAMAGE_TYPES_RU = ['кислота', 'дробящий', 'холод', 'огонь', 'силовое поле', 'электричество', 'некротический', 'колющий', 'яд', 'психический', 'излучение', 'рубящий', 'звук'];
 // Написания, встречавшиеся в корпусе переводов: тип урона в полях монстра писали по-разному
 // («Гром» в 2014 и «Громовой» в 2024 вместо «Звук»). Канон — общий словарь проекта (DAMAGE_TYPES_RU).
-const DAMAGE_TYPES_VARIANTS = { 'гром': 'звук', 'громовой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
+const DAMAGE_TYPES_VARIANTS = { 'гром': 'звук', 'громовой': 'звук', 'звуковой': 'звук', 'огненный': 'огонь', 'холодный': 'холод', 'кислотный': 'кислота', 'электрический': 'электричество', 'ядовитый': 'яд', 'некротическая энергия': 'некротический' };
 
 /// Типы урона в русском тексте → английские имена (для сверки русского поля монстра с английским слоем).
 function damageKeysRu(text) {
@@ -334,6 +334,21 @@ function checkSeed(edition, opts = {}) {
           else if (!t.text.trim()) report.error('empty-text', where, `data.${key}`, `у «${t.name}» пустой текст`);
         }
       }
+      // Имена умений — кросс-ссылки: на них смотрят выпадающие броски (actions_roll) и узлы графа
+      // (params.feature_name). Переименование в одном месте ломает кнопки и механики записи.
+      const featureNames = new Set(['traits', 'actions', 'reactions', 'legendary_actions']
+        .flatMap(key => (d[key] || []).filter(isObj).map(t => t.name)));
+      for (const [i, a] of (d.actions_roll || []).entries()) {
+        if (!isObj(a) || !isStr(a.name)) continue;
+        const base = a.name.replace(/[:.]\s*(урон|Урон)?\s*$/, '').trim().replace(/\.$/, '');
+        if (base && ![...featureNames].some(name => name.replace(/\.$/, '') === base))
+          report.error('broken-feature-link', where, `data.actions_roll[${i}].name`, `бросок «${a.name}» не находит одноимённого умения`);
+      }
+      for (const [i, node] of ((d.mechanics?.graph?.nodes) || []).entries()) {
+        const feature = node.params?.feature_name;
+        if (isStr(feature) && !featureNames.has(feature))
+          report.error('broken-feature-link', where, `data.mechanics.graph.nodes[${i}].params.feature_name`, `узел ссылается на умение «${feature}», которого нет в списке`);
+      }
       const enRoll = (row.data.i18n && row.data.i18n.en && (row.data.i18n.en['actions_roll!'] || row.data.i18n.en.actions_roll)) || null;
       if (isArr(enRoll)) for (const [i, a] of enRoll.entries()) {
         if (isStr(a.dtype) && CJK_CYR.test(a.dtype)) report.warn('localization', where, `data.i18n.en.actions_roll[${i}].dtype`, `в английском виде остался русский тип урона «${a.dtype}»`);
@@ -436,6 +451,73 @@ function checkSeed(edition, opts = {}) {
     }
     if (row.category === 'condition') {
       checkFields(row, [['desc', isStr]]);
+    }
+  }
+
+  // ---- 2б. тип урона в текстах: «звук», а не «гром»/«громовой» ----
+  // Словарь листа знает только «звук» (DAMAGE_TYPES_RU), поэтому там, где ТЕКСТ называет тип урона,
+  // перевод «громом» и «Громового урона» — расхождение с листом. Имена («Волна грома», «Громовой удар»,
+  // свойства посоха) и явления («гремит гром», «громче») не трогаются: проверяется контекст, как в
+  // tools/srd/fix_thunder_terms.py (тот же разбор, что и правка, — иначе правка и проверка разойдутся).
+  const THUNDER_NAMES = ['волна грома', 'раскат грома', 'гром и молния', 'гром бури', 'громовой голос',
+    'громовой удар', 'громовая булава', 'громовой заряд', 'громовой рёв', 'громовой раскат', 'громовой взрыв'];
+  const THUNDER_NOUN = /(^|[^А-Яа-яЁё])([Гг]ром(?:ом|а|у|е)?)(?![а-яё])/gu;
+  const THUNDER_ADJ = /(^|[^А-Яа-яЁё])([Гг]ромов[а-яё]*)(?![а-яё])(?=\s+[Уу]рон)/gu;
+  const THUNDER_DAMAGE_WORD = /(урон[а-яё]*|уязвим[а-яё]*|иммунитет[а-яё]*|сопротивлени[а-яё]*|получа[а-яё]+)/gi;
+  const thunderDamageContext = (text, index) => {
+    const window = text.slice(Math.max(0, index - 120), index);
+    let found = null;
+    for (const match of window.matchAll(THUNDER_DAMAGE_WORD)) found = match;
+    if (!found) return false;
+    return !/[.;!?]/.test(window.slice(found.index + found[0].length));
+  };
+  const thunderTypeChoice = (text, index) => /для\s+типа/i.test(text.slice(index, index + 40));
+  const thunderTableRow = (text, index, word) => {
+    const start = text.lastIndexOf('\n', index) + 1, end = text.indexOf('\n', index);
+    const cells = text.slice(start, end < 0 ? text.length : end).replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+    if (cells.length !== 2 && cells.length !== 3) return false;
+    if (!/^\d+$/.test(cells[0]) || cells[1] !== word) return false;
+    return /\|\s*(к10|1d10|d10)\s*\|\s*Тип урона\s*\|/.test(text.slice(Math.max(0, start - 400), start));
+  };
+  const thunderSkip = (text, start, end) => {
+    const window = text.slice(Math.max(0, start - 25), end + 25).toLowerCase();
+    if (THUNDER_NAMES.some(name => window.includes(name))) return true;
+    const near = text.slice(Math.max(0, start - 14), end + 8);
+    if (/[гГ]ром(кий|ко|че)|гремит\s+гром/i.test(near)) return true;
+    const before = text.slice(Math.max(0, start - 3), start), after = text.slice(end, end + 2);
+    return (after.startsWith('»') || before.endsWith('«') || (/[\n.]\s*$/.test(before) && after.startsWith('.')));
+  };
+  const thunderTexts = (row) => {
+    const d = row.data, out = [];
+    if (isStr(d.desc)) out.push(['data.desc', d.desc]);
+    for (const key of ['traits', 'actions', 'reactions', 'legendary_actions', 'subclasses']) {
+      for (const [i, item] of (d[key] || []).entries()) {
+        const text = key === 'subclasses' ? item.desc : item.text;
+        if (isStr(text)) out.push([`data.${key}[${i}]`, text]);
+      }
+    }
+    for (const [name, text] of Object.entries(d.feature_texts || {})) if (isStr(text)) out.push([`data.feature_texts.${name}`, text]);
+    for (const [i, node] of ((d.mechanics?.graph?.nodes) || []).entries()) if (isStr(node.params?.text)) out.push([`data.mechanics.graph.nodes[${i}].params.text`, node.params.text]);
+    for (const field of ['vulnerabilities', 'resistances', 'immunities']) if (isStr(d[field])) out.push([`data.${field}`, d[field]]);
+    return out;
+  };
+  for (const row of rows) {
+    const where = `#${row.category}/${row.slug}`;
+    for (const [field, text] of thunderTexts(row)) {
+      for (const pattern of [THUNDER_NOUN, THUNDER_ADJ]) {
+        pattern.lastIndex = 0;
+        for (const match of text.matchAll(pattern)) {
+          const word = match[2], start = match.index + match[1].length, end = start + word.length;
+          if (thunderSkip(text, start, end)) continue;
+          if (pattern === THUNDER_NOUN) {
+            const defenses = field.startsWith('data.vulnerabilities') || field.startsWith('data.resistances') || field.startsWith('data.immunities');
+            const head = defenses ? text.slice(0, text.indexOf(';') < 0 ? text.length : text.indexOf(';')) : text;
+            if (defenses && start > head.length) continue;
+            if (!defenses && !thunderDamageContext(text, start) && !thunderTypeChoice(text, end) && !thunderTableRow(text, start, word)) continue;
+          }
+          report.error('thunder-term-drift', where, field, `тип урона назван «${word}», а словарь листа знает «звук» (${match[0].trim()})`, 'python3 tools/srd/fix_thunder_terms.py');
+        }
+      }
     }
   }
 
