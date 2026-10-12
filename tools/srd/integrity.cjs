@@ -1,0 +1,541 @@
+#!/usr/bin/env node
+// ---------------------------------------------------------------------------
+// integrity.cjs — проверка целостности встроенного справочника SRD
+// (data_seed/srd_2014.json, data_seed/srd_2024.json) и соответствия клиента
+// серверу (static/node-registry.js ↔ src/mechanics_graph.rs).
+//
+// Запуск:   node tools/srd/integrity.cjs [--edition 2014,2024] [--json] [--quiet] [--max 20]
+// Библиотека: module.exports = { runAll, checkSeed, checkRuntime, REPO }
+//
+// Уровни: error — данные противоречат схеме, ссылкам или движку; warn — подозрительно,
+// но может быть намеренным (например, одинаковый слаг в разных категориях).
+// Ничего не исправляет: отчёт с ID сущности, путём к полю и рекомендацией.
+// ---------------------------------------------------------------------------
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const REPO = path.join(__dirname, '..', '..');
+const EDITIONS = ['2014', '2024'];
+const CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'npc', 'feat', 'condition', 'lore'];
+const SEED_CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'feat', 'condition'];
+const RUNTIME_FILES = ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js'];
+const CJK_CYR = /[\u0400-\u04FF]/;
+const LATIN = /[A-Za-z]/;
+// Записи, которых не было до локализации: у них нет хеша старой версии (см. src/seed.rs, mod tests).
+const NEW_AFTER_LOCALIZATION = ['item/srd24-shield-magic'];
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(path.join(REPO, file), 'utf8'));
+}
+
+// ---------- рантайм клиента: реестр узлов, валидатор графа, движок бросков ----------
+// Список навыков и характеристики — из static/common.js (словари загружаются в первом слое,
+// поэтому берём только их объявления, а не весь файл с DOM-зависимостями).
+function commonDictionaries() {
+  const text = fs.readFileSync(path.join(REPO, 'static/common.js'), 'utf8');
+  const pick = (name) => {
+    const m = text.match(new RegExp(`window\\.${name}\\s*=\\s*(\\[[\\s\\S]*?\\n\\]|\\{[\\s\\S]*?\\});`));
+    if (!m) throw new Error(`не найден window.${name} в static/common.js`);
+    return vm.runInNewContext(`(${m[1]})`);
+  };
+  return { SKILLS: pick('SKILLS'), ABIL: pick('ABIL') };
+}
+
+function loadRuntime() {
+  const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
+  vm.createContext(ctx);
+  const { SKILLS, ABIL } = commonDictionaries();
+  ctx.window.SKILLS = SKILLS;
+  ctx.window.ABIL = ABIL;
+  for (const file of RUNTIME_FILES) vm.runInContext(fs.readFileSync(path.join(REPO, file), 'utf8'), ctx, { filename: file });
+  return ctx.window;
+}
+
+// Константы сервера (единственный источник списка типов узлов для сохранения записи).
+function rustConstants() {
+  const src = fs.readFileSync(path.join(REPO, 'src/mechanics_graph.rs'), 'utf8');
+  const list = name => {
+    const m = src.match(new RegExp(`const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
+    if (!m) throw new Error(`не найдена константа ${name} в src/mechanics_graph.rs`);
+    return [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]);
+  };
+  return {
+    NODE_TYPES: list('NODE_TYPES'), ABILITIES: list('ABILITIES'), ACTIONS: list('ACTIONS'),
+    DICE_ACTIONS: list('DICE_ACTIONS'), SKILL_IDS: list('SKILL_IDS'), BUTTON_STYLES: list('BUTTON_STYLES'), SOCKET_TYPES: list('SOCKET_TYPES'),
+  };
+}
+
+class Report {
+  constructor() { this.issues = []; this.stats = {}; }
+  add(level, check, entity, field, message, hint) {
+    this.issues.push({ level, check, entity, field, message, hint: hint || '' });
+  }
+  error(check, entity, field, message, hint) { this.add('error', check, entity, field, message, hint); }
+  warn(check, entity, field, message, hint) { this.add('warn', check, entity, field, message, hint); }
+  get errors() { return this.issues.filter(i => i.level === 'error'); }
+  get warnings() { return this.issues.filter(i => i.level === 'warn'); }
+}
+
+const isStr = v => typeof v === 'string';
+const isNum = v => typeof v === 'number' && Number.isFinite(v);
+const isInt = v => isNum(v) && Number.isInteger(v);
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const isArr = Array.isArray;
+const nameOf = e => e.name;
+
+// Технические токены характеристик: короткие формы из tools/srd/ru_names.py (ABIL),
+// их показывает лист персонажа в чипе «СЛ … ЛОВ» (static/modules.js).
+const ABILITY_CODES = ['СИЛ', 'ЛОВ', 'ТЕЛ', 'ИНТ', 'МДР', 'ХАР'];
+// Тип урона — отображаемая строка (dtype/damage_type), сравнений по ней в коде нет.
+const DAMAGE_TYPES_RU = ['кислота', 'дробящий', 'холод', 'огонь', 'силовое поле', 'электричество', 'некротический', 'колющий', 'яд', 'психический', 'излучение', 'рубящий', 'звук'];
+const DAMAGE_TYPES_EN = { 'кислота': 'acid', 'дробящий': 'bludgeoning', 'холод': 'cold', 'огонь': 'fire', 'силовое поле': 'force', 'электричество': 'lightning', 'некротический': 'necrotic', 'колющий': 'piercing', 'яд': 'poison', 'психический': 'psychic', 'излучение': 'radiant', 'рубящий': 'slashing', 'звук': 'thunder' };
+// Карты «ключ — содержимое»: в английском слое ключи намеренно английские (умения классов),
+// поэтому висячий ключ там не ошибка (см. src/i18n.rs merge и docs/localization.md).
+const NAME_KEYED_MAPS = ['feature_texts'];
+// Вынужденный спасбросок в русском тексте: «совершает спасбросок Ловкости», а не «преимущество на спасброски».
+const FORCED_SAVE_RU = /(?:соверша\w+|совершить|преуспе\w+|провалит\w*|долж\w+|обязан\w*)\b[^.!?]{0,60}спасброс\w*[^.!?]{0,25}(?:СИЛ|ЛОВ|ТЕЛ|ИНТ|МДР|ХАР|Силы|Ловкости|Телосложения|Интеллекта|Мудрости|Харизмы)/i;
+
+// Подстановка переменных листа: формулы должны оставаться бросками и после подстановки 0.
+const stripVars = expr => String(expr).replace(/@[a-z_0-9]+/gi, '0').replace(/\{\{[^}]*\}\}/g, '0');
+
+// ---------- проверка одной редакции ----------
+function checkSeed(edition, opts = {}) {
+  const runtime = opts.runtime || loadRuntime();
+  const rust = opts.rust || rustConstants();
+  const report = new Report();
+  const file = `data_seed/srd_${edition}.json`;
+  const rows = readJson(file);
+  const DiceEngine = runtime.DiceEngine;
+  const Mechanics = runtime.Mechanics;
+
+  const byCategory = new Map();
+  for (const row of rows) {
+    if (!byCategory.has(row.category)) byCategory.set(row.category, []);
+    byCategory.get(row.category).push(row);
+  }
+  report.stats.records = rows.length;
+  report.stats.categories = Object.fromEntries([...byCategory].map(([c, list]) => [c, list.length]));
+  for (const category of byCategory.keys()) {
+    if (!CATEGORIES.includes(category)) report.error('category-known', `${category}`, 'category', `категория «${category}» не входит в CATEGORIES (src/compendium.rs)`);
+  }
+  for (const category of SEED_CATEGORIES) {
+    if (!byCategory.has(category)) report.warn('category-expected', `${edition}`, 'category', `в наборе нет записей категории «${category}»`);
+  }
+
+  const namesByCategory = new Map([...byCategory].map(([c, list]) => [c, new Set(list.map(nameOf))]));
+  const spellNames = namesByCategory.get('spell') || new Set();
+  const itemNames = namesByCategory.get('item') || new Set();
+  const classNames = namesByCategory.get('class') || new Set();
+  const raceNames = namesByCategory.get('race') || new Set();
+  const subclassIds = new Set();
+  for (const c of byCategory.get('class') || []) for (const s of c.data.subclasses || []) if (s && isStr(s.name_en)) subclassIds.add(s.name_en);
+  const itemTypes = new Set(), schools = new Set(), damageTypes = new Set(), weaponMasteries = new Set(), conditions = new Set(), properties = new Set(), languages = new Set();
+  for (const row of rows) {
+    const d = row.data;
+    if (row.category === 'item') { if (isStr(d.type)) itemTypes.add(d.type); if (isStr(d.damage_type)) damageTypes.add(d.damage_type); if (isStr(d.mastery)) weaponMasteries.add(d.mastery); for (const p of d.properties || []) properties.add(String(p).replace(/\s*\(.*\)$/, '')); }
+    if (row.category === 'spell') { if (isStr(d.school)) schools.add(d.school); if (isStr(d.damage_type)) damageTypes.add(d.damage_type); }
+    if (row.category === 'condition') conditions.add(row.name);
+    if (row.category === 'race') for (const l of d.languages || []) if (isStr(l) && l.length < 40) languages.add(l);
+  }
+  report.stats.distinct = { item_types: [...itemTypes].sort(), schools: [...schools].sort(), damage_types: [...damageTypes].sort(), weapon_masteries: [...weaponMasteries].sort() };
+
+  // ---- 1. базовая форма записи ----
+  const seen = new Map();
+  for (const row of rows) {
+    const id = `${row.category}/${row.slug}`;
+    const where = `#${id}`;
+    for (const key of ['category', 'slug', 'name', 'data']) {
+      if (!(key in row)) report.error('record-shape', where, key, `в записи нет обязательного поля «${key}»`);
+    }
+    if (!isObj(row.data)) { report.error('record-shape', where, 'data', 'data должен быть объектом'); continue; }
+    if (!isStr(row.slug) || !/^srd\d\d-[a-z0-9()-]+$/.test(row.slug)) report.error('record-shape', where, 'slug', `слаг «${row.slug}» не вида srd14-…/srd24-…`);
+    else if (/[^a-z0-9-]/.test(row.slug)) report.warn('record-shape', where, 'slug', `в слаге «${row.slug}» есть символы вне [a-z0-9-] — такие ссылки требуют кодирования в URL`);
+    if (isStr(row.slug) && !row.slug.startsWith(`srd${edition.slice(2)}-`)) report.error('edition-consistency', where, 'slug', `слаг не соответствует файлу редакции ${edition}`);
+    if (!isStr(row.name) || !row.name.trim()) report.error('record-shape', where, 'name', 'пустое название');
+    else {
+      if (row.name.length > 128) report.error('record-shape', where, 'name', 'название длиннее 128 символов (лимит util::truncate в src/compendium.rs)');
+      if (LATIN.test(row.name)) report.error('localization', where, 'name', `в русском названии «${row.name}» есть латиница`);
+    }
+    const dup = seen.get(id);
+    if (dup) report.error('duplicate-id', where, 'slug', `ID «${id}» повторяется (записи №${dup} и текущая)`);
+    else seen.set(id, rows.indexOf(row));
+    const bare = seen.get(`*/${row.slug}`);
+    if (!bare) seen.set(`*/${row.slug}`, where);
+    else if (bare !== where) report.warn('duplicate-slug-cross-category', where, 'slug', `слаг «${row.slug}» встречается и в ${bare}; ключ БД — (категория, слаг), ссылки обязаны учитывать категорию`);
+    if (row.data.edition !== edition) report.error('edition-consistency', where, 'data.edition', `data.edition=«${row.data.edition}», ожидалось «${edition}»`);
+    const en = row.data.i18n && row.data.i18n.en;
+    if (!isObj(en)) report.error('localization', where, 'data.i18n.en', 'нет английского слоя перевода');
+    else {
+      const enName = en.name;
+      if (!isStr(enName) || !enName.trim()) report.error('localization', where, 'data.i18n.en.name', 'нет английского названия');
+      else if (CJK_CYR.test(enName)) report.error('localization', where, 'data.i18n.en.name', `кириллица в английском названии «${enName}»`);
+    }
+  }
+
+  // ---- 2. поля и типы по категориям ----
+  // present — поле обязано быть; allowEmpty — пустая строка допустима (например, у оружия нет описания);
+  // level:'warn' — отсутствие допустимо, но подозрительно.
+  const checkFields = (row, fields) => {
+    const where = `#${row.category}/${row.slug}`;
+    for (const [key, test, opts = {}] of fields) {
+      const value = key.split('.').reduce((o, k) => (isObj(o) ? o[k] : undefined), row.data);
+      const emit = opts.level === 'warn' ? report.warn.bind(report) : report.error.bind(report);
+      if (value === undefined || value === null) { emit(opts.check || 'required-field', where, `data.${key}`, opts.message || `нет поля data.${key}`, opts.hint); continue; }
+      if (isStr(value) && !value.trim() && !opts.allowEmpty) { emit('empty-text', where, `data.${key}`, `пустое значение data.${key}`, opts.hint); continue; }
+      if (test && !test(value)) report.error('field-type', where, `data.${key}`, `data.${key} имеет неверный тип (${Array.isArray(value) ? 'array' : typeof value})`);
+    }
+  };
+  // Английский вид не должен показывать русский текст: у отображаемых полей обязан быть слой en.
+  const checkEnCoverage = (row, key, value, message) => {
+    if (value === undefined || value === null || (isStr(value) && !value.trim())) return;
+    const en = row.data.i18n && row.data.i18n.en;
+    if (!isObj(en) || en[key] === undefined) report.warn('localization', `#${row.category}/${row.slug}`, `data.i18n.en.${key}`, message || `нет английского значения для data.${key} — английский вид покажет русский текст`);
+  };
+  const enAction = (row) => {
+    const en = row.data.i18n && row.data.i18n.en;
+    const list = en && (en['actions!'] || en.actions);
+    return isArr(list) ? list : null;
+  };
+  for (const row of rows) {
+    const d = row.data, where = `#${row.category}/${row.slug}`;
+    if (row.category === 'spell') {
+      checkFields(row, [['level', isInt], ['school', isStr], ['casting_time', isStr], ['range', isStr],
+        ['components', isStr, { allowEmpty: true, level: 'warn', message: 'в источнике 5e-database у заклинания нет компонентов (пробел источника)' }],
+        ['duration', isStr], ['concentration', v => typeof v === 'boolean'], ['ritual', v => typeof v === 'boolean'], ['classes', isArr], ['desc', isStr]]);
+      if (isInt(d.level) && (d.level < 0 || d.level > 9)) report.error('field-range', where, 'data.level', `уровень заклинания ${d.level} вне 0…9`);
+      if (isStr(d.school) && !schools.has(d.school)) report.error('enum-values', where, 'data.school', `школа «${d.school}» не встречается в наборе`);
+      if (isStr(d.damage_type) && !DAMAGE_TYPES_RU.includes(d.damage_type)) report.error('enum-values', where, 'data.damage_type', `неизвестный тип урона «${d.damage_type}»`);
+      for (const cls of d.classes || []) if (!classNames.has(cls)) report.error('broken-reference', where, 'data.classes', `заклинание ссылается на класс «${cls}», которого нет в редакции ${edition}`, 'проверьте CLASSES в tools/srd/ru_names.py и список классов SRD');
+      if (d.save_ability !== undefined && !ABILITY_CODES.includes(d.save_ability)) report.error('enum-values', where, 'data.save_ability', `неизвестный код характеристики спасброска «${d.save_ability}» (ожидается одно из ${ABILITY_CODES.join('/')})`);
+      const saveText = `${d.desc || ''} ${d.higher_level || ''}`;
+      const hasSaveAction = (d.actions || []).some(a => a && a.kind === 'save');
+      if (!d.save_ability && !hasSaveAction && FORCED_SAVE_RU.test(saveText)) report.warn('spell-save-missing', where, 'data.save_ability', 'текст вынуждает спасбросок с характеристикой, но нет ни save_ability, ни действия kind=save', 'сверьте с официальным текстом SRD и заполните tools/srd/fix_spell_saves.py');
+      if (isStr(d.damage_type)) checkEnCoverage(row, 'damage_type');
+      for (const [i, action] of (d.actions || []).entries()) {
+        if (!isObj(action)) { report.error('field-type', where, `data.actions[${i}]`, 'действие должно быть объектом'); continue; }
+        if (!isStr(action.name) || !action.name.trim()) report.error('required-field', where, `data.actions[${i}].name`, 'у действия нет названия');
+        if (!isStr(action.kind) || !action.kind.trim()) report.error('required-field', where, `data.actions[${i}].kind`, 'у действия нет вида');
+        if (!isStr(action.roll) || !action.roll.trim()) report.error('required-field', where, `data.actions[${i}].roll`, 'у действия нет формулы');
+        else { try { DiceEngine.parse(stripVars(action.roll)); } catch (e) { report.error('dice-expression', where, `data.actions[${i}].roll`, `формула «${action.roll}» не разбирается: ${e.message}`); } }
+        if (isStr(action.dtype) && !DAMAGE_TYPES_RU.includes(action.dtype)) report.error('enum-values', where, `data.actions[${i}].dtype`, `неизвестный тип урона «${action.dtype}»`);
+      }
+      const enActions = enAction(row);
+      if (enActions) for (const [i, action] of enActions.entries()) {
+        if (isStr(action.dtype) && CJK_CYR.test(action.dtype)) report.warn('localization', where, `data.i18n.en.actions[${i}].dtype`, `в английском виде остался русский тип урона «${action.dtype}» (ожидается ${DAMAGE_TYPES_EN[action.dtype] || '—'})`);
+      }
+    }
+    if (row.category === 'item') {
+      checkFields(row, [['type', isStr], ['category', isStr], ['desc', isStr, { allowEmpty: true }], ['edition', isStr]]);
+      if (isStr(d.type) && !['weapon', 'armor', 'gear', 'consumable', 'magic', 'vehicle', 'tool', 'pack', 'treasure', 'mount'].includes(d.type)) report.warn('enum-values', where, 'data.type', `неизвестный тип предмета «${d.type}»`);
+      if (isNum(d.weight) && d.weight < 0) report.error('field-range', where, 'data.weight', `отрицательный вес ${d.weight}`);
+      if (d.ac !== undefined && !isNum(d.ac) && !isStr(d.ac)) report.error('field-type', where, 'data.ac', 'ac должен быть числом или строкой');
+      if (isStr(d.damage_type) && !DAMAGE_TYPES_RU.includes(d.damage_type)) report.error('enum-values', where, 'data.damage_type', `неизвестный тип урона «${d.damage_type}»`);
+      if (isStr(d.mastery) && !weaponMasteries.has(d.mastery)) report.error('enum-values', where, 'data.mastery', `мастерство оружия «${d.mastery}» неизвестно`);
+      if (isStr(d.damage) && !/^\d+([кd]\d+)?$/.test(d.damage)) report.warn('field-format', where, 'data.damage', `формула урона «${d.damage}» не вида 1к8`);
+      if (d.attunement !== undefined && typeof d.attunement !== 'boolean' && !isStr(d.attunement)) report.error('field-type', where, 'data.attunement', 'attunement должен быть boolean или строкой условия');
+      if (isStr(d.damage_type)) checkEnCoverage(row, 'damage_type', `нет английского типа урона для «${d.damage_type}» (ожидается ${DAMAGE_TYPES_EN[d.damage_type] || '—'})`);
+      if (d.edition !== edition) report.error('edition-consistency', where, 'data.edition', `data.edition=«${d.edition}»`);
+    }
+    if (row.category === 'monster') {
+      checkFields(row, [['size', isStr], ['type', isStr], ['cr', v => isStr(v) || isNum(v)], ['xp', isNum], ['ac', isNum], ['hp', isStr], ['abilities', isObj], ['traits', isArr], ['actions', isArr]]);
+      // Кнопок бросков нет — нормально, если в действиях нечего бросать (у жабы, морского конька, гриба-вопилки действий нет вовсе).
+      const rollable = (d.actions || []).filter(a => /Attack(?: Roll)?:\s*\+\d|урон|Урон|\d+к\d+/.test(a && a.text || ''));
+      if (!isArr(d.actions_roll) && rollable.length) report.warn('monster-actions-roll', where, 'data.actions_roll', `в действиях есть броски (${rollable.length}), но нет data.actions_roll`);
+      const abilities = d.abilities || {};
+      for (const key of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+        const v = abilities[key];
+        if (!isInt(v) || v < 1 || v > 30) report.error('field-range', where, `data.abilities.${key}`, `характеристика ${key}=${v} вне 1…30`);
+      }
+      if (isStr(d.hp) && !/^\d+\s*\(/.test(d.hp)) report.warn('field-format', where, 'data.hp', `хиты «${d.hp}» не вида «9 (2к8)»`);
+      const actionRollKinds = new Set(['attack', 'damage', 'heal', 'temp_hp', 'roll', 'save', 'other']);
+      for (const a of d.actions_roll || []) {
+        if (!isObj(a)) { report.error('field-type', where, 'data.actions_roll', 'элемент должен быть объектом'); continue; }
+        if (!isStr(a.name) || !a.name.trim()) report.error('required-field', where, 'data.actions_roll[].name', 'у броска нет названия');
+        if (!actionRollKinds.has(a.kind)) report.error('enum-values', where, 'data.actions_roll[].kind', `неизвестный вид броска «${a.kind}»`);
+        if (!isStr(a.roll) || !a.roll.trim()) report.error('required-field', where, 'data.actions_roll[].roll', 'пустая формула броска');
+        else { try { DiceEngine.parse(stripVars(a.roll)); } catch (e) { report.error('dice-expression', where, 'data.actions_roll[].roll', `формула «${a.roll}» не разбирается: ${e.message}`); } }
+        if (isStr(a.dtype) && !DAMAGE_TYPES_RU.includes(a.dtype)) report.error('enum-values', where, 'data.actions_roll[].dtype', `неизвестный тип урона «${a.dtype}»`);
+      }
+      for (const key of ['traits', 'actions', 'reactions', 'legendary_actions']) {
+        for (const t of d[key] || []) {
+          if (!isObj(t) || !isStr(t.name) || !isStr(t.text)) report.error('field-type', where, `data.${key}`, `элемент ${key} должен быть {name, text}`);
+          else if (!t.text.trim()) report.error('empty-text', where, `data.${key}`, `у «${t.name}» пустой текст`);
+        }
+      }
+      const enRoll = (row.data.i18n && row.data.i18n.en && (row.data.i18n.en['actions_roll!'] || row.data.i18n.en.actions_roll)) || null;
+      if (isArr(enRoll)) for (const [i, a] of enRoll.entries()) {
+        if (isStr(a.dtype) && CJK_CYR.test(a.dtype)) report.warn('localization', where, `data.i18n.en.actions_roll[${i}].dtype`, `в английском виде остался русский тип урона «${a.dtype}»`);
+      }
+    }
+    if (row.category === 'class') {
+      checkFields(row, [['hit_die', isStr], ['saves', isArr], ['skills', isObj], ['features', isObj], ['feature_texts', isObj], ['subclasses', isArr]]);
+      if (isStr(d.hit_die) && !['d6', 'd8', 'd10', 'd12'].includes(d.hit_die)) report.error('enum-values', where, 'data.hit_die', `кость хитов «${d.hit_die}» не из d6/d8/d10/d12`);
+      for (const s of d.saves || []) if (!['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(s)) report.error('enum-values', where, 'data.saves', `неизвестный спасбросок «${s}»`);
+      if (isObj(d.skills)) {
+        if (!isInt(d.skills.choose) || d.skills.choose < 0 || d.skills.choose > 18) report.error('field-range', where, 'data.skills.choose', `skills.choose=${d.skills.choose}`);
+        for (const s of d.skills.from || []) if (!(runtime.SKILLS || []).some(([, ru]) => ru === s)) report.error('broken-reference', where, 'data.skills.from', `навык «${s}» не из списка SKILLS (static/common.js)`);
+      }
+      const featureNames = new Set(Object.values(d.features || {}).flat());
+      for (const name of featureNames) if (!(name in (d.feature_texts || {}))) report.error('missing-feature-text', where, `data.feature_texts.${name}`, `у умения «${name}» нет текста`);
+      const levels = Object.keys(d.features || {}).map(Number);
+      if (levels.some(l => !Number.isInteger(l) || l < 1 || l > 20)) report.error('field-range', where, 'data.features', 'уровни умений должны быть целыми 1…20');
+      if (levels.length && Math.min(...levels) !== 1) report.error('missing-feature-text', where, 'data.features', 'нет умений 1-го уровня');
+      for (const s of d.subclasses || []) if (!isObj(s) || !isStr(s.name) || !isStr(s.name_en) || !s.name.trim()) report.error('field-type', where, 'data.subclasses', 'подкласс должен быть {name, name_en, …}');
+      if (isStr(d.spellcasting) && !['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(d.spellcasting)) report.error('enum-values', where, 'data.spellcasting', `характеристика заклинаний «${d.spellcasting}»`);
+    }
+    if (row.category === 'race') {
+      // В дампе SRD 5.2.1 у видов нет описания: содержание — в traits. Пустой desc — не потеря данных.
+      checkFields(row, [['asi', isObj], ['traits', isArr], ['desc', isStr, { allowEmpty: edition === '2024', level: edition === '2024' ? 'warn' : 'error', message: 'в источнике SRD у вида нет описания (текст — в traits)' }]]);
+      for (const [k, v] of Object.entries(d.asi || {})) {
+        if (!['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(k)) report.error('enum-values', where, `data.asi.${k}`, `неизвестная характеристика «${k}»`);
+        if (!isInt(v) || v < -5 || v > 5) report.error('field-range', where, `data.asi.${k}`, `бонус характеристики ${v} вне −5…5`);
+      }
+      if (d.subrace === true) {
+        if (!isStr(d.parent)) report.error('required-field', where, 'data.parent', 'у подрасы нет parent');
+        else if (!raceNames.has(d.parent)) report.error('broken-reference', where, 'data.parent', `родительская раса «${d.parent}» не найдена в редакции ${edition}`);
+      } else if (isArr(d.subraces) && d.subraces.length) {
+        for (const s of d.subraces) if (!raceNames.has(s)) report.error('broken-reference', where, 'data.subraces', `подраса «${s}» не найдена в редакции ${edition}`);
+      }
+      for (const t of d.traits || []) if (!isObj(t) || !isStr(t.name) || !isStr(t.text)) report.error('field-type', where, 'data.traits', 'черта должна быть {name, text}');
+    }
+    if (row.category === 'background') {
+      // Описание происхождения в дампе SRD лежит в feature/feature_text или отсутствует вовсе.
+      checkFields(row, [['desc', isStr, { allowEmpty: edition === '2024' || edition === '2014', level: 'warn', message: 'в источнике SRD у происхождения нет поля описания (текст — в feature_text)' }], ['skills', v => isArr(v) || isObj(v)], ['tools', v => isArr(v) || isObj(v)]]);
+      if (edition === '2024') {
+        if (!isStr(d.feat) || !d.feat.trim()) report.error('required-field', where, 'data.feat', 'у происхождения 2024 нет черты');
+        if (!isArr(d.asi_options) || !d.asi_options.length) report.error('required-field', where, 'data.asi_options', 'у происхождения 2024 нет набора asi_options');
+      }
+    }
+    if (row.category === 'feat') {
+      checkFields(row, [['desc', isStr], ['category', isStr, { allowEmpty: true }], ['prerequisites', isStr, { allowEmpty: true, level: 'warn', message: 'у черты нет требований (в источнике SRD их нет)' }]]);
+    }
+    if (row.category === 'condition') {
+      checkFields(row, [['desc', isStr]]);
+    }
+  }
+
+  // ---- 3. механики ----
+  const mechanicsRows = rows.filter(r => r.data.mechanics !== undefined);
+  report.stats.mechanics = mechanicsRows.length;
+  const nodesUsed = new Map();
+  for (const row of rows) {
+    const where = `#${row.category}/${row.slug}`;
+    const mechanics = row.data.mechanics;
+    if (mechanics === undefined) continue;
+    if (!isObj(mechanics) || mechanics.version !== 2) { report.error('mechanics-version', where, 'data.mechanics.version', `версия механику «${mechanics && mechanics.version}», ожидается 2 (граф v2)`); continue; }
+    const problem = Mechanics.validate(mechanics);
+    if (problem) report.error('mechanics-invalid', where, 'data.mechanics', problem);
+    else {
+      const list = Mechanics.problems(mechanics);
+      for (const p of list) report.error('mechanics-problem', where, 'data.mechanics', p);
+    }
+    const graph = mechanics.graph || {};
+    const ids = new Set();
+    for (const node of graph.nodes || []) {
+      if (ids.has(node.id)) report.error('duplicate-id', where, 'data.mechanics.graph.nodes', `ID узла «${node.id}» повторяется`);
+      ids.add(node.id);
+      nodesUsed.set(node.type, (nodesUsed.get(node.type) || 0) + 1);
+      if (!rust.NODE_TYPES.includes(node.type)) report.error('unknown-node-type', where, `data.mechanics.graph.nodes[${node.id}]`, `тип узла «${node.type}» не поддерживается сервером (src/mechanics_graph.rs NODE_TYPES)`);
+      if (node.type === 'action.attack' || node.type === 'action.damage' || node.type === 'action.roll') {
+        const stat = node.params && node.params.dice && node.params.dice.stat;
+        const STATS = ['', 'best', 'prof', 'atk', 'atk_str', 'atk_dex', 'spell', 'spell_mod', 'level', 'dc', 'str', 'dex', 'con', 'int', 'wis', 'cha'];
+        if (stat !== undefined && !STATS.includes(stat)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.dice.stat`, `неизвестный модификатор «${stat}»`);
+      }
+      if (node.type === 'condition.edition') {
+        const editions = (node.params || {}).editions;
+        if (!isArr(editions) || !editions.length) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, 'не указаны редакции условия');
+        else {
+          for (const e of editions) if (!EDITIONS.includes(e)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, `неизвестная редакция «${e}»`);
+          if (node.params.locked !== true && !editions.includes(edition)) report.warn('edition-consistency', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, `условие «редакция ${editions.join('/')}» никогда не сработает у записи редакции ${edition}`);
+        }
+      }
+      if (node.type === 'action.grant_item') {
+        const item = node.params && node.params.item;
+        if (isObj(item) && isStr(item.name) && item.name && !itemNames.has(item.name)) report.warn('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.item.name`, `выдаваемый предмет «${item.name}» не найден в редакции ${edition}`);
+      }
+      const learn = node.type === 'rule.spell_list' ? node.params && node.params.spells : null;
+      for (const s of learn || []) {
+        const value = isObj(s) ? s.name : s;
+        if (isStr(value) && value && !spellNames.has(value)) report.warn('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.spells`, `заклинание «${value}» не найдено в редакции ${edition}`);
+      }
+      if (node.type === 'condition.subclass') {
+        const id = (node.params || {}).id;
+        if (isStr(id) && subclassIds.size && !subclassIds.has(id)) report.error('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.id`, `подкласс «${id}» не найден среди data.subclasses.name_en редакции ${edition}`);
+      }
+    }
+    // формулы, которые реально бросаются (в том числе вычисленные из узлов)
+    try {
+      const legacy = Mechanics.toLegacy(mechanics, { edition, level: 20, subclass: '', choices: {} });
+      for (const program of (legacy && legacy.programs) || []) {
+        for (const block of program.blocks || []) {
+          const advanced = block.dice && (block.dice.advanced || '');
+          if (!advanced) continue;
+          try { DiceEngine.parse(stripVars(advanced)); } catch (e) { report.error('dice-expression', where, `data.mechanics.programs[${program.id}].blocks[${block.id}].dice`, `формула «${advanced}» не разбирается: ${e.message}`); }
+        }
+      }
+    } catch (e) {
+      report.error('mechanics-compile', where, 'data.mechanics', `граф не собирается в действия: ${e.message}`);
+    }
+  }
+  report.stats.node_types = Object.fromEntries([...nodesUsed].sort());
+
+  // ---- 4. слой перевода: висячие ключи и остатки русского в английском ----
+  // Семантика слияния — как в src/i18n.rs: ключ с «!» заменяет значение целиком,
+  // массивы объектов с id сливаются по id, прочие массивы заменяются,
+  // карты «ключ — название умения» (feature_texts) дополняются английскими ключами.
+  let dangling = 0, cyrInEn = 0;
+  const examples = [];
+  const walkI18n = (base, over, trail) => {
+    if (!isObj(over)) return;
+    for (const [key, value] of Object.entries(over)) {
+      if (key === 'mechanics') return; // механики пересобираются tools/srd/mechanics.py, сверяются отдельно
+      const pure = key.endsWith('!') ? key.slice(0, -1) : key;
+      if (NAME_KEYED_MAPS.includes(pure)) continue;
+      if (pure === 'name') continue; // имя записи лежит в row.name, i18n.<lang>.name — его перевод (src/i18n.rs::view)
+      const baseValue = isObj(base) ? base[pure] : undefined;
+      if (baseValue === undefined) {
+        dangling++;
+        if (examples.length < 8) examples.push({ entity: trail.entity, field: `data.i18n.${trail.lang}.${trail.path}${key}`, message: `в базовых данных нет поля «${pure}» — перевод некуда накладывать` });
+        continue;
+      }
+      if (isObj(value)) { walkI18n(baseValue, value, { ...trail, path: `${trail.path}${key}.` }); continue; }
+      if (isArr(value)) {
+        const byId = isArr(baseValue) && value.every(x => isObj(x) && isStr(x.id)) && baseValue.every(x => isObj(x) && isStr(x.id));
+        value.forEach((v, i) => {
+          const match = byId ? baseValue.find(b => b.id === v.id) : (isArr(baseValue) ? (baseValue[i] !== undefined ? baseValue[i] : baseValue[0]) : undefined);
+          if (isObj(v)) walkI18n(match || {}, v, { ...trail, path: `${trail.path}${key}[${i}].` });
+          else if (isStr(v) && CJK_CYR.test(v)) {
+            cyrInEn++;
+            if (examples.length < 16) examples.push({ entity: trail.entity, field: `data.i18n.${trail.lang}.${trail.path}${key}[${i}]`, message: `кириллица в английском тексте: «${v.slice(0, 60)}»` });
+          }
+        });
+        continue;
+      }
+      if (isStr(value) && CJK_CYR.test(value) && trail.lang === 'en') {
+        cyrInEn++;
+        if (examples.length < 16) examples.push({ entity: trail.entity, field: `data.i18n.${trail.lang}.${trail.path}${key}`, message: `кириллица в английском тексте: «${value.slice(0, 60)}»` });
+      }
+    }
+  };
+  for (const row of rows) {
+    const i18n = row.data.i18n;
+    if (!isObj(i18n)) continue;
+    const base = { ...row.data };
+    delete base.i18n;
+    for (const [lang, layer] of Object.entries(i18n)) {
+      if (!['ru', 'en'].includes(lang)) { report.error('localization', `#${row.category}/${row.slug}`, `data.i18n.${lang}`, `неизвестный язык «${lang}» (src/i18n.rs LANGS)`); continue; }
+      walkI18n(base, layer, { entity: `#${row.category}/${row.slug}`, lang, path: '' });
+    }
+  }
+  report.stats.i18n = { dangling_keys: dangling, cyrillic_in_en: cyrInEn };
+  for (const e of examples) report.warn('i18n-layer', e.entity, e.field, e.message);
+
+  // ---- 5. хеши прежних версий (миграция в развёрнутых БД) ----
+  const legacy = readJson('data_seed/legacy_hashes.json');
+  const shipped = readJson('data_seed/previous_shipped.json');
+  for (const [label, table] of [['legacy_hashes', legacy], ['previous_shipped', shipped]]) {
+    if (!isObj(table[edition])) { report.error('shipped-hashes', `data_seed/${label}.json`, edition, `нет раздела редакции ${edition}`); continue; }
+  }
+  const legacyTable = legacy[edition] || {};
+  for (const row of rows) {
+    const key = `${row.category}/${row.slug}`;
+    if (!legacyTable[key] && !NEW_AFTER_LOCALIZATION.includes(key)) report.error('shipped-hashes', `#${key}`, `legacy_hashes.${edition}.${key}`, 'нет хеша старой версии — запись не обновится в развёрнутых базах');
+    const entry = legacyTable[key];
+    if (Array.isArray(entry)) {
+      for (const h of entry) if (!isStr(h) || !/^[0-9a-f]{16}$/.test(h)) report.error('shipped-hashes', `#${key}`, `legacy_hashes.${edition}.${key}`, `хеш «${h}» не вида 16 hex-символов`);
+    }
+  }
+  for (const [key, snaps] of Object.entries(shipped[edition] || {})) {
+    const [category, slug] = key.split('/');
+    if (!byCategory.get(category)?.some(r => r.slug === slug)) report.warn('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимок для записи, которой нет в наборе');
+    if (!isArr(snaps)) { report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимки должны быть массивом пар'); continue; }
+    for (const pair of snaps) if (!isArr(pair) || pair.length !== 2 || pair.some(h => !isStr(h) || !/^[0-9a-f]{16}$/.test(h))) report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, `пара хешей «${JSON.stringify(pair)}» неверна`);
+  }
+  return report;
+}
+
+// ---------- согласованность клиента и сервера ----------
+function checkRuntime(opts = {}) {
+  const runtime = opts.runtime || loadRuntime();
+  const rust = opts.rust || rustConstants();
+  const report = new Report();
+  const Registry = runtime.NodeRegistry;
+  const defs = Object.keys(Registry.NODE_DEFS);
+  const exposed = defs.filter(t => !Registry.INTERNAL.has(t));
+  for (const type of exposed) {
+    if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/mechanics_graph.rs NODE_TYPES)`);
+  }
+  // Внутренние узлы (group.input/group.output) намеренно вне палитры, но обязаны быть в реестре и на сервере.
+  for (const type of rust.NODE_TYPES) {
+    if (!defs.includes(type)) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
+  }
+  for (const type of Registry.INTERNAL) {
+    if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
+  }
+  const actionKinds = defs.filter(t => t.startsWith('action.') && t !== 'action.program').map(t => t.slice(7));
+  if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);
+  const diceKinds = defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).map(t => t.slice(7));
+  if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
+  const skillIds = (runtime.SKILLS || []).map(([id]) => id);
+  if (skillIds.slice().sort().join() !== rust.SKILL_IDS.slice().sort().join()) {
+    const only = (a, b) => a.filter(x => !b.includes(x)).join(',');
+    report.error('client-server-parity', 'static/common.js', 'SKILLS', `идентификаторы навыков клиента и сервера (SKILL_IDS) различаются: только у клиента ${only(skillIds, rust.SKILL_IDS) || '—'}; только у сервера ${only(rust.SKILL_IDS, skillIds) || '—'}`);
+  }
+  const abilityValues = [...new Set(Object.values(Registry.NODE_DEFS).map(d => d.defaults && d.defaults.value).filter(v => isStr(v) && v.length === 3 && rust.ABILITIES.includes(v)))];
+  for (const type of ['data.ability']) {
+    const values = (Registry.NODE_DEFS[type] && Registry.NODE_DEFS[type].values) || null;
+    if (values && values.slice().sort().join() !== rust.ABILITIES.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', type, 'список характеристик не совпадает с ABILITIES сервера');
+  }
+  report.stats.parity = { abilities: abilityValues.length, skills: skillIds.length };
+  report.stats.client_nodes = exposed.length;
+  report.stats.server_nodes = rust.NODE_TYPES.length;
+  return report;
+}
+
+function runAll(opts = {}) {
+  const runtime = loadRuntime();
+  const rust = rustConstants();
+  const editions = opts.editions || EDITIONS;
+  const reports = { runtime: checkRuntime({ runtime, rust }) };
+  for (const edition of editions) reports[edition] = checkSeed(edition, { runtime, rust });
+  return reports;
+}
+
+function printReports(reports, { max = 20, quiet = false, json = false } = {}) {
+  if (json) {
+    let jsonErrors = 0;
+    for (const report of Object.values(reports)) jsonErrors += report.errors.length;
+    console.log(JSON.stringify(Object.fromEntries(Object.entries(reports).map(([k, r]) => [k, { issues: r.issues, stats: r.stats }])), null, 1));
+    return jsonErrors;
+  }
+  let errors = 0, warnings = 0;
+  for (const [name, report] of Object.entries(reports)) {
+    errors += report.errors.length; warnings += report.warnings.length;
+    console.log(`\n=== ${name}`);
+    for (const [key, value] of Object.entries(report.stats)) console.log(`  ${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
+    if (!report.issues.length) { console.log('  проблем нет'); continue; }
+    const byCheck = new Map();
+    for (const issue of report.issues) byCheck.set(`${issue.level}/${issue.check}`, (byCheck.get(`${issue.level}/${issue.check}`) || 0) + 1);
+    for (const [key, count] of [...byCheck].sort()) console.log(`  ${key}: ${count}`);
+    if (!quiet) {
+      const shown = report.issues.slice(0, max);
+      for (const issue of shown) console.log(`  [${issue.level}] ${issue.check} ${issue.entity} ${issue.field ? `· ${issue.field} ·` : ''} ${issue.message}${issue.hint ? ` (${issue.hint})` : ''}`);
+      if (report.issues.length > shown.length) console.log(`  … ещё ${report.issues.length - shown.length} (--max, --json)`);
+    }
+  }
+  console.log(`\nошибок: ${errors}, предупреждений: ${warnings}`);
+  return errors;
+}
+
+if (require.main === module) {
+  const argv = process.argv.slice(2);
+  const get = (flag, def) => { const i = argv.indexOf(flag); return i >= 0 && argv[i + 1] ? argv[i + 1] : def; };
+  const editions = get('--edition', EDITIONS.join(',')).split(',').filter(e => EDITIONS.includes(e));
+  const reports = runAll({ editions });
+  const errors = printReports(reports, { max: Number(get('--max', 20)), quiet: argv.includes('--quiet'), json: argv.includes('--json') });
+  process.exit(errors ? 1 : 0);
+}
+
+module.exports = { runAll, checkSeed, checkRuntime, loadRuntime, rustConstants, Report, REPO, EDITIONS, CATEGORIES };
