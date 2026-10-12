@@ -336,6 +336,9 @@ function checkSeed(edition, opts = {}) {
       }
       // Имена умений — кросс-ссылки: на них смотрят выпадающие броски (actions_roll) и узлы графа
       // (params.feature_name). Переименование в одном месте ломает кнопки и механики записи.
+      // Проверка идёт в блоке монстров и НИП: только у них `actions_roll` ссылается на `traits`/`actions`.
+      // У классов, рас и происхождений `params.feature_name` ссылается на наборы умений (522 узла) —
+      // их сверяет генератор наборов и тесты tests/class-*.test.cjs, здесь они не проверяются.
       const featureNames = new Set(['traits', 'actions', 'reactions', 'legendary_actions']
         .flatMap(key => (d[key] || []).filter(isObj).map(t => t.name)));
       for (const [i, a] of (d.actions_roll || []).entries()) {
