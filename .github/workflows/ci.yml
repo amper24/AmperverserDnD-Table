@@ -72,10 +72,10 @@ jobs:
         run: |
           {
             echo "### CI failure: run ${{ github.run_id }} (${{ github.sha }})"
-            for f in build.log test.log smoke-sqlite.log smoke-mysql.log; do
+            for f in smoke-sqlite.log smoke-mysql.log build.log test.log; do
               if [ -f "$f" ]; then
                 echo; echo "#### $f"; echo '```'
-                grep -v -E '^\s*(Compiling|Downloaded|Downloading|Updating|Locking|Adding|Fresh|Running)' "$f" | tail -n 250 | cut -c1-400
+                grep -v -E '^\s*(Compiling|Downloaded|Downloading|Updating|Locking|Adding|Fresh|Running)' "$f" | tail -n 120 | cut -c1-400
                 echo '```'
               fi
             done
