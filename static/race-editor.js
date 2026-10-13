@@ -573,7 +573,10 @@ window.RaceEditor = (() => {
   }
 
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
-  function edit(entry, opts = {}) {
+  /// Тело редактора: разделы, навигация и состояние — общее для модалки и для
+  /// отдельной страницы редактора. Возвращает { root, state, save, title }:
+  /// save() отдаёт { name, data } или null с подсказкой.
+  function form(entry, opts = {}) {
     const st = readState(entry, opts.catalog);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
@@ -594,13 +597,19 @@ window.RaceEditor = (() => {
     };
     render();
     const root = el('div', { class: 'class-editor' }, nav, content);
-    return modal(entry?.id ? 'Раса: ' + (entry.name || '') : 'Новая раса', root,
-      [{ label: 'Сохранить', cls: 'primary', fn: () => {
-        const name = st.name.trim();
-        if (!name) { toast('Нужно название расы'); return false; }
-        return { name, data: writeData(st, entry) };
-      } }], { wide: true });
+    const save = () => {
+      const name = st.name.trim();
+      if (!name) { toast('Нужно название расы'); return null; }
+      return { name, data: writeData(st, entry) };
+    };
+    return { root, state: st, save, title: entry?.id ? 'Раса: ' + (entry.name || '') : 'Новая раса' };
   }
 
-  return { edit, readState, writeData, emptyData, SECTIONS, SIZES, PROF_KINDS, LEVELS, presetRaceRules };
+  /// Модалка редактора — для встраиваемых мест (свой стол, лист персонажа).
+  function edit(entry, opts = {}) {
+    const f = form(entry, opts);
+    return modal(f.title, f.root, [{ label: 'Сохранить', cls: 'primary', fn: () => f.save() || false }], { wide: true });
+  }
+
+  return { edit, form, readState, writeData, emptyData, SECTIONS, SIZES, PROF_KINDS, LEVELS, presetRaceRules };
 })();

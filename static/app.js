@@ -43,6 +43,9 @@
   if (path === '/profile') { if (!me) { go('/login?next=/profile', true); return; } renderProfile(); return; }
   if (path === '/admin') { if (!me) { go('/login?next=/admin', true); return; } renderAdmin(); return; }
   if (SECTIONS[path]) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderSection(SECTIONS[path]); return; }
+  // Отдельная страница редактора записи: /class-editor, /race-editor, /background-editor (+ /<id>).
+  const editorKind = window.EditorPage?.kindOfPath(path);
+  if (editorKind) { if (!me) { go('/login?next=' + encodeURIComponent(location.pathname + location.search), true); return; } renderEditorPage(editorKind, window.EditorPage.idOfPath(path)); return; }
   if (!me) renderLanding(); else renderHome();
 
   // ================= Общее: шапка =================
@@ -322,6 +325,16 @@
     const r = await views[k]();
     page.append(r);
   }
+  // ================= Отдельная страница редактора (классы, расы, предыстории) =================
+  async function renderEditorPage(kind, id) {
+    app.innerHTML = '';
+    const page = el('div', { class: 'page editor-page' });
+    app.append(topbar('comp'), page);
+    if (!window.EditorPage?.available(kind)) { page.append(el('p', { class: 'muted' }, 'Редактор недоступен: обновите страницу.')); return; }
+    document.title = window.EditorPage.KINDS[kind].label + ' — ' + APP_NAME;
+    await window.EditorPage.render(page, { kind, id, search: location.search, onSaved: () => { } });
+  }
+
   async function lobbyCampaigns() {
     const wrap = el('div');
     const list = await API.get('/api/campaigns');

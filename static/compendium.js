@@ -128,7 +128,8 @@ window.Compendium = (function () {
     const isRoot = !!window.ME?.is_root;
     const canEdit = isRoot || (e.pack_id && (opts.packMine || e._mine)) || (e.campaign_id && (window.TABLE_CTX?.isGM || opts.isGM));
     if (d.secrets && (canEdit || window.TABLE_CTX?.isGM || opts.isGM)) wrap.append(el('div', { class: 'card-desc', style: 'border-left:3px solid var(--danger,#c55);padding-left:8px;margin-top:8px' }, el('b', {}, 'Только для мастера. '), M().rich(d.secrets, ctx, { prose:!!d.mechanics, prefix: e.name })));
-    if (canEdit) btns.append(el('button', { class: 'small', onclick: () => editEntry(e, { campaignId: e.campaign_id, packId: e.pack_id, onSaved: opts.onChanged }) }, 'Редактировать'),
+    if (canEdit) btns.append(el('button', { class: 'small', title: EDITOR_KIND[e.category] ? 'Откроется отдельная страница редактора' : null,
+      onclick: () => { if (!openEntryEditor(e, opts)) editEntry(e, { campaignId: e.campaign_id, packId: e.pack_id, onSaved: opts.onChanged }); } }, 'Редактировать'),
       el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить запись?')) { await API.del('/api/compendium/' + e.id); opts.onChanged && opts.onChanged(); } } }, 'Удалить'));
     if (canEdit) btns.append(el('button', { class: 'small', title: 'Название и описание на втором языке (русский ⇄ английский)', onclick: () => editTranslation(e, { onSaved: opts.onChanged }) }, 'Перевод…'));
     btns.append(el('button', { class: 'small', onclick: () => copyTo(e, opts) }, 'Копировать в набор…'));
@@ -174,6 +175,15 @@ window.Compendium = (function () {
   }
 
   /// Редактор записи: визуальный (предмет/заклинание/общий) + выбор, куда сохранить (набор или homebrew кампании).
+  // Класс, раса и предыстория правятся отдельным редактором на своей странице (свой адрес,
+  // весь экран). Если страница недоступна (встраивание), остаётся прежняя модалка.
+  const EDITOR_KIND = { class: 'class', race: 'race', background: 'background' };
+  function openEntryEditor(e, o = {}) {
+    const kind = EDITOR_KIND[e?.category];
+    if (!kind || !window.EditorPage?.available?.(kind)) return false;
+    return window.EditorPage.open(kind, { id: e.id, packId: e.pack_id, campaignId: e.campaign_id });
+  }
+
   async function editEntry(e, o = {}) {
     e = await API.rawEntry(e);
     let category = e?.category || o.category || 'item';
@@ -553,7 +563,12 @@ window.Compendium = (function () {
     const filterBtn = el('button', { type: 'button', class: 'comp-filter-btn', 'aria-expanded': 'false', title: 'Редакция, источник, папки и другие фильтры', onclick: () => { const open = filters.hidden; filters.hidden = !open; filterBtn.setAttribute('aria-expanded', String(open)); filterBtn.classList.toggle('on', open); } }, 'Фильтры', filterBadge);
     if (opts.expandable) heading.insertBefore(el('button', { type: 'button', class: 'small comp-expand', title: 'Открыть в большом окне', 'aria-label': 'Открыть в большом окне', onclick: () => floatWindow('Справочник (перетаскивайте на лист)', el('div', { style: 'height:100%;padding:8px' }, widget({ ...opts, expandable: false, category: catSel.value || opts.category, edition: edSel.value || undefined })), { x: 40, y: 40, w: Math.min(980, window.innerWidth - 80), h: Math.min(700, window.innerHeight - 80) }) }, '⤢'), count);
     left.append(heading, catSel, el('div', { class: 'comp-compact-searchrow' }, q, filterBtn), filters, lst,
-      el('button', { class: 'small comp-compact-create', onclick: () => editEntry(null, { campaignId: opts.campaignId, isGM: opts.isGM, packId: opts.packId, category: catSel.value || 'item', onSaved: load }) }, '+ Создать свою запись'));
+      el('button', { class: 'small comp-compact-create', onclick: () => {
+        const category = catSel.value || 'item';
+        // Класс, раса и предыстория создаются на своей странице редактора: там все разделы целиком.
+        if (EDITOR_KIND[category] && window.EditorPage?.available?.(category)) return window.EditorPage.open(category, { packId: opts.packId, campaignId: opts.isGM ? opts.campaignId : null });
+        editEntry(null, { campaignId: opts.campaignId, isGM: opts.isGM, packId: opts.packId, category, onSaved: load });
+      } }, '+ Создать свою запись'));
     if (opts.packId) { sourceRow.hidden = true; packTagSel.hidden = true; packRow.classList.add('comp-compact-filter-row-single'); }
     root.append(left, det);
     const backBtn = el('button', { type: 'button', class: 'small comp-back', onclick: () => root.classList.remove('show-detail') }, '← К списку');

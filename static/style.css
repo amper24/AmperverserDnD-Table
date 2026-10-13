@@ -1667,6 +1667,21 @@ body.lu-open { overflow: hidden; }
 .node-group-item{display:inline-flex;gap:3px;align-items:center}
 
 /* ---- Редактор класса (справочник → Классы): разделы вместо одного поля данных ---- */
+/* Отдельная страница редактора записи (класс, раса, предыстория): /class-editor/<id>.
+   Разделы те же .ced-*, но на всю высоту экрана и с шапкой «Сохранить». */
+.editor-page { max-width: 1240px; }
+.editor-page .ed-head { align-items: center; gap: 10px; flex-wrap: wrap; }
+.editor-page .ed-head h1 { font-size: 22px; }
+.editor-page .ed-dest { margin: 10px 0 0; }
+.editor-page .ced-inline { gap: 8px; align-items: center; }
+.editor-page .class-editor { margin-top: 12px; min-height: min(70vh, 760px); align-items: flex-start; }
+.editor-page .ced-nav { position: sticky; top: 12px; }
+.editor-page .ced-content { overflow: visible; }
+@media (max-width: 860px) {
+  .editor-page .class-editor { flex-direction: column; }
+  .editor-page .ced-nav { flex-direction: row; flex-wrap: wrap; width: auto; position: static; }
+}
+
 .modal:has(.class-editor) { display: flex; flex-direction: column; width: min(1120px, 96vw); max-width: 1120px;
   height: min(92vh, 900px); max-height: 92vh; padding: 18px 22px; overflow: hidden; }
 .modal:has(.class-editor) > h2 { flex: none; }
