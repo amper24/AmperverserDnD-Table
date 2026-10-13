@@ -12,6 +12,16 @@ window.Compendium = (function () {
   const M = () => window.Modules;
   let packsCache = null;
   async function myPacks(force) { if (!packsCache || force) { try { packsCache = await API.get('/api/packs?scope=mine'); } catch { packsCache = []; } } return packsCache; }
+  // Иконка записи: стандартный ассет из данных (data.icon — свой у каждой записи), затем предметная
+  // или расовая иконка по имени, затем иконка категории. Расы, классы и предыстории несут data.icon.
+  const CATEGORY_ICONS = { spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' };
+  const entryIcon = (e, size = 16) => e.data?.asset_id ? M().docIcon(e.data, 'box', size)
+    : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon })
+      : e.data?.icon ? icon(e.data.icon, size)
+        : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name)
+          : icon(CATEGORY_ICONS[e.category] || 'box', size);
+  /// Справочник категории для визуального редактора: линии расы наследуют поля корневой записи.
+  async function categoryCatalog(category) { try { return await API.get(`/api/compendium?category=${category}&limit=3000&raw=1`); } catch { return []; } }
 
   // ---------- Карточка записи: отрисовка данных ----------
   function renderData(e, opts = {}) {
@@ -181,7 +191,11 @@ window.Compendium = (function () {
       result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
     } else if (category === 'race' && window.RaceEditor) {
       // Раса правится отдельным редактором: характеристики, языки, навыки и черты — своими разделами.
-      const r = await window.RaceEditor.edit(e, o); if (!r) return;
+      const r = await window.RaceEditor.edit(e, { ...o, catalog: await categoryCatalog('race') }); if (!r) return;
+      result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
+    } else if (category === 'background' && window.BackgroundEditor) {
+      // Предыстория правится отдельным редактором: навыки, языки, снаряжение и умение — своими разделами.
+      const r = await window.BackgroundEditor.edit(e, o); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else if (category === 'class' && window.ClassEditor) {
       // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами.
@@ -450,7 +464,7 @@ window.Compendium = (function () {
       for (const e of items) {
         e.pack_name = packNames[e.pack_id] || e.pack_name;
         e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' }[e.category] || 'box', 16);
+        const ico = entryIcon(e, 16);
         const row = el('div', { class: 'item comp-entry', role: 'button', tabindex: '0', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, el('b', {}, e.name), el('small', { class: 'muted comp-entry-source' }, sourceLabel(e))), e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => showEntry(e, row));
@@ -653,7 +667,7 @@ window.Compendium = (function () {
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' }[e.category] || 'box', 16);
+        const ico = entryIcon(e, 16);
         const row = el('div', { class: 'item comp-compact-entry', role: 'button', tabindex: '0', draggable: 'true', title: 'Нажми, чтобы открыть, или перетащи на лист' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => selectEntry(e, row, true));

@@ -170,23 +170,23 @@ test('заговоры расы из набора правил: высший э�
   assert.equal(st.spells.ability.mode, 'inherit', 'характеристика не выбирается игроком');
 });
 
-test('известные сразу заклинания приходят из набора, у линии 2024 — вместе с набором корня', () => {
+test('известные сразу заклинания приходят из записи, у линии 2024 — вместе с корнем', () => {
   const tiefling = RE.readState(raceByName('Тифлинг'));
   assert.deepEqual(plain(tiefling.spells.fixed), [{ name: 'Чудотворство', level: 0, ability: 'cha' }]);
 
-  // Линия со своими заговорами перекрывает заговоры корня — как в наборе правил мастера создания.
-  const high = { id: 'l1', category: 'race', name: 'Эльфийская линия: высший эльф',
-    data: { edition: '2024', name_en: 'Elven Lineage: High Elf', i18n: { en: { parent: 'Elf' } } } };
-  const st = RE.readState(high);
-  assert.deepEqual(plain(st.spells.fixed.map(r => r.name)), ['Фокусы'], 'своя линия перекрывает корень');
-  assert.equal(st.spells.ability.mode, 'on', 'выбор характеристики наследуется от корня');
-  assert.deepEqual(plain(st.spells.ability.options), ['int', 'wis', 'cha']);
-  assert.equal(st.spells.ability.title, 'Заклинательная характеристика родословной');
+  // Записи 2024 — справочник подставляется редактору вторым доводом: линия со своими заговорами
+  // перекрывает корень, линия без своих заговоров берёт заговоры и выбор характеристики у корня.
+  const seed24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'race');
+  const race24 = name => seed24.find(e => e.name === name);
+  const high = RE.readState(race24('Эльфийская линия: высший эльф'), seed24);
+  assert.deepEqual(plain(high.spells.fixed.map(r => r.name)), ['Фокусы'], 'своя линия перекрывает корень');
+  assert.equal(high.spells.ability.mode, 'on', 'выбор характеристики наследуется от корня');
+  assert.deepEqual(plain(high.spells.ability.options), ['int', 'wis', 'cha']);
+  assert.equal(high.spells.ability.title, 'Заклинательная характеристика родословной');
 
   // Линия без своих заговоров наследует заговоры корня.
-  const wood = { id: 'l2', category: 'race', name: 'Эльфийская линия: лесной эльф',
-    data: { edition: '2024', name_en: 'Elven Lineage: Wood Elf', i18n: { en: { parent: 'Elf' } } } };
-  assert.deepEqual(plain(RE.readState(wood).spells.fixed.map(r => r.name)), ['Искусство друидов']);
+  const wood = RE.readState(race24('Эльфийская линия: лесной эльф'), seed24);
+  assert.deepEqual(plain(wood.spells.fixed.map(r => r.name)), ['Искусство друидов']);
 });
 
 test('запись заклинаний: узлы rule.spell_list, поля данных и характеристика игрока', () => {

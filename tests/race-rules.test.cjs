@@ -12,6 +12,8 @@ vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
 ctx.DiceEngine = { ...ctx.window.DiceEngine, present() {} };
+require('./fixtures/graph.cjs')(ctx);
+ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
 vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;

@@ -165,6 +165,15 @@ logging:  { level: "info,sqlx=warn" }
 мастер создания задаёт вопрос на шаге расы и выдаёт заклинания листу. Подробности —
 [docs/race-editor.md](docs/race-editor.md).
 
+**Редактор предыстории** повторяет устройство редакторов класса и расы:
+**Справочник → Предыстории → «+ Создать свою запись»** или «Редактировать» в
+карточке. Разделы — **Общее, Навыки, Владения, Языки, Снаряжение, Способности,
+Характер**: навыки и инструменты пишутся узлами `rule.skill_proficiency` и
+`rule.proficiencies`, умение — узлом `rule.feature`, а черта 2024 (`data.feat`),
+характеристики на выбор (`data.asi_options`) и текст снаряжения остаются полями
+записи, которые читает мастер создания. Подробности —
+[docs/background-editor.md](docs/background-editor.md).
+
 **Навыки** теперь отдельная категория справочника (18 SRD-навыков сеются из
 `data_seed/skills.json`, собирает их `tools/srd/build_skills.py`) и работают на
 графах, как остальные объекты: запись навыка несёт граф с узлом
@@ -287,7 +296,8 @@ static/                 # фронтенд без бандлера: слои и 
                         #   app.js (лобби+кампания), table.js (canvas-стол), sheet.js (лист),
                         #   character-builder.js (правила создания) + builder-dialog.js (мастер-окно),
                         #   compendium.js (справочник), class-editor.js (конструктор класса),
-                        #   race-editor.js (конструктор расы), nodes/ (классы узлов графа),
+                        #   race-editor.js (конструктор расы), background-editor.js
+                        #   (конструктор предыстории), nodes/ (классы узлов графа),
                         #   см. также уровень-файлы в docs/frontend.md
 data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), skills.json (18 навыков с графом, сборка tools/srd/build_skills.py), builtin/ (30 ассетов)
 scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)

@@ -673,6 +673,17 @@ window.CharacterBuilder = (() => {
           hint: abilityChoice.hint || '', options: abilityChoice.options.map(k => ({ value: k, name: ABIL[k] || k })) }]
         : rest;
     }
+    // Навыки расы (узел rule.skills в записи): раса сама описывает, сколько навыков выбирает игрок, —
+    // набор правил для этого не нужен. Своя линия перекрывает корень, как и остальные поля.
+    const skillNodesOf = source => (((source?.data || {}).mechanics || {}).graph?.nodes || []).filter(n => n.type === 'rule.skills');
+    const ownSkillNodes = skillNodesOf(entry);
+    const skillNodes = ownSkillNodes.length ? ownSkillNodes : (rootEntry && rootEntry !== entry ? skillNodesOf(rootEntry) : []);
+    if (skillNodes.length) {
+      const keys = new Set(skillNodes.map(n => String(n.params?.id || '')));
+      merged.choices = [...(merged.choices || []).filter(c => !keys.has(String(c?.key || ''))),
+        ...skillNodes.map(n => ({ key: String(n.params?.id || 'race_skills'), kind: 'skills', count: Math.max(0, Number(n.params?.count) || 0),
+          title: String(n.params?.title || 'Навыки расы'), hint: String(n.params?.hint || ''), optional: n.params?.optional === true }))];
+    }
     return merged;
   }
   // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт

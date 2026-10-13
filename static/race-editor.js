@@ -57,6 +57,15 @@ window.RaceEditor = (() => {
     return { ...(root || {}), ...(own && own !== root ? own : {}) };
   }
 
+  /// Родительская (корневая) запись расы: линия наследует её заклинания и выбор характеристики,
+  /// как и при сборке персонажа (там корень читается из справочника). Каталог передаёт справочник.
+  function rootRecord(entry, catalog) {
+    const parent = str(entry?.data?.parent);
+    if (!parent || !Array.isArray(catalog)) return null;
+    const candidates = catalog.filter(e => e.category === 'race' && e.name === parent && !e?.data?.parent);
+    return candidates.find(e => e.pack_id && e.pack_id === entry.pack_id && e.source === entry.source) || candidates[0] || null;
+  }
+
   // ---------- Граф механик ----------
   const nodesOf = g => (Array.isArray(g?.nodes) ? g.nodes : (g.nodes = []));
   const linksOf = g => (Array.isArray(g?.links) ? g.links : (g.links = []));
@@ -170,32 +179,38 @@ window.RaceEditor = (() => {
 
   /// Заклинания записи: узлы графа → поля данных → набор правил расы (у высшего эльфа так приходит
   /// «Заговор высшего эльфа»: один заговор волшебника на выбор, Интеллект — характеристика).
-  function readSpells(d, graph, entry) {
+  function readSpells(d, graph, entry, catalog) {
     const preset = presetRaceRules(entry);
+    const rootData = rootRecord(entry, catalog)?.data || {};
+    // Поля записи перекрывают корень, корень — набор правил: та же очерёдность, что при сборке листа.
+    const own = key => (key in d ? d[key] : (key in rootData ? rootData[key] : undefined));
     const nodes = ruleNodes(graph, 'rule.spell_list');
     const spellRow = c => (typeof c === 'string'
       ? { name: str(c), level: 0, ability: '' }
       : { name: str(c?.name), level: num(c?.level), ability: str(c?.ability) });
+    const cantrips = own('cantrips');
     const fixed = nodes.length
       ? nodes.flatMap(n => (Array.isArray(n.params?.spells) ? n.params.spells : []).map(name => ({ name: str(name), level: 0, ability: str(n.params?.ability) })))
-      : Array.isArray(d.cantrips) ? d.cantrips.map(spellRow) : (preset.cantrips || []).map(spellRow);
+      : Array.isArray(cantrips) ? cantrips.map(spellRow) : (preset.cantrips || []).map(spellRow);
     const choiceRow = c => ({ key: str(c?.key), title: str(c?.title), hint: str(c?.hint), ability: str(c?.ability) || 'choice',
       level: num(c?.filter?.level), classes: (Array.isArray(c?.filter?.classes) ? c.filter.classes : []).map(str).filter(Boolean).join(', ') });
-    const choices = Array.isArray(d.spell_choices)
-      ? d.spell_choices.filter(c => str(c?.kind) === 'spell').map(choiceRow)
+    const spellChoices = own('spell_choices');
+    const choices = Array.isArray(spellChoices)
+      ? spellChoices.filter(c => str(c?.kind) === 'spell').map(choiceRow)
       : (preset.choices || []).filter(c => str(c?.kind) === 'spell').map(choiceRow);
-    const own = d.spell_ability_choice;
+    const abilityChoiceRaw = own('spell_ability_choice');
     const fromPreset = (preset.choices || []).find(c => str(c?.key) === 'raceSpellAbility');
     const options = c => (Array.isArray(c?.options) ? c.options : []).map(o => str(o?.value ?? o)).filter(k => KEYS.includes(k));
-    const ability = own && typeof own === 'object'
-      ? { mode: own.enabled ? 'on' : 'off', options: options(own).length ? options(own) : ['int', 'wis', 'cha'], title: str(own.title), hint: str(own.hint) }
+    const ability = abilityChoiceRaw && typeof abilityChoiceRaw === 'object'
+      ? { mode: abilityChoiceRaw.enabled ? 'on' : 'off', options: options(abilityChoiceRaw).length ? options(abilityChoiceRaw) : ['int', 'wis', 'cha'],
+        title: str(abilityChoiceRaw.title), hint: str(abilityChoiceRaw.hint) }
       : fromPreset ? { mode: 'on', options: options(fromPreset).length ? options(fromPreset) : ['int', 'wis', 'cha'], title: str(fromPreset.title), hint: str(fromPreset.hint) }
         : { mode: 'inherit', options: ['int', 'wis', 'cha'], title: '', hint: '' };
     return { fixed: fixed.filter(r => r.name), choices, ability };
   }
 
   /// Состояние редактора из записи: узлы графа в приоритете, сырые поля — запасной вариант.
-  function readState(entry) {
+  function readState(entry, catalog) {
     const d = entry?.data || {};
     const graph = d.mechanics?.graph || { nodes: [] };
     const asiNodes = ruleNodes(graph, 'rule.ability_bonus');
@@ -228,7 +243,7 @@ window.RaceEditor = (() => {
         from: Array.isArray(rulesNode?.params?.options) ? rulesNode.params.options.map(str) : [],
         id: str(rulesNode?.params?.id) || 'race_skills',
       },
-      spells: readSpells(d, graph, entry),
+      spells: readSpells(d, graph, entry, catalog),
       profs: ruleNodes(graph, 'rule.proficiencies').map(n => ({ kind: str(n.params?.kind), values: listOf(n) })),
       traits: (Array.isArray(d.traits) ? d.traits : []).map(t => ({ name: str(t?.name), text: str(t?.text) })),
       subraces: (Array.isArray(d.subraces) ? d.subraces : []).map(str).filter(Boolean),
@@ -557,7 +572,7 @@ window.RaceEditor = (() => {
 
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
   function edit(entry, opts = {}) {
-    const st = readState(entry);
+    const st = readState(entry, opts.catalog);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
     const nav = el('div', { class: 'ced-nav' });

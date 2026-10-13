@@ -530,6 +530,8 @@
     return { error: '', sheet, manual_rules: sheet.manual_rules, effects: context.effects, actions: v2ToV1(graphMechanics, { edition, level, subclass: options.subclass || '', choices: options.choices || {} }).programs || [] };
   }
   function applyGraphRules(mechanics, target, options = {}) {
+    // Запись без механик ничего не накладывает: сборка листа зовёт правило для каждой записи.
+    if (!mechanics) return { error: '', sheet: target, manual_rules: [], effects: [], actions: [] };
     const result = evaluateGraph(mechanics, options);
     if (result.error) return result;
     target.abilities ||= Object.fromEntries(ABILITIES.map(key => [key, 10]));
@@ -1244,7 +1246,11 @@
     validate,
     programsOf(mechanics, context) { return mechanics?.version === GRAPH_VERSION ? Base.programsOf(v2ToV1(mechanics, runtimeContext(context))) : oldProgramsOf(mechanics); },
     migrate(doc, category) { const m = oldMigrate(doc, category); return v1ToV2(m); },
-    forFeature(mechanics, name, context) { const m = v2ToV1(mechanics, runtimeContext(context)); const out = oldForFeature(m, name); return out ? v1ToV2(out) : undefined; },
+    // Запись без механик: особенности черт читаются у каждой записи, отсутствие механик — это «ничего нет».
+    forFeature(mechanics, name, context) {
+      if (!mechanics) return undefined;
+      const m = v2ToV1(mechanics, runtimeContext(context)); const out = oldForFeature(m, name); return out ? v1ToV2(out) : undefined;
+    },
     passiveData(entry, context) {
       const e = clone(entry), original = e.data?.mechanics;
       if (original?.version === GRAPH_VERSION) {
