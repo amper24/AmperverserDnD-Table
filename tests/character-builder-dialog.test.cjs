@@ -134,8 +134,8 @@ async function walkWizard() {
   click(findButton(documentStub.body, 'Покупка очков')); await sleep(20);
   click(findButton(documentStub.body, 'Далее')); await sleep(20);
 
-  // шаг 4 «Навыки»: два навыка класса + две взаимозамены (навыки предыстории в списке класса) + два языка
-  for (const skill of ['История', 'Медицина', 'Акробатика', 'Выживание']) {
+  // шаг 4 «Навыки»: два навыка класса (Религия и Проницательность уже даны прислужником) + два языка
+  for (const skill of ['История', 'Медицина']) {
     const cb = findByPrefix(documentStub.body, 'builder-skill', skill);
     assert.ok(cb, 'навык «' + skill + '» доступен'); cb.checked = true; fireChange(cb); await sleep(10);
   }

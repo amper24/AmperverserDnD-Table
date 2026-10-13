@@ -18,7 +18,7 @@ const B = ctx.window.CharacterBuilder || ctx.window.B;
 const catalog = ed => seed(ed).map((e, i) => ({ ...e, id: e.id || `c${ed}-${i}`, source: 'srd' }));
 const draft = (ed, slug, ruleChoices = {}) => {
   const cat = catalog(ed), cls = cat.find(e => e.category === 'class' && e.slug === `srd${ed.slice(2)}-${slug}`);
-  return { name: 'T', edition: ed, level: 1, abilities: { str: 14, dex: 12, con: 14, int: 10, wis: 12, cha: 8 }, catalog: cat, ruleChoices, skills: [], freeSkills: [], languages: [], selected: { class: cls, race: null, background: null, feat: null, subclass: null } };
+  return { name: 'T', edition: ed, level: 1, abilities: { str: 14, dex: 12, con: 14, int: 10, wis: 12, cha: 8 }, catalog: cat, ruleChoices, skills: [], languages: [], selected: { class: cls, race: null, background: null, feat: null, subclass: null } };
 };
 
 test('боевой стиль воина 2014: варианты из набора, проверка и черта на листе', () => {
@@ -145,7 +145,7 @@ test('пользовательский класс из своего набора
     items: [{ id: 'homebrew', table: { ru: 'Свой класс', choices: [{ key: 'school', kind: 'options', title: 'Школа', feature_name: 'Школа',
       options: [{ value: 'fire', name: 'Огонь', feature_text: 'Огненный удар.' }, { value: 'ice', name: 'Лёд', feature_text: 'Ледяной удар.' }] }] } }] });
   const cls = { id: 'user-homebrew', category: 'class', name: 'Свой класс', slug: 'homebrew', source: 'user', data: { name_en: 'homebrew', edition: '2014' } };
-  const d = { name: 'T', edition: '2014', level: 1, abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, catalog: [], ruleChoices: {}, skills: [], freeSkills: [], languages: [],
+  const d = { name: 'T', edition: '2014', level: 1, abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, catalog: [], ruleChoices: {}, skills: [], languages: [],
     selected: { class: cls, race: null, background: null, feat: null, subclass: null } };
   assert.equal(B.classChoices(d).length, 1, 'выбор из пользовательского набора виден мастеру');
   assert.match(B.classChoiceProblem(d), /Школа|Выберите/);

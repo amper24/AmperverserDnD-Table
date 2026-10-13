@@ -138,7 +138,7 @@ test('every SRD class offers its complete, correctly sized skill-choice pool in 
     const records = loadSrd(`data_seed/srd_${edition}.json`).filter(e => e.category === 'class');
     assert.equal(records.length, 12);
     for (const klass of records) {
-      const state = B.skillsState({ edition, selected: { class: klass }, skills: [], freeSkills: [] });
+      const state = B.skillsState({ edition, selected: { class: klass }, skills: [] });
       const slug = klass.data.name_en.toLowerCase();
       assert.equal(klass.data.skills.choose, expected[slug], `${edition} ${klass.name} skill-choice count`);
       assert.equal(state.klass.choose, expected[slug], `${edition} ${klass.name} UI choice count`);
@@ -377,45 +377,35 @@ test('choice definitions are validated before they reach the sheet', () => {
   assert.match(B.validateChoices([ok[0], ok[0]]), /код/i);
 });
 
-test('правило взаимозамены: навык из двух источников заменяется любым другим', () => {
+test('навык из двух источников не удваивается и не даёт владений сверх списка класса', () => {
   const d = draft();
   d.selected.class.data.skills = { choose: 2, from: ['Религия', 'Скрытность', 'Атлетика'] };
   d.selected.background.data.skills = ['Религия'];               // Религия уже есть от предыстории
   const st = B.skillsState(d);
   assert.equal(st.klass.choose, 2);
   assert.equal(st.klass.overlap.length, 1, 'Религия приходит и от класса, и от предыстории');
-  assert.equal(st.free.need, 1, 'вместо совпавшего навыка — любое другое владение');
-  assert.equal(st.free.options.some(o => o.key === 'religion'), false, 'уже известный навык в заменах не предлагается');
-  d.skills = ['Скрытность', 'Атлетика'];
-  d.freeSkills = ['religion'];
-  assert.equal(B.build(d).skills.filter(k => k === 'religion').length, 1, 'навык не удваивается');
+  assert.equal(st.free, undefined, 'взаимозамены нет: сверх списка класса мастер владений не выдаёт');
+  d.skills = ['stealth', 'athletics'];
+  assert.deepEqual([...B.build(d).skills].sort(), ['athletics', 'religion', 'stealth'], 'два навыка класса и один от предыстории — всего три');
 });
 
-test('взаимозамена не появляется, когда пересечений нет', () => {
+test('совпавший навык помечен источником и в выбор класса не идёт', () => {
+  const d = draft();
+  d.selected.class.data.skills = { choose: 1, from: ['Религия', 'Скрытность'] };
+  d.selected.background.data.skills = ['Религия'];
+  d.skills = ['religion', 'stealth'];
+  const st = B.skillsState(d);
+  assert.deepEqual(st.klass.picked, ['stealth'], 'Религия занята предысторией и выбор класса не тратит');
+  assert.equal(st.klass.overlap.length, 1);
+  assert.equal(st.klass.options.find(o => o.key === 'religion').granted, 'предыстория · Послушник');
+  assert.deepEqual([...B.build(d).skills].sort(), ['religion', 'stealth']);
+});
+
+test('пересечений нет — список класса доступен целиком', () => {
   const d = draft();
   d.selected.class.data.skills = { choose: 1, from: ['Скрытность', 'Атлетика'] };
   d.selected.background.data.skills = ['Религия'];
   const st = B.skillsState(d);
-  assert.equal(st.free, null);
   assert.equal(st.klass.overlap.length, 0);
-});
-
-test('замены фильтруются: занятые и чужие навыки в зачёт не идут', () => {
-  const d = draft();
-  d.selected.class.data.skills = { choose: 1, from: ['Религия', 'Скрытность'] };
-  d.selected.background.data.skills = ['Религия'];
-  d.skills = ['Скрытность'];
-  d.freeSkills = ['Скрытность', 'religion', 'НетТакого'];
-  const st = B.skillsState(d);
-  assert.deepEqual(JSON.parse(JSON.stringify(st.free.picked)), [], 'Скрытность выбрана классом, Религия занята предысторией, остального нет в списке');
-});
-
-test('навыки из замен попадают на лист один раз', () => {
-  const d = draft();
-  d.selected.class.data.skills = { choose: 1, from: ['Религия', 'Скрытность', 'Атлетика'] };
-  d.selected.background.data.skills = ['Религия'];
-  d.skills = ['stealth'];
-  d.freeSkills = ['athletics'];                                   // замена за совпавшую Религию
-  const s = B.build(d);
-  assert.deepEqual([...s.skills].sort(), ['athletics', 'religion', 'stealth']);
+  assert.equal(st.free, undefined);
 });

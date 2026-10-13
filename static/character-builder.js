@@ -631,15 +631,13 @@ window.CharacterBuilder = (() => {
     }).filter(Boolean);
     const picked = (draft.skills || []).filter(key => options.some(o => o.key === key) && !taken.has(key));
     const source = klass?.name || '';
-    // Правило PHB (2014) и SRD 2024: владение из двух источников не складывается — вместо
-    // совпавшего навыка игрок берёт любой другой. Считаем такие замены отдельным списком.
+    // Правило PHB (2014) и SRD 2024: владение из двух источников не складывается. Навык,
+    // уже выданный расой, предысторией или выбором модуля, в списке класса помечен источником
+    // и не выбирается повторно — взамен игрок просто отмечает другой навык из списка класса.
+    // Никаких «замен» сверх списка класса мастер не выдаёт: иначе персонаж получал бы больше
+    // владений, чем положено классу.
     const overlap = options.filter(o => o.granted);
-    const freeOptions = SKILLS.map(([key, name, ability]) => ({ key, name, ability, granted: unique.find(g => g.key === key) ? sourceLabel(unique.find(g => g.key === key)) : '' }))
-      .filter(o => !o.granted && !picked.includes(o.key));
-    const freeNeed = Math.min(overlap.length, freeOptions.length);
-    const freePicked = (draft.freeSkills || []).filter(key => freeOptions.some(o => o.key === key));
-    return { granted: unique, klass: options.length && choose ? { source, choose, options, picked, overlap } : null,
-      free: freeNeed ? { need: freeNeed, options: freeOptions, picked: freePicked, overlap } : null };
+    return { granted: unique, klass: options.length && choose ? { source, choose, options, picked, overlap } : null };
   }
   // ---------- Сборка листа: draft + выбранные модули → готовый лист ----------
   // Особенности расы и родословной — набор race_rules (по редакции). Запись линии переопределяет поля корня,
@@ -800,7 +798,7 @@ window.CharacterBuilder = (() => {
   }
   function build(draft) {
     const s = { name: draft.name.trim(), edition: draft.edition, level: 1, alignment: draft.alignment || '', abilities: { ...draft.abilities },
-      race: '', class: '', subclass: '', background: '', classes: [], proficiency_bonus: 2, saving_throws: [], skills: [...new Set([...(draft.skills || []), ...(draft.freeSkills || [])])], expertise: [],
+      race: '', class: '', subclass: '', background: '', classes: [], proficiency_bonus: 2, saving_throws: [], skills: [...new Set(draft.skills || [])], expertise: [],
       hp: { max: 0, current: 0, temp: 0, hit_dice: '1d8' }, speed: 30, features: [], ac: 10, auto_armor: true, unarmored_defense: '',
       spells: { ability: '', slots: {}, known: [] }, proficiencies: '', notes: '', modules: [],
       inventory: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
