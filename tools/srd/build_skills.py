@@ -111,6 +111,7 @@ def entries():
                 'ability': ability,
                 'name_en': name_en,
                 'desc': desc,
+                'icon': 'target',  # стандартный ассет приложения (static/common.js)
                 'mechanics': graph(name),
                 'i18n': {'en': {'name': name_en, 'desc': desc_en}},
             },

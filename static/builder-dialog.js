@@ -325,10 +325,13 @@ window.newCharacterDialog = async function (defaults = {}) {
     } }, el('option', { value: '' }, 'Выберите…'), ...selectableEntries.map(e => el('option', { value: e.id, selected: selected?.id === e.id ? '' : null }, e.name + ' · ' + e.source)));
     const d = selected?.data || {};
     const list = value => Array.isArray(value) ? value.filter(Boolean).join(', ') : typeof value === 'string' ? value : '';
+    // Навыки класса — правило графа (узел rule.skills): показываем то же, что спросит мастер создания.
+    const skillRule = category === 'class' ? (window.ClassRules?.skillsOf?.(selected) || {}) : {};
     const facts = category === 'class'
       ? [`Кость хитов: ${d.hit_die || 'd8'}`, d.saves?.length && `Спасброски: ${d.saves.map(k => ABIL[k] || k).join(', ')}`,
         d.armor && `Доспехи: ${list(d.armor)}`, d.weapons && `Оружие: ${list(d.weapons)}`,
-        d.skills && `Навыки: ${typeof d.skills === 'object' ? `${d.skills.choose || 0} из ${(d.skills.from || []).join(', ')}` : list(d.skills)}`,
+        skillRule.count || (skillRule.options || []).length ? `Навыки: ${skillRule.count} из ${(skillRule.options || []).join(', ') || 'любого навыка'}`
+          : d.skills && `Навыки: ${typeof d.skills === 'object' ? `${d.skills.choose || 0} из ${(d.skills.from || []).join(', ')}` : list(d.skills)}`,
         d.spellcasting && `Заклинательная характеристика: ${ABIL[d.spellcasting] || d.spellcasting}`].filter(Boolean).join(' · ')
       : category === 'background'
         ? [Array.isArray(d.skills) && d.skills.length && `Навыки: ${list(d.skills)}`,

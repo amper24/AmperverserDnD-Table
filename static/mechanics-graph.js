@@ -1235,6 +1235,16 @@
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_features || null);
     },
+    // Выбор навыков из узла rule.skills (params {id, count, options}) — для классов id «classSkills»;
+    // null, если узла нет. Пустой список — «любой навык», как у расс.
+    classSkills(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      if (result.error) return null;
+      const rules = result.sheet?.skill_choices || [];
+      const node = rules.find(r => r.id === 'classSkills') || rules[0];
+      return node ? { id: node.id, count: Math.max(0, Number(node.count) || 0), options: (node.options || []).map(String) } : null;
+    },
     // Заклинательная характеристика из узла rule.spellcasting; null, если узла нет.
     classSpellcasting(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;

@@ -275,7 +275,11 @@ window.LevelUp = (() => {
     const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
     const expertiseExtra = classRulesOf(slug, edition)?.expertise_extra || [];
-    const expertiseFrom = (classRulesOf(slug, edition)?.expertise_from_class || []).includes(to) ? (d.skills?.from || []).map(skillKeyFromName).filter(Boolean) : null;
+    // Список навыков класса — правило графа (узел rule.skills), запас — поле data.skills старого формата.
+    const classSkills = window.ClassRules?.skillsOf?.(entry, edition) || { count: 0, options: Array.isArray(d.skills?.from) ? d.skills.from : [] };
+    // Пустой список навыков класса — «любой навык»: тогда экспертиза не ограничена списком класса.
+    const expertiseFrom = (classRulesOf(slug, edition)?.expertise_from_class || []).includes(to) && classSkills.options.length
+      ? classSkills.options.map(skillKeyFromName).filter(Boolean) : null;
     if (expertise && !feats.some(f => hasFeatureKind(f.name, 'expertise', edition, f.text))) feats.push({ name: 'Экспертиза', text: `Выберите ${expertise} владения навыками для экспертизы.`, source: entry.name, tag: 'expertise' });
     const subLevel = subclassLevel(entry), subclass = subclassOf(entry, row?.subclass || opts.subclass?.name);
     const needSubclass = !subclass && subLevel !== null && to >= subLevel && (d.subclasses || []).length > 0;
@@ -304,7 +308,7 @@ window.LevelUp = (() => {
     const req = isNew ? multiclassReq(sheet.abilities, slug, sheet.edition) : null;
     const reqCurrent = isNew ? classes.filter(c => c.name).map(c => ({ name: c.name, ...multiclassReq(sheet.abilities, slugOf(resolve(c.name)), sheet.edition) })).filter(r => !r.ok) : [];
     const skillSet = classRulesOf(slug, edition)?.multiclass?.skill;
-    const skillRule = isNew && multi && skillSet ? { count: Number(skillSet.count) || 1, any: skillSet.any === true, from: d.skills?.from || [] } : null;
+    const skillRule = isNew && multi && skillSet ? { count: Number(skillSet.count) || 1, any: skillSet.any === true, from: classSkills.options } : null;
     return { from, to, entry, slug, edition, isNew, multi, hitDie: dieOf(entry), pb: { from: pbFrom, to: pbTo }, total: { from: totalFrom, to: totalTo }, columns: changes, features: feats, subclass, subclassChoices: row?.subclass_choices || {}, subclassFeatures: subFeatures,
       needSubclass, subclassLevel: subLevel, asi: feats.some(f => f.tag === 'asi'), epic: feats.some(f => f.tag === 'epic'), expertise, expertiseFrom, expertiseExtra,
       groups, spells, slotsFrom: (multi || cur.combined ? cur.slots : before?.slots) || null, slotsTo: multi || nxt.combined ? nxt.slots : (after?.slots || null), combined: nxt.combined, casterLevel: nxt.casterLevel,
@@ -712,7 +716,8 @@ window.LevelUp = (() => {
         return c;
       };
       const classFacts = e => {
-        const d = e?.data || {}, rows = [['Кость хитов', `d${dieOf(e)}`], ['Основная характеристика', d.primary], ['Спасброски', savesOf(e).join(', ')], ['Доспехи', d.armor], ['Оружие', d.weapons], ['Навыки', d.skills?.choose ? `выберите ${d.skills.choose}` : ''], ['Колдовская характеристика', d.spellcasting ? abilName(d.spellcasting) : '']].filter(r => r[1] && r[1] !== '—');
+        const d = e?.data || {}, skills = window.ClassRules?.skillsOf?.(e, st.p?.edition) || { count: 0 };
+        const rows = [['Кость хитов', `d${dieOf(e)}`], ['Основная характеристика', d.primary], ['Спасброски', savesOf(e).join(', ')], ['Доспехи', d.armor], ['Оружие', d.weapons], ['Навыки', skills.count ? `выберите ${skills.count}` : ''], ['Колдовская характеристика', d.spellcasting ? abilName(d.spellcasting) : '']].filter(r => r[1] && r[1] !== '—');
         return h('dl', 'lu-facts', ...rows.flatMap(([a, b]) => [h('dt', '', a), h('dd', '', b)]));
       };
       const upcoming = p => {

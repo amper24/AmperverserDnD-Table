@@ -51,7 +51,7 @@
 |---|---|
 | Общее | `rule.hit_die`, `rule.saving_throws`, `rule.spellcasting` |
 | Владения | `rule.proficiencies` по видам «Доспехи», «Оружие», «Инструменты» |
-| Навыки | `rule.skills` (id `classSkills`; пустой список — «любой навык») |
+| Навыки | `rule.skills` (id `classSkills`; пустой список — «любой навык») — это правило читают мастер создания (`CharacterBuilder.skillsState` через `ClassRules.skillsOf`), карточка класса и мастер повышения уровня (ограничение экспертизы) |
 | Языки | `rule.languages` |
 | Уровни | `rule.class_features` (умения по уровням), `rule.class_progression` (таблица 1–20) |
 | Заклинания | `table.caster` в `rule.class_rules` (мультикласс не трогается) |

@@ -45,6 +45,16 @@ window.ClassRules = (() => {
     isPicker: (entry, edition) => Boolean(casterOf(entry, edition).picker),
     // 'book' | 'prepared' | '' — режим заклинаний на 1 уровне в данной редакции.
     startMode: (entry, edition) => byEdition(casterOf(entry, edition).start, edition),
+    // Навыки класса: узел rule.skills в графе записи (id «classSkills»), запас — поле data.skills
+    // старого формата. { count, options }: пустой список значит «игрок выбирает любой навык».
+    skillsOf(entry, edition) {
+      // Без явной редакции берётся редакция записи — узел может быть привязан к редакции.
+      const node = window.Mechanics?.classSkills?.(entry?.data?.mechanics, edition || entry?.data?.edition);
+      if (node) return { ...node, graph: true };
+      const d = entry?.data || {};
+      return { count: Math.max(0, Number(d.skills?.choose) || 0),
+        options: Array.isArray(d.skills?.from) ? d.skills.from.map(String) : [] };
+    },
     // 'level' | 'half' | '' — формула числа подготовленных заклинаний в данной редакции.
     preparedFormula: (entry, edition) => byEdition(casterOf(entry, edition).prepared, edition),
     // Книга заклинаний: { start, per_level } — заклинаний при создании и за повышение уровня (набор уже по редакции).

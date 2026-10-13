@@ -8,6 +8,7 @@
    "ability": "dex",
    "name_en": "Acrobatics",
    "desc": "Удержать равновесие на краю или на скользкой поверхности, выполнить акробатический трюк, вырваться из захвата или уйти от опрокидывания.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -49,6 +50,7 @@
    "ability": "wis",
    "name_en": "Animal Handling",
    "desc": "Успокоить животное, понять его намерения, удержаться в седле при резком манёвре или заставить ездовое животное преодолеть препятствие.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -90,6 +92,7 @@
    "ability": "int",
    "name_en": "Arcana",
    "desc": "Знания о магии: школы и традиции, магические предметы и символы, существа из иных планов, правила работы заклинаний.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -131,6 +134,7 @@
    "ability": "str",
    "name_en": "Athletics",
    "desc": "Лазание, плавание, прыжки, захват и удержание противника, трудные физические усилия.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -172,6 +176,7 @@
    "ability": "cha",
    "name_en": "Deception",
    "desc": "Скрыть правду, выдать ложь за истину, незаметно подсунуть фальшивку или отвести глаза стражнику.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -213,6 +218,7 @@
    "ability": "int",
    "name_en": "History",
    "desc": "Легенды, войны и колонии, древние цивилизации, давно забытые династии и события прошлого.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -254,6 +260,7 @@
    "ability": "wis",
    "name_en": "Insight",
    "desc": "Понять истинные намерения собеседника, заметить ложь, уловить настроение или прочитать язык тела.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -295,6 +302,7 @@
    "ability": "cha",
    "name_en": "Intimidation",
    "desc": "Угрозами или давлением заставить существо сделать то, что вам нужно, или выбить из него правду.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -336,6 +344,7 @@
    "ability": "int",
    "name_en": "Investigation",
    "desc": "Найти скрытую улику, воссоздать картину случившегося по косвенным признакам, расшифровать чужие записи.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -377,6 +386,7 @@
    "ability": "wis",
    "name_en": "Medicine",
    "desc": "Стабилизировать умирающего, поставить диагноз, определить причину смерти или действие яда.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -418,6 +428,7 @@
    "ability": "int",
    "name_en": "Nature",
    "desc": "Знания о растениях и животных, погоде и природных циклах, ландшафте и его опасностях.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -459,6 +470,7 @@
    "ability": "wis",
    "name_en": "Perception",
    "desc": "Заметить существо или предмет, услышать звук за дверью, почувствовать засаду — или понять, что кто-то крадётся.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -500,6 +512,7 @@
    "ability": "cha",
    "name_en": "Performance",
    "desc": "Сыграть, спеть, станцевать, прочесть стихи или удержать внимание толпы.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -541,6 +554,7 @@
    "ability": "cha",
    "name_en": "Persuasion",
    "desc": "Уговорить собеседника дипломатией, сочувствием или здравым доводом — заставить его захотеть помочь.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -582,6 +596,7 @@
    "ability": "int",
    "name_en": "Religion",
    "desc": "Знания о богах и их служителях, ритуалах и священных символах, культы и запретные обряды.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -623,6 +638,7 @@
    "ability": "dex",
    "name_en": "Sleight of Hand",
    "desc": "Незаметно украсть, спрятать предмет в рукаве, сжульничать в игре или подсунуть что-то на глазах у всех.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -664,6 +680,7 @@
    "ability": "dex",
    "name_en": "Stealth",
    "desc": "Спрятаться, пройти незамеченным, подобраться к врагу или вовсе не оставить следа.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,
@@ -705,6 +722,7 @@
    "ability": "wis",
    "name_en": "Survival",
    "desc": "Идти по следу, выследить дичь, найти дорогу, предсказать погоду или найти пропитание и укрытие.",
+   "icon": "target",
    "mechanics": {
     "origin": "skill-graph-v2",
     "version": 2,

@@ -7,6 +7,8 @@ const vm = require('node:vm');
 const dictionaries = require('./fixtures/dictionaries.cjs')();
 const ctx = { window: { ...dictionaries }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } }; vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
+// Граф механик: правила класса (в том числе список навыков — узел rule.skills) читаются узлами.
+require('./fixtures/graph.cjs')(ctx);
 for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 const L = ctx.window.LevelUp;
@@ -106,6 +108,24 @@ test('план: магия договора колдуна и известные
   const w = cls('2014', 'warlock'), p = L.plan(sheet({ level: 4, class: w.name, subclass: 'Исчадие' }), w);
   assert.deepEqual(plain(p.pactTo), { count: 2, level: 3 }); assert.equal(p.spells.mode, 'known'); assert.equal(p.spells.spells, 1); assert.equal(p.spells.maxLevel, 3);
 });
+test('навыки класса для экспертизы берутся из правила графа (узел rule.skills)', () => {
+  const wizard = cls(2024, 'wizard');
+  const record = () => JSON.parse(JSON.stringify(wizard));
+  const nodeOf = e => e.data.mechanics.graph.nodes.find(n => n.type === 'rule.skills');
+
+  const graph = record();
+  nodeOf(graph).params = { id: 'classSkills', count: 2, options: ['Расследование', 'История'] };
+  graph.data.skills = { choose: 2, from: ['Магия', 'Природа'] };   // поле записи устарело
+  const p = L.plan(sheet({ level: 1, class: graph.name, edition: '2024' }), graph, '2024');
+  assert.deepEqual(plain(p.expertiseFrom), ['investigation', 'history'], 'ограничение экспертизы — из узла');
+
+  const legacy = record();
+  legacy.data.mechanics.graph.nodes = legacy.data.mechanics.graph.nodes.filter(n => n.type !== 'rule.skills');
+  const pLegacy = L.plan(sheet({ level: 1, class: legacy.name, edition: '2024' }), legacy, '2024');
+  const legacyKeys = legacy.data.skills.from.map(name => dictionaries.SKILLS.find(([, ru]) => ru === name)[0]).sort();
+  assert.deepEqual(plain(pLegacy.expertiseFrom).sort(), legacyKeys, 'без узла — список из поля записи');
+});
+
 test('компетентность: ключи навыков берутся из словаря листа (регрессия длинных id)', () => {
   // Регрессия: levelup.js держал свою таблицу «русское название → ключ» с длинными id
   // (animal_handling, sleight_of_hand), которых нет в словаре листа (window.SKILLS: animal, sleight).

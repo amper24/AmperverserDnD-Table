@@ -625,8 +625,15 @@ window.CharacterBuilder = (() => {
     const taken = new Set(unique.map(g => g.key));
     const klass = draft.selected?.class;
     const data = ((klass && window.Mechanics?.passiveData?.(klass, context)) || klass)?.data || {};
-    const from = Array.isArray(data.skills?.from) ? data.skills.from : [];
-    const choose = Math.max(0, Math.min(Number(data.skills?.choose) || 0, from.length));
+    // Навыки класса — правило графа (узел rule.skills): запасной путь для старых записей без него —
+    // поле data.skills. Пустой список значит «любой навык справочника».
+    const rule = (klass && window.ClassRules?.skillsOf?.(klass, context.edition)) || null;
+    const legacyCount = Math.max(0, Number(data.skills?.choose) || 0);
+    const legacyList = Array.isArray(data.skills?.from) ? data.skills.from : [];
+    // Пустой список в правиле графа значит «любой навык справочника» — так же, как у рас.
+    const anySkill = Boolean(rule?.graph) && !(rule.options || []).length;
+    const from = anySkill ? SKILLS.map(([, name]) => name) : (rule ? rule.options : legacyList);
+    const choose = Math.max(0, Math.min(rule ? rule.count : legacyCount, from.length));
     const options = from.map(name => {
       const key = skillKey(name);
       if (!key) return null;

@@ -31,7 +31,15 @@ window.Compendium = (function () {
     const ctx = window.SHEET_CTX || {};
     switch (e.category) {
       case 'race': if (d.parent) add('Основной вид', d.parent); add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Тёмное зрение', d.darkvision && d.darkvision + ' фт'); add('Языки', d.languages); break;
-      case 'class': add('Кость хитов', d.hit_die); add('Стартовое снаряжение', d.starting_equipment); add('Основная хар-ка', d.primary); add('Спасброски', (d.saves || []).map(s => ABIL[s])); add('Доспехи', d.armor); add('Оружие', d.weapons); add('Навыки', Array.isArray(d.skills) ? d.skills : d.skills && Array.isArray(d.skills.from) ? `${d.skills.choose ?? 2} из: ${d.skills.from.join(', ')}` : typeof d.skills === 'string' ? d.skills : ''); add('Подклассы', (d.subclasses || []).map(x => typeof x === 'string' ? x : x?.name).filter(Boolean)); break;
+      case 'class': {
+        // Навыки класса — правило графа (узел rule.skills, id classSkills): в карточке видно то же,
+        // что спросит мастер создания. Запас — поле data.skills старого формата.
+        const rule = window.ClassRules?.skillsOf?.(e) || {};
+        const legacy = Array.isArray(d.skills) ? d.skills : d.skills && Array.isArray(d.skills.from) ? `${d.skills.choose ?? 2} из: ${d.skills.from.join(', ')}` : typeof d.skills === 'string' ? d.skills : '';
+        add('Кость хитов', d.hit_die); add('Стартовое снаряжение', d.starting_equipment); add('Основная хар-ка', d.primary); add('Спасброски', (d.saves || []).map(s => ABIL[s])); add('Доспехи', d.armor); add('Оружие', d.weapons);
+        add('Навыки', rule.count || (rule.options || []).length ? `${rule.count} из: ${(rule.options || []).join(', ') || 'любого навыка'}` : legacy);
+        add('Подклассы', (d.subclasses || []).map(x => typeof x === 'string' ? x : x?.name).filter(Boolean)); break;
+      }
       case 'background': add('Навыки', d.skills); add('Инструменты', d.tools); add('Языки', d.languages); add('Умение', d.feature); add('Черта происхождения', d.feat); add('Характеристики', d.asi_options && ('+2/+1 или +1/+1/+1 из: ' + d.asi_options.join(', '))); add('Снаряжение', d.equipment); break;
       case 'item':
         add('Тип', M().ITEM_TYPES[d.type]?.slice(2)); add('Категория', d.category); add('Стоимость', d.cost); add('Урон', d.damage && `${d.damage} ${Lang.term(d.damage_type) || ''}`); add('КД', d.ac); add('Вес', d.weight && d.weight + ' фнт'); add('Свойства', d.properties); add('Редкость', d.rarity); add('Настройка', d.attunement && 'Требуется'); add('Заряды', d.charges);
