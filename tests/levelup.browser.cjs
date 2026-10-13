@@ -11,7 +11,8 @@ const assert = require('node:assert/strict');
 const browserLaunchOptions = require('./browser-launch.cjs');
 
 const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js', 'node-menu.js', 'mechanics-graph.js', 'modules.js', 'compendium.js', 'class-rules.js', 'levelup.js'];
-const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => `<script src="/static/${f}"></script>`).join('')}</body></html>`;
+const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => f === 'node-registry.js' ? `<script src="/static/${f}"></script>` + NODE_SCRIPTS : `<script src="/static/${f}"></script>`).join('')}</body></html>`;
 const SEED = loadSrd('data_seed/srd_2014.json');
 const catalog = category => SEED.filter(r => r.category === category).map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
 

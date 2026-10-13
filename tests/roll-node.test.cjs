@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, console };
 ctx.window.SKILLS = [['acrobatics', 'Акробатика', 'dex']];
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) {
+for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 }
 const M = ctx.window.Mechanics;

@@ -41,7 +41,7 @@ async function main() {
   const ctx = { console, crypto: require('node:crypto').webcrypto, document: {} };
   const Presets = await loadPresets(ctx);
   // Граф проверяется тем же кодом, что и в браузере.
-  for (const f of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) {
+  for (const f of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) {
     vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
   }
   const M = ctx.window.Mechanics;

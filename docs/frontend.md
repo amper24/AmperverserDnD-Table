@@ -31,6 +31,8 @@
 | `dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
 | `equipment.js` | правила инвентаря | `Equipment` |
 | `mechanics.js` | механики умений | `Mechanics` |
+| `node-registry.js` | базовый класс `GraphNode` и реестр узлов | `NodeRegistry`, `Nodes` |
+| `nodes/<категория>/<файл>.js` | ООП-классы узлов графа: папка — категория, файл — узел (data / conditions / logic / flow / rules / actions / groups) | регистрируются в `NodeRegistry.NODE_DEFS` |
 | `modules.js` | записи листа и редакторы | `Modules` |
 | `compendium.js` | справочник | `Compendium` |
 | `character-builder.js` | правила создания персонажа | `CharacterBuilder` |

@@ -20,7 +20,8 @@ const REPO = path.join(__dirname, '..', '..');
 const EDITIONS = ['2014', '2024'];
 const CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'npc', 'feat', 'condition', 'lore'];
 const SEED_CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'feat', 'condition'];
-const RUNTIME_FILES = ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js'];
+const RUNTIME_NODE_FILES = require('../nodes/node-loader.cjs').nodeFiles().map(f => path.relative(REPO, f).split(path.sep).join('/'));
+const RUNTIME_FILES = ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...RUNTIME_NODE_FILES, 'static/mechanics-graph.js'];
 const CJK_CYR = /[\u0400-\u04FF]/;
 const LATIN = /[A-Za-z]/;
 // Записи, которых не было до локализации: у них нет хеша старой версии (см. src/seed.rs, mod tests).

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 // Прогрессия класса задаётся узлом rule.class_progression; таблица зависит от редакции через condition.edition.
 const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
 const plain = value => JSON.parse(JSON.stringify(value));
 

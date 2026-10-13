@@ -72,6 +72,10 @@
     subclass: 'Подкласс', level: 'Уровень', edition: 'Редакция', hp: 'Хиты', program_id: 'ID программы', block_id: 'ID блока',
     choices: 'Выборы', spell: 'Заклинание', mode_label: 'Режим', prompt: 'Подсказка', description: 'Описание',
     roll_kind: 'Тип броска', op: 'Операция', damage_type: 'Тип урона', grip: 'Хват', apply: 'Применить к листу',
+    // Параметры узлов правил и таблиц (чтобы не показывать сырые английские ключи).
+    items: 'Предметы', title: 'Название', gold: 'Золото', qty: 'Количество', type: 'Тип',
+    levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
+    caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита',
   };
   const labelOf = key => LABELS[key] || key;
 

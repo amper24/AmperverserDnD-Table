@@ -50,30 +50,53 @@ window.CharacterBuilder = (() => {
   };
   const feature = (s, name, text, source, mechanics) => s.features.push(Modules.newFeature({ name, text: text || '', source, mechanics }));
   register('race', (s, e) => {
-    const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name; if (d.speed) s.speed = d.speed;
-    if (s.edition === '2014') for (const k of keys) s.abilities[k] += Number(d.asi?.[k]) || 0;
-    appendProficiency(s, 'Языки расы', d.languages);
+    const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name;
+    // Правила расы (скорость, языки, ASI 2014) перенесены в узлы rule.* — придут из applyGraphRules ниже.
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.speed' || n.type === 'rule.languages' || n.type === 'rule.ability_bonus');
+    if (!hasRules) {
+      // Старый формат записи без узлов правил — читаем сырые поля.
+      if (d.speed) s.speed = d.speed;
+      if (s.edition === '2014') for (const k of keys) s.abilities[k] += Number(d.asi?.[k]) || 0;
+      appendProficiency(s, 'Языки расы', (Array.isArray(d.languages) ? d.languages : []).filter(x => typeof x === 'string' && x.length <= 40));
+    }
     // Фиксированные навыки расы (например, Острые чувства эльфа — Восприятие) из данных или пассивного блока.
     for (const name of Array.isArray(d.skills) ? d.skills : []) { const key = skillKey(name); if (key && !s.skills.includes(key)) s.skills.push(key); }
   });
   register('class', (s, e) => {
-    const d = e.data || {}; s.class = e.name; s.saving_throws = [...(d.saves || [])];
-    s.hp.hit_dice = '1' + (d.hit_die || 'd8'); s.spells.ability = d.spellcasting || '';
-    for (const name of d.features?.['1'] || []) {
-      // Особенность с признаком creation: skip (набор feature_rules) не добавляется как обычная: её выбирают отдельно.
-      if ((window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name))) continue;
-      feature(s, name, d.feature_texts?.[name], e.name, window.Mechanics?.forFeature(d.mechanics,name));
+    const d = e.data || {}; s.class = e.name;
+    const skipFeature = name => (window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name));
+    // Правила классов перенесены в узлы rule.*: базовые владения, спасброски, кость хитов и
+    // заклинательная характеристика придут из applyGraphRules ниже; здесь только умения 1-го уровня.
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.class_features' || n.type === 'rule.saving_throws');
+    if (hasRules) {
+      const cf = window.Mechanics?.classFeatures?.(e.data?.mechanics, s.edition);
+      for (const item of cf?.levels?.['1'] || []) {
+        const name = item?.name; if (!name || skipFeature(name)) continue;
+        feature(s, name, item.text || '', e.name, window.Mechanics?.forFeature(d.mechanics, name));
+      }
+    } else {
+      // Старый формат записи без узлов правил — читаем сырые поля.
+      s.saving_throws = [...(d.saves || [])];
+      s.hp.hit_dice = '1' + (d.hit_die || 'd8'); s.spells.ability = d.spellcasting || '';
+      for (const name of d.features?.['1'] || []) {
+        if (skipFeature(name)) continue;
+        feature(s, name, d.feature_texts?.[name], e.name, window.Mechanics?.forFeature(d.mechanics, name));
+      }
+      appendProficiency(s, 'Доспехи', d.armor);
+      appendProficiency(s, 'Оружие', d.weapons);
+      appendProficiency(s, 'Инструменты', d.tools);
     }
-    appendProficiency(s, 'Доспехи', d.armor);
-    appendProficiency(s, 'Оружие', d.weapons);
-    appendProficiency(s, 'Инструменты', d.tools);
   });
   register('background', (s, e) => {
     const d = e.data || {}; s.background = e.name;
+    // Правила предыстории (инструменты, умение) перенесены в узлы rule.* — придут из applyGraphRules.
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.proficiencies' || n.type === 'rule.feature');
     for (const name of Array.isArray(d.skills) ? d.skills : []) { const key = skillKey(name); if (key) s.skills.push(key); }
-    appendProficiency(s, 'Инструменты предыстории', d.tools);
+    if (!hasRules) {
+      appendProficiency(s, 'Инструменты предыстории', d.tools);
+      if (d.feature) feature(s, d.feature, d.feature_text, e.name, window.Mechanics?.forFeature(d.mechanics, d.feature));
+    }
     appendProficiency(s, 'Языки предыстории', Array.isArray(d.languages) || typeof d.languages === 'string' ? d.languages : null);
-    if (d.feature) feature(s, d.feature, d.feature_text, e.name, window.Mechanics?.forFeature(d.mechanics,d.feature));
   });
   register('feat', (s, e) => {
     const d = e.data || {};
@@ -348,12 +371,36 @@ window.CharacterBuilder = (() => {
     }
     return blocks.map((block, index) => ({ ...block, source, index }));
   }
-  /// План снаряжения выбранных модулей: класс и предыстория дают текст, мастер — выбор игрока.
+  /// Снаряжение из узлов rule.equipment / rule.equipment_choice графа записи (источник правды), иначе null.
+  function graphEquipment(entry, draft) {
+    const mechanics = entry?.data?.mechanics;
+    if (!mechanics || mechanics.version !== 2 || !window.Mechanics?.equipment) return null;
+    const hasNodes = (mechanics.graph?.nodes || []).some(n => n.type === 'rule.equipment' || n.type === 'rule.equipment_choice');
+    if (!hasNodes) return null;
+    return window.Mechanics.equipment(mechanics, { edition: draft.edition, level: draft.level || 1, choices: draft.ruleChoices || {}, source: entry.name });
+  }
+  /// План снаряжения выбранных модулей: узлы графа (rule.equipment/…_choice) или текст — мастер делает выбор игрока.
   function equipmentPlan(draft) {
     const blocks = [];
     for (const [kind, entry] of [['class', draft.selected?.class], ['background', draft.selected?.background]]) {
+      if (!entry) continue;
+      const graph = graphEquipment(entry, draft);
+      if (graph && (graph.items.length || graph.choices.length)) {
+        let index = 0;
+        for (const item of graph.items) {
+          blocks.push({ kind: 'fixed', tokens: [{ kind: 'item', name: String(item.name || ''), qty: Math.max(1, Number(item.qty) || 1) }], id: `${kind}:${index++}`, sourceName: entry.name, graph: true });
+        }
+        for (const choice of graph.choices) {
+          const options = (choice.options || []).map((option, oi) => ({
+            id: `opt${oi + 1}`, marker: String.fromCharCode(65 + (oi % 26)), label: String(option.name || ''),
+            tokens: [...(option.items || []).map(i => ({ kind: 'item', name: String(i.name || ''), qty: Math.max(1, Number(i.qty) || 1) })), ...(Number(option.gold) > 0 ? [{ kind: 'gold', amount: Number(option.gold) }] : [])],
+          }));
+          blocks.push({ kind: 'group', label: String(choice.title || 'Выберите снаряжение'), options, id: `${kind}:${index++}`, sourceName: entry.name, graph: true });
+        }
+        continue;
+      }
       const text = kind === 'class' ? entry?.data?.starting_equipment : entry?.data?.equipment;
-      if (!entry || typeof text !== 'string' || !text.trim()) continue;
+      if (typeof text !== 'string' || !text.trim()) continue;
       for (const block of parseEquipmentText(text, kind)) blocks.push({ ...block, id: `${kind}:${block.index}`, sourceName: entry.name });
     }
     return blocks;

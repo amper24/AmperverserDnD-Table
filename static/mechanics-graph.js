@@ -56,17 +56,8 @@
   }
   // Значение узла по значениям входов: get(socket) отдаёт значение входа или undefined. Неизвестное — undefined.
   function computedValue(type, p, get) {
-    if (type === 'data.stat') return statDice(p);
-    if (type === 'dice.combine') { const a = get('a'), b = get('b'); return a && b ? { count: 0, sides: 6, bonus: 0, stat: '', advanced: `${diceTerm(a)}+${diceTerm(b)}` } : undefined; }
-    if (type === 'condition.compare') { const a = get('a'), b = get('b'); return typeof a === 'number' && typeof b === 'number' && COMPARE_OPS[p.op] ? COMPARE_OPS[p.op](a, b) : undefined; }
-    if (type === 'logic.op') {
-      const a = get('a');
-      if (p.op === 'not') return typeof a === 'boolean' ? !a : undefined;
-      const b = get('b');
-      if (p.op === 'or') { if (a === true || b === true) return true; return a === false && b === false ? false : undefined; }
-      if (a === false || b === false) return false;
-      return a === true && b === true ? true : undefined;
-    }
+    const def = NodeRegistry.nodeDef(type);
+    if (def && typeof def.compute === 'function') return def.compute(p, get);
     return undefined;
   }
 
@@ -415,25 +406,11 @@
     // Псевдонимы проверяются как их абстрактный узел: параметры типа (roll_kind, op) добавляются сами.
     const type = NodeRegistry.resolveType(node.type);
     const p = { ...(node.params || {}), ...(NodeRegistry.aliasParams(node.type) || {}) };
-    const stringList = value => Array.isArray(value) && value.length <= 100 && value.every(item => typeof item === 'string' && item.length <= 200);
-    const tableValue = value => value && typeof value === 'object' && !Array.isArray(value) && JSON.stringify(value).length <= 100000;
-    if (type === 'data.number' && !Number.isFinite(p.value)) return 'Числовой узел должен содержать конечное число.';
-    if (type === 'data.dice' && (!p.value || typeof p.value !== 'object' || Array.isArray(p.value) || !Number.isInteger(p.value.count) || p.value.count < 0 || p.value.count > 100 || !Number.isInteger(p.value.sides) || p.value.sides < 1 || p.value.sides > 1000 || !Number.isInteger(p.value.bonus ?? 0) || Math.abs(p.value.bonus ?? 0) > 1000000 || !['', ...ABILITIES, 'best', 'prof', 'atk', 'atk_str', 'atk_dex', 'spell', 'spell_mod', 'level', 'dc'].includes(p.value.stat ?? ''))) return 'Узел кости должен содержать количество и грани.';
-    if (type === 'data.ability' && !ABILITIES.includes(p.value)) return 'Выберите характеристику из закрытого списка.';
-    if (type === 'data.table' && (!p.value || typeof p.value !== 'object' || Array.isArray(p.value))) return 'Табличный узел должен содержать JSON-объект.';
-    if (type === 'data.choice' && (!p.value || typeof p.value !== 'object' || Array.isArray(p.value))) return 'Узел выбора должен содержать JSON-объект.';
-    if (type === 'data.text' && (typeof p.value !== 'string' || p.value.length > 4000)) return 'Текстовый узел: до 4000 символов.';
-    if (type === 'condition.edition' && (!Array.isArray(p.editions) || !p.editions.length || p.editions.length > 2 || p.editions.some(x => typeof x !== 'string' || !['2014', '2024'].includes(x)))) return 'Условие редакции: один или несколько допустимых SRD.';
-    if (type === 'condition.level' && (!Number.isInteger(p.min) || !Number.isInteger(p.max) || p.min < 1 || p.max > 20 || p.min > p.max)) return 'Условие уровня: диапазон 1–20.';
-    if (type === 'condition.subclass' && (!idText(p.id, 100))) return 'Укажите ID подкласса в условии.';
-    if (type === 'condition.choice' && (!idText(p.id, 100) || !Object.hasOwn(p, 'value'))) return 'Укажите ID группы и сравниваемый выбор.';
-    if (type === 'data.stat' && (!isStatId(p.id) || !STAT_MODES.includes(p.mode))) return 'Выберите характеристику или навык и режим: бонус или значение.';
-    if (type === 'condition.compare' && !Object.hasOwn(COMPARE_OPS, p.op)) return 'Сравнение: допустимы >=, <=, >, <, = и !=.';
-    if (type === 'logic.op' && p.op !== undefined && !LOGIC_OPS.includes(p.op)) return 'Логический узел: операция И, ИЛИ или НЕ.';
-    if (type === 'flow.if' && Object.keys(p).length > 8) return 'Условный узел содержит лишние параметры.';
-    if (type === 'action.program' && p.style !== undefined && !window.BUTTON_STYLES?.[p.style]) return 'Неизвестный стиль кнопки.';
-    if (type === 'action.program' && (!idText(p.program_id, 100) || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || !['use', 'passive'].includes(p.trigger))) return 'Программе нужны ID, название и допустимый триггер.';
-    if (['group.input', 'group.output'].includes(type) && !idText(p.socket_id, 64)) return 'Узел границы группы должен ссылаться на сокет интерфейса.';
+    const def = NodeRegistry.nodeDef(node.type);
+    if (def && typeof def.validate === 'function') {
+      const err = def.validate(p);
+      if (err) return err;
+    }
     if (actionType(type)) {
       if (!idText(p.block_id, 100)) return 'Узел действия должен иметь стабильный block_id.';
       if (type === 'action.roll' && p.roll_kind !== undefined && !ROLL_KINDS.includes(p.roll_kind)) return 'Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.';
@@ -443,24 +420,6 @@
         if (error && !p.dice?.advanced) return error;
       }
     }
-    if (type === 'rule.ability_bonus' && (!ABILITIES.includes(p.ability) || (p.amount !== undefined && (!Number.isFinite(p.amount) || Math.abs(p.amount) > 1000)))) return 'Бонус характеристики требует существующий ключ характеристики и конечную величину.';
-    if (type === 'rule.speed' && p.value !== undefined && (!Number.isInteger(p.value) || p.value < 0 || p.value > 1000)) return 'Скорость должна быть целым числом от 0 до 1000.';
-    if (type === 'rule.languages' && p.value !== undefined && !stringList(p.value)) return 'Языки должны быть списком текстовых значений.';
-    if (type === 'rule.proficiencies' && (p.value !== undefined && !stringList(p.value) || (p.kind !== undefined && (typeof p.kind !== 'string' || p.kind.length > 120)))) return 'Владения должны быть списком и иметь короткий тип.';
-    if (type === 'rule.hit_die' && p.value !== undefined && (typeof p.value !== 'string' || !/^d(?:6|8|10|12)$/.test(p.value))) return 'Кость хитов: d6, d8, d10 или d12.';
-    if (type === 'rule.saving_throws' && p.value !== undefined && (!Array.isArray(p.value) || p.value.length > 6 || p.value.some(v => !ABILITIES.includes(v)))) return 'Спасброски должны быть списком характеристик.';
-    if (type === 'rule.feature' && (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || (p.text !== undefined && (typeof p.text !== 'string' || p.text.length > 4000)))) return 'Умение: название до 120 и текст до 4000 символов.';
-    if (type === 'rule.skills' && (!idText(p.id, 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
-    if (type === 'rule.spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
-    if (['rule.spell_slots', 'rule.asi', 'rule.class_progression', 'rule.class_rules'].includes(type) && p.table !== undefined && !tableValue(p.table)) return 'Табличное правило должно содержать ограниченный JSON-объект.';
-    if (type === 'rule.armor_formula') {
-      const formulaError = typeof p.formula === 'string' && p.formula.length <= 100 ? Formulas.validate(p.formula) : 'Формула защиты: строка до 100 символов.';
-      if (formulaError) return `Формула защиты без доспехов: ${formulaError}`;
-      if (p.name !== undefined && (typeof p.name !== 'string' || p.name.length > 120)) return 'Название защиты без доспехов: строка до 120 символов.';
-      if (p.no_shield !== undefined && typeof p.no_shield !== 'boolean') return 'Запрет щита: логическое значение.';
-    }
-    if (type === 'rule.hp_bonus' && p.amount !== undefined && (!Number.isInteger(p.amount) || Math.abs(p.amount) > 1000)) return 'Бонус хитов: целое от −1000 до 1000.';
-    if (type === 'rule.manual' && (typeof p.text !== 'string' || p.text.length > 4000)) return 'Ручное правило: до 4000 символов.';
     return '';
   }
   function toGraph(mechanics) { return v1ToV2(mechanics); }
@@ -524,42 +483,20 @@
     return { ordered, linksByTarget };
   }
   const valuesOf = value => Array.isArray(value) ? value : value === undefined || value === null || value === '' ? [] : [value];
+  // Снаряжение из узлов: фиксированный список и варианты выбора. Имя усекается, количество приводится к 1–1000.
+  const normalizeEquipmentItems = raw => (Array.isArray(raw) ? raw : []).slice(0, 100)
+    .map(item => ({ name: String(item?.name || '').trim().slice(0, 120), qty: Math.max(1, Math.min(1000, Math.trunc(Number(item?.qty) || 1))) }))
+    .filter(item => item.name);
+  const normalizeEquipmentOptions = raw => (Array.isArray(raw) ? raw : []).slice(0, 50)
+    .map((option, index) => ({ name: String(option?.name || `Вариант ${index + 1}`).trim().slice(0, 120), items: normalizeEquipmentItems(option?.items), gold: Math.max(0, Math.min(1000000, Math.trunc(Number(option?.gold) || 0))) }));
   function applyRuleNode(type, p, incoming, sheet, context, outputs) {
     const on = incoming('enabled'); if (on === false) return;
+    const def = NodeRegistry.nodeDef(type);
     const n = input => incoming(input);
     const value = input => n(input) ?? p[input] ?? p.value;
     const emit = (kind, data = {}) => context.effects.push({ kind, ...clone(data), source: context.source || '', node_id: context.nodeId });
-    if (type === 'rule.ability_bonus') {
-      const ability = p.ability, amount = Number(value('amount')) || 0;
-      if (ABILITIES.includes(ability)) { sheet.abilities[ability] = (Number(sheet.abilities[ability]) || 10) + amount; emit('ability_bonus', { ability, amount }); }
-    } else if (type === 'rule.speed') { const v = Number(value('value')); if (Number.isFinite(v)) { sheet.speed = v; emit('speed', { value: v }); }
-    } else if (type === 'rule.languages') {
-      const langs = valuesOf(value('value')).map(String).filter(Boolean); sheet.languages.push(...langs); appendProficiency(sheet, 'Языки', langs); emit('languages', { values: langs });
-    } else if (type === 'rule.proficiencies') {
-      const profs = valuesOf(value('value')).map(String).filter(Boolean); appendProficiency(sheet, p.kind || 'Владения', profs); emit('proficiencies', { label: p.kind || 'Владения', values: profs });
-    } else if (type === 'rule.hit_die') { const die = value('value'); if (die) { sheet.hp.hit_dice = `1${die}`; emit('hit_die', { value: die }); }
-    } else if (type === 'rule.saving_throws') {
-      const saves = valuesOf(value('value')).filter(x => ABILITIES.includes(x)); sheet.saving_throws = [...new Set([...sheet.saving_throws, ...saves])]; emit('saving_throws', { values: saves });
-    } else if (type === 'rule.feature') {
-      const feature = { name: p.name, text: p.text || '', source: context.source || '', mechanic_node_id: context.featureNodeId || '' }; sheet.features.push(feature); emit('feature', { feature });
-    } else if (type === 'rule.skills') {
-      const id = String(p.id || ''), options = valuesOf(n('options') ?? p.options), count = Number(n('count') ?? p.count) || 0;
-      const selected = valuesOf(context.choices?.[id]).slice(0, Math.max(0, count));
-      sheet.skill_choices.push({ id, count, options: options.map(String), selected: selected.map(String) });
-      sheet.skills.push(...selected.map(String)); emit('skills', { id, count, options: options.map(String), selected: selected.map(String) });
-    } else if (type === 'rule.spell_list') {
-      const spells = valuesOf(n('spells') ?? p.spells); sheet.spell_rules.push({ mode: p.mode, ability: p.ability || '', spells: clone(spells) }); emit('spell_list', { mode: p.mode, ability: p.ability || '', spells });
-    } else if (type === 'rule.spell_slots') {
-      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.spell_progression.slots = clone(table); emit('spell_slots', { table }); }
-    } else if (type === 'rule.asi') {
-      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.asi_rules.push(clone(table)); emit('asi', { table }); }
-    } else if (type === 'rule.class_progression') {
-      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_progression = clone(table); emit('class_progression', { table }); }
-    } else if (type === 'rule.class_rules') {
-      const table = n('table') ?? p.table; if (table && typeof table === 'object') { sheet.class_rules = clone(table); emit('class_rules', { table }); }
-    } else if (type === 'rule.armor_formula') { const rule = { formula: String(n('formula') ?? p.formula ?? ''), name: String(p.name || 'Защита без доспехов').slice(0, 120), no_shield: Boolean(p.no_shield) }; sheet.unarmored_defense = clone(rule); emit('unarmored_defense', rule);
-    } else if (type === 'rule.hp_bonus') { const amount = Number(n('amount') ?? p.amount) || 0; sheet.hp.max += amount; sheet.hp.current += amount; emit('hp_bonus', { amount });
-    } else if (type === 'rule.manual') { const text = String(n('text') ?? p.text ?? ''); sheet.manual_rules.push(text); emit('manual', { text }); }
+    const env = { get: n, value, emit, sheet, context, clone, valuesOf, appendProficiency, normalizeEquipmentItems, normalizeEquipmentOptions };
+    if (def && typeof def.project === 'function') def.project(p, env);
     outputs.set(`${context.nodeId}:effect`, { type: 'effect', node_type: type });
   }
   function appendProficiency(sheet, label, values) {
@@ -616,6 +553,10 @@
       else if (effect.kind === 'unarmored_defense') target.unarmored_defense = { formula: effect.formula, name: effect.name, no_shield: effect.no_shield };
       else if (effect.kind === 'hp_bonus') { target.hp.max += effect.amount; target.hp.current += effect.amount; }
       else if (effect.kind === 'manual') (target.manual_rules ||= []).push(effect.text);
+      else if (effect.kind === 'equipment') (target.equipment_grants ||= []).push(...clone(effect.items || []));
+      else if (effect.kind === 'equipment_choice') (target.equipment_choices ||= []).push(clone(effect));
+      else if (effect.kind === 'class_features') target.class_features = clone(effect.table);
+      else if (effect.kind === 'spellcasting') target.spells.ability = effect.ability;
     }
     target.skills = [...new Set(target.skills)];
     return { error: '', target, effects: result.effects, manual_rules: result.manual_rules };
@@ -627,6 +568,9 @@
       hp: result.sheet.hp, saves: result.sheet.saving_throws, skills: result.sheet.skills, skill_choices: result.sheet.skill_choices,
       languages: result.sheet.languages, proficiencies: result.sheet.proficiencies, spells: result.sheet.spell_rules,
       spell_slots: result.sheet.spell_progression.slots, features: result.sheet.features, manual_rules: result.manual_rules,
+      equipment: result.effects.filter(e => e.kind === 'equipment').flatMap(e => e.items || []),
+      equipment_choices: result.effects.filter(e => e.kind === 'equipment_choice').map(e => ({ id: e.id, title: e.title, options: e.options || [] })),
+      class_features: result.sheet.class_features || null, spellcasting: result.sheet.spellcasting || null,
       actions: result.actions.map(p => ({ name: p.name, trigger: p.trigger, blocks: p.blocks.map(b => b.kind) })) };
   }
   function adaptForRead(mechanics) { return mechanics?.version === 1 ? v1ToV2(mechanics) : clone(mechanics); }
@@ -1271,6 +1215,27 @@
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_rules || null);
+    },
+    // Стартовое снаряжение из графа: rule.equipment (фиксированный список) и rule.equipment_choice (выбор варианта).
+    equipment(mechanics, options = {}) {
+      if (mechanics?.version !== GRAPH_VERSION) return { items: [], choices: [] };
+      const result = evaluateGraph(mechanics, options);
+      if (result.error) return { items: [], choices: [] };
+      const items = result.effects.filter(e => e.kind === 'equipment').flatMap(e => e.items || []);
+      const choices = result.effects.filter(e => e.kind === 'equipment_choice').map(e => ({ id: e.id, title: e.title, options: e.options || [] }));
+      return { items, choices };
+    },
+    // Умения класса по уровням из узла rule.class_features; null, если узла нет.
+    classFeatures(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.class_features || null);
+    },
+    // Заклинательная характеристика из узла rule.spellcasting; null, если узла нет.
+    classSpellcasting(mechanics, edition = '2014') {
+      if (mechanics?.version !== GRAPH_VERSION) return null;
+      const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
+      return result.error ? null : (result.sheet?.spellcasting || null);
     },
     applyGraphRules,
     normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },

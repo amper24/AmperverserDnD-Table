@@ -48,10 +48,12 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("options".into(), "list".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("spells".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spellcasting" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hp_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.equipment" | "rule.equipment_choice" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
         x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => {
@@ -86,6 +88,31 @@ fn valid_string_list(value: &Value, max_items: usize, max_length: usize) -> bool
     value.as_array().map(|items| items.len() <= max_items && items.iter().all(|item| item.as_str().map(|text| utf16_len(text) <= max_length).unwrap_or(false))).unwrap_or(false)
 }
 fn valid_json_object(value: &Value, max_length: usize) -> bool { value.is_object() && utf16_len(&value.to_string()) <= max_length }
+// Снаряжение: предмет с названием (до 120) и количеством (1–1000, необязательно).
+fn valid_equipment_item(value: &Value) -> bool {
+    let Some(o) = value.as_object() else { return false; };
+    let name_ok = o.get("name").and_then(|n| n.as_str()).map(|n| !n.trim().is_empty() && utf16_len(n) <= 120).unwrap_or(false);
+    let qty_ok = o.get("qty").map(|q| json_integer(q).map(|n| (1..=1000).contains(&n)).unwrap_or(false)).unwrap_or(true);
+    name_ok && qty_ok
+}
+fn valid_equipment_items(value: &Value) -> bool {
+    value.as_array().map(|items| items.len() <= 100 && items.iter().all(valid_equipment_item)).unwrap_or(false)
+}
+fn valid_equipment_choice(value: &Value) -> bool {
+    let Some(o) = value.as_object() else { return false; };
+    let id_ok = o.get("id").map(|v| v.as_str().map(|s| utf16_len(s) <= 100).unwrap_or(false)).unwrap_or(true);
+    let title_ok = o.get("title").map(|v| v.as_str().map(|s| utf16_len(s) <= 120).unwrap_or(false)).unwrap_or(true);
+    let options_ok = o.get("options").map(|v| v.as_array().map(|opts| {
+        opts.len() >= 1 && opts.len() <= 50 && opts.iter().all(|opt| {
+            let Some(oo) = opt.as_object() else { return false; };
+            let name_ok = oo.get("name").and_then(|n| n.as_str()).map(|n| !n.trim().is_empty() && utf16_len(n) <= 120).unwrap_or(false);
+            let items_ok = oo.get("items").map(valid_equipment_items).unwrap_or(false);
+            let gold_ok = oo.get("gold").map(|g| json_integer(g).map(|n| (0..=1_000_000).contains(&n)).unwrap_or(false)).unwrap_or(true);
+            name_ok && items_ok && gold_ok
+        })
+    }).unwrap_or(false)).unwrap_or(false);
+    id_ok && title_ok && options_ok
+}
 fn check_interface(value: &Value) -> ApiResult<()> {
     let items = value.as_array().filter(|xs| xs.len() <= 16).ok_or_else(|| bad("Интерфейс группы: не более 16 сокетов."))?;
     let mut ids = HashSet::new();
@@ -157,7 +184,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "rule.spell_list" => {
             if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); }
         }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
+        "rule.spellcasting" if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) => return Err(bad("Выберите заклинательную характеристику из закрытого списка.")),
         "rule.armor_formula" => {
             let formula = p["formula"].as_str().unwrap_or("");
             if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); }
@@ -166,6 +194,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         }
         "rule.hp_bonus" if p.get("amount").is_some() && json_integer(&p["amount"]).map(|n| n < -1000 || n > 1000).unwrap_or(true) => return Err(bad("Бонус хитов: целое от −1000 до 1000.")),
         "rule.manual" if p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000 => return Err(bad("Ручное правило: до 4000 символов.")),
+        "rule.equipment" if !valid_equipment_items(&p["items"]) => return Err(bad("Снаряжение: список предметов с названием (до 120) и количеством (1–1000).")),
+        "rule.equipment_choice" if !valid_equipment_choice(&p) => return Err(bad("Выбор снаряжения: ID, название и варианты со списком предметов.")),
         _ => {}
     }
     if kind.starts_with("action.") && kind != "action.program" {
@@ -263,7 +293,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
-    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual",
+    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 

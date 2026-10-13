@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), vm = requ
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el: (t, a = {}, ...c) => ({ tag: t, attrs: a, children: c.flat() }), toast() {} };
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
-for (const f of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+for (const f of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 const G = ctx.window.Mechanics;
 const startOf = g => g.graph.nodes.find(n => n.type === 'action.program');
 

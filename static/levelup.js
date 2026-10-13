@@ -141,11 +141,30 @@ window.LevelUp = (() => {
     }
     return { slots, pact, combined, casterLevel };
   }
+  /// Таблица умений класса: { "1": [{name, text}], … } — из узла rule.class_features, иначе сырые поля data.features.
+  function classFeatureTable(entry) {
+    const cf = window.Mechanics?.classFeatures?.(entry?.data?.mechanics, entry?.data?.edition);
+    if (cf?.levels) return cf.levels;
+    const d = entry?.data || {}, levels = {};
+    for (const [lvl, names] of Object.entries(d.features || {})) {
+      levels[lvl] = (Array.isArray(names) ? names : []).map(name => ({ name: String(name), text: d.feature_texts?.[name] || '' }));
+    }
+    return levels;
+  }
   /// Умения класса на уровне без мусорных строк данных и повторов.
   function classFeaturesAt(entry, level) {
-    const d = entry?.data || {}, seen = new Set();
-    return (d.features?.[String(level)] || []).filter(n => typeof n === 'string' && n.trim() && !n.trim().startsWith('|') && !seen.has(n) && seen.add(n))
-      .map(name => ({ name, text: d.feature_texts?.[name] || '' }));
+    const levels = classFeatureTable(entry), seen = new Set();
+    return (levels[String(level)] || []).filter(item => {
+      const name = typeof item === 'string' ? item : item?.name;
+      return name && String(name).trim() && !String(name).trim().startsWith('|') && !seen.has(name) && seen.add(name);
+    }).map(item => typeof item === 'string' ? { name: item, text: '' } : { name: item.name, text: item.text || '' });
+  }
+  function featureTextOf(entry, name) {
+    for (const items of Object.values(classFeatureTable(entry))) for (const item of items) {
+      const n = typeof item === 'string' ? item : item?.name;
+      if (n === name) return typeof item === 'string' ? '' : (item?.text || '');
+    }
+    return '';
   }
   const subclassOf = (entry, name) => {
     const n = String(name || '').trim().toLowerCase(); if (!n) return null;
@@ -193,7 +212,8 @@ window.LevelUp = (() => {
   // ---------- Чистая логика: план повышения (умения, выборы, ячейки) ----------
   function optionGroups(entry, edition, from, to, sheet, prog) {
     const d = entry?.data || {}, slug = slugOf(entry), groups = [], hidden = new Set();
-    const names = classFeaturesAt(entry, to).map(f => f.name), textOf = n => d.feature_texts?.[n] || '';
+    const levels = classFeatureTable(entry);
+    const names = classFeaturesAt(entry, to).map(f => f.name), textOf = n => featureTextOf(entry, n);
     const opt = n => ({ name: n, text: textOf(n) });
     const owned = new Set((sheet.features || []).map(f => f.name));
     const listed = lv => classFeaturesAt(entry, lv).map(f => f.name);
@@ -210,13 +230,13 @@ window.LevelUp = (() => {
       } else if (rule.type === 'pool') {
         // Пул вариантов из особенностей уровня, где впервые появилась особенность-источник (метамагия).
         if (!names.includes(rule.feature)) continue;
-        const first = Object.keys(d.features || {}).map(Number).filter(l => (d.features[l] || []).includes(rule.feature)).sort((a, b) => a - b)[0];
+        const first = Object.keys(levels).map(Number).filter(l => (levels[l] || []).some(x => (typeof x === 'string' ? x : x?.name) === rule.feature)).sort((a, b) => a - b)[0];
         const all = listed(first).filter(n => n !== rule.feature), options = all.filter(n => !owned.has(n)).map(opt);
         if (options.length) { groups.push({ id: rule.id, kind: 'feature', label: rule.label, hint: to === first ? rule.hint_first : rule.hint_next, count: to === first ? rule.count_first : rule.count_next, options }); hide([rule.feature, ...all]); }
       } else if (rule.type === 'invocations') {
         // Пул «воззваний» (по признаку из наборов особенностей) и число новых по таблице прогрессии.
         const prefix = featureRuleOf(rule.kind, edition)?.pattern || '';
-        const pool = Object.keys(d.features || {}).map(Number).filter(l => l <= to).sort((a, b) => a - b).flatMap(l => listed(l)).filter(n => n.startsWith(prefix));
+        const pool = Object.keys(levels).map(Number).filter(l => l <= to).sort((a, b) => a - b).flatMap(l => listed(l)).filter(n => n.startsWith(prefix));
         const nb = Number(prog?.levels?.[String(to)]?.[rule.count_key]) || 0, na = Number(prog?.levels?.[String(from)]?.[rule.count_key]) || 0;
         const options = [...new Set(pool)].filter(n => !owned.has(n)).map(opt), known = (sheet.features || []).filter(f => f.name.startsWith(prefix));
         if (nb > na && options.length) groups.push({ id: rule.id, kind: 'feature', label: rule.label, hint: fill(rule.hint_more, nb - na), count: nb - na, options, swap: known.length ? known.map(f => ({ uid: f.uid, name: f.name })) : null });

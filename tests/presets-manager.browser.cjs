@@ -6,6 +6,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
+const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
 const MY_SET = {
   kind: 'graph_starter', id: 'user.my-sets', name: 'Мои варианты', items: [
     { id: 'my-level-speed', name: 'Моя скорость с 3 уровня', hint: 'Свой набор: скорость 40 фт', nodes: [
@@ -23,7 +24,7 @@ const MY_SET = {
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        MODULES.map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        MODULES.map(name => name === 'node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://presets.test/');
     await page.waitForFunction(() => window.Presets?.loaded === true);

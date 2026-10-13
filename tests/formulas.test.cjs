@@ -11,7 +11,7 @@ const F = ctx.window.Formulas;
 // Механики SRD хранятся в графе v2: читаем v1-представление (toLegacy), как редактор.
 const mctx = { window: {}, el: (tag, attrs = {}, ...children) => ({ tag, attrs, children }), toast() {}, crypto: require('node:crypto').webcrypto };
 vm.createContext(mctx);
-for (const f of ['static/dice.js', 'static/formulas.js', 'static/mechanics.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), mctx);
+for (const f of ['static/dice.js', 'static/formulas.js', 'static/mechanics.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), mctx);
 const G = mctx.window.Mechanics;
 const srd = f => JSON.parse(fs.readFileSync(f, 'utf8')).map(e => e.data?.mechanics?.version === 2 ? { ...e, data: { ...e.data, mechanics: JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics))) } } : e);
 

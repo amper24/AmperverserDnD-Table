@@ -6,7 +6,7 @@ const vm = require('node:vm');
 // Проверка связей редактора: тип сокетов, петли, циклы и общая схема (движок, не UI).
 const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
 
 const defaults = type => JSON.parse(JSON.stringify(ctx.window.NodeRegistry.NODE_DEFS[type].defaults));

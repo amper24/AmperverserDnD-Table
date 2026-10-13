@@ -16,19 +16,29 @@
     "origin": {
       "srd-graph-v2": 981
     },
-    "nodes": 9651,
-    "links": 5794,
-    "programs": 3833,
+    "nodes": 9843,
+    "links": 5852,
+    "programs": 3870,
     "records_with_programs": 977,
     "node_types": {
       "action.condition": 30,
       "action.consume": 384,
       "action.manual": 3813,
       "action.passive": 113,
-      "action.program": 3833,
-      "action.roll": 1454,
+      "action.program": 3870,
+      "action.roll": 1491,
+      "condition.edition": 13,
+      "rule.ability_bonus": 21,
+      "rule.class_features": 12,
       "rule.class_progression": 12,
-      "rule.class_rules": 12
+      "rule.class_rules": 12,
+      "rule.feature": 1,
+      "rule.hit_die": 12,
+      "rule.languages": 9,
+      "rule.proficiencies": 21,
+      "rule.saving_throws": 12,
+      "rule.speed": 9,
+      "rule.spellcasting": 8
     }
   },
   "2024": {
@@ -48,19 +58,25 @@
     "origin": {
       "srd-graph-v2": 986
     },
-    "nodes": 9161,
-    "links": 5539,
-    "programs": 3598,
+    "nodes": 9294,
+    "links": 5567,
+    "programs": 3626,
     "records_with_programs": 981,
     "node_types": {
       "action.condition": 30,
       "action.consume": 373,
       "action.manual": 3587,
       "action.passive": 92,
-      "action.program": 3598,
-      "action.roll": 1457,
+      "action.program": 3626,
+      "action.roll": 1485,
+      "rule.class_features": 12,
       "rule.class_progression": 12,
-      "rule.class_rules": 12
+      "rule.class_rules": 12,
+      "rule.hit_die": 12,
+      "rule.proficiencies": 24,
+      "rule.saving_throws": 12,
+      "rule.speed": 9,
+      "rule.spellcasting": 8
     }
   },
   "format": "v2-graph",

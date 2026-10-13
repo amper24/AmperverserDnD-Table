@@ -3,6 +3,7 @@ const { chromium } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -13,7 +14,7 @@ const assert = require('node:assert/strict');
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => `<script src="/static/${name}.js"></script>`).join('') });
+        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => name === 'node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://forms-create.test/');
     await page.waitForFunction(() => window.Presets?.loaded === true);

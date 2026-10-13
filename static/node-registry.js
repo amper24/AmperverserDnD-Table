@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// node-registry.js — единый реестр узлов механик v2: типы данных, входы/выходы, настройки по умолчанию,
-// категории для меню и проверка совместимости сокетов. Интерфейс и движок читают только этот реестр.
-// Набор узлов намеренно абстрактный: вместо отдельных узлов «Атака», «Урон», «Лечение» и «Временные хиты»
-// есть один настраиваемый узел «Бросок» (action.roll, параметр roll_kind), вместо «И»/«ИЛИ»/«НЕ» — один
-// узел «Логика» (logic.op, параметр op). Старые типы остаются псевдонимами (ALIASES): графы из базы и
-// шаблоны прошлых версий читаются, а редактор переводит их на абстрактные узлы при открытии.
-// Чтобы добавить узел, достаточно строки в NODE_DEFS (вход/выход/тип/категория/настройки) и обработчика
-// исполнения в движке. Загружается после mechanics.js и до mechanics-graph.js. Даёт: window.NodeRegistry.
+// node-registry.js — база объектно-ориентированной системы узлов механик v2.
+// Каждый узел — отдельный класс в static/nodes/<категория>/<файл>.js: он наследует
+// GraphNode, объявляет метаданные (type/label/group/inputs/outputs/defaults) и своё
+// поведение (validate/compute/project) и регистрирует себя через Nodes.register.
+// Реестр собирает NODE_DEFS из классов и сохраняет прежний публичный API NodeRegistry
+// (catalog/sameType/nodeTitle/...), который читают интерфейс, движок и мастера.
+// Старые типы узлов (action.attack, logic.and, …) — псевдонимы (ALIASES), читаются без миграции.
+// Загружается после mechanics.js и до файлов static/nodes/*. Даёт: window.NodeRegistry, window.Nodes.
 // ---------------------------------------------------------------------------
 (() => {
   const Base = window.Mechanics;
@@ -24,63 +24,51 @@
   const EFFECT_KINDS = ['consume', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-  const NODE_DEFS = {
-    'data.number': { label: 'Число', group: 'Данные', inputs: {}, outputs: { value: 'number' }, defaults: { value: 1 } },
-    'data.dice': { label: 'Кость', group: 'Данные', inputs: {}, outputs: { value: 'dice' }, defaults: { value: { count: 1, sides: 6, bonus: 0, stat: '' } } },
-    'data.ability': { label: 'Характеристика', group: 'Данные', inputs: {}, outputs: { value: 'ability' }, defaults: { value: 'str' } },
-    'data.table': { label: 'Таблица по уровню', group: 'Данные', inputs: {}, outputs: { value: 'table' }, defaults: { value: {} } },
-    'data.choice': { label: 'Выбор', group: 'Данные', inputs: {}, outputs: { value: 'choice' }, defaults: { value: { id: '', count: 1, options: [] } } },
-    'data.text': { label: 'Текст', group: 'Данные', inputs: {}, outputs: { value: 'text' }, defaults: { value: '' } },
-    // Характеристика или навык персонажа: «bonus» — модификатор (для навыка уже с владением), «score» — значение
-    // (характеристика — показатель, навык — пассивное значение 10 + бонус). Числа берутся из листа при броске.
-    'data.stat': { label: 'Характеристика / навык', group: 'Данные', inputs: {}, outputs: { value: 'dice' }, defaults: { id: 'str', mode: 'bonus' } },
-    // Совмещение двух костей в одну формулу броска (сумма).
-    'dice.combine': { label: 'Сложить кости', group: 'Данные', inputs: { a: 'dice', b: 'dice' }, outputs: { value: 'dice' }, defaults: {} },
-    'condition.edition': { label: 'Если редакция', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { editions: ['2014'] } },
-    'condition.level': { label: 'Если уровень', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { min: 1, max: 20 } },
-    'condition.subclass': { label: 'Если подкласс', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '' } },
-    'condition.choice': { label: 'Если выбран вариант', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: { id: '', value: '' } },
-    // Попадание последней атаки в цепочке. Подключается только ко входу «condition» узла «Если»: ветви «да»/«нет» задают гейт действий.
-    'condition.hit': { label: 'Попадание атаки', group: 'Условия', inputs: {}, outputs: { value: 'bool' }, defaults: {} },
-    // Сравнение двух чисел (данные «Число» и вычисленные значения). Операция: >=, <=, >, <, =, !=.
-    'condition.compare': { label: 'Сравнить числа', group: 'Условия', inputs: { a: 'number', b: 'number' }, outputs: { value: 'bool' }, defaults: { op: '>=' } },
-    // Один настраиваемый логический узел: op = and / or / not. Для «НЕ» используется только вход «a».
-    // Вход условия «попадания атаки» сюда не подключается — только ко входу «Если».
-    'logic.op': { label: 'Логика', group: 'Логика', inputs: { a: 'bool', b: 'bool' }, outputs: { value: 'bool' }, defaults: { op: 'and' } },
-    'flow.if': { label: 'Если', group: 'Поток', inputs: { exec: 'flow', condition: 'bool' }, outputs: { then: 'flow', else: 'flow' }, defaults: {} },
-    // Конец цепочки действия: принимает поток и ничего не исполняет. В конец может прийти несколько проводов.
-    'flow.end': { label: 'Конец', group: 'Поток', inputs: { exec: 'flow' }, outputs: {}, defaults: {} },
-    'rule.ability_bonus': { label: 'Бонус характеристики', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { ability: 'str', amount: 1 } },
-    'rule.speed': { label: 'Скорость', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'number' }, outputs: { effect: 'effect' }, defaults: { value: 30 } },
-    'rule.languages': { label: 'Языки', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.proficiencies': { label: 'Владения', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { kind: 'general', value: [] } },
-    'rule.hit_die': { label: 'Кость хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'text' }, outputs: { effect: 'effect' }, defaults: { value: 'd8' } },
-    'rule.saving_throws': { label: 'Спасброски', group: 'Правила персонажа', inputs: { enabled: 'bool', value: 'list' }, outputs: { effect: 'effect' }, defaults: { value: [] } },
-    'rule.feature': { label: 'Умение', group: 'Правила персонажа', inputs: { enabled: 'bool' }, outputs: { effect: 'effect' }, defaults: { name: 'Новое умение', text: '', feature_name: '' } },
-    'rule.skills': { label: 'Выбор навыков', group: 'Правила персонажа', inputs: { enabled: 'bool', options: 'list', count: 'number' }, outputs: { effect: 'effect' }, defaults: { id: '', count: 1, options: [] } },
-    'rule.spell_list': { label: 'Список заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', spells: 'list' }, outputs: { effect: 'effect' }, defaults: { mode: 'known', ability: 'int', spells: [] } },
-    'rule.spell_slots': { label: 'Ячейки заклинаний', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.asi': { label: 'Улучшение характеристик', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.class_progression': { label: 'Прогрессия класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.class_rules': { label: 'Правила класса', group: 'Правила персонажа', inputs: { enabled: 'bool', table: 'table' }, outputs: { effect: 'effect' }, defaults: { table: {} } },
-    'rule.armor_formula': { label: 'Защита без доспехов', group: 'Правила персонажа', inputs: { enabled: 'bool', formula: 'text' }, outputs: { effect: 'effect' }, defaults: { formula: '10 + @dex + @con', name: 'Защита без доспехов', no_shield: false } },
-    'rule.hp_bonus': { label: 'Бонус хитов', group: 'Правила персонажа', inputs: { enabled: 'bool', amount: 'number' }, outputs: { effect: 'effect' }, defaults: { amount: 1 } },
-    'rule.manual': { label: 'Ручное правило', group: 'Правила персонажа', inputs: { enabled: 'bool', text: 'text' }, outputs: { effect: 'effect' }, defaults: { text: 'Опишите правило, которое применяется вручную.' } },
-    'action.program': { label: 'Начало действия', group: 'Действия', inputs: {}, outputs: { exec: 'flow' }, defaults: { program_id: '', name: 'Новое действие', trigger: 'use', style: 'default' } },
-    // Один настраиваемый узел всех бросков: roll_kind выбирает смысл (свободный бросок, атака, урон,
-    // лечение, временные хиты). Кость задаётся полем «dice» или проводом на вход «Кость».
-    'action.roll': { label: 'Бросок', group: 'Действия', inputs: { exec: 'flow', enabled: 'bool', dice: 'dice' }, outputs: { exec: 'flow' }, defaults: {} },
-    'group.instance': { label: 'Группа', group: 'Группы', inputs: {}, outputs: {}, defaults: { group_id: '' } },
-    'group.input': { label: 'Вход группы', group: 'Группы', inputs: {}, outputs: { value: 'text' }, defaults: { socket_id: '' } },
-    'group.output': { label: 'Выход группы', group: 'Группы', inputs: { value: 'text' }, outputs: {}, defaults: { socket_id: '' } },
-  };
-  for (const kind of EFFECT_KINDS) {
-    NODE_DEFS[`action.${kind}`] = {
-      label: Base.TYPES[kind]?.[0] || kind, group: 'Действия',
-      inputs: { exec: 'flow', enabled: 'bool' }, outputs: { exec: 'flow' }, defaults: actionDefaults(kind),
-    };
+  // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
+  const STAT_MODES = ['bonus', 'score'];
+  const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
+  const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
+  function statDice(p) {
+    const id = String(p.id || '');
+    const term = ABILITIES.includes(id) ? (p.mode === 'score' ? `@${id}_score` : `@${id}`) : (p.mode === 'score' ? `10+@${id}` : `@${id}`);
+    return { count: 0, sides: 6, bonus: 0, stat: '', advanced: term };
   }
-  NODE_DEFS['action.roll'].defaults = { ...actionDefaults('roll'), roll_kind: 'roll' };
+  function diceTerm(d) {
+    if (d?.advanced) return String(d.advanced);
+    return (d.count ? `${d.count}d${d.sides}` : '0') + (Number(d.bonus) >= 0 ? '+' : '') + (Number(d.bonus) || 0) + (d.stat ? `+@${d.stat}` : '');
+  }
+  // Общие проверки параметров, переиспользуемые классами узлов в validate().
+  const idText = (value, max = 80) => typeof value === 'string' && value.length > 0 && value.length <= max;
+  const stringList = value => Array.isArray(value) && value.length <= 100 && value.every(item => typeof item === 'string' && item.length <= 200);
+  const tableValue = value => value && typeof value === 'object' && !Array.isArray(value) && JSON.stringify(value).length <= 100000;
+  const equipmentItemsValue = value => Array.isArray(value) && value.length <= 100 && value.every(item => item && typeof item === 'object' && typeof item.name === 'string' && item.name.trim() && item.name.length <= 120 && (item.qty === undefined || (Number.isInteger(item.qty) && item.qty >= 1 && item.qty <= 1000)));
+  const equipmentChoiceValue = value => value && typeof value === 'object' && (value.id === undefined || (typeof value.id === 'string' && value.id.length <= 100)) && (value.title === undefined || (typeof value.title === 'string' && value.title.length <= 120)) && Array.isArray(value.options) && value.options.length >= 1 && value.options.length <= 50 && value.options.every(option => option && typeof option === 'object' && typeof option.name === 'string' && option.name.trim() && option.name.length <= 120 && equipmentItemsValue(option.items) && (option.gold === undefined || (Number.isInteger(option.gold) && option.gold >= 0 && option.gold <= 1000000)));
+  // ---------------------------------------------------------------------------
+  // Базовый класс узла: метаданные и поведение. Каждый узел — подкласс в
+  // static/nodes/<категория>/<файл>.js, регистрирующий себя через Nodes.register.
+  // ---------------------------------------------------------------------------
+  class GraphNode {
+    static type = '';
+    static label = 'Узел';
+    static group = 'Прочее';
+    static inputs = {};
+    static outputs = {};
+    static defaults = {};
+    static isAction = false;
+    static isComputed = false;
+    static isRule = false;
+    // Проверка параметров: '' — допустимо, иначе текст ошибки.
+    static validate(params) { return ''; }
+    // Значение вычисляемого узла: get(socket) → значение входа или undefined. undefined — неизвестно.
+    static compute(params, get) { return undefined; }
+    // Проекция правила на лист. env: { get, value, emit, sheet, context, clone, valuesOf, appendProficiency }.
+    static project(params, env) {}
+  }
+  // Реестр: файлы узлов регистрируют классы, NODE_DEFS собирается из них.
+  const NODE_DEFS = {};
+  function register(cls) { NODE_DEFS[cls.type] = cls; }
+  // Умолчания полей действия по виду (block_defaults из наборов + встроенные умолчания).
   function actionDefaults(kind) {
     // Условие «попал / не попал» не хранится в действии: его задаёт узел condition.hit через flow.if.
     const base = { enabled: true };
@@ -147,8 +135,11 @@
     return CATEGORIES.map(c => ({ id: c.id, title: c.title, items: items.filter(item => item.category === c.id).sort((a, b) => a.label.localeCompare(b.label, 'ru')) }))
       .filter(section => section.items.length);
   }
+  window.Nodes = { GraphNode, register, actionDefaults, clone };
   window.NodeRegistry = {
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
+    COMPUTED, STAT_MODES, COMPARE_OPS, isStatId, statDice, diceTerm,
+    idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, ALIASES, resolveType, aliasParams, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
   };
 })();
