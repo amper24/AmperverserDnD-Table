@@ -282,8 +282,10 @@ window.RaceEditor = (() => {
     syncNodes(graph, 'rule.skill_proficiency', skillNames.length ? [{ params: { value: skillNames } }] : []);
     if (skillNames.length) d.skills = skillNames; else delete d.skills;
     const from = st.skills.from.map(s => str(s).trim()).filter(Boolean);
-    syncNodes(graph, 'rule.skills', num(st.skills.choose) > 0 && from.length
-      ? [{ params: { id: str(st.skills.id).trim() || 'race_skills', count: Math.min(num(st.skills.choose), from.length), options: from } }] : []);
+    const choose = Math.max(0, num(st.skills.choose));
+    // Пустой список — «любой навык»: узел остаётся, иначе сохранение записи потеряло бы выбор расы.
+    syncNodes(graph, 'rule.skills', choose > 0
+      ? [{ params: { id: str(st.skills.id).trim() || 'race_skills', count: from.length ? Math.min(choose, from.length) : choose, options: from } }] : []);
 
     // Владения: по узлу rule.proficiencies на каждый вид.
     syncNodes(graph, 'rule.proficiencies', st.profs.filter(p => str(p.kind).trim() && (p.values || []).length)
@@ -512,11 +514,11 @@ window.RaceEditor = (() => {
         numInput(st.skills.choose, v => { st.skills.choose = Math.max(0, v); render(); }, { max: 18 }),
         el('small', { class: 'muted' }, 'навыков из списка ниже')),
       el('span', { class: 'grow' }),
-      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, `${st.skills.from.length} в списке`)));
+      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, st.skills.from.length ? `${st.skills.from.length} в списке` : 'пусто — любой навык')));
     box.append(listEditor(st.skills.from, render, {
       options: skillsCatalog().map(s => ({ value: s.name, label: `${s.name} (${ABIL[s.ability] || s.ability})` })),
       addLabel: '+ добавить навык…', placeholder: 'свой навык', drop: 'Перетащите навык из справочника сюда',
-      empty: 'Списка выбора нет.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
+      empty: 'Пустой список — игрок выбирает любой навык.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
     }));
     box.append(el('p', { class: 'muted small' },
       'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника: перетаскивайте навыки прямо сюда.'));

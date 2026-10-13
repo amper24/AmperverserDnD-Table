@@ -145,6 +145,28 @@ test('новая раса: пустая запись собирает валид
   assert.deepEqual(plain(out.traits), []);
 });
 
+test('выбор навыков расы переживает сохранение записи: пустой список — любой навык', () => {
+  // «Универсальность навыков» полуэльфа: сколько выбрать, список пуст (любой навык). Сохранение
+  // записи без правок не должно потерять узел rule.skills.
+  const half = RE.readState(raceByName('Полуэльф'));
+  assert.equal(half.skills.choose, 2);
+  assert.deepEqual(plain(half.skills.from), []);
+  const out = RE.writeData(half, raceByName('Полуэльф'));
+  const node = nodesOfType(out, 'rule.skills')[0];
+  assert.ok(node, 'узел выбора навыков остался в графе');
+  assert.equal(node.params.count, 2);
+  assert.deepEqual(plain(node.params.options), []);
+  assert.equal(M.validate(out.mechanics) || '', '');
+
+  // Со списком узел пишет его и не даёт выбрать больше, чем в списке.
+  half.skills.choose = 3;
+  half.skills.from = ['Скрытность', 'Атлетика'];
+  const out2 = RE.writeData(half, raceByName('Полуэльф'));
+  const node2 = nodesOfType(out2, 'rule.skills')[0];
+  assert.deepEqual(plain(node2.params.options), ['Скрытность', 'Атлетика']);
+  assert.equal(node2.params.count, 2, 'выбор ограничен списком');
+});
+
 test('владения: по узлу rule.proficiencies на каждый вид', () => {
   const st = RE.readState(entryOf(RE.emptyData()));
   st.profs.push({ kind: 'Оружие', values: ['Боевой топор', 'Ручной топор'] });
