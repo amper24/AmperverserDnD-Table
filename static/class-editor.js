@@ -53,6 +53,118 @@ window.ClassEditor = (() => {
   /// Навык из записи справочника (категория «Навыки»): ключ берётся из data.key, иначе по названию.
   const skillFromEntry = entry => (entry?.category === 'skill' ? (skillKeyOfName(entry.data?.key) || skillKeyOfName(entry.name)) : '');
 
+  // ---------- Граф механик ----------
+  // Правила класса живут и в узлах графа, и мастер создания читает их оттуда: базовые владения,
+  // спасброски, кость хитов, заклинательная характеристика, выбор навыков, умения по уровням и
+  // таблица развития. Редактор пишет узлы на месте (id и связи сохраняются) и только тогда, когда
+  // значения действительно изменились, — тексты и таблицы SRD остаются теми же.
+  const nodesOf = g => { if (!g) return []; if (!Array.isArray(g.nodes)) g.nodes = []; return g.nodes; };
+  const linksOf = g => { if (!g) return []; if (!Array.isArray(g.links)) g.links = []; return g.links; };
+  const ruleNodesOf = (d, type) => nodesOf(d?.mechanics?.graph).filter(n => n.type === type);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  let seq = 0;
+  const nodeId = prefix => `${prefix}-${Date.now().toString(36)}${(seq++).toString(36)}`;
+  function removeNode(graph, id) {
+    const links = linksOf(graph);
+    graph.nodes = nodesOf(graph).filter(n => n.id !== id);
+    graph.links = links.filter(l => l.from?.node !== id && l.to?.node !== id);
+  }
+  function graphOf(d) {
+    d.mechanics = d.mechanics && typeof d.mechanics === 'object' ? d.mechanics : { version: 2, origin: 'class-editor', graph: { nodes: [], links: [] } };
+    d.mechanics.version = d.mechanics.version || 2;
+    d.mechanics.graph = d.mechanics.graph && typeof d.mechanics.graph === 'object' ? d.mechanics.graph : { nodes: [], links: [] };
+    nodesOf(d.mechanics.graph); linksOf(d.mechanics.graph);
+    if (!Array.isArray(d.mechanics.graph.groups)) d.mechanics.graph.groups = [];
+    return d.mechanics.graph;
+  }
+  const newNode = (graph, id, type, params) => ({ id, type, position: { x: 40, y: 40 + (nodesOf(graph).length % 12) * 60 }, params: clone(params) });
+  /// Узлы одного типа под список значений: лишние удаляются, совпавшие обновляются (совпадение — match).
+  /// item.same(node) — «в узле уже ровно это значение»: запись остаётся байт в байт как в наборе SRD.
+  function syncNodes(graph, type, wanted, match) {
+    const existing = nodesOf(graph).filter(n => n.type === type);
+    const used = new Set();
+    for (const item of wanted) {
+      const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
+      if (found) { used.add(found.id); if (!(item.same && item.same(found))) found.params = { ...found.params, ...item.params }; continue; }
+      const node = newNode(graph, nodeId(type.split('.').pop() || 'rule'), type, item.params);
+      nodesOf(graph).push(node); used.add(node.id);
+    }
+    for (const node of existing) if (!used.has(node.id)) removeNode(graph, node.id);
+  }
+  /// Табличный узел: переписывается только когда содержимое уровней действительно изменилось.
+  /// Узел ищется по типу: id у записей SRD свой (например, class_features), плодить второй нельзя.
+  function syncTableNode(graph, type, levels) {
+    const node = nodesOf(graph).find(n => n.type === type);
+    const wanted = levels && Object.keys(levels).length ? clone(levels) : null;
+    if (!node) { if (wanted) nodesOf(graph).push(newNode(graph, nodeId(type.split('.').pop() || 'rule'), type, { table: { levels: wanted } })); return; }
+    const current = node.params?.table && typeof node.params.table === 'object' ? node.params.table : {};
+    const was = current.levels && typeof current.levels === 'object' ? current.levels : {};
+    const equal = !wanted ? !Object.keys(was).length
+      : Object.keys(wanted).length === Object.keys(was).length && Object.entries(wanted).every(([level, list]) => same(list, was[level]));
+    if (!equal) node.params = { ...node.params, table: { ...clone(current), levels: wanted || {} } };
+  }
+
+  /// Таблица развития: данные записи в приоритете, затем узел rule.class_progression (порядок чтения
+  /// тот же, что у мастера повышения уровня).
+  function levelsOf(d) {
+    const rows = d?.progression?.levels || ruleNodesOf(d, 'rule.class_progression')[0]?.params?.table?.levels || {};
+    const out = {};
+    for (let lv = 1; lv <= MAX_LEVEL; lv++) out[String(lv)] = levelRow(lv, rows[String(lv)] || rows[lv]);
+    return out;
+  }
+  /// Умения уровней: таблица узла rule.class_features, иначе сырые поля записи.
+  function readFeaturesOf(d) {
+    const table = ruleNodesOf(d, 'rule.class_features')[0]?.params?.table;
+    const levels = table?.levels;
+    if (!levels || typeof levels !== 'object' || Array.isArray(levels)) return readFeatures(d);
+    const texts = d.feature_texts || {};
+    const out = {};
+    for (const [level, items] of Object.entries(levels)) {
+      const list = (Array.isArray(items) ? items : [])
+        .map(x => (typeof x === 'string' ? { name: str(x), text: '' } : { name: str(x?.name), text: str(x?.text) }))
+        .filter(x => x.name);
+      for (const item of list) if (!item.text) item.text = str(texts[item.name]);
+      if (list.length) out[level] = list;
+    }
+    return out;
+  }
+  /// Умения для узла: { уровень: [{ name, text }] }.
+  function featureLevels(features) {
+    const levels = {};
+    for (const [level, items] of Object.entries(features || {})) {
+      const list = (items || []).map(f => ({ name: str(f.name).trim(), text: str(f.text) })).filter(f => f.name);
+      if (list.length) levels[String(level)] = list;
+    }
+    return levels;
+  }
+  /// Блок заклинателя: значения редактора поверх прежних (ключи вроде picker сохраняются).
+  function casterBlock(st, base) {
+    const out = { ...(base && typeof base === 'object' ? clone(base) : {}) };
+    const book = num(st.caster.book_start) || num(st.caster.book_per_level)
+      ? { start: num(st.caster.book_start), per_level: num(st.caster.book_per_level) } : null;
+    // Число стартовых подготовленных заклинаний пишется числом (как в наборах SRD), иначе текстом.
+    const startPrepared = str(st.caster.start_prepared).trim();
+    const managed = { level: str(st.caster.level), start: str(st.caster.start), prepared: str(st.caster.prepared),
+      start_prepared: /^\d+$/.test(startPrepared) ? Number(startPrepared) : startPrepared, book };
+    for (const [key, value] of Object.entries(managed)) { if (value === '' || value === null) delete out[key]; else out[key] = value; }
+    return out;
+  }
+
+  /// Строка уровня для узла: поля редактора плюс чужие ключи строки. Пустые ячейки и pact-поля не
+  /// пишутся вовсе — так же хранит таблицы набор SRD («slots» есть только там, где они нужны).
+  function rowForNode(row, base) {
+    const out = { ...(base || {}) };
+    out.pb = row.pb;
+    out.cantrips = row.cantrips;
+    if (row.known !== null) out.known = row.known; else delete out.known;
+    if (row.prepared !== null) out.prepared = row.prepared; else delete out.prepared;
+    const slots = Array.from({ length: SLOT_COUNT }, (_, i) => num(row.slots?.[i], 0));
+    if (slots.some(n => n) || Array.isArray(base?.slots)) out.slots = slots; else delete out.slots;
+    if (row.pact_slots) { out.pact_slots = row.pact_slots; out.pact_level = row.pact_level || 1; }
+    else if (!base || base.pact_slots === undefined) { delete out.pact_slots; delete out.pact_level; }
+    return out;
+  }
+
   /// Пустая запись класса.
   function emptyData(edition = '2014') {
     return { name_en: '', edition, hit_die: 'd8', saves: [], spellcasting: '', primary: '', armor: '', weapons: '', tools: '', desc: '',
@@ -73,8 +185,6 @@ window.ClassEditor = (() => {
     if (row) for (const [k, v] of Object.entries(row)) if (!(k in out) && str(k).startsWith('x:')) out[k] = v;
     return out;
   }
-  const rowIsEmpty = row => !row || (!row.cantrips && row.known === null && row.prepared === null && !row.pact_slots
-    && row.slots.every(n => !n));
 
   /// Умения: { уровень: [{ name, text }] } — из data.features + data.feature_texts.
   function readFeatures(d) {
@@ -176,37 +286,49 @@ window.ClassEditor = (() => {
     return lines.join('\n');
   }
 
-  /// Данные записи → состояние редактора.
+  /// Данные записи → состояние редактора. Правила берутся из узлов графа, если они есть: мастер
+  /// создания читает именно их, поэтому редактор показывает то же, что попадёт на лист.
   function readState(entry) {
     const d = entry?.data || {};
     // Все 20 уровней всегда в состоянии: править можно любой, а пишется таблица только если её трогали.
-    const levels = {};
-    for (let lv = 1; lv <= MAX_LEVEL; lv++) levels[String(lv)] = levelRow(lv, d.progression?.levels?.[String(lv)] || d.progression?.levels?.[lv]);
+    const levels = levelsOf(d);
+    const ruleValue = type => { const node = ruleNodesOf(d, type)[0]; if (!node) return null;
+      const value = node.params?.value; return Array.isArray(value) ? value.map(str) : str(value); };
+    const profText = kind => { const node = ruleNodesOf(d, 'rule.proficiencies').find(n => str(n.params?.kind) === kind);
+      if (!node) return ''; const value = node.params?.value; return Array.isArray(value) ? value.map(str).join(', ') : str(value); };
+    const skillNode = ruleNodesOf(d, 'rule.skills')[0];
+    const hitDie = ruleValue('rule.hit_die');
+    const saves = ruleValue('rule.saving_throws');
+    const casting = ruleValue('rule.spellcasting');
+    const languages = ruleValue('rule.languages');
+    const casterTable = ruleNodesOf(d, 'rule.class_rules')[0]?.params?.table?.caster;
+    const caster = (d.caster && typeof d.caster === 'object' ? d.caster : (casterTable && typeof casterTable === 'object' ? casterTable : {}));
     return {
       name: str(entry?.name),
       name_en: str(d.name_en),
       edition: str(d.edition) || '2014',
-      hit_die: str(d.hit_die) || 'd8',
-      saves: (d.saves || []).filter(k => KEYS.includes(k)),
-      spellcasting: str(d.spellcasting),
+      hit_die: str(hitDie || d.hit_die) || 'd8',
+      saves: (Array.isArray(saves) ? saves : (d.saves || [])).filter(k => KEYS.includes(k)),
+      spellcasting: str(casting || d.spellcasting),
       primary: str(d.primary),
-      armor: str(d.armor),
-      weapons: str(d.weapons),
-      tools: str(d.tools),
+      armor: profText('Доспехи') || str(d.armor),
+      weapons: profText('Оружие') || str(d.weapons),
+      tools: profText('Инструменты') || str(d.tools),
       desc: str(d.desc),
-      skills: { choose: num(d.skills?.choose), from: Array.isArray(d.skills?.from) ? d.skills.from.map(str) : [] },
-      languages: { fixed: Array.isArray(d.languages_fixed) ? d.languages_fixed.map(str) : [], extra: num(d.languages_extra) },
+      skills: skillNode ? { choose: num(skillNode.params?.count), from: Array.isArray(skillNode.params?.options) ? skillNode.params.options.map(str) : [] }
+        : { choose: num(d.skills?.choose), from: Array.isArray(d.skills?.from) ? d.skills.from.map(str) : [] },
+      languages: { fixed: (Array.isArray(languages) && languages.length ? languages : (Array.isArray(d.languages_fixed) ? d.languages_fixed.map(str) : [])), extra: num(d.languages_extra) },
       equipment: readEquipment(d),
-      features: readFeatures(d),
+      features: readFeaturesOf(d),
       levels,
       subclasses: (Array.isArray(d.subclasses) ? d.subclasses : []).map(s => ({
         name: str(s?.name), name_en: str(s?.name_en), flavor: str(s?.flavor), desc: str(s?.desc),
         features: subFeatureList(s),
       })),
       caster: {
-        level: str(d.caster?.level), start: str(d.caster?.start), prepared: str(d.caster?.prepared),
-        book_start: num(d.caster?.book?.start), book_per_level: num(d.caster?.book?.per_level),
-        start_prepared: str(d.caster?.start_prepared),
+        level: str(caster.level), start: str(caster.start), prepared: str(caster.prepared),
+        book_start: num(caster.book?.start), book_per_level: num(caster.book?.per_level),
+        start_prepared: str(caster.start_prepared),
       },
     };
   }
@@ -243,15 +365,6 @@ window.ClassEditor = (() => {
     }
     d.features = features; d.feature_texts = texts;
 
-    // Таблица развития пишется только если её правили: иначе класс берёт таблицу из набора SRD.
-    const levels = {};
-    const touched = Object.values(st.levels).some(r => !rowIsEmpty(r));
-    // Пишем всегда все 20 уровней: таблица из записи заменяет набор целиком, и частичная
-    // оставила бы уровни без ячеек. Бонус мастерства у нетронутых уровней — по кривой SRD.
-    if (touched) for (let lv = 1; lv <= MAX_LEVEL; lv++) levels[String(lv)] = levelRow(lv, st.levels[String(lv)]);
-    if (touched) d.progression = { columns: d.progression?.columns || [], levels };
-    else delete d.progression;
-
     d.subclasses = st.subclasses.filter(s => str(s.name).trim()).map(s => {
       const features2 = {}, texts2 = {};
       for (const f of s.features || []) {
@@ -268,13 +381,68 @@ window.ClassEditor = (() => {
       return out;
     });
 
-    const caster = {};
-    if (st.caster.level) caster.level = st.caster.level;
-    if (st.caster.start) caster.start = st.caster.start;
-    if (st.caster.prepared) caster.prepared = st.caster.prepared;
-    if (num(st.caster.book_start) || num(st.caster.book_per_level)) caster.book = { start: num(st.caster.book_start), per_level: num(st.caster.book_per_level) };
-    if (str(st.caster.start_prepared).trim()) caster.start_prepared = str(st.caster.start_prepared).trim();
+    // Правила заклинателя: прежний блок читается первым (в нём бывают ключи вроде picker), поэтому
+    // редактор обновляет только свои поля и не теряет чужие.
+    const caster = casterBlock(st, entry?.data?.caster);
     if (Object.keys(caster).length) d.caster = caster; else delete d.caster;
+
+    // Правила — и в узлах графа: мастер создания читает их оттуда. Значения, которые не меняли,
+    // не переписываются, поэтому тексты и таблицы SRD остаются прежними.
+    const graph = graphOf(d);
+    syncNodes(graph, 'rule.hit_die', [{ params: { value: str(st.hit_die) || 'd8' } }]);
+    syncNodes(graph, 'rule.saving_throws', [{ params: { value: d.saves.filter(k => KEYS.includes(k)) } }]);
+    syncNodes(graph, 'rule.spellcasting', str(d.spellcasting).trim() ? [{ params: { ability: str(d.spellcasting) } }] : []);
+    // «—» в поле владений значит «нет владений»: узел для такого вида не создаётся (как в наборе SRD).
+    syncNodes(graph, 'rule.proficiencies', [['Доспехи', d.armor], ['Оружие', d.weapons], ['Инструменты', d.tools]]
+      .map(([kind, text]) => ({ kind, text: str(text).trim() })).filter(item => item.text.replace(/[\s—–-]+/g, ''))
+      .map(item => ({ params: { kind: item.kind, value: item.text.split(',').map(x => x.trim()).filter(Boolean) },
+        same: node => str(Array.isArray(node.params?.value) ? node.params.value.join(', ') : node.params?.value).trim() === item.text })),
+    (node, item) => str(node.params?.kind) === item.params.kind);
+    const skillNames = d.skills.from.map(str).filter(Boolean);
+    const choose = Math.max(0, num(d.skills.choose));
+    // Пустой список — «любой навык»: узел остаётся, иначе сохранение записи потеряло бы выбор класса.
+    syncNodes(graph, 'rule.skills', choose > 0
+      ? [{ params: { id: 'classSkills', count: skillNames.length ? Math.min(choose, skillNames.length) : choose, options: skillNames, title: 'Навыки класса' } }] : []);
+    const fixedLanguages = Array.isArray(d.languages_fixed) ? d.languages_fixed : [];
+    syncNodes(graph, 'rule.languages', fixedLanguages.length ? [{ params: { value: fixedLanguages } }] : []);
+    syncTableNode(graph, 'rule.class_features', featureLevels(st.features));
+    // Таблица развития — в узле графа, единым источником. Пишутся только правленые уровни: строки
+    // SRD (со своими колонками вроде «Ярости») остаются как были. Таблица старого формата
+    // (data.progression) переносится в узел и удаляется: мастер повышения уровня читает её первой.
+    const was = levelsOf(entry?.data);
+    if (!same(st.levels, was)) {
+      const baseNode = ruleNodesOf(entry?.data, 'rule.class_progression')[0];
+      const nodeTable = baseNode?.params?.table && typeof baseNode.params.table === 'object' ? clone(baseNode.params.table) : {};
+      const legacy = entry?.data?.progression && typeof entry.data.progression === 'object' ? entry.data.progression : {};
+      const rows = clone(nodeTable.levels && typeof nodeTable.levels === 'object' ? nodeTable.levels : {});
+      if (legacy.levels && typeof legacy.levels === 'object') for (const [key, row] of Object.entries(legacy.levels)) rows[key] = clone(row);
+      const columns = Array.isArray(nodeTable.columns) && nodeTable.columns.length ? clone(nodeTable.columns) : clone(legacy.columns || []);
+      for (let lv = 1; lv <= MAX_LEVEL; lv++) {
+        const key = String(lv);
+        const row = levelRow(lv, st.levels[key]);
+        // Уровень не правили и строка узла на месте — остаётся как была; иначе пишем строку
+        // (и достраиваем уровни, которых в таблице записи не было).
+        if (rows[key] && same(row, was[key])) continue;
+        rows[key] = rowForNode(row, rows[key]);
+      }
+      const table = { ...nodeTable, columns, levels: rows };
+      if (!columns.length) delete table.columns;
+      const node = baseNode || nodesOf(graph).find(n => n.type === 'rule.class_progression');
+      if (node) node.params = { ...node.params, table };
+      else nodesOf(graph).push(newNode(graph, 'class_progression', 'rule.class_progression', { table }));
+      delete d.progression; // старая таблица перенесена в узел
+    }
+    // Правила заклинателя — в таблицу узла rule.class_rules (блок caster; мультикласс не трогаем):
+    // поле data.caster читается первым, но копия в графе держит запись цельной.
+    const rulesNode = nodesOf(graph).find(n => n.type === 'rule.class_rules');
+    if (rulesNode) {
+      const table = rulesNode.params?.table && typeof rulesNode.params.table === 'object' ? rulesNode.params.table : {};
+      const oldCaster = table.caster && typeof table.caster === 'object' ? table.caster : null;
+      const nodeCaster = casterBlock(st, oldCaster || entry?.data?.caster);
+      const next = { ...clone(table) };
+      if (Object.keys(nodeCaster).length) next.caster = nodeCaster; else delete next.caster;
+      if (!same(next, table)) rulesNode.params = { ...rulesNode.params, table: next };
+    }
 
     return d;
   }
@@ -348,12 +516,12 @@ window.ClassEditor = (() => {
       el('label', { class: 'ced-inline' }, el('span', {}, 'Игрок выбирает'), numInput(st.skills.choose, v => { st.skills.choose = Math.max(0, v); render(); }, { max: 18 }),
         el('small', { class: 'muted' }, 'навыков из списка ниже')),
       el('span', { class: 'grow' }),
-      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, `${st.skills.from.length} в списке`)));
+      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, st.skills.from.length ? `${st.skills.from.length} в списке` : 'пусто — любой навык')));
     const list = el('div', { class: 'ced-chips' });
     const drawList = () => {
       list.replaceChildren(...st.skills.from.map((name, i) => chip(str(name), () => { st.skills.from.splice(i, 1); render(); },
         { note: (skillsCatalog().find(s => s.name === name || s.key === name) || {}).ability ? ABIL_SHORT[(skillsCatalog().find(s => s.name === name || s.key === name) || {}).ability] || '' : '' })));
-      if (!st.skills.from.length) list.append(el('span', { class: 'muted small' }, 'Пока пусто — добавьте навык из списка или перетащите запись «Навыки» из справочника.'));
+      if (!st.skills.from.length) list.append(el('span', { class: 'muted small' }, 'Пустой список — игрок выбирает любой навык, целиком из справочника «Навыки». Добавьте навыки кнопкой или перетащите их сюда.'));
     };
     drawList();
     box.append(list);
@@ -366,7 +534,7 @@ window.ClassEditor = (() => {
         const entry = payload.entry || payload;
         addSkill(payload.key || skillFromEntry(entry));
       })));
-    box.append(el('p', { class: 'muted small' }, 'Навыки — обычные записи справочника (категория «Навыки»): их можно перетаскивать в класс, как предметы в снаряжение.'));
+    box.append(el('p', { class: 'muted small' }, 'Навыки — обычные записи справочника (категория «Навыки»): их можно перетаскивать в класс, как предметы в снаряжение. Выбор хранится правилом rule.skills (id «classSkills»), поэтому мастер создания и лист читают его наравне с остальными механиками.'));
     return box;
   }
 

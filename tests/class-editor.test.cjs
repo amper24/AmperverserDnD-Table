@@ -16,12 +16,16 @@ vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
 // presets.js не перезапускаем: его уже загрузил node-loader (иначе реестр пуст).
-for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
-  vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), ctx, { filename: f });
+// Графовый слой: правила класса живут в узлах (rule.*), и мастер создания читает их движком узлов.
+for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
+  vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 const CE = ctx.window.ClassEditor;
 // Объекты из vm — другого окружения: сравнение идёт через JSON.
 const plain = x => JSON.parse(JSON.stringify(x));
 const B = ctx.window.CharacterBuilder;
+const M = ctx.window.Mechanics;
+const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
 
 const entry = (data, name = 'Свой класс') => ({ id: 'c1', category: 'class', name, data });
 
@@ -68,23 +72,33 @@ test('таблица развития пишется только когда е�
   const st = CE.readState(entry({ skills: { choose: 2, from: ['Магия'] } }));
   assert.equal(Object.keys(st.levels).length, CE.MAX_LEVEL, 'в состоянии все уровни, но пустые');
   assert.equal(st.levels['7'].pb, 3, 'бонус мастерства пустого уровня — по кривой SRD');
-  assert.equal(CE.writeData(st, entry({ skills: {} })).progression, undefined);
+  const clean = CE.writeData(st, entry({ skills: {} }));
+  assert.equal(clean.progression, undefined, 'нетронутая таблица не пишется');
+  assert.equal(nodesOfType(clean, 'rule.class_progression').length, 0, 'и узел не создаётся');
   st.levels['4'].slots[1] = 3;
-  st.levels['4'].slots[1] = 3;
-  assert.equal(CE.writeData(st, entry({ skills: {} })).progression.levels['4'].slots[1], 3);
+  const out = CE.writeData(st, entry({ skills: {} }));
+  const table = nodesOfType(out, 'rule.class_progression')[0].params.table;
+  assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'в таблице узла все уровни');
+  assert.equal(table.levels['4'].slots[1], 3, 'правленый уровень в узле');
+  assert.equal(table.levels['5'].pb, 3, 'нетронутый уровень — по кривой SRD');
+  assert.equal(out.progression, undefined, 'в записи не остаётся второй таблицы');
+  assert.equal(M.validate(out.mechanics) || '', '', 'граф валиден');
 });
 
-test('таблица развития: свои колонки не теряются и пишется вся сразу', () => {
+test('таблица развития: своя колонка не теряется, таблица старого формата переносится в узел', () => {
   const d = { ...CE.emptyData(), progression: { columns: [], levels: { 2: { pb: 2, cantrips: 1, slots: [2, 0, 0, 0, 0, 0, 0, 0, 0], 'x:ki_points': 2 } } } };
   const st = CE.readState(entry(d));
   assert.equal(plain(st.levels['2']['x:ki_points']), 2, 'своя колонка уровня прочитана');
   st.levels['3'].slots[0] = 3;             // правим только третий уровень
   const out = CE.writeData(st, { data: d });
-  assert.equal(Object.keys(out.progression.levels).length, CE.MAX_LEVEL, 'в таблице все уровни');
-  assert.equal(out.progression.levels['2']['x:ki_points'], 2, 'своя колонка не потеряна');
-  assert.equal(out.progression.levels['5'].pb, 3, 'бонус мастерства нетронутого уровня — по кривой SRD');
-  assert.equal(out.progression.levels['3'].slots[0], 3);
-  assert.equal(out.progression.levels['4'].slots[0], 0);
+  const table = nodesOfType(out, 'rule.class_progression')[0].params.table;
+  assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'в таблице узла все уровни');
+  assert.equal(table.levels['2']['x:ki_points'], 2, 'своя колонка не потеряна');
+  assert.equal(table.levels['5'].pb, 3, 'бонус мастерства нетронутого уровня — по кривой SRD');
+  assert.equal(table.levels['3'].slots[0], 3);
+  assert.deepEqual(plain(table.levels['4'].slots || []), [], 'уровень без ячеек пишется без slots — как в наборе SRD');
+  assert.equal(out.progression, undefined, 'data.progression перенесён в узел и удалён');
+  assert.equal(M.validate(out.mechanics) || '', '', 'граф валиден');
 });
 
 test('снаряжение: блоки → текст, который понимает парсер мастера создания', () => {
@@ -157,6 +171,113 @@ test('класс из редактора строит лист: навыки, у
   assert.ok(sheet.inventory.length > 0, 'стартовое снаряжение попало в инвентарь');
 });
 
+// ---------- Узлы графа: правила класса читаются и пишутся вместе с записью ----------
+const seed14 = require('./fixtures/srd.cjs')('data_seed/srd_2014.json');
+const seed24 = require('./fixtures/srd.cjs')('data_seed/srd_2024.json');
+const record = (slug, name) => { const list = slug.startsWith('srd24') ? seed24 : seed14; const e = list.find(x => x.slug === slug);
+  return { id: e.slug, category: 'class', name: name || e.name, source: slug.startsWith('srd24') ? 'SRD 2024' : 'SRD 2014', data: JSON.parse(JSON.stringify(e.data)) }; };
+
+test('правила читаются из узлов: кость хитов, спасброски, владения, навыки, умения и заклинатель', () => {
+  const st = CE.readState(record('srd14-barbarian', 'Варвар'));
+  assert.equal(st.hit_die, 'd12', 'кость хитов из узла rule.hit_die');
+  assert.deepEqual(plain(st.saves), ['str', 'con']);
+  assert.equal(st.weapons, 'Простое оружие, воинское оружие', 'владения из узлов rule.proficiencies');
+  assert.equal(st.armor, 'Лёгкие доспехи, средние доспехи, щиты');
+  assert.equal(st.skills.choose, 2);
+  assert.deepEqual(plain(st.skills.from), ['Уход за животными', 'Атлетика', 'Запугивание', 'Природа', 'Восприятие', 'Выживание']);
+  assert.deepEqual(plain(st.features['1'].map(f => f.name)), ['Ярость', 'Защита без доспехов'], 'умения из узла rule.class_features');
+  assert.ok(st.features['1'][0].text.length > 20, 'текст умения из узла');
+  assert.equal(st.levels['1'].pb, 2, 'таблица развития из узла rule.class_progression');
+  assert.equal(st.levels['20'].pb, 6);
+
+  const wizard = CE.readState(record('srd14-wizard', 'Волшебник'));
+  assert.equal(wizard.spellcasting, 'int', 'характеристика из узла rule.spellcasting');
+  assert.equal(wizard.caster.level, 'full', 'правила заклинателя из таблицы rule.class_rules');
+  assert.equal(wizard.caster.book_start, 6);
+});
+
+test('правки редактора доходят до мастера создания через узлы графа', () => {
+  const source = record('srd14-barbarian', 'Варвар');
+  const st = CE.readState(source);
+  st.hit_die = 'd10';
+  st.saves = ['str', 'dex'];
+  st.armor = 'Лёгкие доспехи';
+  st.weapons = 'Простое оружие';
+  st.skills.choose = 3;
+  st.skills.from = ['Атлетика', 'Природа', 'Выживание'];
+  st.features['1'] = [{ name: 'Новое умение', text: 'Текст нового умения.' }];
+  const out = CE.writeData(st, source);
+
+  assert.equal(nodesOfType(out, 'rule.hit_die')[0].params.value, 'd10');
+  assert.deepEqual(plain(nodesOfType(out, 'rule.saving_throws')[0].params.value), ['str', 'dex']);
+  const profs = Object.fromEntries(nodesOfType(out, 'rule.proficiencies').map(n => [n.params.kind, plain(n.params.value)]));
+  assert.deepEqual(profs['Доспехи'], ['Лёгкие доспехи']);
+  assert.deepEqual(profs['Оружие'], ['Простое оружие'], 'лишние виды владений удалены');
+  assert.equal(nodesOfType(out, 'rule.skills')[0].params.count, 3);
+  assert.deepEqual(plain(nodesOfType(out, 'rule.class_features')[0].params.table.levels['1'].map(f => f.name)), ['Новое умение']);
+  assert.equal(out.hit_die, 'd10', 'сырое поле идёт в ногу с узлом');
+  assert.deepEqual(plain(out.skills), { choose: 3, from: ['Атлетика', 'Природа', 'Выживание'] });
+
+  // Лист собирается из записи редактора: мастер создания читает узлы.
+  const race = { id: 'r', category: 'race', name: 'Человек', data: { edition: '2014', speed: 30, languages: ['Общий'] } };
+  const draft = { name: 'Тест', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])),
+    selected: { race, class: { id: 'c', category: 'class', name: 'Варвар', data: out } }, skills: ['athletics'], spells: [], method: 'standard' };
+  const sheet = B.build(draft);
+  assert.equal(sheet.hp.hit_dice, '1d10', 'кость хитов из узла попала на лист');
+  assert.deepEqual(plain(sheet.saving_throws), ['str', 'dex']);
+  assert.match(String(sheet.proficiencies), /Лёгкие доспехи/);
+  assert.ok(sheet.features.some(f => f.name === 'Новое умение'), 'правленое умение на листе');
+});
+
+test('сохранение без правок не переписывает узлы SRD: тексты, таблицы и ключи правил остаются теми же', () => {
+  for (const [slug, name] of [['srd14-barbarian', 'Варвар'], ['srd14-bard', 'Бард'], ['srd14-monk', 'Монах'], ['srd24-wizard', 'Волшебник']]) {
+    const source = record(slug, name);
+    const before = JSON.parse(JSON.stringify(source.data.mechanics.graph.nodes));
+    const out = CE.writeData(CE.readState(source), source);
+    assert.equal(JSON.stringify(out.mechanics.graph.nodes), JSON.stringify(before), `${slug}: узлы не изменились`);
+    assert.equal(out.progression, undefined, `${slug}: data.progression не появился`);
+    assert.equal(M.validate(out.mechanics) || '', '', `${slug}: граф валиден`);
+
+    // Ключи правил, которых редактор не знает, сохраняются: у барда в table.caster есть picker.
+    const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules');
+    if (slug === 'srd14-bard') assert.equal(rules.params.table.caster.picker, true, 'picker сохранён');
+    if (slug === 'srd24-wizard') assert.equal(rules.params.table.caster.start_prepared, 4, 'число осталось числом');
+    // «—» в поле владений значит «нет владений»: лишний узел владений не создаётся.
+    if (slug === 'srd14-monk') assert.equal(nodesOfType(out, 'rule.proficiencies').length, 1, 'лишний узел владений не создан');
+  }
+});
+
+test('правила заклинателя: правка уходит и в данные, и в узел, чужие ключи не теряются', () => {
+  const source = record('srd14-bard', 'Бард');
+  const st = CE.readState(source);
+  assert.equal(st.caster.level, 'full');
+  st.caster.start = 'book';
+  st.caster.book_start = 4;
+  st.caster.book_per_level = 1;
+  const out = CE.writeData(st, source);
+  assert.equal(out.caster.start, 'book');
+  assert.deepEqual(plain(out.caster.book), { start: 4, per_level: 1 });
+  const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules');
+  assert.equal(rules.params.table.caster.start, 'book');
+  assert.equal(rules.params.table.caster.picker, true, 'незнакомый редактору ключ сохранён');
+  assert.deepEqual(plain(rules.params.table.multiclass), { requirements: [['cha']] }, 'мультикласс не тронут');
+  assert.equal(M.validate(out.mechanics) || '', '', 'граф валиден');
+});
+
+test('новая запись класса собирает узлы правил из разделов редактора', () => {
+  const st = CE.readState(entry(CE.emptyData('2014'), 'Свой класс'));
+  st.hit_die = 'd6';
+  st.saves = ['con', 'cha'];
+  st.spellcasting = 'cha';
+  st.skills = { choose: 1, from: ['Запугивание'] };
+  st.features = { 1: [{ name: 'Наследие', text: 'Текст.' }] };
+  const out = CE.writeData(st, entry({ name_en: 'Новый', edition: '2014' }, 'Свой класс'));
+  assert.equal(out.mechanics.version, 2);
+  assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.class_features').length, 1, 'узел умений создан');
+  assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.class_progression').length, 0, 'таблицу не трогали — узла таблицы нет');
+  assert.equal(M.validate(out.mechanics) || '', '', 'граф новой записи валиден');
+});
+
 // ---------- DOM-прогон: редактор открывается, разделы рисуются, правки сохраняются ----------
 function makeNode(tag) {
   return {
@@ -188,8 +309,10 @@ domCtx.globalThis = domCtx;
 vm.createContext(domCtx);
 const domPresets = require('../tools/presets/node-loader.cjs').loadPresets(domCtx);
 // presets.js уже загружен node-loader — не перезапускаем.
-for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
-  vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), domCtx, { filename: f });
+// Графовый слой нужен и здесь: редактор пишет правила в узлы, и граф должен остаться валидным.
+for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
+  vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
 
 const walk = (node, fn) => { fn(node); for (const c of node.children || []) walk(c, fn); };
 const text = node => !node ? '' : node.nodeType === 3 ? node.textContent : (node.children || []).map(text).join('');
@@ -293,7 +416,10 @@ test('редактор класса открывается: все раздел�
   assert.equal(saved.data.subclasses[0].name, 'Алхимик');
   assert.equal(saved.data.caster.level, 'full');
   assert.equal(saved.data.caster.book.start, 6);
-  assert.equal(Object.keys(saved.data.progression.levels).length, CE.MAX_LEVEL, 'таблица уровней записана целиком');
-  assert.equal(saved.data.progression.levels['5'].slots[0], 4);
-  assert.equal(saved.data.progression.levels['5'].pb, 3);
+  const table = nodesOfType(saved.data, 'rule.class_progression')[0].params.table;
+  assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'таблица уровней записана целиком');
+  assert.equal(table.levels['5'].slots[0], 4);
+  assert.equal(table.levels['5'].pb, 3);
+  assert.equal(saved.data.progression, undefined, 'таблица живёт в узле графа');
+  assert.equal(domCtx.window.Mechanics.validate(saved.data.mechanics) || '', '', 'граф валиден');
 });
