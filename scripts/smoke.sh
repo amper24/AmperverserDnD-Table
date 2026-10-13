@@ -41,6 +41,9 @@ echo "[2] справочник"
 [ "$(gm "$B/api/compendium?category=race&edition=2014" | J "len(d)")" = "13" ]
 [ "$(gm "$B/api/compendium?category=class&edition=2024" | J "len(d)")" = "12" ]
 [ "$(gm "$B/api/compendium?category=spell&edition=2014&limit=3000" | J "len(d)")" = "319" ]
+[ "$(gm "$B/api/compendium?category=skill" | J "len(d)")" = "18" ]                       # навыки — своя категория, вне редакций
+[ "$(gm "$B/api/compendium?category=skill&edition=2024" | J "len(d)")" = "18" ]          # и видны при любой редакции
+gm "$B/api/compendium?category=skill" | J "[e['data']['key'] for e in d]" | grep acrobatics >/dev/null
 gm "$B/api/compendium?q=fireball" | J "[e['name'] for e in d]" | grep "Огненный шар" >/dev/null
 gm "$B/api/compendium?q=меч" | J "[e['name'] for e in d]" | grep "Длинный меч" >/dev/null
 HB=$(gm -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Меч Ампера\",\"campaign_id\":\"$CID\",\"data\":{\"type\":\"magic\"}}" | J "d['source']")

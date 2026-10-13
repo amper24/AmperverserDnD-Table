@@ -930,11 +930,11 @@
   // ---------- Перетаскивание записей из справочника ----------
   function bindDrops(root) {
     root.querySelectorAll('.dropslot').forEach(slot => {
-      slot.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell')) { e.preventDefault(); slot.classList.add('dragover'); } });
+      slot.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell', 'application/x-skill')) { e.preventDefault(); slot.classList.add('dragover'); } });
       slot.addEventListener('dragleave', () => slot.classList.remove('dragover'));
       slot.addEventListener('drop', e => { if (e.defaultPrevented) return; e.preventDefault(); slot.classList.remove('dragover'); handleDrop(e, slot.dataset.cat); });
     });
-    root.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell')) e.preventDefault(); });
+    root.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell', 'application/x-skill')) e.preventDefault(); });
     root.addEventListener('drop', e => { if (e.defaultPrevented) return; e.preventDefault(); handleDrop(e); });
   }
   function handleDrop(e, slotCat) {
@@ -946,6 +946,15 @@
     if (comp) return applyEntry(comp);
     const item = M.getDrag(e, 'application/x-item'); if (item) return acceptItem(item);
     const spell = M.getDrag(e, 'application/x-spell'); if (spell) { if (!s.spells.known.some(x => x.name === spell.spell.name)) { s.spells.known.push({ ...spell.spell, uid: M.uid(), prepared: false }); save(); render(); toast(`${spell.spell.name} добавлено`); } }
+    // Навык из справочника: владение навыком на лист (повторно не добавляется).
+    const skill = M.getDrag(e, 'application/x-skill');
+    if (skill) {
+      const key = String(skill.key || window.ClassEditor?.skillKeyOfName?.(skill.name) || '').trim()
+        || (SKILLS.find(([, n]) => n === skill.name) || [])[0] || '';
+      if (!key) { toast('Непонятный навык — добавьте владение вручную'); return; }
+      if (s.skills.includes(key)) { toast(`Владение «${skill.name}» уже есть`); return; }
+      s.skills.push(key); save(); render(); toast(`Владение: ${skill.name}`);
+    }
   }
   function applyEntry(e, slotCat) {
     if (slotCat && e.category !== slotCat) {
@@ -996,6 +1005,11 @@
         break;
       }
       case 'spell': if (!s.spells.known.some(x => x.name === e.name)) s.spells.known.push(M.spellFromCompendium(e)); if (tab !== 'spells') tab = 'spells'; break;
+      case 'skill': {
+        const key = String(d.key || window.ClassEditor?.skillKeyOfName?.(e.name) || '').trim() || (SKILLS.find(([, n]) => n === e.name) || [])[0] || '';
+        if (key && !s.skills.includes(key)) { s.skills.push(key); toast(`Владение: ${e.name}`); } else if (!key) toast('Непонятный навык — добавьте владение вручную');
+        break;
+      }
       case 'feat': case 'condition': s.features.push(M.newFeature({name:e.name,text:d.desc||'',actions:d.actions||[],mechanics:d.mechanics})); break;
       default: toast('Нельзя применить к листу');
     }

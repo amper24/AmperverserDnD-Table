@@ -35,6 +35,7 @@
 | `nodes/<категория>/<файл>.js` | ООП-классы узлов графа: папка — категория, файл — узел (data / conditions / logic / flow / rules / actions / groups) | регистрируются в `NodeRegistry.NODE_DEFS` |
 | `modules.js` | записи листа и редакторы | `Modules` |
 | `compendium.js` | справочник | `Compendium` |
+| `class-editor.js` | конструктор класса справочника (разделы: общее, уровни 1–20, навыки, языки, снаряжение, подклассы, заклинания) | `ClassEditor` |
 | `character-builder.js` | правила создания персонажа | `CharacterBuilder` |
 | `builder-dialog.js` | мастер создания (8 шагов) | `newCharacterDialog` |
 | `presets.js` | реестр наборов данных: стартовые графы, основы, таблицы развития (JSON в `static/presets/`) | `Presets` |

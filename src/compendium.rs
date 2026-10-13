@@ -11,7 +11,7 @@ use sqlx::Row;
 
 use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, i18n, packs, util, AppError, AppState};
 
-pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore"];
+pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore", "skill"];
 
 /// Как отдавать запись. `lang` — язык вида (слой перевода накладывается на данные, `i18n` скрыт);
 /// без `lang` и `raw=1` запись отдаётся как хранится (со всеми слоями перевода) — так работают редактор и старые клиенты.

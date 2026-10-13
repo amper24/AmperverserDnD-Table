@@ -85,6 +85,8 @@ window.CharacterBuilder = (() => {
       appendProficiency(s, 'Доспехи', d.armor);
       appendProficiency(s, 'Оружие', d.weapons);
       appendProficiency(s, 'Инструменты', d.tools);
+      // Языки класса пишет редактор класса (data.languages_fixed): у SRD-классов поля нет.
+      appendProficiency(s, 'Языки класса', Array.isArray(d.languages_fixed) ? d.languages_fixed : null);
     }
   });
   register('background', (s, e) => {

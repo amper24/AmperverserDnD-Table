@@ -28,6 +28,7 @@ window.Compendium = (function () {
         if (d.stealth_disadvantage) add('Скрытность', 'Помеха'); if (d.str_req) add('Требование', 'Сила ' + d.str_req);
         break;
       case 'spell': add('Уровень', d.level === 0 ? 'Заговор' : d.level); add('Школа', d.school); add('Время', d.casting_time); add('Дистанция', d.range); add('Компоненты', d.components); add('Длительность', (d.concentration ? 'Концентрация, ' : '') + (d.duration || '')); add('Ритуал', d.ritual && 'Да'); add('Классы', d.classes); break;
+      case 'skill': add('Характеристика', ABIL[d.ability] || d.ability); add('Ключ', d.key); add('Английское название', d.name_en); break;
       case 'npc': add('Роль', d.role); add('Раса', d.race); add('Фракция', d.faction); add('Отношение', d.attitude); add('Место', d.location); add('Голос и манеры', d.voice); if (d.abilities) { add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); } add('Добыча', d.loot); break;
       case 'lore': add('Тип', { rule: 'Правило', place: 'Место', faction: 'Фракция', event: 'Событие', deity: 'Божество', other: 'Другое' }[d.kind]); add('Теги', d.tags); break;
       case 'monster': add('Тип', `${d.size || ''} ${d.type || ''}${d.alignment ? ', ' + d.alignment : ''}`); add('Спасброски', d.saves); add('Навыки', d.skills); add('Уязвимости', d.vulnerabilities); add('Сопротивления', d.resistances); add('Иммунитеты', d.immunities); add('Иммунитет к состояниям', d.condition_immunities); add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); add('Опасность', `${d.cr} (${d.xp || 0} опыта)`); add('Чувства', d.senses); add('Языки', d.languages); add('Уязвимости', d.vulnerabilities); add('Иммунитеты', d.immunities); break;
@@ -160,6 +161,10 @@ window.Compendium = (function () {
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
       result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
+    } else if (category === 'class' && window.ClassEditor) {
+      // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами.
+      const r = await window.ClassEditor.edit(e, o); if (!r) return;
+      result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else {
       const r = await M().editGeneric(e, category, { folders: o.folders, folder: o.folder }); if (!r) return; result = r;
     }
@@ -423,12 +428,12 @@ window.Compendium = (function () {
       for (const e of items) {
         e.pack_name = packNames[e.pack_id] || e.pack_name;
         e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' }[e.category] || 'box', 16);
         const row = el('div', { class: 'item comp-entry', role: 'button', tabindex: '0', draggable: 'true' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, el('b', {}, e.name), el('small', { class: 'muted comp-entry-source' }, sourceLabel(e))), e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => showEntry(e, row));
         row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showEntry(e, row); } });
-        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
         lst.append(row);
       }
       const active = items.find(e => e.id === activeId);
@@ -626,12 +631,12 @@ window.Compendium = (function () {
       for (const e of items) {
         if (!catSel.value && e.category !== lastCat) { lastCat = e.category; lst.append(el('div', { class: 'muted small', style: 'padding:6px 4px 2px;text-transform:uppercase;letter-spacing:.5px' }, CAT_NAMES[e.category] || e.category)); }
         e.pack_name = packNames[e.pack_id]; e._mine = !!(e.pack_id && (packsCache || []).some(p => p.id === e.pack_id));
-        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap' }[e.category] || 'box', 16);
+        const ico = e.data?.asset_id ? M().docIcon(e.data, 'box', 16) : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon }) : e.category === 'race' ? M().raceIcon(e.data?.name_en || e.name) : icon({ spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' }[e.category] || 'box', 16);
         const row = el('div', { class: 'item comp-compact-entry', role: 'button', tabindex: '0', draggable: 'true', title: 'Нажми, чтобы открыть, или перетащи на лист' }, el('span', { class: 'lst-ico' }, ico), el('span', { class: 'grow' }, e.name, e.data?.name_en && e.data.name_en !== e.name ? el('span', { class: 'muted small' }, ' ' + e.data.name_en) : null), !edSel.value && e.data?.edition ? el('span', { class: 'badge' }, e.data.edition) : null, e.pack_id ? el('span', { class: 'badge', title: e.pack_name }, 'набор') : e.campaign_id ? el('span', { class: 'badge' }, 'HB') : null);
         rows.set(e.id, row);
         row.addEventListener('click', () => selectEntry(e, row, true));
         row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectEntry(e, row, true); } });
-        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
         lst.append(row);
       }
       const active = items.find(e => e.id === activeId);

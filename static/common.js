@@ -230,7 +230,7 @@ window.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телослож
 window.EDITIONS = { '2014': 'D&D 5e (2014)', '2024': 'D&D 5e (2024)' };
 /// Редакция по умолчанию для новых персонажей и фильтра справочника (запоминается).
 window.defaultEdition = () => LS.getItem('et-edition') || '2014';
-window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила' };
+window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила', skill: 'Навыки' };
 
 // ---- Минималистичные SVG-иконки (line icons), без эмодзи ----
 const ICONS = {
