@@ -51,6 +51,19 @@ test('сводка механик (docs/mechanics-migration.json) соответ
   }
 });
 
+test('навыки справочника собраны генератором и несут граф владения', () => {
+  // data_seed/skills.json собирает tools/srd/build_skills.py; --check ловит забытую пересборку.
+  const out = execFileSync('python3', [path.join(ROOT, 'tools', 'srd', 'build_skills.py'), '--check']).toString();
+  assert.match(out, /актуален \(18 навыков\)/);
+  const skills = JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed', 'skills.json'), 'utf8'));
+  assert.equal(skills.length, 18);
+  for (const row of skills) {
+    const nodes = row.data.mechanics.graph.nodes;
+    assert.equal(nodes.length, 1, `${row.name}: один узел`);
+    assert.equal(nodes[0].type, 'rule.skill_proficiency', `${row.name}: узел владения навыком`);
+  }
+});
+
 test('броски монстров и кубики урона заклинаний подтверждаются текстом записи', () => {
   // Бросок обязан быть виден в тексте, из которого он взят: бонус атаки «+9» — в «атака: +9»,
   // кубики «2к8 + 5» — в «14 (2к8 + 5)» описания умения, кубики заклинания — в его описании.

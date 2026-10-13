@@ -161,6 +161,10 @@ window.Compendium = (function () {
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
       result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
+    } else if (category === 'race' && window.RaceEditor) {
+      // Раса правится отдельным редактором: характеристики, языки, навыки и черты — своими разделами.
+      const r = await window.RaceEditor.edit(e, o); if (!r) return;
+      result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else if (category === 'class' && window.ClassEditor) {
       // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами.
       const r = await window.ClassEditor.edit(e, o); if (!r) return;

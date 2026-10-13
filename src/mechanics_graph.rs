@@ -43,7 +43,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.ability_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.speed" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.languages" | "rule.proficiencies" | "rule.saving_throws" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.languages" | "rule.proficiencies" | "rule.saving_throws" | "rule.skill_proficiency" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hit_die" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("options".into(), "list".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -174,6 +174,7 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         "rule.languages" if p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200) => return Err(bad("Языки должны быть списком текстовых значений.")),
         "rule.proficiencies" if (p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200)) || (p.get("kind").is_some() && (p["kind"].as_str().is_none() || utf16_len(p["kind"].as_str().unwrap_or("")) > 120)) => return Err(bad("Владения должны быть списком и иметь короткий тип.")),
         "rule.hit_die" if p.get("value").is_some() && !["d6", "d8", "d10", "d12"].contains(&p["value"].as_str().unwrap_or("")) => return Err(bad("Кость хитов: d6, d8, d10 или d12.")),
+        "rule.skill_proficiency" if p.get("value").is_some() && !valid_string_list(&p["value"], 18, 200) => return Err(bad("Владение навыком: список названий (до 18).")),
         "rule.saving_throws" => {
             if p.get("value").is_some() && (!p["value"].as_array().map(|values| values.len() <= 6 && values.iter().all(|value| ABILITIES.contains(&value.as_str().unwrap_or("")))).unwrap_or(false)) { return Err(bad("Спасброски должны быть списком характеристик.")); }
         }
@@ -293,7 +294,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
-    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
+    "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 

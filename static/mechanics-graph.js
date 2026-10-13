@@ -546,6 +546,8 @@
       else if (effect.kind === 'saving_throws') target.saving_throws = [...new Set([...target.saving_throws, ...effect.values])];
       else if (effect.kind === 'feature') target.features.push(effect.feature);
       else if (effect.kind === 'skills') { target.skill_choices.push({ id: effect.id, count: effect.count, options: effect.options, selected: effect.selected }); target.skills.push(...effect.selected); }
+      // Владение навыком из графа (например, запись навыка или раса «Острые чувства»).
+      else if (effect.kind === 'skill_proficiency') target.skills.push(...(effect.values || []));
       else if (effect.kind === 'spell_list') target.graph_spell_rules.push({ mode: effect.mode, ability: effect.ability, spells: clone(effect.spells), source: effect.source });
       else if (effect.kind === 'spell_slots') target.spells.slots = { ...target.spells.slots, ...clone(effect.table) };
       else if (effect.kind === 'asi') target.asi_rules.push(clone(effect.table));

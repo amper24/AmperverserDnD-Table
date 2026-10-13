@@ -1721,3 +1721,6 @@ body.lu-open { overflow: hidden; }
 .ced-feature { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--panel); }
 .ced-preview { margin-top: 10px; }
 .ced-text { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--panel2); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); margin: 6px 0 0; }
+/* Подзаголовок внутри раздела редактора (редактор рас: «Владение навыками», «Выбор игрока»). */
+.ced-sub { margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
+.ced-sub:first-child { margin-top: 0; }

@@ -937,6 +937,24 @@
     root.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell', 'application/x-skill')) e.preventDefault(); });
     root.addEventListener('drop', e => { if (e.defaultPrevented) return; e.preventDefault(); handleDrop(e); });
   }
+  /// Владение навыком: из графа записи (узел rule.skill_proficiency), как у остальных объектов справочника.
+  /// true — добавлено, 'dup' — уже есть, false — запись без графа и без ключа.
+  function grantSkill(e, name) {
+    const entry = e?.entry || e, label = String(name || entry?.name || '').trim();
+    const before = s.skills.length;
+    const applied = window.Mechanics?.applyGraphRules?.(entry?.data?.mechanics, s,
+      { edition: s.edition || '2014', level: Number(s.level) || 1, source: label });
+    if (applied && !applied.error && (applied.effects || []).some(eff => eff.kind === 'skill_proficiency')) {
+      s.skills = [...new Set(s.skills)];
+      return s.skills.length > before ? true : 'dup';
+    }
+    const key = String(entry?.data?.key || '').trim() || window.ClassEditor?.skillKeyOfName?.(label)
+      || (SKILLS.find(([, n]) => n === label) || [])[0] || '';
+    if (!key) return false;
+    if (s.skills.includes(key)) return 'dup';
+    s.skills.push(key);
+    return true;
+  }
   function handleDrop(e, slotCat) {
     const comp = M.getDrag(e, 'application/x-compendium');
     if (slotCat) {
@@ -946,14 +964,13 @@
     if (comp) return applyEntry(comp);
     const item = M.getDrag(e, 'application/x-item'); if (item) return acceptItem(item);
     const spell = M.getDrag(e, 'application/x-spell'); if (spell) { if (!s.spells.known.some(x => x.name === spell.spell.name)) { s.spells.known.push({ ...spell.spell, uid: M.uid(), prepared: false }); save(); render(); toast(`${spell.spell.name} добавлено`); } }
-    // Навык из справочника: владение навыком на лист (повторно не добавляется).
+    // Навык из справочника: владение приходит из графа записи (повторно не добавляется).
     const skill = M.getDrag(e, 'application/x-skill');
     if (skill) {
-      const key = String(skill.key || window.ClassEditor?.skillKeyOfName?.(skill.name) || '').trim()
-        || (SKILLS.find(([, n]) => n === skill.name) || [])[0] || '';
-      if (!key) { toast('Непонятный навык — добавьте владение вручную'); return; }
-      if (s.skills.includes(key)) { toast(`Владение «${skill.name}» уже есть`); return; }
-      s.skills.push(key); save(); render(); toast(`Владение: ${skill.name}`);
+      const res = grantSkill(skill.entry || skill, skill.name);
+      if (res === 'dup') { toast(`Владение «${skill.name}» уже есть`); return; }
+      if (!res) { toast('Непонятный навык — добавьте владение вручную'); return; }
+      save(); render(); toast(`Владение: ${skill.name}`);
     }
   }
   function applyEntry(e, slotCat) {
@@ -1006,8 +1023,9 @@
       }
       case 'spell': if (!s.spells.known.some(x => x.name === e.name)) s.spells.known.push(M.spellFromCompendium(e)); if (tab !== 'spells') tab = 'spells'; break;
       case 'skill': {
-        const key = String(d.key || window.ClassEditor?.skillKeyOfName?.(e.name) || '').trim() || (SKILLS.find(([, n]) => n === e.name) || [])[0] || '';
-        if (key && !s.skills.includes(key)) { s.skills.push(key); toast(`Владение: ${e.name}`); } else if (!key) toast('Непонятный навык — добавьте владение вручную');
+        const res = grantSkill(e);
+        if (res === 'dup') toast(`Владение «${e.name}» уже есть`);
+        else if (!res) toast('Непонятный навык — добавьте владение вручную');
         break;
       }
       case 'feat': case 'condition': s.features.push(M.newFeature({name:e.name,text:d.desc||'',actions:d.actions||[],mechanics:d.mechanics})); break;

@@ -153,9 +153,20 @@ logging:  { level: "info,sqlx=warn" }
 мастер создания). Неизвестные редактору поля записи сохраняются. Подробности —
 [docs/class-editor.md](docs/class-editor.md).
 
+**Редактор расы** устроен так же: **Справочник → Расы → «+ Создать свою запись»**
+или «Редактировать» в карточке расы. Разделы — **Общее, Характеристики, Языки,
+Навыки, Владения, Черты, Подрасы**. Правила расы живут в графе механик, поэтому
+редактор правит и узлы (`rule.speed`, `rule.languages`, `rule.ability_bonus`,
+`rule.skill_proficiency`, `rule.skills`, `rule.proficiencies`, программы черт), и
+сырые поля записи — узлы обновляются на месте, их связи (например, условие
+редакции) не рвутся. Подробности — [docs/race-editor.md](docs/race-editor.md).
+
 **Навыки** теперь отдельная категория справочника (18 SRD-навыков сеются из
-`data_seed/skills.json`): запись навыка перетаскивается в редактор класса и прямо
-на лист персонажа — добавляет владение.
+`data_seed/skills.json`, собирает их `tools/srd/build_skills.py`) и работают на
+графах, как остальные объекты: запись навыка несёт граф с узлом
+`rule.skill_proficiency`, поэтому навык перетаскивается в редактор класса или
+расы и прямо на лист персонажа — владение приходит из проекции графа. Тот же
+узел доступен в палитре графа механик.
 
 ## Cookie, согласие и конфиденциальность
 
@@ -272,8 +283,9 @@ static/                 # фронтенд без бандлера: слои и 
                         #   app.js (лобби+кампания), table.js (canvas-стол), sheet.js (лист),
                         #   character-builder.js (правила создания) + builder-dialog.js (мастер-окно),
                         #   compendium.js (справочник), class-editor.js (конструктор класса),
+                        #   race-editor.js (конструктор расы), nodes/ (классы узлов графа),
                         #   см. также уровень-файлы в docs/frontend.md
-data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), skills.json (18 навыков), builtin/ (30 ассетов)
+data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), skills.json (18 навыков с графом, сборка tools/srd/build_skills.py), builtin/ (30 ассетов)
 scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)
 deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh · install.bat
 .github/workflows/ci.yml      # сборка + smoke (SQLite/MySQL), Windows-джоб с run.bat/install.bat, .exe артефактом в PR
