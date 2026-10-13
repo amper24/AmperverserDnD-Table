@@ -43,7 +43,7 @@
   if (path === '/profile') { if (!me) { go('/login?next=/profile', true); return; } renderProfile(); return; }
   if (path === '/admin') { if (!me) { go('/login?next=/admin', true); return; } renderAdmin(); return; }
   if (SECTIONS[path]) { if (!me) { go('/login?next=' + encodeURIComponent(path), true); return; } renderSection(SECTIONS[path]); return; }
-  // Отдельная страница редактора записи: /class-editor, /race-editor, /background-editor (+ /<id>).
+  // Отдельная страница редактора записи: /class-editor, /race-editor (+ /<id>).
   const editorKind = window.EditorPage?.kindOfPath(path);
   if (editorKind) { if (!me) { go('/login?next=' + encodeURIComponent(location.pathname + location.search), true); return; } renderEditorPage(editorKind, window.EditorPage.idOfPath(path)); return; }
   if (!me) renderLanding(); else renderHome();

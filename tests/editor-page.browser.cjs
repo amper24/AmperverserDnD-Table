@@ -58,6 +58,8 @@ async function scenario(browser) {
   await page.waitForFunction(() => location.pathname === '/class-editor/c-1');
   await page.waitForSelector('.editor-page .ced-nav-btn');
   assert.equal(await page.locator('.modal').count(), 0, 'модалка не открывается — правим на странице');
+  const kinds = await page.evaluate(() => Object.keys(window.EditorPage.KINDS));
+  assert.deepEqual(JSON.parse(JSON.stringify(kinds)), ['class', 'race'], 'страницы есть у класса и расы; предыстория остаётся модалкой справочника');
 
   // 2. Правка существующей записи: страница со своим адресом, разделы и сохранение в запись.
   await page.goto('https://editor.test/class-editor/c-1');

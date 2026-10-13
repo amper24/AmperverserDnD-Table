@@ -145,7 +145,7 @@ window.Packs = (function () {
       async function refresh() { try { p = await API.get('/api/packs/' + pid); } catch { } renderFolders(); loadList(); renderSide(); }
       function newEntry() {
         const category = state.category || 'item';
-        // Класс, раса и предыстория создаются на своей странице редактора (весь экран, все разделы).
+        // Класс и раса создаются на своей странице редактора (весь экран, все разделы), остальное — модалкой.
         if (window.EditorPage?.available?.(category)) return window.EditorPage.open(category, { packId: pid });
         C().editEntry(null, { packId: pid, category, folders: p.folders || [], folder: state.folder || undefined, onSaved: refresh });
       }

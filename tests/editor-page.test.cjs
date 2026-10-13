@@ -87,14 +87,16 @@ test('адреса страницы редактора: вид по пути, id
   assert.equal(EP.kindOfPath('/class-editor'), 'class');
   assert.equal(EP.kindOfPath('/class-editor/abc-1/'), 'class');
   assert.equal(EP.kindOfPath('/race-editor/x'), 'race');
-  assert.equal(EP.kindOfPath('/background-editor'), 'background');
+  assert.equal(EP.kindOfPath('/background-editor'), null, 'предыстория остаётся модалкой справочника');
   assert.equal(EP.kindOfPath('/compendium'), null);
   assert.equal(EP.idOfPath('/class-editor/abc-1'), 'abc-1');
   assert.equal(EP.idOfPath('/class-editor'), null);
   assert.equal(EP.url('class', 'abc-1'), '/class-editor/abc-1');
   assert.equal(EP.url('race', null, { packId: 'p-1' }), '/race-editor?pack=p-1');
-  assert.equal(EP.url('background', null, { campaignId: 'c-2' }), '/background-editor?campaign=c-2');
   assert.equal(EP.available('class'), true, 'редактор класса умеет отдавать тело для страницы');
+  assert.equal(EP.available('race'), true, 'редактор расы умеет отдавать тело для страницы');
+  assert.equal(EP.available('background'), false, 'у предыстории страницы нет — правится модалкой');
+  assert.equal(EP.available('item'), false, 'предметы правятся в справочнике');
 });
 
 test('страница редактора класса: запись загружается, разделы рисуются, сохранение идёт в запись', async () => {
@@ -211,6 +213,7 @@ test('справочник и наборы ведут в отдельный ре
   const compendium = fs.readFileSync('static/compendium.js', 'utf8');
   assert.match(compendium, /window\.EditorPage\?\.available\?\.\(kind\)/, 'карточка проверяет отдельную страницу');
   assert.match(compendium, /EDITOR_KIND\[category\][\s\S]{0,200}window\.EditorPage\.open/, 'создание записи ведёт на страницу редактора');
+  assert.match(compendium, /const EDITOR_KIND = \{ class: 'class', race: 'race' \}/, 'на страницу ведут только класс и раса');
   assert.match(compendium, /if \(!openEntryEditor\(e, opts\)\) editEntry\(/, 'модалка остаётся запасным путём');
   const packs = fs.readFileSync('static/packs.js', 'utf8');
   assert.match(packs, /window\.EditorPage\?\.available\?\.\(category\)/, 'мастерская набора ведёт на страницу редактора');

@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// editor-page.js — отдельная страница редактора записи справочника: класс, раса,
-// предыстория. Запись правится на своём экране со своим адресом (/class-editor/<id>),
+// editor-page.js — отдельная страница редактора записи справочника: класс и раса.
+// Запись правится на своём экране со своим адресом (/class-editor/<id>),
 // а не модалкой поверх справочника: большие записи удобнее править на всю страницу,
 // видно все разделы, а ссылку на редактор можно дать другому мастеру.
 // Граф механик здесь не показывается: редакторы пишут узлы сами, граф остаётся
@@ -11,7 +11,8 @@ window.EditorPage = (() => {
   const KINDS = {
     class: { category: 'class', path: '/class-editor', label: 'Класс', back: '/compendium', editor: () => window.ClassEditor },
     race: { category: 'race', path: '/race-editor', label: 'Раса', back: '/compendium', editor: () => window.RaceEditor },
-    background: { category: 'background', path: '/background-editor', label: 'Предыстория', back: '/compendium', editor: () => window.BackgroundEditor },
+    // Предыстория остаётся в справочнике: она правится прежней модалкой (BackgroundEditor.edit).
+    // Чтобы отдать ей страницу, достаточно добавить сюда строку с её путём.
   };
   /// Отдельная страница возможна, только если редактор умеет отдавать тело (form).
   const available = kind => Boolean(KINDS[kind]?.editor()?.form);
