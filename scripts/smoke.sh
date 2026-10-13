@@ -213,7 +213,8 @@ printf 'dnd-table users list\nquit\n' | PORT=$((PORT+1)) "$BIN" | grep "root@tes
 "$BIN" users revoke-root root@test.ru 2>&1 | grep "не осталось ни одного root" >/dev/null   # последнего root снять можно (с предупреждением)
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RT" "$B/api/admin/users"); [ "$code" = "403" ]
 "$BIN" users make-root root@test.ru | grep "root = да" >/dev/null
-rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep 2499 >/dev/null
+# записей справочника: 1294 (SRD 2014) + 1205 (SRD 2024) + 18 навыков своей категорией
+rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep 2517 >/dev/null
 echo "[10] профиль: два cookie, имя, аватар, смена пароля"
 hdrs=$(curl -s -D - -o /dev/null -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}')
 [ "$(echo "$hdrs" | grep -ci '^set-cookie: dnd_session')" = "2" ]

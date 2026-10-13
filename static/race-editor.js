@@ -280,9 +280,11 @@ window.RaceEditor = (() => {
       input,
       el('button', { type: 'button', class: 'small', onclick: () => { if (add(input.value)) input.value = ''; } }, 'Добавить'),
       opts.drop ? dropZone(str(opts.drop), ['application/x-skill', 'application/x-compendium'], payload => {
+        // Принимаем только навыки: свою запись раздела «Навыки» или название из словаря листа.
         const entry = payload.entry || payload;
-        const skill = payload.key ? skillNameOfKey(payload.key) : (skillFromEntry(entry) ? str(entry.name) : '');
-        add(skill || str(entry?.name || payload?.name || ''));
+        const key = payload.key || skillFromEntry(entry) || (opts.skillOnly && entry?.category === 'skill' ? skillKeyOfName(entry.name) : skillKeyOfName(entry?.name || payload?.name));
+        if (!key) { toast('Сюда можно перетащить только запись из раздела «Навыки»'); return; }
+        add(skillNameOfKey(key));
       }) : null));
     return box;
   }
@@ -340,7 +342,7 @@ window.RaceEditor = (() => {
     box.append(listEditor(st.skills.fixed, render, {
       options: skillsCatalog().map(s => ({ value: s.name, label: `${s.name} (${ABIL[s.ability] || s.ability})` })),
       addLabel: '+ добавить навык…', placeholder: 'свой навык', drop: 'Перетащите навык из справочника сюда',
-      empty: 'Раса не даёт владения навыками.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '',
+      empty: 'Раса не даёт владения навыками.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
     }));
     box.append(el('h4', { class: 'ced-sub' }, 'Выбор игрока'));
     box.append(el('div', { class: 'ced-row' },
@@ -352,7 +354,7 @@ window.RaceEditor = (() => {
     box.append(listEditor(st.skills.from, render, {
       options: skillsCatalog().map(s => ({ value: s.name, label: `${s.name} (${ABIL[s.ability] || s.ability})` })),
       addLabel: '+ добавить навык…', placeholder: 'свой навык', drop: 'Перетащите навык из справочника сюда',
-      empty: 'Списка выбора нет.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '',
+      empty: 'Списка выбора нет.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
     }));
     box.append(el('p', { class: 'muted small' },
       'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника: перетаскивайте навыки прямо сюда.'));
