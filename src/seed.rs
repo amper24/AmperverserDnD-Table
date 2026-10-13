@@ -271,6 +271,8 @@ mod tests {
             // Записи, которых не было до локализации (у них нет хеша старой версии): магический щит 2024
             // получил собственный слаг, потому что обычный и магический щит делили один.
             const NEW_AFTER_LOCALIZATION: &[&str] = &["item/srd24-shield-magic"];
+            // Категория «Навыки» появилась позже снимков SRD целиком.
+            const NEW_CATEGORIES: &[&str] = &["skill"];
             for e in &entries {
                 let en = &e.data["i18n"]["en"];
                 let en_name = en["name"].as_str().unwrap_or("");
@@ -279,7 +281,8 @@ mod tests {
                 assert!(!e.name.chars().any(|c| c.is_ascii_alphabetic()), "{}: латиница в русском названии «{}»", e.slug, e.name);
                 assert!(i18n::validate(&e.data).is_ok(), "{}: некорректный i18n", e.slug);
                 let key = format!("{}/{}", e.category, e.slug);
-                assert!(NEW_AFTER_LOCALIZATION.contains(&key.as_str()) || legacy[*edition].contains_key(&key), "{}: нет хеша старой версии", e.slug);
+                assert!(NEW_AFTER_LOCALIZATION.contains(&key.as_str()) || NEW_CATEGORIES.contains(&e.category.as_str())
+                    || legacy[*edition].contains_key(&key), "{}: нет хеша старой версии", e.slug);
             }
         }
     }
