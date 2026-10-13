@@ -315,10 +315,7 @@ window.BackgroundEditor = (() => {
   }
 
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
-  /// Тело редактора: разделы, навигация и состояние — общее для модалки и для
-  /// отдельной страницы редактора. Возвращает { root, state, save, title }:
-  /// save() отдаёт { name, data } или null с подсказкой.
-  function form(entry, opts = {}) {
+  function edit(entry, opts = {}) {
     const st = readState(entry);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
@@ -338,19 +335,13 @@ window.BackgroundEditor = (() => {
     };
     render();
     const root = el('div', { class: 'class-editor' }, nav, content);
-    const save = () => {
-      const name = st.name.trim();
-      if (!name) { toast('Нужно название предыстории'); return null; }
-      return { name, data: writeData(st, entry) };
-    };
-    return { root, state: st, save, title: entry?.id ? 'Предыстория: ' + (entry.name || '') : 'Новая предыстория' };
+    return modal(entry?.id ? 'Предыстория: ' + (entry.name || '') : 'Новая предыстория', root,
+      [{ label: 'Сохранить', cls: 'primary', fn: () => {
+        const name = st.name.trim();
+        if (!name) { toast('Нужно название предыстории'); return false; }
+        return { name, data: writeData(st, entry) };
+      } }], { wide: true });
   }
 
-  /// Модалка редактора — для встраиваемых мест (свой стол, лист персонажа).
-  function edit(entry, opts = {}) {
-    const f = form(entry, opts);
-    return modal(f.title, f.root, [{ label: 'Сохранить', cls: 'primary', fn: () => f.save() || false }], { wide: true });
-  }
-
-  return { edit, form, readState, writeData, emptyData, SECTIONS };
+  return { edit, readState, writeData, emptyData, SECTIONS };
 })();

@@ -750,10 +750,7 @@ window.ClassEditor = (() => {
   const ABIL_SHORT = { str: 'СИЛ', dex: 'ЛОВ', con: 'ТЕЛ', int: 'ИНТ', wis: 'МДР', cha: 'ХАР' };
 
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
-  /// Тело редактора: разделы, навигация и состояние. Одно и то же для модалки и для
-  /// отдельной страницы редактора (/class-editor/<id>).
-  /// Возвращает { root, state, save, title }: save() отдаёт { name, data } или null с подсказкой.
-  function form(entry, opts = {}) {
+  function edit(entry, opts = {}) {
     const st = readState(entry);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
@@ -773,20 +770,14 @@ window.ClassEditor = (() => {
     };
     render();
     const root = el('div', { class: 'class-editor' }, nav, content);
-    const save = () => {
-      const name = st.name.trim();
-      if (!name) { toast('Нужно название класса'); return null; }
-      return { name, data: writeData(st, entry) };
-    };
-    return { root, state: st, save, title: entry?.id ? 'Класс: ' + (entry.name || '') : 'Новый класс' };
+    return modal(entry?.id ? 'Класс: ' + (entry.name || '') : 'Новый класс', root,
+      [{ label: 'Сохранить', cls: 'primary', fn: () => {
+        const name = st.name.trim();
+        if (!name) { toast('Нужно название класса'); return false; }
+        return { name, data: writeData(st, entry) };
+      } }], { wide: true });
   }
 
-  /// Модалка редактора — для встраиваемых мест (лист персонажа, стол).
-  function edit(entry, opts = {}) {
-    const f = form(entry, opts);
-    return modal(f.title, f.root, [{ label: 'Сохранить', cls: 'primary', fn: () => f.save() || false }], { wide: true });
-  }
-
-  return { edit, form, readState, writeData, emptyData, equipmentText, blocksFromText, rowsFromList, rowFromText, skillKeyOfName, skillNameOfKey, skillFromEntry,
-    ABIL_SHORT, KEYS, SECTIONS, MAX_LEVEL };
+  return { edit, readState, writeData, emptyData, equipmentText, blocksFromText, rowsFromList, rowFromText, skillKeyOfName, skillNameOfKey, skillFromEntry,
+    skillsCatalog, pickFilters, levelRow, SECTIONS, MAX_LEVEL };
 })();

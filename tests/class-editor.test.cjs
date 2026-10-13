@@ -423,3 +423,25 @@ test('редактор класса открывается: все раздел�
   assert.equal(saved.data.progression, undefined, 'таблица живёт в узле графа');
   assert.equal(domCtx.window.Mechanics.validate(saved.data.mechanics) || '', '', 'граф валиден');
 });
+
+// ---------- Место редактора: конструктор класса живёт в окне редактора записи ----------
+test('класс правится в окне редактора записи, отдельных страниц редактора нет', () => {
+  const compendium = fs.readFileSync('static/compendium.js', 'utf8');
+  // Карточка открывает окно редактора записи, а внутри для класса — конструктор.
+  assert.match(compendium, /const EDITOR_LABELS = \{ class: 'Редактор класса', race: 'Редактор расы', background: 'Редактор предыстории' \}/,
+    'кнопка конструктора названа своим именем');
+  assert.match(compendium, /onclick: \(\) => editEntry\(e, \{ campaignId: e\.campaign_id, packId: e\.pack_id, onSaved: opts\.onChanged \}\) \}, EDITOR_LABELS\[e\.category\] \|\| 'Редактировать'\)/,
+    'кнопка в карточке открывает окно редактора записи: конструктор для класса, раса, предыстория');
+  assert.match(compendium, /category === 'class' && window\.ClassEditor[\s\S]{0,140}const r = await window\.ClassEditor\.edit\(e, o\); if \(!r\) return;[\s\S]{0,140}result = \{ name: r\.name, data: \{ \.\.\.e\?\.data, \.\.\.r\.data/,
+    'в окне для класса открывается конструктор и его поля ложатся в запись');
+  assert.match(compendium, /if \(e\?\.id\) await API\.patch\('\/api\/compendium\/' \+ e\.id, body\); else await API\.post\('\/api\/compendium', body\)/,
+    'результат конструктора сохраняется в саму запись справочника');
+  // Создание записи и мастерская наборов: тот же путь.
+  assert.match(compendium, /function createRecord\(\)[\s\S]{0,600}editEntry\(null, \{/, '«+ Своя запись» открывает то же окно');
+  assert.match(fs.readFileSync('static/packs.js', 'utf8'), /C\(\)\.editEntry\(null, \{ packId: pid, category/, '«+ Запись» в наборе открывает то же окно');
+  // Отдельных страниц редактора в приложении нет.
+  assert.equal(fs.existsSync('static/editor-page.js'), false, 'страница редактора записи удалена');
+  assert.doesNotMatch(fs.readFileSync('static/app.js', 'utf8'), /class-editor|EditorPage/, 'в маршрутах нет страницы редактора');
+  for (const file of ['static/index.html', 'static/sheet.html'])
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /editor-page\.js/, `${file}: страница редактора не подключается`);
+});
