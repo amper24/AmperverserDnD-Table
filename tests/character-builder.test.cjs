@@ -52,6 +52,35 @@ test('origin selections project into starting proficiencies and 2024 lineage spe
   assert.ok(elfSheet.spells.known.some(s => s.name === 'Искусство друидов' && s.spell_ability === 'wis'));
 });
 
+test('заклинания расы из данных записи: известные сразу, выбор игрока и перекрытие набора правил', () => {
+  const records = loadSrd('data_seed/srd_2014.json');
+  // В базе записей id выдаёт сервер (slug), поэтому в тесте подставляем его сами.
+  const withIds = list => list.map(e => ({ ...e, id: e.id || e.slug }));
+  const spells = withIds(records.filter(e => e.category === 'spell'));
+  const wizardCantrip = spells.find(e => Number(e.data.level) === 0 && (e.data.classes || []).some(c => /волшебник/i.test(c)));
+  assert.ok(wizardCantrip, 'в справочнике есть заговор волшебника');
+  const race = { id: 'custom-race', category: 'race', name: 'Своя раса', source: 'Test pack',
+    data: { edition: '2014', name_en: 'My Race', speed: 30,
+    cantrips: [{ name: 'Чудотворство', level: 0, ability: 'cha' }],
+    spell_choices: [{ key: 'spell_choice_1', kind: 'spell', title: 'Заговор своей расы', hint: 'Выберите заговор из списка волшебника.',
+      ability: 'wis', filter: { level: 0, classes: ['волшебник'] } }] } };
+  const base = { name: 'Своя раса', edition: '2014', abilities: Object.fromEntries(B.keys.map(k => [k, 10])),
+    selected: { race }, catalog: [...spells, race], spells: [], method: 'standard' };
+  const sheet = B.build({ ...base, ruleChoices: { spell_choice_1: wizardCantrip.id } });
+  assert.ok(sheet.spells.known.some(s => s.name === 'Чудотворство' && s.spell_ability === 'cha'), 'известное сразу заклинание из данных');
+  assert.ok(sheet.spells.known.some(s => s.name === wizardCantrip.name && s.spell_ability === 'wis'), 'заговор, выбранный игроком');
+  const choices = B.raceChoices({ ...base, ruleChoices: {} });
+  assert.ok(choices.some(c => c.key === 'spell_choice_1' && c.title === 'Заговор своей расы'), 'выбор виден мастеру создания');
+  assert.ok((choices.find(c => c.key === 'spell_choice_1').options || []).some(o => o.value === wizardCantrip.id), 'в списке выбора — заговоры волшебника');
+  assert.match(B.raceChoiceProblem({ ...base, ruleChoices: {} }), /Заговор своей расы/, 'без выбора создание не закончить');
+
+  // Данные записи перекрывают набор правил: пустой список гасит пресетный заговор тифлинга.
+  const tiefling = records.find(e => e.category === 'race' && e.name === 'Тифлинг');
+  const muted = { ...tiefling, id: tiefling.slug, data: { ...tiefling.data, cantrips: [] } };
+  const mutedSheet = B.build({ ...base, selected: { race: muted }, catalog: spells });
+  assert.ok(!mutedSheet.spells.known.some(s => s.name === 'Чудотворство'), 'пресетный заговор выключен данными записи');
+});
+
 test('2014 dwarf/elf weapon proficiencies and tiefling cantrip, plus exact 2024 lineage cantrips', () => {
   const records14 = loadSrd('data_seed/srd_2014.json');
   const dwarf = records14.find(e => e.category === 'race' && e.name === 'Дварф');

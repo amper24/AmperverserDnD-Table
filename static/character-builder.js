@@ -230,6 +230,8 @@ window.CharacterBuilder = (() => {
   // PICK_FILTERS[id] → { label, test }: прежний интерфейс для мастера и builder-dialog, данные — из набора.
   const PICK_FILTERS = new Proxy({}, { get: (_, id) => typeof id === 'string' ? pickFilterOf(id) : undefined });
   const cap = v => { const t = String(v || '').trim(); return t ? t[0].toLocaleUpperCase() + t.slice(1) : ''; };
+  // Английское имя записи: сервер отдаёт его полем data.name_en, в «сырых» данных оно лежит в слое i18n.en.
+  const nameEnOf = data => String(data?.name_en || data?.i18n?.en?.name || '').toLocaleLowerCase().trim();
   const normalizeName = v => String(v === undefined || v === null ? '' : v).toLocaleLowerCase().replace(/ё/g, 'е')
     .replace(/[«»"'.,;:()[\]×*]/g, ' ').replace(/\s+/g, ' ').trim();
   function stemWord(word) {
@@ -644,11 +646,34 @@ window.CharacterBuilder = (() => {
   // ---------- Сборка листа: draft + выбранные модули → готовый лист ----------
   // Особенности расы и родословной — набор race_rules (по редакции). Запись линии переопределяет поля корня,
   // остальное наследуется от корня (владения оружием, например, относятся ко всем линиям расы).
-  function raceRules(entry, rootNameEn, edition) {
+  function raceRules(entry, rootNameEn, edition, rootEntry) {
     const items = window.Presets?.items('race_rules', edition) || [];
     const byName = en => { const key = String(en || '').toLowerCase(); return key ? items.find(i => String(i.table?.name_en || '').toLowerCase() === key)?.table : undefined; };
-    const root = byName(rootNameEn), own = byName(entry?.data?.name_en);
-    return { ...(root || {}), ...(own && own !== root ? own : {}) };
+    const root = byName(rootNameEn), own = byName(nameEnOf(entry?.data));
+    const merged = { ...(root || {}), ...(own && own !== root ? own : {}) };
+    // Заклинания расы (раздел «Заклинания» редактора) запись может описывать сама: поля data.cantrips,
+    // data.spell_choices и data.spell_ability_choice перекрывают набор правил — своя раса описывается данными.
+    // Корень (родительская раса) перекрывается записью линии, как и остальные поля наборов.
+    const rootData = (rootEntry && rootEntry !== entry ? rootEntry.data : null) || {};
+    const ownData = entry?.data && typeof entry.data === 'object' ? entry.data : {};
+    const dataValue = key => (key in ownData ? ownData[key] : (key in rootData ? rootData[key] : undefined));
+    const cantrips = dataValue('cantrips');
+    if (cantrips !== undefined) merged.cantrips = (Array.isArray(cantrips) ? cantrips : [])
+      .map(c => (typeof c === 'string' ? { name: c } : c)).filter(c => c?.name);
+    const spellChoices = dataValue('spell_choices');
+    if (spellChoices !== undefined) {
+      merged.choices = [...(merged.choices || []).filter(c => c?.kind !== 'spell'),
+        ...(Array.isArray(spellChoices) ? spellChoices.filter(c => c?.kind === 'spell' && c?.key) : [])];
+    }
+    const abilityChoice = dataValue('spell_ability_choice');
+    if (abilityChoice !== undefined) {
+      const rest = (merged.choices || []).filter(c => c?.key !== 'raceSpellAbility');
+      merged.choices = abilityChoice?.enabled && Array.isArray(abilityChoice.options) && abilityChoice.options.length
+        ? [...rest, { key: 'raceSpellAbility', kind: 'options', title: abilityChoice.title || 'Заклинательная характеристика',
+          hint: abilityChoice.hint || '', options: abilityChoice.options.map(k => ({ value: k, name: ABIL[k] || k })) }]
+        : rest;
+    }
+    return merged;
   }
   // Выборы расы из набора race_rules: навыки, варианты, заговоры и черты. Варианты заклинаний и черт
   // берутся из справочника по фильтру набора, поэтому кастомная раса описывается только данными.
@@ -766,9 +791,9 @@ window.CharacterBuilder = (() => {
     if (!race) return [];
     const rootName = race.data?.parent || race.name;
     const rootEntry = (draft.catalog || []).find(e => e.category === 'race' && e.name === rootName && !e.data?.parent);
-    const rootNameEn = String(rootEntry?.data?.name_en || race.data?.name_en || '').toLowerCase();
+    const rootNameEn = nameEnOf(rootEntry?.data) || nameEnOf(race.data);
     const catalog = draft.catalog || [];
-    return (raceRules(race, rootNameEn, draft.edition || '2014').choices || []).map(c => {
+    return (raceRules(race, rootNameEn, draft.edition || '2014', rootEntry).choices || []).map(c => {
       const choice = { ...JSON.parse(JSON.stringify(c)), required: c.optional !== true };
       if (c.kind === 'skills') choice.options = SKILLS.map(([key, label]) => ({ value: key, name: label }));
       if (c.kind === 'spell') {
@@ -865,8 +890,8 @@ window.CharacterBuilder = (() => {
     if (classRule && typeof classRule === 'object') s.unarmored_defense = JSON.parse(JSON.stringify(classRule));
     const raceEntry = draft.selected.race, raceRoot = raceEntry?.data?.parent || raceEntry?.name;
     const raceParentEntry = (draft.catalog || []).find(e => e.category === 'race' && e.name === raceRoot && !e.data?.parent);
-    const raceRootNameEn = String(raceParentEntry?.data?.name_en || raceEntry?.data?.name_en || '').toLowerCase();
-    const rr = raceRules(raceEntry, raceRootNameEn, s.edition);
+    const raceRootNameEn = nameEnOf(raceParentEntry?.data) || nameEnOf(raceEntry?.data);
+    const rr = raceRules(raceEntry, raceRootNameEn, s.edition, raceParentEntry);
     const ruleChoices = draft.ruleChoices || {};
     for (const key of ruleChoices.raceSkills || []) if (SKILLS.some(([skill]) => skill === key)) s.skills.push(key);
     if (rr.speed) s.speed = rr.speed;
@@ -930,6 +955,15 @@ window.CharacterBuilder = (() => {
     for (const c of rr.cantrips || []) {
       const found = (draft.catalog || []).find(e => e.category === 'spell' && normalizeName(entryName(e)) === normalizeName(c.name));
       if (found) racialCantrips.push({ entry: found, ability: c.ability === 'choice' ? ruleChoices.raceSpellAbility : c.ability });
+    }
+    // Заклинания из графа механик (узел rule.spell_list): их несут расы и любые записи справочника.
+    for (const rule of s.graph_spell_rules || []) {
+      const ability = String(rule?.ability || '') || String(ruleChoices.raceSpellAbility || '');
+      for (const name of rule?.spells || []) {
+        if (racialCantrips.some(x => normalizeName(entryName(x.entry)) === normalizeName(name))) continue;
+        const found = (draft.catalog || []).find(e => e.category === 'spell' && normalizeName(entryName(e)) === normalizeName(name));
+        if (found) racialCantrips.push({ entry: found, ability });
+      }
     }
     for (const { entry, ability } of racialCantrips) {
       const existing = s.spells.known.find(spell => normalizeName(spell.name) === normalizeName(entryName(entry)));

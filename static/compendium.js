@@ -50,6 +50,24 @@ window.Compendium = (function () {
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
     block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${t.name}` })));
+    // Заклинания расы: свои поля данных, иначе набор правил (у высшего эльфа — «Заговор высшего эльфа»).
+    if (e.category === 'race') {
+      const rr = window.RaceEditor?.presetRaceRules?.(e) || {};
+      const ability = v => (v === 'choice' ? 'характеристика игрока' : window.ABIL?.[v] || v);
+      // Поле в записи перекрывает набор правил целиком: пустой список гасит пресетные заклинания (как в мастере создания).
+      const fixed = (('cantrips' in d ? d.cantrips : rr.cantrips) || [])
+        .map(c => (typeof c === 'string' ? { name: c, ability: '' } : c)).filter(c => c?.name);
+      if (fixed.length) wrap.append(el('p', {}, el('b', {}, 'Заклинания расы. '),
+        fixed.map(c => c.name + (c.ability ? ` (${ability(c.ability)})` : '')).join(' · ')));
+      const choices = (('spell_choices' in d ? d.spell_choices : (rr.choices || [])) || []).filter(c => c?.kind === 'spell');
+      if (choices.length) wrap.append(el('h3', { style: 'margin-top:12px' }, 'Выбор заклинаний'));
+      for (const c of choices) {
+        const level = Number(c.filter?.level) || 0;
+        wrap.append(el('p', {}, el('b', {}, (c.title || 'Выбор заклинания') + '. '),
+          el('span', { class: 'muted small' }, `${level > 0 ? level + '-й круг' : 'Заговор'}${(c.filter?.classes || []).length ? ' · ' + c.filter.classes.join(', ') : ''}. `),
+          M().rich(c.hint || '', ctx, { prose: !!d.mechanics, prefix: `${e.name}: ${c.title || 'заклинание'}` })));
+      }
+    }
     if (Array.isArray(d.choices) && d.choices.length) {
       wrap.append(el('h3', { style: 'margin-top:12px' }, 'Выбор при создании'));
       for (const g of d.choices) {

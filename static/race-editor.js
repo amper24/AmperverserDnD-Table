@@ -3,13 +3,14 @@
 //
 // Открывается там же, где раньше создавалась раса: «Создать свою запись» →
 // категория «Расы» и кнопка «Редактировать» в карточке расы. Разделы:
-// Общее · Характеристики · Языки · Навыки · Владения · Черты · Подрасы.
+// Общее · Характеристики · Языки · Заклинания · Навыки · Владения · Черты · Подрасы.
 //
 // Правила расы живут в графе механик (узлы rule.*), поэтому редактор правит и
 // сырые поля записи, и узлы графа — иначе правку не увидел бы мастер создания:
 //   rule.speed / rule.languages / rule.ability_bonus — скорость, языки, бонусы;
 //   rule.skill_proficiency                          — владение навыком (как у записи навыка);
 //   rule.skills                                     — выбор навыков игроком;
+//   rule.spell_list                                 — заклинания, известные расе сразу;
 //   rule.proficiencies                              — владения (доспехи, оружие, инструменты);
 //   action.program (group: 'traits') + action.manual — черты расы с текстом.
 // Сырые поля (data.speed, data.languages, data.asi, data.skills, data.traits)
@@ -39,6 +40,22 @@ window.RaceEditor = (() => {
   }
   const skillNameOfKey = key => (skillsCatalog().find(s => s.key === key) || {}).name || str(key);
   const skillFromEntry = entry => (entry?.category === 'skill' ? (skillKeyOfName(entry.data?.key) || skillKeyOfName(entry.name)) : '');
+
+  // ---------- Заклинания (набор правил расы + собственные данные записи) ----------
+  const LEVELS = [0, 1, 2, 3, 4, 5];
+  const levelLabel = l => (num(l) > 0 ? `${num(l)}-й круг` : 'Заговор');
+  const ABILITY_OPTIONS = [{ value: '', label: 'не указана' }, ...KEYS.map(k => ({ value: k, label: ABIL[k] || k })),
+    { value: 'choice', label: 'выбор игрока' }];
+  // Английское имя записи: сервер отдаёт его полем data.name_en, в «сырых» данных оно лежит в слое i18n.en.
+  const nameEnOf = data => str(data?.name_en || data?.i18n?.en?.name);
+  /// Набор правил расы (race_rules по редакции): корень — по английскому имени родителя, поверх — своя запись.
+  function presetRaceRules(entry) {
+    const d = entry?.data || {}, edition = str(d.edition) || '2014';
+    const items = window.Presets?.items?.('race_rules', edition) || [];
+    const byName = en => { const key = str(en).toLowerCase(); return key ? items.find(i => str(i.table?.name_en).toLowerCase() === key)?.table : undefined; };
+    const own = byName(nameEnOf(d)), root = byName(str(d.i18n?.en?.parent));
+    return { ...(root || {}), ...(own && own !== root ? own : {}) };
+  }
 
   // ---------- Граф механик ----------
   const nodesOf = g => (Array.isArray(g?.nodes) ? g.nodes : (g.nodes = []));
@@ -128,8 +145,53 @@ window.RaceEditor = (() => {
     }
   }
 
+  /// Заклинания, известные расе сразу: по узлу rule.spell_list на каждую характеристику (пусто — характеристику выбирает игрок).
+  function syncSpellNodes(graph, groups) {
+    const existing = ruleNodes(graph, 'rule.spell_list');
+    const used = new Set();
+    for (const [ability, spells] of groups) {
+      let node = existing.find(n => !used.has(n.id) && (str(n.params?.ability) || '') === ability);
+      if (!node) {
+        node = { id: nodeId('spell'), type: 'rule.spell_list', position: { x: 60, y: 60 + (nodesOf(graph).length % 12) * 60 }, params: {} };
+        nodesOf(graph).push(node);
+      }
+      used.add(node.id);
+      // Чужие параметры узла сохраняем, свои переписываем: характеристика без значения убирается совсем —
+      // rule.spell_list не принимает пустое значение (проверка узла отклонила бы весь граф).
+      node.params = { ...node.params, mode: 'known', spells: [...spells] };
+      if (ability) node.params.ability = ability; else delete node.params.ability;
+    }
+    for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
+  }
+
   function emptyData(edition = '2014') {
     return { name_en: '', edition, size: 'Средний', speed: 30, languages: [], traits: [], desc: '', age: '', size_description: '', subraces: [], asi: {} };
+  }
+
+  /// Заклинания записи: узлы графа → поля данных → набор правил расы (у высшего эльфа так приходит
+  /// «Заговор высшего эльфа»: один заговор волшебника на выбор, Интеллект — характеристика).
+  function readSpells(d, graph, entry) {
+    const preset = presetRaceRules(entry);
+    const nodes = ruleNodes(graph, 'rule.spell_list');
+    const spellRow = c => (typeof c === 'string'
+      ? { name: str(c), level: 0, ability: '' }
+      : { name: str(c?.name), level: num(c?.level), ability: str(c?.ability) });
+    const fixed = nodes.length
+      ? nodes.flatMap(n => (Array.isArray(n.params?.spells) ? n.params.spells : []).map(name => ({ name: str(name), level: 0, ability: str(n.params?.ability) })))
+      : Array.isArray(d.cantrips) ? d.cantrips.map(spellRow) : (preset.cantrips || []).map(spellRow);
+    const choiceRow = c => ({ key: str(c?.key), title: str(c?.title), hint: str(c?.hint), ability: str(c?.ability) || 'choice',
+      level: num(c?.filter?.level), classes: (Array.isArray(c?.filter?.classes) ? c.filter.classes : []).map(str).filter(Boolean).join(', ') });
+    const choices = Array.isArray(d.spell_choices)
+      ? d.spell_choices.filter(c => str(c?.kind) === 'spell').map(choiceRow)
+      : (preset.choices || []).filter(c => str(c?.kind) === 'spell').map(choiceRow);
+    const own = d.spell_ability_choice;
+    const fromPreset = (preset.choices || []).find(c => str(c?.key) === 'raceSpellAbility');
+    const options = c => (Array.isArray(c?.options) ? c.options : []).map(o => str(o?.value ?? o)).filter(k => KEYS.includes(k));
+    const ability = own && typeof own === 'object'
+      ? { mode: own.enabled ? 'on' : 'off', options: options(own).length ? options(own) : ['int', 'wis', 'cha'], title: str(own.title), hint: str(own.hint) }
+      : fromPreset ? { mode: 'on', options: options(fromPreset).length ? options(fromPreset) : ['int', 'wis', 'cha'], title: str(fromPreset.title), hint: str(fromPreset.hint) }
+        : { mode: 'inherit', options: ['int', 'wis', 'cha'], title: '', hint: '' };
+    return { fixed: fixed.filter(r => r.name), choices, ability };
   }
 
   /// Состояние редактора из записи: узлы графа в приоритете, сырые поля — запасной вариант.
@@ -166,6 +228,7 @@ window.RaceEditor = (() => {
         from: Array.isArray(rulesNode?.params?.options) ? rulesNode.params.options.map(str) : [],
         id: str(rulesNode?.params?.id) || 'race_skills',
       },
+      spells: readSpells(d, graph, entry),
       profs: ruleNodes(graph, 'rule.proficiencies').map(n => ({ kind: str(n.params?.kind), values: listOf(n) })),
       traits: (Array.isArray(d.traits) ? d.traits : []).map(t => ({ name: str(t?.name), text: str(t?.text) })),
       subraces: (Array.isArray(d.subraces) ? d.subraces : []).map(str).filter(Boolean),
@@ -211,6 +274,23 @@ window.RaceEditor = (() => {
     syncNodes(graph, 'rule.proficiencies', st.profs.filter(p => str(p.kind).trim() && (p.values || []).length)
       .map(p => ({ params: { kind: str(p.kind).trim(), value: p.values.map(str).filter(Boolean) } })),
     (node, item) => str(node.params?.kind) === item.params.kind);
+
+    // Заклинания: известные сразу — узлом rule.spell_list и полем data.cantrips; выбор игрока — data.spell_choices.
+    const spellRows = st.spells.fixed.map(r => ({ name: str(r.name).trim(), level: num(r.level), ability: str(r.ability) })).filter(r => r.name);
+    d.cantrips = spellRows.map(r => ({ name: r.name, level: r.level, ability: r.ability }));
+    const spellChoices = st.spells.choices.map((c, i) => ({ key: str(c.key).trim() || `spell_choice_${i + 1}`, kind: 'spell',
+      title: str(c.title).trim(), hint: str(c.hint), ability: KEYS.includes(c.ability) ? c.ability : 'int',
+      filter: { level: num(c.level), classes: str(c.classes).split(',').map(x => str(x).trim().toLowerCase()).filter(Boolean) } })).filter(c => c.title);
+    d.spell_choices = spellChoices;
+    if (st.spells.ability.mode === 'inherit') delete d.spell_ability_choice; else d.spell_ability_choice = { enabled: st.spells.ability.mode === 'on',
+      options: (st.spells.ability.options || []).filter(k => KEYS.includes(k)), title: str(st.spells.ability.title), hint: str(st.spells.ability.hint) };
+    const spellGroups = new Map();
+    for (const row of spellRows) {
+      const ability = KEYS.includes(row.ability) ? row.ability : '';
+      if (!spellGroups.has(ability)) spellGroups.set(ability, []);
+      spellGroups.get(ability).push(row.name);
+    }
+    syncSpellNodes(graph, spellGroups);
 
     // Черты: сырым полем data.traits и программами графа (кнопки бросков в описании черты).
     const traits = st.traits.map(t => ({ name: str(t.name).trim(), text: str(t.text) })).filter(t => t.name);
@@ -294,6 +374,7 @@ window.RaceEditor = (() => {
     { id: 'common', title: 'Общее', hint: 'Название, размер, скорость, описание' },
     { id: 'abilities', title: 'Характеристики', hint: 'Увеличение характеристик расы' },
     { id: 'languages', title: 'Языки', hint: 'Какими языками владеет раса' },
+    { id: 'spells', title: 'Заклинания', hint: 'Заговоры и заклинания расы: известные сразу и выбор игрока' },
     { id: 'skills', title: 'Навыки', hint: 'Владение навыками и выбор игрока' },
     { id: 'proficiencies', title: 'Владения', hint: 'Доспехи, оружие, инструменты' },
     { id: 'traits', title: 'Черты', hint: 'Особенности расы с текстами' },
@@ -333,6 +414,72 @@ window.RaceEditor = (() => {
     box.append(el('label', { class: 'ced-field' }, el('span', {}, 'Примечание о языках'),
       area(st.languages.note, 2, 'Вы можете говорить, читать и писать на Общем и Дварфийском…', v => st.languages.note = v)));
     box.append(el('p', { class: 'muted small' }, 'Языки пишутся в узел rule.languages и в поле данных: их видит и мастер создания, и карточка справочника.'));
+    return box;
+  }
+
+  function spellsSection(st, render) {
+    const box = el('div', {});
+    box.append(el('h4', { class: 'ced-sub' }, 'Заклинания, известные сразу'));
+    const rows = el('div', { class: 'ced-features' });
+    const draw = () => {
+      rows.replaceChildren(...st.spells.fixed.map((row, index) => el('div', { class: 'ced-feature' },
+        el('div', { class: 'ced-row' },
+          el('input', { class: 'grow', value: str(row.name), placeholder: 'Название заклинания из справочника', oninput: e => row.name = e.target.value }),
+          select(num(row.level), LEVELS.map(l => ({ value: l, label: levelLabel(l) })), v => { row.level = num(v); render(); }),
+          select(str(row.ability), ABILITY_OPTIONS, v => { row.ability = v; render(); }),
+          el('button', { type: 'button', class: 'small ghost', title: 'Убрать заклинание', onclick: () => { st.spells.fixed.splice(index, 1); render(); } }, '×')))));
+      if (!st.spells.fixed.length) rows.append(el('span', { class: 'muted small' }, 'Известных сразу заклинаний нет.'));
+    };
+    draw();
+    box.append(rows);
+    const addSpell = (name, level) => {
+      const value = str(name).trim();
+      if (!value || st.spells.fixed.some(r => norm(r.name) === norm(value))) return false;
+      st.spells.fixed.push({ name: value, level: num(level), ability: '' });
+      render(); return true;
+    };
+    box.append(el('div', { class: 'ced-row' },
+      el('button', { type: 'button', class: 'small', onclick: () => { st.spells.fixed.push({ name: '', level: 0, ability: '' }); render(); } }, '+ заклинание'),
+      dropZone('Перетащите заклинание из справочника сюда', ['application/x-spell', 'application/x-compendium'], payload => {
+        const entry = payload.entry || (payload.spell ? { name: payload.spell.name, category: 'spell', data: { level: payload.spell.level } } : payload);
+        if (entry?.category !== 'spell') { toast('Сюда можно перетащить только запись из раздела «Заклинания»'); return; }
+        addSpell(entry.name, entry.data?.level);
+      })));
+
+    box.append(el('h4', { class: 'ced-sub' }, 'Выбор игрока'));
+    const choices = el('div', { class: 'ced-features' });
+    const drawChoices = () => {
+      choices.replaceChildren(...st.spells.choices.map((row, index) => el('div', { class: 'ced-feature' },
+        el('div', { class: 'ced-row' },
+          el('input', { class: 'grow', value: str(row.title), placeholder: 'Заголовок выбора, например «Заговор высшего эльфа»', oninput: e => row.title = e.target.value }),
+          el('button', { type: 'button', class: 'small ghost', title: 'Убрать выбор', onclick: () => { st.spells.choices.splice(index, 1); render(); } }, '×')),
+        el('div', { class: 'ced-row' },
+          select(num(row.level), LEVELS.map(l => ({ value: l, label: levelLabel(l) })), v => { row.level = num(v); render(); }),
+          el('input', { class: 'grow', value: str(row.classes), placeholder: 'классы через запятую: волшебник, wizard', oninput: e => row.classes = e.target.value }),
+          select(str(row.ability), [{ value: 'choice', label: 'характеристика игрока' }, ...KEYS.map(k => ({ value: k, label: ABIL[k] || k }))], v => { row.ability = v; render(); })),
+        el('input', { class: 'grow', value: str(row.hint), placeholder: 'Подсказка игроку: откуда выбирать заговор', oninput: e => row.hint = e.target.value }))));
+      if (!st.spells.choices.length) choices.append(el('span', { class: 'muted small' }, 'Выбора заговора нет — раса даёт только известные сразу.'));
+    };
+    drawChoices();
+    box.append(choices);
+    box.append(el('div', { class: 'ced-row' },
+      el('button', { type: 'button', class: 'small', onclick: () => { st.spells.choices.push({ key: '', title: '', hint: '', ability: 'choice', level: 0, classes: '' }); render(); } }, '+ выбор заговора'),
+      el('span', { class: 'muted small' }, 'Игрок выберет одно заклинание из списка класса по уровню.')));
+
+    const ab = st.spells.ability;
+    box.append(el('h4', { class: 'ced-sub' }, 'Заклинательная характеристика'));
+    box.append(el('div', { class: 'ced-row' },
+      select(ab.mode, [{ value: 'inherit', label: 'Наследуется от набора правил' }, { value: 'on', label: 'Игрок выбирает из списка' }, { value: 'off', label: 'Не задана' }], v => { ab.mode = v; render(); }),
+      ab.mode === 'on' ? el('div', { class: 'ced-row' }, ...KEYS.map(k => el('label', { class: 'ced-inline' },
+        el('input', { type: 'checkbox', checked: ab.options.includes(k) ? '' : null, onchange: e => {
+          ab.options = e.target.checked ? [...new Set([...ab.options, k])] : ab.options.filter(x => x !== k); render();
+        } }), el('span', {}, ABIL[k] || k)))) : null));
+    if (ab.mode === 'on' && !ab.options.length) box.append(el('p', { class: 'danger small' }, 'Отметьте хотя бы одну характеристику — иначе игроку нечего выбирать.'));
+    if (st.spells.fixed.some(r => str(r.ability) === 'choice') && ab.mode !== 'on') box.append(el('p', { class: 'muted small' },
+      'Часть заклинаний использует характеристику по выбору игрока — включите «Игрок выбирает из списка».'));
+    box.append(el('p', { class: 'muted small' },
+      'Известные сразу заклинания пишутся узлом rule.spell_list и полем data.cantrips, выбор игрока — полями data.spell_choices и data.spell_ability_choice. '
+      + 'Мастер создания задаёт вопрос на шаге расы и выдаёт заклинания листу.'));
     return box;
   }
 
@@ -421,7 +568,8 @@ window.RaceEditor = (() => {
       const body = sec.id === 'common' ? commonSection(st)
         : sec.id === 'abilities' ? abilitiesSection(st)
           : sec.id === 'languages' ? languagesSection(st, render)
-            : sec.id === 'skills' ? skillsSection(st, render)
+            : sec.id === 'spells' ? spellsSection(st, render)
+              : sec.id === 'skills' ? skillsSection(st, render)
               : sec.id === 'proficiencies' ? proficienciesSection(st, render)
                 : sec.id === 'traits' ? traitsSection(st, render)
                   : subracesSection(st, render);
@@ -437,5 +585,5 @@ window.RaceEditor = (() => {
       } }], { wide: true });
   }
 
-  return { edit, readState, writeData, emptyData, SECTIONS, SIZES, PROF_KINDS };
+  return { edit, readState, writeData, emptyData, SECTIONS, SIZES, PROF_KINDS, LEVELS, presetRaceRules };
 })();

@@ -157,6 +157,89 @@ test('владения: по узлу rule.proficiencies на каждый ви�
   assert.deepEqual(plain(st2.profs), [{ kind: 'Оружие', values: ['Боевой топор', 'Ручной топор'] }, { kind: 'Инструменты', values: ['Кузнечные инструменты'] }]);
 });
 
+// ---------- Заклинания расы ----------
+test('заговоры расы из набора правил: высший эльф выбирает один заговор волшебника', () => {
+  const st = RE.readState(raceByName('Высший эльф'));
+  assert.deepEqual(plain(st.spells.fixed), [], 'известных сразу заклинаний у высшего эльфа нет');
+  assert.equal(st.spells.choices.length, 1, 'один выбор заговора');
+  const [choice] = st.spells.choices;
+  assert.equal(choice.title, 'Заговор высшего эльфа');
+  assert.equal(choice.level, 0, 'выбор идёт среди заговоров');
+  assert.equal(choice.classes, 'волшебник, wizard', 'фильтр по списку волшебника');
+  assert.equal(choice.ability, 'int', 'Интеллект — заклинательная характеристика');
+  assert.equal(st.spells.ability.mode, 'inherit', 'характеристика не выбирается игроком');
+});
+
+test('известные сразу заклинания приходят из набора, у линии 2024 — вместе с набором корня', () => {
+  const tiefling = RE.readState(raceByName('Тифлинг'));
+  assert.deepEqual(plain(tiefling.spells.fixed), [{ name: 'Чудотворство', level: 0, ability: 'cha' }]);
+
+  // Линия со своими заговорами перекрывает заговоры корня — как в наборе правил мастера создания.
+  const high = { id: 'l1', category: 'race', name: 'Эльфийская линия: высший эльф',
+    data: { edition: '2024', name_en: 'Elven Lineage: High Elf', i18n: { en: { parent: 'Elf' } } } };
+  const st = RE.readState(high);
+  assert.deepEqual(plain(st.spells.fixed.map(r => r.name)), ['Фокусы'], 'своя линия перекрывает корень');
+  assert.equal(st.spells.ability.mode, 'on', 'выбор характеристики наследуется от корня');
+  assert.deepEqual(plain(st.spells.ability.options), ['int', 'wis', 'cha']);
+  assert.equal(st.spells.ability.title, 'Заклинательная характеристика родословной');
+
+  // Линия без своих заговоров наследует заговоры корня.
+  const wood = { id: 'l2', category: 'race', name: 'Эльфийская линия: лесной эльф',
+    data: { edition: '2024', name_en: 'Elven Lineage: Wood Elf', i18n: { en: { parent: 'Elf' } } } };
+  assert.deepEqual(plain(RE.readState(wood).spells.fixed.map(r => r.name)), ['Искусство друидов']);
+});
+
+test('запись заклинаний: узлы rule.spell_list, поля данных и характеристика игрока', () => {
+  const source = raceByName('Высший эльф');
+  const st = RE.readState(source);
+  st.spells.fixed.push({ name: 'Огненный снаряд', level: 0, ability: 'cha' });
+  st.spells.fixed.push({ name: 'Свет', level: 0, ability: 'choice' });
+  st.spells.choices[0].classes = 'волшебник';
+  st.spells.ability = { mode: 'on', options: ['int', 'cha'], title: 'Заклинательная характеристика', hint: 'Выберите характеристику.' };
+  const out = RE.writeData(st, source);
+
+  assert.deepEqual(plain(out.cantrips), [{ name: 'Огненный снаряд', level: 0, ability: 'cha' }, { name: 'Свет', level: 0, ability: 'choice' }]);
+  assert.equal(out.spell_choices.length, 1);
+  assert.equal(out.spell_choices[0].key, 'racialCantrip', 'ключ выбора сохранён');
+  assert.deepEqual(plain(out.spell_choices[0].filter), { level: 0, classes: ['волшебник'] });
+  assert.deepEqual(plain(out.spell_ability_choice), { enabled: true, options: ['int', 'cha'], title: 'Заклинательная характеристика', hint: 'Выберите характеристику.' });
+
+  const nodes = nodesOfType(out, 'rule.spell_list');
+  assert.equal(nodes.length, 2, 'по узлу на характеристику');
+  assert.deepEqual(plain(nodes.find(n => n.params.ability === 'cha').params.spells), ['Огненный снаряд']);
+  assert.deepEqual(plain(nodes.find(n => !n.params.ability).params.spells), ['Свет'], 'характеристику выбирает игрок — узел без неё');
+  assert.equal(M.validate(out.mechanics) || '', '', 'граф остался валидным');
+
+  // Круг чтения: узлы в приоритете, выбор игрока и характеристика читаются обратно.
+  const st2 = RE.readState({ data: out });
+  assert.deepEqual(plain(st2.spells.fixed), [{ name: 'Огненный снаряд', level: 0, ability: 'cha' }, { name: 'Свет', level: 0, ability: '' }]);
+  assert.equal(st2.spells.choices[0].classes, 'волшебник');
+  assert.deepEqual(plain(st2.spells.ability), { mode: 'on', options: ['int', 'cha'], title: 'Заклинательная характеристика', hint: 'Выберите характеристику.' });
+
+  // Убрали заклинания — узлы и поля ушли вместе с ними.
+  const cleared = RE.writeData(RE.readState({ data: out }), { data: out });
+  cleared.cantrips = [];
+  const st3 = RE.readState({ data: out });
+  st3.spells.fixed = [];
+  const out3 = RE.writeData(st3, { data: out });
+  assert.deepEqual(plain(out3.cantrips), []);
+  assert.equal(nodesOfType(out3, 'rule.spell_list').length, 0);
+});
+
+test('заклинания расы доходят до листа персонажа: данные и граф механик', () => {
+  const spells = seed.filter(e => e.category === 'spell');
+  const race = { id: 'custom-race', category: 'race', name: 'Своя раса', source: 'Тест',
+    data: { edition: '2014', name_en: 'My Race', speed: 30, cantrips: [{ name: 'Чудотворство', level: 0, ability: 'cha' }],
+      mechanics: { origin: 'race-editor-v2', version: 2, graph: { nodes: [{ id: 'sp1', type: 'rule.spell_list', position: { x: 0, y: 0 }, params: { mode: 'known', ability: 'int', spells: ['Огненный снаряд'] } }], links: [], frames: [], groups: [] } } } };
+  const sheet = ctx.window.CharacterBuilder.build({ name: 'Своя раса', edition: '2014',
+    abilities: Object.fromEntries(ctx.window.CharacterBuilder.keys.map(k => [k, 10])), selected: { race },
+    catalog: [...spells, race], spells: [], method: 'standard' });
+  const known = plain(sheet.spells.known);
+  assert.ok(known.some(s => s.name === 'Чудотворство' && s.spell_ability === 'cha'), 'известное сразу заклинание из данных');
+  assert.ok(known.some(s => s.name === 'Огненный снаряд' && s.spell_ability === 'int'), 'заклинание из узла rule.spell_list');
+  assert.ok(known.every(s => s.prepared), 'заклинания расы всегда доступны');
+});
+
 // ---------- DOM-прогон: редактор открывается, разделы рисуются, правки сохраняются ----------
 function makeNode(tag) {
   return {
@@ -233,6 +316,17 @@ test('редактор расы открывается: все разделы р
     preventDefault() { }, stopPropagation() { } });
   assert.ok(all(captured.content, 'ced-chip').some(c => text(c).includes('Скрытность')), 'навык добавлен перетаскиванием');
 
+  // Заклинания: заклинание добавляется перетаскиванием, выбор заговора — из формы.
+  navTo('Заклинания');
+  const spellZone = all(captured.content, 'ced-drop')[0];
+  fire(spellZone, 'drop', { dataTransfer: { types: ['application/x-spell'], getData: t => (t === 'application/x-spell' ? JSON.stringify({ spell: { name: 'Свет', level: 0 } }) : '') },
+    preventDefault() { }, stopPropagation() { } });
+  const spellInput = allTag(captured.content, 'input').find(i => i.attributes.placeholder === 'Название заклинания из справочника');
+  assert.equal(spellInput && (spellInput.attributes.value || spellInput.value), 'Свет', 'заклинание добавлено перетаскиванием');
+  clickNode(allTag(captured.content, 'button').find(b => text(b) === '+ выбор заговора'));
+  typeIn(byPlaceholder(captured.content, 'Заголовок выбора, например «Заговор высшего эльфа»'), 'Заговор своей расы');
+  typeIn(byPlaceholder(captured.content, 'классы через запятую: волшебник, wizard'), 'волшебник');
+
   // Черты: новая черта с текстом.
   navTo('Черты');
   clickNode(allTag(captured.content, 'button').find(b => text(b) === '+ черта'));
@@ -248,6 +342,11 @@ test('редактор расы открывается: все разделы р
   assert.deepEqual(JSON.parse(JSON.stringify(saved.data.languages)), ['Общий']);
   assert.deepEqual(JSON.parse(JSON.stringify(saved.data.skills)), ['Скрытность']);
   assert.deepEqual(JSON.parse(JSON.stringify(saved.data.traits)), [{ name: 'Тёмное зрение', text: 'Видите в темноте на 60 футов.' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.cantrips)), [{ name: 'Свет', level: 0, ability: '' }]);
+  assert.equal(saved.data.spell_choices.length, 1);
+  assert.equal(saved.data.spell_choices[0].title, 'Заговор своей расы');
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.spell_choices[0].filter)), { level: 0, classes: ['волшебник'] });
+  assert.ok(!('spell_ability_choice' in saved.data), 'характеристика не выбирается игроком — поле не пишется');
   assert.equal(domCtx.window.Mechanics.validate(saved.data.mechanics) || '', '', 'граф валиден');
   // Проекция: владение навыком приходит из графа, а не из отдельного поля.
   const sheet = { edition: '2014', level: 1, skills: [], proficiencies: '', languages: [], features: [], saving_throws: [], abilities: {}, hp: { max: 0, current: 0, temp: 0 } };
