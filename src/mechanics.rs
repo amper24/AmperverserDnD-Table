@@ -2,7 +2,7 @@
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
-// `save` остаётся в схеме только для старых записей: при выполнении он превращается в своё действие.
+// `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
 const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","save","grant_item","condition","adjust","require","manual","passive"];
 fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
@@ -105,9 +105,6 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
     }
     Ok(())
 }
-/// Приводит старую схему к текущей: спасбросок цели становится правилом для мастера (игрок его не
-/// кидает), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся на спасброске,
-/// становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
 /// Короткий код характеристики для текста правила: `dex` → «ЛОВ» (как `Mechanics.abilityCode`).
 fn ability_code(value: &str) -> String {
     match value.trim().to_lowercase().as_str() {
@@ -120,6 +117,9 @@ fn ability_code(value: &str) -> String {
         other => other.to_string(),
     }
 }
+/// Приводит старую схему к текущей: спасбросок цели становится правилом для мастера (игрок его не
+/// кидает), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся на спасброске,
+/// становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
 fn normalize(m: &Value) -> Value {
     let mut out = m.clone();
     let Some(programs) = out["programs"].as_array_mut() else { return out };
