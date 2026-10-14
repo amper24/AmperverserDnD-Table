@@ -43,6 +43,8 @@ echo "[2] справочник"
 [ "$(gm "$B/api/compendium?category=spell&edition=2014&limit=3000" | J "len(d)")" = "319" ]
 [ "$(gm "$B/api/compendium?category=skill" | J "len(d)")" = "18" ]                       # навыки — своя категория, вне редакций
 [ "$(gm "$B/api/compendium?category=skill&edition=2024" | J "len(d)")" = "18" ]          # и видны при любой редакции
+[ "$(gm "$B/api/compendium?category=feat&edition=2014&limit=3000" | J "len(d)")" = "325" ]  # 324 черты рас и умений классов + «Борец»
+[ "$(gm "$B/api/compendium?category=feat&edition=2024&limit=3000" | J "len(d)")" = "299" ]  # 282 + 17 черт для выбора игроком
 gm "$B/api/compendium?category=skill" | J "[e['data']['key'] for e in d]" | grep acrobatics >/dev/null
 gm "$B/api/compendium?q=fireball" | J "[e['name'] for e in d]" | grep "Огненный шар" >/dev/null
 gm "$B/api/compendium?q=меч" | J "[e['name'] for e in d]" | grep "Длинный меч" >/dev/null
@@ -79,8 +81,8 @@ pl -X PATCH "$B/api/characters/$CH" >/dev/null   # пустой PATCH (пров�
 echo "[4b] наборы (packs)"
 PACK=$(pl -X POST "$B/api/packs" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":false}' | J "d['id']")
 pl -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Кинжал Теней\",\"pack_id\":\"$PACK\",\"data\":{\"type\":\"weapon\",\"actions\":[{\"name\":\"Атака\",\"kind\":\"attack\",\"roll\":\"1d20+@atk\"}]}}" | J "d['pack_id']" | grep -q "$PACK"
-pl "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)" | grep -q 1          # владелец видит свой набор
-[ "$(gm "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)")" = "0" ]        # мастер — нет, набор не подключён и не публичный
+pl "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)" | grep -q 1          # владелец видит свой набор
+[ "$(gm "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)")" = "0" ]        # мастер — нет, набор не подключён и не публичный
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/campaigns/$CID/packs/$PACK"); [ "$code" = "403" ]
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":true}'); [ "$code" = "400" ]   # публикация без описания запрещена
 # доступ по ссылке: мастер подписывается по коде и видит набор
@@ -88,7 +90,7 @@ SHARE=$(pl -X POST "$B/api/packs/$PACK/share" | J "d['share_code']")
 [ "$(gm "$B/api/packs/join/$SHARE" | J "d['entries']")" = "1" ]
 gm -X POST "$B/api/packs/join/$SHARE" | grep -q '"ok":true'
 [ "$(gm "$B/api/packs?scope=subscribed" | J "len(d)")" = "1" ]
-[ "$(gm "$B/api/compendium?q=Теней" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/compendium?q=Кинжал%20Теней" | J "len(d)")" = "1" ]
 gm -X POST "$B/api/campaigns/$CID/packs/$PACK" | grep -q '"ok":true'
 # соавтор: мастер может добавлять записи, папки
 pl -X POST "$B/api/packs/$PACK/editors" -H 'content-type: application/json' -d '{"email":"gm@test.ru"}' | grep -q '"ok":true'
@@ -102,7 +104,7 @@ pl -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name"
 CLONE=$(gm -X POST "$B/api/packs/$PACK/clone" | J "d['id']")
 [ "$(gm "$B/api/packs/$CLONE" | J "d['entries']")" = "2" ]
 gm -X DELETE "$B/api/packs/$CLONE" | grep -q '"ok":true'
-[ "$(gm "$B/api/compendium?q=Теней&campaign_id=$CID" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)")" = "1" ]
 [ "$(gm "$B/api/campaigns/$CID/packs" | J "d[0]['entries']")" = "2" ]
 EXP=$(pl "$B/api/packs/$PACK/export")
 IMP=$(gm -X POST "$B/api/packs/import" -H 'content-type: application/json' -d "$(echo "$EXP" | python3 -c "import sys,json; d=json.load(sys.stdin); d['name']='Импорт'; print(json.dumps(d))")")
