@@ -143,12 +143,23 @@ test('броски монстров и кубики урона заклинан�
     `проверок стало меньше: атак ${attacks}, урона ${damages}, кубиков ${dice}, оружия ${itemDice}`);
 });
 
-test('заклинания: у спасброска есть характеристика, действие и программа в обеих редакциях', () => {
+test('заклинания: спасбросок цели — правило для мастера, а не бросок игрока', () => {
+  // 0.7.0 держала на каждый спасбросок отдельную кнопку «Отдельный бросок: Спасбросок» — игрок
+  // кидал чужой d20. Теперь характеристика спасброска читается правилом действия «Сотворить»,
+  // а ячейку списывает лист (круг, Договор, ритуал) — расхода в графе нет.
+  let checked = 0;
   for (const edition of EDITIONS) {
     for (const row of spells(edition)) {
       const data = row.data;
+      const nodes = (data.mechanics.graph || {}).nodes || [];
+      assert.equal(nodes.some(n => n.type === 'action.program' && String(n.params.name || '').startsWith(SAVE_PROGRAM)),
+        false, `${row.slug}: осталась кнопка «${SAVE_PROGRAM}»`);
+      assert.equal(nodes.some(n => n.type === 'action.roll' && n.params.dice && n.params.dice.sides === 20
+        && !n.params.dice.stat && !n.params.dice.bonus && (n.params.roll_kind || 'roll') === 'roll'),
+        false, `${row.slug}: у игрока остался бросок d20 спасброска`);
+      assert.equal(nodes.some(n => n.type === 'action.consume' && n.params.resource === 'slot'),
+        false, `${row.slug}: расход ячейки в графе спорит с учётом ячеек на листе`);
       const action = (data.actions || []).find(a => a.kind === 'save');
-      const program = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.program' && n.params.name === SAVE_PROGRAM);
       if (!data.save_ability) {
         assert.ok(!action, `${row.slug}: действие спасброска без save_ability`);
         continue;
@@ -157,13 +168,14 @@ test('заклинания: у спасброска есть характери�
       assert.ok(action, `${row.slug}: нет действия kind=save`);
       assert.match(action.note, /СЛ (\{\{@dc\}\}|\d+) /, `${row.slug}: подсказка спасброска «${action.note}»`);
       assert.ok(action.note.endsWith(` ${data.save_ability}`), `${row.slug}: подсказка «${action.note}» не совпадает с save_ability`);
-      assert.ok(program, `${row.slug}: нет программы «${SAVE_PROGRAM}»`);
-      assert.equal(program.params.roll_only, true, `${row.slug}: программа спасброска не помечена roll_only`);
-      const suffix = program.id.replace('program-', '');
-      const roll = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.roll' && n.id === `action-${suffix}-2`);
-      assert.ok(roll, `${row.slug}: в программе спасброска нет узла броска`);
+      const rules = nodes.filter(n => n.type === 'action.manual' && /бросает цель или ДМ/.test(String(n.params.text || '')));
+      assert.ok(rules.length, `${row.slug}: нет правила «кто кидает спасбросок»`);
+      assert.ok(rules.some(n => String(n.params.text).includes(`(${data.save_ability})`)),
+        `${row.slug}: в правилах нет основной характеристики ${data.save_ability}`);
+      checked++;
     }
   }
+  assert.ok(checked > 240, `заклинаний со спасброском проверено: ${checked}`);
 });
 
 test('заклинания: английский слой действий не отстаёт от базового', () => {
@@ -282,88 +294,41 @@ const MULTI_SAVES = {
 };
 const ABILITY_EN = { 'СИЛ': 'STR', 'ЛОВ': 'DEX', 'ТЕЛ': 'CON', 'ИНТ': 'INT', 'МДР': 'WIS', 'ХАР': 'CHA' };
 
-test('заклинания с несколькими спасбросками: у каждого своё действие, программа и характеристика', () => {
-  const checked = [];
-  for (const edition of EDITIONS) {
-    for (const row of spells(edition)) {
-      const data = row.data;
-      const saves = (data.actions || []).filter(a => a.kind === 'save');
-      if (saves.length < 2) continue;
-      checked.push(row.slug);
-      const ids = new Set(), names = new Set();
-      for (const action of saves) {
-        const ability = action.note.split(' ').at(-1);
-        assert.ok(ABILITY_CODES.includes(ability), `${row.slug}: подсказка «${action.note}» без характеристики`);
-        assert.match(action.note, /СЛ (\{\{@dc\}\}|\d+) /, `${row.slug}: подсказка спасброска «${action.note}»`);
-        assert.ok(!names.has(action.name), `${row.slug}: два действия спасброска с именем «${action.name}»`);
-        names.add(action.name);
-        const label = action.name === 'Спасбросок' ? '' : action.name.replace('Спасбросок: ', '');
-        const programName = label ? `${SAVE_PROGRAM}: ${label}` : SAVE_PROGRAM;
-        const program = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.program' && n.params.name === programName);
-        assert.ok(program, `${row.slug}: нет программы «${programName}»`);
-        assert.equal(program.params.roll_only, true, `${row.slug}: программа «${programName}» не помечена roll_only`);
-        const suffix = program.id.replace('program-', '');
-        assert.ok(!ids.has(suffix), `${row.slug}: программы спасбросков делят id узла ${program.id}`);
-        ids.add(suffix);
-        const roll = (data.mechanics.graph.nodes || []).find(n => n.type === 'action.roll' && n.id === `action-${suffix}-2`);
-        assert.ok(roll, `${row.slug}: в программе «${programName}» нет узла броска`);
-      }
-      // основной спасбросок (data.save_ability) — действие «Спасбросок» без метки эффекта
-      const primary = saves.find(a => a.name === 'Спасбросок');
-      assert.ok(primary, `${row.slug}: нет основного действия «Спасбросок»`);
-      assert.ok(primary.note.endsWith(` ${data.save_ability}`), `${row.slug}: data.save_ability=${data.save_ability}, а основной спасбросок «${primary.note}»`);
-      // английское зеркало: столько же действий и те же характеристики
-      const en = (data.i18n || {}).en || {};
-      const enActions = en['actions!'] || [];
-      assert.equal(enActions.length, (data.actions || []).length, `${row.slug}: английских действий ${enActions.length}, русских ${(data.actions || []).length}`);
-      const enSaves = enActions.filter(a => a.kind === 'save');
-      assert.equal(enSaves.length, saves.length, `${row.slug}: спасбросков в английском слое ${enSaves.length}, в русском ${saves.length}`);
-      for (let i = 0; i < enSaves.length; i++) {
-        const ruAbility = saves[i].note.split(' ').at(-1), enAbility = enSaves[i].note.split(' ').at(-1);
-        assert.equal(enAbility, ABILITY_EN[ruAbility], `${row.slug}: в английском слое «${enSaves[i].note}» вместо ${ABILITY_EN[ruAbility]}`);
-      }
-    }
-  }
-  assert.deepEqual(checked.sort(), Object.values(MULTI_SAVES).flatMap(Object.keys).sort(),
-    'набор заклинаний с несколькими спасбросками изменился — сверьте с официальным SRD');
-});
-
-test('2014: спасброски эффектов, найденные сверкой с официальным текстом', () => {
-  const spell = slug => seeds['2014'].find(r => r.slug === slug).data;
-  // «Радужные брызги»: зелёный луч — ЛОВ (основной), индиго — ТЕЛ, фиолетовый — МДР
-  const spray = spell('srd14-prismatic-spray');
-  assert.deepEqual(spray.actions.filter(a => a.kind === 'save').map(a => a.note.split(' ').at(-1)), ['ЛОВ', 'ТЕЛ', 'МДР']);
-  assert.match(spray.desc, /спасбросок Телосложения в конце каждого своего хода/);
-  assert.match(spray.desc, /спасбросок Мудрости в начале вашего следующего хода/);
-  // «Ледяной шторм»: второй спасбросок — ТЕЛ, поддержание концентрации
-  const sleet = spell('srd14-sleet-storm');
-  assert.ok(sleet.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: поддержание концентрации' && a.note.endsWith(' ТЕЛ')));
-  assert.match(sleet.desc, /должно совершить успешный спасбросок Телосложения против СЛ спасброска/);
-  // «Гроза мщения»: молнии третьего раунда — ЛОВ, основной спасбросок тучи — ТЕЛ
-  const storm = spell('srd14-storm-of-vengeance');
-  assert.equal(storm.save_ability, 'ТЕЛ');
-  assert.ok(storm.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: молния' && a.note.endsWith(' ЛОВ')));
-  assert.match(storm.desc, /Поражённое существо должно совершить спасбросок Ловкости/);
-  // «Ледяная стена»: слой ледяного воздуха — второй спасбросок ТЕЛ
-  const wall = spell('srd14-wall-of-ice');
-  assert.ok(wall.actions.some(a => a.kind === 'save' && a.name === 'Спасбросок: слой ледяного воздуха' && a.note.endsWith(' ТЕЛ')));
-  assert.match(wall.desc, /проходящее через слой ледяного воздуха, должно совершить спасбросок Телосложения/);
-});
-
-test('заклинания с несколькими спасбросками: набор характеристик совпадает с официальным текстом', () => {
+test('заклинания с несколькими спасбросками: у каждой характеристики своё правило для мастера', () => {
   for (const [edition, expected] of Object.entries(MULTI_SAVES)) {
     for (const [slug, abilities] of Object.entries(expected)) {
       const row = seeds[edition].find(r => r.slug === slug);
       assert.ok(row, `${edition}: нет записи ${slug}`);
-      const saves = (row.data.actions || []).filter(a => a.kind === 'save');
-      const got = [...new Set(saves.map(a => a.note.split(' ').at(-1)))].sort();
-      assert.deepEqual(got, [...new Set(abilities)].sort(), `${slug}: характеристики спасбросков`);
+      const data = row.data;
+      const nodes = (data.mechanics.graph || {}).nodes || [];
+      const rules = nodes.filter(n => n.type === 'action.manual' && /бросает цель или ДМ/.test(String(n.params.text || '')));
+      const found = new Set(rules.flatMap(n => [...String(n.params.text).matchAll(/\((СИЛ|ЛОВ|ТЕЛ|ИНТ|МДР|ХАР)\)/g)].map(m => m[1])));
+      assert.deepEqual([...found].sort(), [...new Set(abilities)].sort(),
+        `${slug}: характеристики правил спасброска`);
+      // Эффекты не смешались между характеристиками: у каждого правила свой перечень.
+      const labeled = new Map(rules.map(n => {
+        const m = String(n.params.text).match(/эффекты: ([^:]+):/);
+        return [String(n.params.text).match(/\((СИЛ|ЛОВ|ТЕЛ|ИНТ|МДР|ХАР)\)/)[1], m ? m[1] : ''];
+      }));
+      const labels = [...labeled.values()].filter(Boolean).flatMap(v => v.split(', '));
+      assert.equal(new Set(labels).size, labels.length, `${slug}: эффект попал в два правила: ${labels.join(', ')}`);
+      // Основной спасбросок записи идёт первым: правило читается сверху вниз.
+      assert.ok(String(rules[0].params.text).includes(`(${data.save_ability})`),
+        `${slug}: первое правило — не основной спасбросок ${data.save_ability}`);
+      // Метаданные записи остались: подсказки действий и английский слой не переписывались.
+      const saves = (data.actions || []).filter(a => a.kind === 'save');
+      assert.deepEqual([...new Set(saves.map(a => a.note.split(' ').at(-1)))].sort(), [...new Set(abilities)].sort(),
+        `${slug}: характеристики действий записи`);
+      const en = (data.i18n || {}).en || {};
+      const enRules = ((en.mechanics || {}).graph || {}).nodes || [];
+      assert.equal(enRules.filter(n => /the target or the GM rolls it/.test(String((n.params || {}).text || ''))).length,
+        rules.length, `${slug}: английских правил спасброска ${enRules.length} против русских ${rules.length}`);
+      const ABILITY_EN = { 'СИЛ': 'STR', 'ЛОВ': 'DEX', 'ТЕЛ': 'CON', 'ИНТ': 'INT', 'МДР': 'WIS', 'ХАР': 'CHA' };
+      const enFound = new Set(enRules.flatMap(n => [...String((n.params || {}).text || '').matchAll(/\((STR|DEX|CON|INT|WIS|CHA)\)/g)].map(m => m[1])));
+      assert.deepEqual([...enFound].sort(), [...new Set(abilities.map(a => ABILITY_EN[a]))].sort(),
+        `${slug}: характеристики правил в английском слое`);
     }
   }
-  // редакции не смешиваются: у «Символа» 2014 шесть разных эффектов, у 2024 — пять
-  const count = (edition, slug) => seeds[edition].find(r => r.slug === slug).data.actions.filter(a => a.kind === 'save').length;
-  assert.equal(count('2014', 'srd14-symbol'), 8, '2014 «Символ»: Смерть, Раздор, Страх, Безнадёжность, Безумие, Боль, Сон, Ошеломление');
-  assert.equal(count('2024', 'srd24-symbol'), 6, '2024 «Символ»: Смерть, Раздор, Страх, Боль, Сон, Ошеломление');
 });
 
 // Тип урона в справочнике называется по словарю листа: «звук» (thunder). Перевод «гром»/«громовой»

@@ -1,11 +1,25 @@
+// Учёт ячеек заклинаний и сборка действия «Сотворить»: чистые правила листа и пересборка
+// старых записей справочника (те же функции вызывают лист персонажа и tools/srd).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const ctx = { window: {} }; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/spell-rules.js', 'utf8'), ctx);
-const R = ctx.window.SpellRules;
+const path = require('node:path');
+
+const ROOT = path.join(__dirname, '..');
+function el(tag, attrs = {}, ...children) {
+  return { tag, attrs, children: children.flat().filter(value => value !== null && value !== undefined), style: {}, classList: { add() {}, remove() {}, contains() { return false; } }, append(...more) { this.children.push(...more.flat()); }, appendChild(value) { this.children.push(value); }, replaceChildren(...values) { this.children = values.flat().filter(value => value !== null && value !== undefined); }, addEventListener() {}, querySelector() { return null; }, closest() { return null; } };
+}
+const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' }, SKILLS: [] };
+vm.createContext(ctx);
+// Порядок загрузки — как на листе персонажа: правила заклинаний опираются на Mechanics.
+for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js',
+                    ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f)), 'static/spell-rules.js', 'static/mechanics-graph.js'])
+  vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
+const M = ctx.window.Mechanics, R = ctx.window.SpellRules;
 const plain = value => JSON.parse(JSON.stringify(value));
+const seeds = { 2014: JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed/srd_2014.json'), 'utf8')), 2024: JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed/srd_2024.json'), 'utf8')) };
+
 const modulesCtx = { window: {} }; vm.createContext(modulesCtx);
 vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), modulesCtx);
 vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), modulesCtx);
@@ -75,4 +89,170 @@ test('заряды заклинаний восстанавливаются по 
   ] };
   R.restore(spells, [], 'short'); assert.deepEqual(plain(spells.known.map(s => s.uses.cur)), [1, 0, 0]);
   R.restore(spells, [], 'long'); assert.deepEqual(plain(spells.known.map(s => s.uses.cur)), [1, 2, 0]);
+});
+
+// ---------- сотворение: кто списывает ячейку ----------
+test('новая запись без блока расхода: ячейку списывает лист, доступны круги не ниже и ячейки Договора', () => {
+  const spells = { slots: { 2: { max: 1, used: 1 }, 3: { max: 1, used: 0 } }, pact_slots: { level: 3, max: 2, used: 1 } };
+  const plan = R.castPlan({ level: 3 }, { id: 'p1', trigger: 'use', blocks: [{ kind: 'attack' }, { kind: 'damage', when: 'hit' }] }, spells);
+  assert.equal(plan.spend, 'client');
+  assert.equal(plan.level, 0);
+  assert.deepEqual(plain(plan.options), [
+    { pool: 'slots', level: 3, remaining: 1 }, { pool: 'pact_slots', level: 3, remaining: 1 }
+  ]);
+});
+
+test('старая запись со своим блоком расхода: платит действие, круг один и тот же, двойного расхода нет', () => {
+  const spells = { slots: { 3: { max: 2, used: 1 }, 4: { max: 1, used: 0 } }, pact_slots: { level: 3, max: 1, used: 0 } };
+  const legacy = { id: 'p1', trigger: 'use', blocks: [{ kind: 'consume', resource: 'slot', slot_level: 3 }, { kind: 'manual', text: 'rule' }] };
+  const plan = R.castPlan({ level: 3 }, legacy, spells);
+  assert.equal(plan.spend, 'server');
+  assert.equal(plan.level, 3);
+  assert.deepEqual(plain(plan.options), [{ pool: 'slots', level: 3, remaining: 1 }], 'ячейка Договора и повышенный круг не предлагаются: их граф не спишет');
+  assert.equal(R.spend(spells, { level: 3 }, { pool: 'slots', level: 3 }).ok, true);
+  assert.equal(spells.slots[3].used, 2);
+});
+
+test('«отдельный бросок» и заговор ничего не тратят, заклинание с зарядами списывает заряды', () => {
+  const spells = { slots: { 1: { max: 1, used: 0 } } };
+  assert.deepEqual(plain(R.castPlan({ level: 1 }, { id: 'p2', name: 'Отдельный бросок: Урон', trigger: 'use', roll_only: true, blocks: [{ kind: 'damage' }] }, spells)),
+    { cost: 'slot', spend: 'none', level: 0, options: [] });
+  assert.equal(R.castPlan({ level: 0 }, { id: 'p1', trigger: 'use', blocks: [] }, spells).cost, 'free');
+  assert.equal(R.castPlan({ level: 0 }, { id: 'p1', trigger: 'use', blocks: [] }, spells).spend, 'none');
+  const charged = { level: 1, cast_cost: 'uses', use_cost: 1, uses: { cur: 1, max: 1 } };
+  assert.equal(R.castPlan(charged, { id: 'p1', trigger: 'use', blocks: [] }, spells).spend, 'client');
+});
+
+test('ритуал добавляется к вариантам расхода, а пустые круги не показываются', () => {
+  const spells = { slots: { 1: { max: 1, used: 1 } } };
+  const plan = R.castPlan({ level: 1, ritual: true }, { id: 'p1', trigger: 'use', blocks: [] }, spells);
+  assert.deepEqual(plain(plan.options), [{ pool: 'ritual', level: 1, remaining: 0 }]);
+});
+
+// ---------- сборка действия из старых записей ----------
+const legacySpellPrograms = () => ([
+  { id: 'p1', name: 'Сотворить (базовый круг)', trigger: 'use', blocks: [
+    { id: 'b1', kind: 'consume', resource: 'slot', source: 'self', slot_level: 2, amount: 1, trigger: 'use', when: 'always' },
+    { id: 'b2', kind: 'manual', when: 'always', text: 'Выберите существо, которое видите в пределах дистанции. Цель должна преуспеть в спасброске, иначе получит урон и станет ослеплённой. Справочная формула (не автоматический эффект): Урон 1к8' },
+    { id: 'b3', kind: 'manual', when: 'always', text: 'Большие круги: урон увеличивается на 1к8 за каждый уровень выше 2-го.' }
+  ] },
+  { id: 'p2', name: 'Отдельный бросок: Атака заклинанием', trigger: 'use', roll_only: true, blocks: [
+    { id: 'b1', kind: 'manual', when: 'always', text: 'Только отдельный бросок кубиков: не тратит ячейку, заряд или действие.' },
+    { id: 'b2', kind: 'attack', when: 'always', dice: { count: 1, sides: 20, bonus: 0, stat: 'spell' } }
+  ] },
+  { id: 'p3', name: 'Отдельный бросок: Урон', trigger: 'use', roll_only: true, blocks: [
+    { id: 'b1', kind: 'manual', when: 'always', text: 'Только отдельный бросок кубиков: не тратит ячейку, заряд или действие.' },
+    { id: 'b2', kind: 'damage', when: 'always', dice: { count: 1, sides: 8, bonus: 0, stat: '' }, damage_type: 'некротический' }
+  ] },
+  { id: 'p4', name: 'Отдельный бросок: Спасбросок', trigger: 'use', roll_only: true, blocks: [
+    { id: 'b1', kind: 'manual', when: 'always', text: 'Только отдельный бросок кубиков: не тратит ячейку, заряд или действие.' },
+    { id: 'b2', kind: 'roll', when: 'always', name: 'Спасбросок', dice: { count: 1, sides: 20, bonus: 0, stat: '' } }
+  ] },
+  { id: 'p5', name: 'Урон', trigger: 'use', blocks: [
+    { id: 'b1', kind: 'manual', when: 'always', text: 'Поздний урон: цель получает 1к6 в начале своего хода.' },
+    { id: 'b2', kind: 'damage', when: 'always', dice: { count: 1, sides: 6, bonus: 0, stat: '' }, damage_type: 'огонь' }
+  ] }
+]);
+const spellMeta = { level: 2, desc: 'Выберите существо, которое видите в пределах дистанции. Цель должна преуспеть в спасброске, иначе получит урон и станет ослеплённой.', actions: [{ kind: 'save', roll: '1d20', note: 'СЛ {@dc} МДР' }], saveAbility: 'МДР' };
+
+test('старые «отдельные броски» сворачиваются в действие: атака, урон по попаданию и правило спасброска', () => {
+  const out = R.spellPrograms(legacySpellPrograms(), spellMeta);
+  assert.equal(out.changed, true);
+  assert.equal(out.programs.length, 2, 'действие «Сотворить» и отдельный «Урон» (отложенный, не сворачивается)');
+  const [use, extra] = out.programs;
+  assert.equal(extra.roll_only, true, 'отдельное действие больше не тратит ячейку');
+  assert.deepEqual(plain(use.blocks.map(b => b.kind)), ['manual', 'attack', 'damage', 'manual']);
+  assert.match(use.blocks[0].text, /Спасбросок \(МДР\).*не игрок/s);
+  assert.equal(use.blocks[1].dice.stat, 'spell');
+  assert.equal(use.blocks[2].when, 'hit', 'урон после атаки срабатывает по попаданию');
+  assert.equal(use.blocks[2].damage_type, 'некротический');
+  assert.match(use.blocks[3].text, /^Большие круги/);
+  assert.equal(use.blocks.some(b => b.kind === 'consume'), false, 'ячейку списывает лист: расхода в действии нет');
+  assert.equal(use.blocks.some(b => b.kind === 'roll' && b.dice.sides === 20), false, 'игрок не кидает спасбросок цели');
+  assert.equal(use.blocks.some(b => b.kind === 'manual' && /Справочная формула/.test(b.text)), false, 'описание записи остаётся описанием');
+});
+
+test('урон без атаки бросается всегда, повторные формулы не дублируются, а собранная запись больше не меняется', () => {
+  const spellFireball = [{ id: 'p1', name: 'Сотворить (базовый круг)', trigger: 'use', blocks: [
+    { id: 'b1', kind: 'consume', resource: 'slot', source: 'self', slot_level: 3, amount: 1, trigger: 'use', when: 'always' },
+    { id: 'b2', kind: 'manual', when: 'always', text: 'Яркая вспышка срывается с вашего указательного пальца к выбранной вами точке в пределах дистанции и расцветает взрывом пламени.' }
+  ] }];
+  const actions = [{ kind: 'damage', roll: '8d6', dtype: 'огонь' }, { kind: 'damage', roll: '8d6', dtype: 'огонь' }, { kind: 'save', roll: '1d20', note: 'СЛ {@dc} ЛОВ' }];
+  const meta = { level: 3, desc: 'Яркая вспышка срывается с вашего указательного пальца к выбранной вами точке в пределах дистанции и расцветает взрывом пламени.', actions, saveAbility: 'ЛОВ' };
+  const out = R.spellPrograms(spellFireball, meta);
+  const blocks = out.programs[0].blocks;
+  assert.deepEqual(plain(blocks.map(b => b.kind)), ['manual', 'damage']);
+  assert.equal(blocks[1].when, 'always', 'без атаки урон не привязан к попаданию');
+  assert.equal(blocks[1].dice.count, 8);
+  const again = R.spellPrograms(out.programs, meta);
+  assert.equal(again.changed, false, 'собранная запись не пересобирается повторно');
+});
+
+test('запись без бросков и без спасброска не трогается, а лишние служебные правила не подтверждаются', () => {
+  const plainSpell = [{ id: 'p1', name: 'Сотворить (базовый круг)', trigger: 'use', blocks: [
+    { id: 'b1', kind: 'consume', resource: 'slot', slot_level: 1, amount: 1, trigger: 'use', when: 'always' },
+    { id: 'b2', kind: 'manual', when: 'always', text: 'Вспышка света.' }
+  ] }];
+  const out = R.spellPrograms(plainSpell, { level: 1, desc: 'Вспышка света.' });
+  assert.deepEqual(plain(out.programs[0].blocks.map(b => b.kind)), ['manual'], 'расход ячейки убран, правило записи осталось');
+  assert.equal(out.changed, true);
+  assert.equal(R.serviceManual('Только отдельный бросок кубиков: не тратит ячейку, заряд или действие.'), true, 'пояснение кнопки не требует подтверждения');
+  assert.equal(R.serviceManual('Спасбросок (МДР): бросает цель или ДМ, а не игрок.'), true, 'правило спасброска показывает окно по своему условию');
+  assert.equal(R.serviceManual('Поздний урон: цель получает 1к6 в начале своего хода.'), false, 'решение мастера подтверждается');
+});
+
+test('правило спасброска: игрок не кидает бросок, подстановка СЛ из старых записей очищается', () => {
+  assert.equal(M.saveRule('СЛ {@dc} МДР'), M.saveRule('МДР'));
+  assert.match(M.saveRule('dex'), /Спасбросок \(ЛОВ\)/);
+  assert.match(M.saveRule(''), /СЛ = 8 \+ владение/);
+  assert.match(M.saveRule('ХАР', [], 'en'), /Saving throw \(CHA\)/);
+  assert.match(M.saveRule('ТЕЛ', ['Раздор', 'Боль']), /эффекты: Раздор, Боль/);
+  assert.equal(M.isSaveRule(M.saveRule('ЛОВ')), true);
+});
+
+test('пересборка на листе: старая копия заклинания получает одно действие без расхода ячейки', () => {
+  const row = seeds[2014].find(entry => entry.slug === 'srd14-acid-arrow');
+  const graph = plain(row.data.mechanics);
+  const rebuilt = R.legacySpellMechanics(graph, { level: row.data.level, desc: row.data.desc, actions: row.data.actions, edition: '2014' });
+  assert.equal(rebuilt.version, 2);
+  const programs = rebuilt.graph.nodes.filter(node => node.type === 'action.program');
+  assert.equal(programs.length, 1, 'осталось одно действие — «Сотворить»');
+  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.consume'), false, 'расхода ячейки в графе больше нет');
+  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && (node.params.roll_kind || 'roll') === 'attack'), true);
+  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && node.params.dice && node.params.dice.sides === 20 && !node.params.dice.stat), false, 'броска спасброска у игрока нет');
+  assert.equal(M.validate(rebuilt), '');
+  assert.deepEqual(plain(M.problems(rebuilt)), []);
+  // Повторный проход: собранная запись не меняется (иначе лист переписывал бы себя при каждом открытии).
+  const again = M.toLegacy(rebuilt, { level: row.data.level, edition: '2014' });
+  assert.equal(R.legacySpellMechanics(rebuilt, { level: row.data.level, desc: row.data.desc, actions: row.data.actions, edition: '2014' }), undefined);
+  assert.equal(R.spellPrograms(again.programs, { level: row.data.level, desc: row.data.desc, actions: row.data.actions }).changed, false);
+});
+
+test('все заклинания справочника: сворачивание даёт одно действие, бросок спасброска игроку не остаётся', () => {
+  let spells = 0, leftover = 0, invalid = 0;
+  for (const [edition, rows] of Object.entries(seeds)) {
+    for (const row of rows) {
+      if (row.category !== 'spell') continue;
+      spells++;
+      const data = row.data;
+      const legacy = M.toLegacy(data.mechanics, { level: data.level, edition });
+      const out = R.spellPrograms(legacy.programs, { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability, lang: 'ru' });
+      const use = out.programs.filter(program => program.trigger === 'use');
+      const casting = use.filter(program => !program.roll_only);
+      assert.equal(casting.length, 1, `${row.slug}: действий сотворения ${casting.length}`);
+      assert.equal(casting[0].blocks.some(block => block.kind === 'consume' && block.resource === 'slot'), false, `${row.slug}: расход ячейки убран`);
+      for (const program of use) assert.equal(program.blocks.some(block => block.kind === 'roll' && block.dice && block.dice.sides === 20 && !block.dice.stat && !block.dice.bonus),
+        false, `${row.slug}: игроку оставлен бросок спасброска цели`);
+      if (out.changed) {
+        leftover++;
+        const graph = M.migrate({ mechanics: { version: 1, origin: 'spell-v1', programs: out.programs } }, 'spell');
+        assert.equal(M.validate(graph), '', `${row.slug}: ${M.validate(graph)}`);
+        assert.deepEqual(plain(M.problems(graph)), [], `${row.slug}: граф не проходит проверку`);
+        if (!R.spellPrograms(M.toLegacy(graph, { level: data.level, edition }).programs, { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability }).changed) invalid++;
+      }
+    }
+  }
+  assert.equal(spells, 658, 'заклинаний в справочнике');
+  assert.ok(leftover > 500, `пересобирается большинство записей: ${leftover}`);
+  assert.equal(invalid, leftover, 'пересборка идемпотентна: повторный проход ничего не меняет');
 });

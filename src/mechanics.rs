@@ -105,9 +105,21 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
     }
     Ok(())
 }
-/// Приводит старую схему к текущей: спасбросок цели становится своим действием (бросок + правило,
-/// которое сравнивает ДМ), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся
-/// на спасброске, становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
+/// Приводит старую схему к текущей: спасбросок цели становится правилом для мастера (игрок его не
+/// кидает), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся на спасброске,
+/// становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
+/// Короткий код характеристики для текста правила: `dex` → «ЛОВ» (как `Mechanics.abilityCode`).
+fn ability_code(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "str" | "сил" | "сила" | "strength" => "СИЛ".into(),
+        "dex" | "лов" | "ловкость" | "dexterity" => "ЛОВ".into(),
+        "con" | "тел" | "телосложение" | "constitution" => "ТЕЛ".into(),
+        "int" | "инт" | "интеллект" | "intelligence" => "ИНТ".into(),
+        "wis" | "мдр" | "мудрость" | "wisdom" => "МДР".into(),
+        "cha" | "хар" | "харизма" | "charisma" => "ХАР".into(),
+        other => other.to_string(),
+    }
+}
 fn normalize(m: &Value) -> Value {
     let mut out = m.clone();
     let Some(programs) = out["programs"].as_array_mut() else { return out };
@@ -116,22 +128,21 @@ fn normalize(m: &Value) -> Value {
         let mut gate = false;
         for b in blocks {
             if b["kind"] == "save" {
-                let ability = text(b, "ability").to_string(); let dc = num(b, "dc");
-                let name = if text(b, "name").is_empty() { "Спасбросок".to_string() } else { text(b, "name").to_string() };
+                // Чужой бросок игроку не показываем: спасбросок кидает цель или ДМ — остаётся правило.
+                let ability = ability_code(text(b, "ability")); let dc = num(b, "dc");
                 if let Some(o) = b.as_object_mut() {
-                    o.insert("kind".into(), json!("roll"));
-                    o.insert("name".into(), json!(name));
+                    o.insert("kind".into(), json!("manual"));
                     o.insert("when".into(), json!("always"));
-                    o.insert("dice".into(), json!({ "count": 1, "sides": 20, "bonus": 0, "stat": "" }));
-                    o.insert("text".into(), json!(format!("Спасбросок{}{}. Результат сравнивает ДМ.",
-                        if ability.is_empty() { String::new() } else { format!(" {ability}") },
-                        if dc > 0 { format!(" · СЛ {dc}") } else { String::new() })));
-                    o.remove("target"); o.remove("apply");
+                    o.insert("text".into(), json!(format!("Спасбросок{}{}: бросает цель или ДМ, а не игрок.{}",
+                        if ability.is_empty() { String::new() } else { format!(" ({ability})") },
+                        if dc > 0 { format!(" · СЛ {dc}") } else { String::new() },
+                        if dc > 0 { " СЛ из записи.".to_string() } else { " СЛ = 8 + владение + модификатор характеристики заклинаний.".to_string() })));
+                    o.remove("target"); o.remove("apply"); o.remove("dice"); o.remove("name");
                 }
             }
             let kind = b["kind"].as_str().unwrap_or("").to_string();
             if let Some(o) = b.as_object_mut() {
-                if ["attack", "damage", "roll", "save"].contains(&kind.as_str()) { o.remove("target"); o.remove("apply"); }
+                if ["attack", "damage", "roll"].contains(&kind.as_str()) { o.remove("target"); o.remove("apply"); }
                 if ["heal", "temp_hp", "condition", "adjust", "grant_item"].contains(&kind.as_str()) { o.insert("target".into(), json!("self")); }
                 let when = o.get("when").and_then(Value::as_str).unwrap_or("").to_string();
                 if ["hit", "miss"].contains(&when.as_str()) && !gate { o.insert("when".into(), json!("always")); }
@@ -254,19 +265,24 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut ready = mk(true, true);
         assert!(execute(&mut ready,"item","ring","use","",true).is_ok());
     }
-    /// Чужих целей нет: урон никому не списывается, спасбросок цели стал своим действием с броском d20.
+    /// Чужих целей нет: урон никому не списывается, спасбросок цели стал правилом для мастера.
     #[test] fn damage_and_saves_are_custom_actions(){
         let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Burst","trigger":"use","blocks":[
             {"id":"s","kind":"save","ability":"dex","dc":15},
             {"id":"d","kind":"damage","target":"target","apply":true,"when":"hit","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}]}]}}]});
-        let r=execute(&mut s,"item","w","use","",false).unwrap();
+        // Правило подтверждается игроком до расхода — без подтверждения сервер отказывает.
+        assert!(execute(&mut s,"item","w","use","",false).is_err());
+        let r=execute(&mut s,"item","w","use","",true).unwrap();
         assert_eq!(s["hp"]["current"],20);
         assert_eq!(s["hp"]["temp"],0);
         let rolls=r["rolls"].as_array().unwrap();
-        assert_eq!(rolls.len(),2);
-        assert_eq!(rolls[0]["kind"],"roll");
-        assert_eq!(rolls[1]["kind"],"damage");
-        assert!(r["effects"].as_array().unwrap().is_empty());
+        assert_eq!(rolls.len(),1);
+        assert_eq!(rolls[0]["kind"],"damage");
+        let effects=r["effects"].as_array().unwrap();
+        assert_eq!(effects.len(),1);
+        assert_eq!(effects[0]["kind"],"manual");
+        assert!(effects[0]["text"].as_str().unwrap().contains("не игрок"));
+        assert!(effects[0]["text"].as_str().unwrap().contains("ЛОВ"));
     }
     /// Ветка попадания считается только по броску и КД: чужой лист (тут AC 99) не участвует.
     #[test] fn hit_branch_uses_only_the_roll(){

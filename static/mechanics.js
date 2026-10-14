@@ -14,8 +14,37 @@ window.Mechanics = (() => {
   // Русское название состояния по его ключу из набора conditions (запасом — сам ключ).
   const conditionName = key => window.Presets?.item('conditions', key)?.table?.ru || key;
   const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
-  // Виды блоков, которых больше нет в палитре: старые записи с ними читаются и превращаются в свои действия.
+  // Виды блоков, которых больше нет в палитре: старые записи с ними читаются и превращаются в правила.
   const LEGACY_KINDS = ['save'];
+  // Спасбросок цели — не бросок игрока: его кидает цель (или ДМ), а лист показывает правило и урон.
+  // Короткий код характеристики: «МДР» в русском тексте, «WIS» в английском.
+  const ABILITY_INPUT = { str: 'str', dex: 'dex', con: 'con', int: 'int', wis: 'wis', cha: 'cha',
+                          'СИЛ': 'str', 'ЛОВ': 'dex', 'ТЕЛ': 'con', 'ИНТ': 'int', 'МДР': 'wis', 'ХАР': 'cha',
+                          'Сила': 'str', 'Ловкость': 'dex', 'Телосложение': 'con', 'Интеллект': 'int', 'Мудрость': 'wis', 'Харизма': 'cha',
+                          'Strength': 'str', 'Dexterity': 'dex', 'Constitution': 'con', 'Intelligence': 'int', 'Wisdom': 'wis', 'Charisma': 'cha' };
+  const ABILITY_CODES = { ru: { str: 'СИЛ', dex: 'ЛОВ', con: 'ТЕЛ', int: 'ИНТ', wis: 'МДР', cha: 'ХАР' },
+                          en: { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' } };
+  const abilityCode = (value, lang = 'ru') => {
+    const text = String(value ?? '').replace(/\{\{?@?dc\}?\}/gi, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const known = text.match(/СИЛ|ЛОВ|ТЕЛ|ИНТ|МДР|ХАР|STR|DEX|CON|INT|WIS|CHA|Сила|Ловкость|Телосложение|Интеллект|Мудрость|Харизма/);
+    const key = ABILITY_INPUT[known ? known[0] : text.toLowerCase()];
+    return key ? ABILITY_CODES[lang === 'en' ? 'en' : 'ru'][key] : text;
+  };
+  const SAVE_RULE = {
+    ru: (ability, effects, dc) => `Спасбросок${ability ? ' (' + ability + ')' : ''}${effects ? ' — эффекты: ' + effects : ''}: бросает цель или ДМ, а не игрок. `
+      + (dc ? `СЛ ${dc} из записи.` : `СЛ = 8 + владение + модификатор характеристики заклинаний${effects ? '' : '; при успехе урон и эффект — по описанию заклинания'}.`),
+    en: (ability, effects, dc) => `Saving throw${ability ? ' (' + ability + ')' : ''}${effects ? ' — effects: ' + effects : ''}: the target or the GM rolls it, not the player. `
+      + (dc ? `DC ${dc} from the record.` : `DC = 8 + proficiency + the spellcasting ability modifier${effects ? '' : '; on a success the damage and effect follow the description'}.`),
+  };
+  const SAVE_RULE_TEXTS = [/бросает цель или ДМ/, /the target or the GM rolls it/];
+  /// Правило спасброска цели. effects — перечень эффектов со своей характеристикой, dc — готовая СЛ из записи.
+  const saveRule = (ability, effects = [], lang = 'ru', dc = 0) => {
+    const list = (Array.isArray(effects) ? effects : [effects]).map(x => String(x || '').trim()).filter(Boolean);
+    return SAVE_RULE[lang === 'en' ? 'en' : 'ru'](abilityCode(ability, lang), list.join(', '), Number(dc) || 0);
+  };
+  /// Узнаётся ли в тексте правило спасброска цели (нужно пересборке старых записей).
+  const isSaveRule = text => SAVE_RULE_TEXTS.some(re => re.test(String(text || '')));
   function dice(expr) {
     const text=String(expr || '0').replace(/\s/g,'').replace(/к/g,'d');
     const m=text.match(/^(?:(\d*)d(\d+))?([+-]?\d+)?(?:\+@([a-z_]+))?$/i);
@@ -66,12 +95,10 @@ window.Mechanics = (() => {
       for (let i = 0; i < p.blocks.length; i++) {
         let b = p.blocks[i];
         if (!b || typeof b !== 'object') continue;
-        // Спасбросок цели → своё действие: бросок d20 и правило, которое сравнивает ДМ.
+        // Спасбросок цели → правило для мастера: чужой бросок игрок не кидает, d20 у него не спрашивают.
         if (b.kind === 'save') {
-          const ability = (window.ABIL || {})[b.ability] || b.ability || '';
-          const dc = Number(b.dc) || 0;
-          b = p.blocks[i] = { id: b.id || uid(), kind: 'roll', enabled: b.enabled !== false, when: 'always', name: b.name || 'Спасбросок',
-            dice: dice('1d20'), text: `Спасбросок${ability ? ' ' + ability : ''}${dc ? ' · СЛ ' + dc : ''}. Результат сравнивает ДМ.` };
+          b = p.blocks[i] = { id: b.id || uid(), kind: 'manual', enabled: b.enabled !== false, when: 'always',
+            text: b.text || saveRule(b.ability, [], 'ru', b.dc) };
         }
         if (['attack', 'damage', 'roll'].includes(b.kind)) { delete b.target; delete b.apply; }
         if (['heal', 'temp_hp', 'condition', 'adjust', 'grant_item'].includes(b.kind)) b.target = 'self';
@@ -95,13 +122,23 @@ window.Mechanics = (() => {
     for(const group of ['traits','actions','reactions','legendary_actions'])for(const row of doc[group]||[])if(row.text)extra.push({id:uid(),name:row.name||'Правило',feature_name:row.name,group,trigger:'use',blocks:[{...block('manual'),text:row.text}]});
     for(const [name,text] of Object.entries(doc.feature_texts||{}))if(text)extra.push({id:uid(),name,feature_name:name,trigger:'use',blocks:[{...block('manual'),text}]});
     if(doc.feature_text)extra.push({id:uid(),name:doc.feature||'Особенность',feature_name:doc.feature,trigger:'use',blocks:[{...block('manual'),text:doc.feature_text}]});
-    if(category==='spell'&&doc.level>0)blocks.push({...block('consume'),resource:'slot',slot_level:doc.level});
+    // Ячейку у заклинаний списывает лист (круг, Договор, ритуал), поэтому расхода в блоках нет.
 
     if(category==='item' && doc.consume) {
       const c=doc.consume; blocks.push({...block('consume'),enabled:c.enabled!==false,resource:c.resource||'quantity',source:c.target_uid==='self'?'self':c.target_uid?'item':'tag',item_uid:c.target_uid==='self'?'':c.target_uid||'',tag:c.ammo_tag||'',amount:c.amount||1,trigger:c.trigger||'use'});
     }
-    // Старые действия: урон и атака — только броски, лечение применяется владельцу.
-    for(const a of (doc.actions || []).filter(a=>a.roll)) blocks.push(Object.assign({...block(['attack','damage','heal'].includes(a.kind)?a.kind:'roll'),name:a.name||'',dice:dice(a.kind==='heal'?a.roll.replace(/@spell\b/g,'@spell_mod'):a.roll),grip:a.grip||'',damage_type:a.dtype||''},a.kind==='heal'?{apply:true}:null));
+    // Старые действия: атака и урон — только броски; лечение предмета применяется владельцу, а у
+    // заклинания идёт броском (сколько хитов вернуть, решает ДМ). Спасбросок цели — правило для мастера.
+    let saveText = '';
+    for(const a of (doc.actions || [])) {
+      if(a.kind === 'save') { saveText = saveText || saveRule(a.ability || String(a.note || '').split(' ').pop(), [], 'ru', 0); continue; }
+      if(!a.roll) continue;
+      const kind = ['attack','damage'].includes(a.kind) ? a.kind : a.kind === 'heal' && category !== 'spell' ? 'heal' : 'roll';
+      const b = Object.assign({...block(kind), name:a.name||'', dice:dice(a.kind==='heal'?String(a.roll).replace(/@spell\b/g,'@spell_mod'):a.roll), grip:a.grip||'', damage_type:a.dtype||''},
+        kind === 'heal' ? { apply:true, target:'self' } : null);
+      blocks.push(b);
+    }
+    if(saveText) blocks.unshift({...block('manual'), text:saveText});
     // Описание снаряжения само по себе не доказывает, что предмет активируется.
     // Для предмета правило добавляется только рядом с явным расходом или броском; пассивный текст остаётся описанием.
     if(category!=='item' && !blocks.some(b=>b.kind==='manual') && (doc.desc || doc.text)) blocks.push({...block('manual'),text:doc.desc||doc.text});
@@ -175,5 +212,5 @@ window.Mechanics = (() => {
     const ps=m?.programs?.filter(p=>p.trigger==='use'&&p.feature_name===name)||[];
     return ps.length?{version:VERSION,programs:clone(ps)}:undefined;
   }
-  return {forFeature,VERSION,TYPES,block,dice,expression,starter,templates,migrate,normalize,programsOf,validate,preview,buttons,passiveData};
+  return {forFeature,VERSION,TYPES,block,dice,expression,starter,templates,migrate,normalize,programsOf,validate,preview,buttons,passiveData,saveRule,abilityCode,isSaveRule};
 })();

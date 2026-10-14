@@ -60,7 +60,7 @@ test('curated healing: potion expenditure is separate from a target-applied heal
     const data=srd(`data_seed/srd_${ed}.json`);
     const spell=data.find(e=>e.category==='spell'&&e.data.name_en==='Cure Wounds');
     const blocks=spell.data.mechanics.programs[0].blocks;
-    assert.equal(blocks[0].resource,'slot');
+    assert.ok(!blocks.some(b=>b.kind==='consume'),'ячейку списывает лист (круг, Договор, ритуал), а не сама запись');
     assert.ok(!blocks.some(b=>b.kind==='heal'));
     const roll=blocks.find(b=>b.kind==='roll');
     assert.equal(roll.name,'Лечение');assert.equal(roll.dice.count,ed==='2014'?1:2);assert.equal(roll.dice.sides,8);assert.equal(roll.dice.stat,'spell_mod');
@@ -159,16 +159,19 @@ test('template library builds valid programs and keeps creation templates apart'
   assert.ok(!ids('item').includes('save_damage'));
   for(const cat of ['item','spell','feature','monster']) assert.ok(!M.templates(cat).some(t=>(t.chain||[]).includes('save')),cat);
 });
-test('blocks never target another character: damage and saves are custom actions',()=>{
+test('blocks never target another character: damage is a roll, a save is a GM rule',()=>{
   const b=M.block('damage'), a=M.block('attack'), h=M.block('heal');
   assert.equal(b.target,undefined); assert.equal(b.apply,undefined);
   assert.equal(a.target,undefined); assert.equal(a.apply,undefined);
   assert.equal(h.target,'self'); assert.equal(h.apply,true);
-  // Старый блок спасброска цели превращается в своё действие с правилом для ДМ.
+  // Старый блок спасброска цели превращается в правило для ДМ: игрок чужой спасбросок не кидает.
   const legacy={version:1,programs:[{id:'p',name:'Пламя',trigger:'use',blocks:[{id:'s',kind:'save',when:'always',ability:'dex',dc:15},{id:'d',kind:'damage',when:'hit',target:'target',apply:true,dice:M.dice('8d6')}]}]};
   const m=M.normalize(legacy);
-  assert.equal(m.programs[0].blocks[0].kind,'roll');
-  assert.match(m.programs[0].blocks[0].text,/Спасбросок|СЛ 15/);
+  assert.equal(m.programs[0].blocks[0].kind,'manual');
+  assert.match(m.programs[0].blocks[0].text,/Спасбросок \(ЛОВ\)/);
+  assert.match(m.programs[0].blocks[0].text,/бросает цель или ДМ/);
+  assert.match(m.programs[0].blocks[0].text,/СЛ 15 из записи/);
+  assert.equal(m.programs[0].blocks[0].dice,undefined,'игроку не остаётся бросок d20');
   assert.equal(m.programs[0].blocks[1].when,'always','ветвление без атаки больше не держится на спасбросоке');
   assert.equal(m.programs[0].blocks[1].target,undefined);
   assert.equal(M.validate(m),'');

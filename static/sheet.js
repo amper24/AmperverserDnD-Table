@@ -82,7 +82,14 @@
     s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.notes_by ||= {}; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
     s.inventory = Equipment.migrate(s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' })));
     s.features=s.features.map(f=>f.uid?f:M.newFeature(f));
-    s.spells.known = s.spells.known.map(sp => sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] }));
+    // Копии заклинаний, снятые со справочника до 0.7.1, пересобираются в одно действие: атака и урон
+    // идут цепочкой «Сотворить», а спасбросок цели остаётся правилом мастера, а не броском игрока.
+    s.spells.known = s.spells.known.map(sp => {
+      const base = sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] });
+      const rebuilt = base.mechanics && window.SpellRules?.legacySpellMechanics
+        ? SpellRules.legacySpellMechanics(base.mechanics, { level: base.level, desc: base.desc, actions: base.actions, edition: s.edition || '2014' }) : undefined;
+      return rebuilt ? { ...base, mechanics: rebuilt } : base;
+    });
   }
   migrate();
 
@@ -122,7 +129,7 @@
   }
   window.addEventListener('message', e => { if (e.origin === location.origin && e.data?.type === 'character_update' && (!e.data.id || e.data.id === id) && (!e.data.revision || e.data.revision > (s._revision || 0))) reload(); });
   // ---------- Операции инвентаря и механики умений ----------
-  async function inventoryOp(operation, retry = false) {
+  async function inventoryOp(operation, retry = false, note = '') {
     if (readonly || inventoryBusy) return;
     if (pendingOperation && !retry) return toast('Сначала повторите незавершённую операцию тем же запросом.');
     inventoryBusy = true; render();
@@ -136,7 +143,7 @@
       else if (r.rolls?.length && !response.replayed) DiceEngine.present(r, { local: true });
       if(r.effects?.length) toast(r.effects.map(e=>({heal:'Лечение',temp_hp:'Временные хиты',damage:'Урон',grant_item:'Выдано',condition:'Состояние',adjust:'Показатель',manual:'Правило подтверждено'}[e.kind]||e.kind)+(e.amount!==undefined?' · '+e.amount:'')+(e.name?' '+e.name:'')).join(' / '),6500);
       if (r.spent?.length) toast(r.spent.map(x => `${x.name}: −${x.amount} (осталось ${x.remaining})`).join(' · '));
-      else toast(['use','program'].includes(operation?.op) ? 'Использовано · без расхода' : 'Инвентарь обновлён');
+      else toast(note || (['use','program'].includes(operation?.op) ? 'Использовано · без расхода' : 'Инвентарь обновлён'));
       return response;
     } catch (e) {
       if (e.status && e.status < 500) pendingOperation = null;
@@ -146,23 +153,38 @@
   window.PROGRAM_USE = ref => {
     if(ref.character_id!==id)return toast('Откройте лист владельца.');
     const list=ref.source_kind==='item'?s.inventory:ref.source_kind==='spell'?s.spells.known:s.features;
-    const doc=list.find(d=>d.uid===ref.source_uid),p=doc?.mechanics?window.Mechanics?.programsOf?.(doc.mechanics,{edition:s.edition,level:s.level,subclass:s.subclass,choices:s.creation?.rule_choices}).find(p=>p.id===ref.program_id):null;
+    const doc=list.find(d=>d.uid===ref.source_uid),p=doc?.mechanics?programsOf(doc).find(p=>p.id===ref.program_id):null;
     if(!p)return toast('Действие больше недоступно.');return runProgram(doc,ref.source_kind,p,{mode:ref.mode,gm_only:ref.gm_only});
   };
   window.ITEM_USE = ref => ref.character_id === id ? inventoryOp({ op: 'use', item_uid: ref.item_uid, actions: ref.actions, mode: ref.mode, gm_only: ref.gm_only }) : toast('Используйте предмет на листе его владельца.');
+  // Контекст листа для графовых механик: редакция, уровень, подкласс и выборы создания.
+  const mechanicContext = () => ({ edition: s.edition, level: s.level, subclass: s.subclass, choices: s.creation?.rule_choices });
+  const programsOf = doc => window.Mechanics?.programsOf?.(doc.mechanics, mechanicContext()) || [];
+  const programOf = doc => programsOf(doc).find(p => p.trigger === 'use');
   /// Действие из блоков: эффекты применяются владельцу листа, цель не выбирается —
   /// урон и состояния по другим персонажам применяет ДМ (на столе, через меню токена).
+  const manualRules = p => (p?.blocks || []).filter(b => b && b.enabled !== false && b.kind === 'manual');
+  /// Подтверждать нужно решения (спасбросок цели, урон по площади), а не пояснения вроде «проверьте дистанцию».
+  const decidingRules = p => manualRules(p).filter(b => !SpellRules?.serviceManual?.(b.text));
+  /// Окно правил действия: показывается до расхода, чтобы отмена не трогала лист.
+  async function confirmManual(doc, p, rules) {
+    if (!rules.length) return true;
+    const yes = await modal(doc.name + ' · ' + p.name, el('div', {}, ...rules.map(b => el('div', { class: 'manual-rule' }, el('b', {}, 'Вручную · подтвердите допустимость действия'), el('p', {}, b.text))),
+      el('p', { class: 'muted small' }, 'Расход и эффекты применятся владельцу листа одной операцией. Урон, состояния и спасброски по другим персонажам не считаются автоматически — их применяет ДМ: действие даёт бросок и правило.')),
+      [{ label: 'Подтвердить и применить', cls: 'primary', fn: () => true }]);
+    return Boolean(yes);
+  }
   async function runProgram(doc, kind, p, opts={}) {
     if(readonly||inventoryBusy) return;
-    const manual=p.blocks.filter(b=>b.enabled!==false&&b.kind==='manual');
-    if(manual.length){
-      const yes=await modal(doc.name+' · '+p.name,el('div',{},...manual.map(b=>el('div',{class:'manual-rule'},el('b',{},'Вручную · подтвердите допустимость действия'),el('p',{},b.text))),el('p',{class:'muted small'},'Расход и эффекты применятся владельцу листа одной операцией. Урон, состояния и спасброски по другим персонажам не считаются автоматически — их применяет ДМ: действие даёт бросок и правило.')),[{label:'Подтвердить и применить',cls:'primary',fn:()=>true}]);
-      if(!yes)return;
-    }
-    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0,...opts});
+    const { note = '', acknowledged, ...fields } = opts || {};
+    const manual=manualRules(p);
+    if(manual.length && acknowledged !== true && !(await confirmManual(doc, p, decidingRules(p)))) return;
+    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0||acknowledged===true,...fields}, false, note);
   }
   const docActions=(doc,kind,context)=>M.actionButtons(doc,context||ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
-  const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: () => cast(doc) });
+  // Кнопка заклинания вызывает именно то действие, по которому щёлкнули: «отдельный бросок»
+  // старых записей не тратит ячейку, а «Сотворить» — тратит её один раз.
+  const spellActions = (doc, context) => M.actionButtons(doc, context || ctx(), `${ch.name}: ${doc.name}`, { disabled: readonly || inventoryBusy, onUse: () => cast(doc), onProgram: (p, opts) => cast(doc, p, opts) });
   // У предмета на блоках старый op:'use' не работает (сервер его отклоняет): кнопки
   // «Попадание» и «Урон» просто бросают кубы, а расход и эффекты идут через действие целиком.
   const itemActions = it => M.actionButtons(it, ctx(), `${ch.name}: ${it.name}`, { onProgram:(p,opts)=>runProgram(it,'item',p,opts), item: true, disabled: readonly || inventoryBusy || !Equipment.canUse(it), onUse: it.mechanics ? undefined : (actions, opts) => inventoryOp({ op: 'use', item_uid: it.uid, actions, ...opts }) });
@@ -828,45 +850,70 @@
     card.addEventListener('dragstart', ev => M.setDrag(ev, 'application/x-spell', { spell: x, from_character_id: id }));
     return card;
   }
-  async function cast(x) {
+  async function cast(x, program, opts = {}) {
     if (readonly || inventoryBusy) return;
+    const active = program && program.trigger === 'use' ? program : x.mechanics ? programOf(x) : null;
+    if (x.mechanics && !active) return toast('Для этого заклинания не настроено действие сотворения.');
+    // Кнопка «отдельного броска» у старых записей ничего не тратит: она только бросает кубики.
+    if (active && SpellRules.programRollOnly(active)) return runProgram(x, 'spell', active, opts);
     const canRitualFromBook = !!x.ritual && x.casting_mode === 'book';
     if (Number(x.level) > 0 && x.casting_mode !== 'known' && !x.prepared && !canRitualFromBook) return toast('Это заклинание не подготовлено. Подготовьте его или выберите известное заклинание.', 4000);
-    const cost = SpellRules.castCost(x), sp = s.spells;
+    const plan = SpellRules.castPlan(x, active, s.spells);
+    // 1. Расход выбирается до броска: круг заклинания или выше, ячейки Договора, ритуал.
     let choice = {};
-    if (cost === 'slot') {
-      const options = SpellRules.slotPool(sp, x).map(o => ({ ...o, key: `${o.pool}:${o.level}`, label: `${o.pool === 'pact_slots' ? 'Договор · ' : ''}${o.level} круг (${o.remaining} свободно)` }));
-      if (x.ritual) options.push({ pool: 'ritual', level: Number(x.level) || 0, key: 'ritual', label: 'Ритуал · без ячейки (длительное сотворение)' });
+    if (plan.cost === 'slot' && plan.spend !== 'none') {
+      const options = plan.options.map(o => ({ ...o, key: `${o.pool}:${o.level}`, label: o.pool === 'ritual' ? 'Ритуал · без ячейки (длительное сотворение)' : `${o.pool === 'pact_slots' ? 'Договор · ' : ''}${o.level} круг (${o.remaining} свободно)` }));
       if (!options.length) return toast('Нет доступной ячейки нужного круга. Обычное заклинание без расхода не сотворяется.', 4500);
       let selected = options[0];
       if (options.length > 1) {
         const pick = el('select', {}, ...options.map(o => el('option', { value: o.key }, o.label)));
-        const result = await modal(`Сотворить «${x.name}»`, el('div', { class: 'field' }, el('label', {}, 'Расход'), pick), [{ label: 'Сотворить', cls: 'primary', fn: () => pick.value }]);
+        const hint = plan.spend === 'server'
+          ? `Ячейку списывает само действие: доступен только ${plan.level} круг.`
+          : 'Круг выше базового усиливает заклинание — добавьте кубики повышения по описанию «Большие круги».';
+        const result = await modal(`Сотворить «${x.name}»`, el('div', { class: 'field' }, el('label', {}, 'Расход'), pick, el('p', { class: 'muted small' }, hint)), [{ label: 'Сотворить', cls: 'primary', fn: () => pick.value }]);
         if (!result) return;
         selected = options.find(o => o.key === result); if (!selected) return;
       }
       choice = selected.pool === 'ritual' ? { ritual: true } : { pool: selected.pool, level: selected.level };
     }
-    const copySpell = JSON.parse(JSON.stringify(x));
-    const check = SpellRules.spend(JSON.parse(JSON.stringify(sp)), copySpell, choice);
-    if (!check.ok) return toast(check.reason, 4000);
-    const program = x.mechanics ? window.Mechanics?.programsOf?.(x.mechanics,{edition:s.edition,level:s.level,subclass:s.subclass,choices:s.creation?.rule_choices}).find(p=>p.trigger==='use') : null;
-    if (x.mechanics && !program) return toast('Для этого заклинания не настроено действие сотворения.');
-    if (program) {
-      const result = await runProgram(x, 'spell', program);
-      if (!result) return;
-      const live = s.spells.known.find(spell => spell.uid === x.uid) || x;
-      const paid = SpellRules.spend(s.spells, live, choice);
-      if (!paid.ok) return toast('Действие выполнено, но расход не удалось подтвердить: ' + paid.reason, 5000);
-      save(); render();
+    // 2. Правила действия подтверждаются до расхода: отменили окно — лист не тронут.
+    if (active && !(await confirmManual(x, active, decidingRules(active)))) return;
+    // 3. Расход. Новые записи расхода не содержат: ячейку (любого круга), ячейки Договора, ритуал и
+    //    заряды списывает лист — ровно один раз. Старая запись со своим блоком расхода списывает
+    //    себя сама: тогда лист молчит, иначе ячейка ушла бы дважды.
+    let paid = plan.cost === 'free' ? { cost: 'free' } : null, snapshot = null;
+    if (plan.spend === 'client') {
+      snapshot = costSnapshot(x, s.spells);
+      paid = SpellRules.spend(s.spells, x, choice);
+      if (!paid.ok) return toast(paid.reason, 4000);
+      save();
+    } else if (plan.spend === 'server') paid = plan.level ? { cost: 'slots', level: plan.level } : { cost: 'server' };
+    if (active) {
+      const result = await runProgram(x, 'spell', active, { ...opts, acknowledged: true, note: costNote(paid) });
+      if (result) return;
+      // Действие не выполнено (отменили подтверждение или сервер отказал) — расход возвращаем.
+      if (snapshot) { restoreCost(x, s.spells, snapshot); save(); toast('Расход не списан: действие не выполнено.', 4500); }
       return;
     }
-    const paid = SpellRules.spend(sp, x, choice);
-    if (!paid.ok) return toast(paid.reason, 4000);
-    save(); render();
+    render();
     const card = M.toChatCard(x, 'spell');
-    const meta = paid.cost === 'slots' ? `${paid.level} круг · ячейка` : paid.cost === 'pact_slots' ? `${paid.level} круг · ячейка Договора` : paid.cost === 'ritual' ? 'Ритуал · без ячейки' : paid.cost === 'uses' ? `−${paid.amount} заряд(а)` : 'Без расхода ячейки';
-    M.sendCard({ ...card, owner: ch.name, meta: `${meta}${card.meta ? ' · ' + card.meta : ''}` });
+    M.sendCard({ ...card, owner: ch.name, meta: [costNote(paid), card.meta].filter(Boolean).join(' · ') });
+  }
+  /// Строка расхода для тостов и чата: «3 круг · ячейка», «−2 заряд(а)», «Ритуал · без ячейки».
+  function costNote(paid) {
+    if (!paid) return '';
+    if (paid.cost === 'slots') return `${paid.level} круг · ячейка`;
+    if (paid.cost === 'pact_slots') return `${paid.level} круг · ячейка Договора`;
+    if (paid.cost === 'ritual') return 'Ритуал · без ячейки';
+    if (paid.cost === 'uses') return `−${paid.amount} заряд(а)`;
+    if (paid.cost === 'server') return 'Расход · действие списывает само';
+    return 'Без расхода ячейки';
+  }
+  const costSnapshot = (x, spells) => ({ slots: JSON.parse(JSON.stringify(spells.slots || {})), pact: spells.pact_slots ? JSON.parse(JSON.stringify(spells.pact_slots)) : null, uses: x.uses ? JSON.parse(JSON.stringify(x.uses)) : null });
+  function restoreCost(x, spells, snapshot) {
+    spells.slots = snapshot.slots;
+    if (snapshot.pact) spells.pact_slots = snapshot.pact; else delete spells.pact_slots;
+    if (snapshot.uses) x.uses = snapshot.uses;
   }
 
   // ---------- вкладка Умения ----------

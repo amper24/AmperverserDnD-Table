@@ -84,7 +84,8 @@
       }, position: { x: 60, y } });
       let previous = programNodeId, x = 330, blockIndex = 0;
       for (const b of p.blocks || []) {
-        const kind = b.kind === 'save' ? 'roll' : b.kind;
+        // Спасбросок цели уже превращён normalize в правило для мастера: узлов «бросок спасброска» нет.
+        const kind = b.kind;
         if (!ACTION_KINDS.includes(kind)) continue;
         const id = `action-${stableHash(programKey)}-${++blockIndex}`;
         const params = { ...clone(b), block_id: b.id || mkId('b') };
