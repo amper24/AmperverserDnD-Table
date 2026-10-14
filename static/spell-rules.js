@@ -227,7 +227,9 @@ window.SpellRules = (() => {
       }
       others.push({ ...b, when: 'always' });
     };
-    for (const program of list) for (const b of program.blocks || []) readBlock(b, program);
+    // Читаются только блоки сотворения и кнопок «Отдельный бросок»: собственные действия записи
+    // («Урон» отдельным умением — отложенный или альтернативный) остаются отдельными кнопками.
+    for (const program of [cast, ...list.filter(p => p !== cast && generated.includes(p))]) for (const b of program.blocks || []) readBlock(b, program);
     // Действия записи уточняют характеристику и перечень эффектов каждого спасброска.
     for (const a of meta.actions || []) {
       if (!a || typeof a !== 'object') continue;

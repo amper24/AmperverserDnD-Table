@@ -211,48 +211,49 @@ test('правило спасброска: игрок не кидает брос
 });
 
 test('пересборка на листе: старая копия заклинания получает одно действие без расхода ячейки', () => {
-  const row = seeds[2014].find(entry => entry.slug === 'srd14-acid-arrow');
-  const graph = plain(row.data.mechanics);
-  const rebuilt = R.legacySpellMechanics(graph, { level: row.data.level, desc: row.data.desc, actions: row.data.actions, edition: '2014' });
+  // Копия 0.7.0 на листе: расход ячейки в действии и отдельные кнопки бросков.
+  const copy = M.migrate({ mechanics: { version: 1, origin: 'spell-v1', programs: legacySpellPrograms() } }, 'spell');
+  const rebuilt = R.legacySpellMechanics(plain(copy), spellMeta);
+  assert.ok(rebuilt, 'старая копия пересобирается при открытии листа');
   assert.equal(rebuilt.version, 2);
   const programs = rebuilt.graph.nodes.filter(node => node.type === 'action.program');
-  assert.equal(programs.length, 1, 'осталось одно действие — «Сотворить»');
+  assert.equal(programs.length, 2, 'действие «Сотворить» и отдельный «Урон» (отложенный, не сворачивается)');
   assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.consume'), false, 'расхода ячейки в графе больше нет');
-  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && (node.params.roll_kind || 'roll') === 'attack'), true);
+  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && node.params.roll_kind === 'attack'), true);
   assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && node.params.dice && node.params.dice.sides === 20 && !node.params.dice.stat), false, 'броска спасброска у игрока нет');
+  const rule = rebuilt.graph.nodes.find(node => node.type === 'action.manual' && /бросает цель или ДМ/.test(node.params.text || ''));
+  assert.ok(rule, 'спасбросок цели остался правилом для мастера');
+  assert.match(rule.params.text, /\(МДР\)/);
   assert.equal(M.validate(rebuilt), '');
   assert.deepEqual(plain(M.problems(rebuilt)), []);
   // Повторный проход: собранная запись не меняется (иначе лист переписывал бы себя при каждом открытии).
-  const again = M.toLegacy(rebuilt, { level: row.data.level, edition: '2014' });
-  assert.equal(R.legacySpellMechanics(rebuilt, { level: row.data.level, desc: row.data.desc, actions: row.data.actions, edition: '2014' }), undefined);
-  assert.equal(R.spellPrograms(again.programs, { level: row.data.level, desc: row.data.desc, actions: row.data.actions }).changed, false);
+  assert.equal(R.legacySpellMechanics(rebuilt, spellMeta), undefined);
+  assert.equal(R.spellPrograms(M.toLegacy(rebuilt, { level: 2 }).programs, spellMeta).changed, false);
 });
 
-test('все заклинания справочника: сворачивание даёт одно действие, бросок спасброска игроку не остаётся', () => {
-  let spells = 0, leftover = 0, invalid = 0;
+test('все заклинания справочника уже собраны: одно действие, расход на листе, чужого броска нет', () => {
+  let spells = 0, notAssembled = [];
   for (const [edition, rows] of Object.entries(seeds)) {
     for (const row of rows) {
       if (row.category !== 'spell') continue;
       spells++;
       const data = row.data;
       const legacy = M.toLegacy(data.mechanics, { level: data.level, edition });
-      const out = R.spellPrograms(legacy.programs, { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability, lang: 'ru' });
+      const meta = { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability, lang: 'ru' };
+      const out = R.spellPrograms(legacy.programs, meta);
+      if (out.changed) notAssembled.push(row.slug);
       const use = out.programs.filter(program => program.trigger === 'use');
       const casting = use.filter(program => !program.roll_only);
       assert.equal(casting.length, 1, `${row.slug}: действий сотворения ${casting.length}`);
       assert.equal(casting[0].blocks.some(block => block.kind === 'consume' && block.resource === 'slot'), false, `${row.slug}: расход ячейки убран`);
       for (const program of use) assert.equal(program.blocks.some(block => block.kind === 'roll' && block.dice && block.dice.sides === 20 && !block.dice.stat && !block.dice.bonus),
         false, `${row.slug}: игроку оставлен бросок спасброска цели`);
-      if (out.changed) {
-        leftover++;
-        const graph = M.migrate({ mechanics: { version: 1, origin: 'spell-v1', programs: out.programs } }, 'spell');
-        assert.equal(M.validate(graph), '', `${row.slug}: ${M.validate(graph)}`);
-        assert.deepEqual(plain(M.problems(graph)), [], `${row.slug}: граф не проходит проверку`);
-        if (!R.spellPrograms(M.toLegacy(graph, { level: data.level, edition }).programs, { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability }).changed) invalid++;
-      }
+      if (data.save_ability) assert.equal(casting[0].blocks.some(block => block.kind === 'manual' && R.serviceManual(block.text)),
+        true, `${row.slug}: нет правила «кто кидает спасбросок»`);
+      assert.equal(M.validate(data.mechanics), '', `${row.slug}: ${M.validate(data.mechanics)}`);
+      assert.deepEqual(plain(M.problems(data.mechanics)), [], `${row.slug}: граф не проходит проверку`);
     }
   }
   assert.equal(spells, 658, 'заклинаний в справочнике');
-  assert.ok(leftover > 500, `пересобирается большинство записей: ${leftover}`);
-  assert.equal(invalid, leftover, 'пересборка идемпотентна: повторный проход ничего не меняет');
+  assert.deepEqual(notAssembled, [], 'пересборка данных справочника: node tools/srd/migrate_spells_071.cjs');
 });
