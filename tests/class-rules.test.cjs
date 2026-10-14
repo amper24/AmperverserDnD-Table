@@ -42,6 +42,32 @@ test('a class record with its own caster block overrides the SRD table', async (
   assert.equal(R.preparedFormula(homebrew, '2014'), 'level');
 });
 
+test('черты-умения отличаются от черт для игрока', async () => {
+  await ready;
+  const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
+  // Все записи, собранные из рас и классов (data_seed/feats_*.json), — черты-умения: игроку их не выбирать.
+  for (const edition of ['2014', '2024']) {
+    const rows = read(`data_seed/feats_${edition}.json`);
+    assert.ok(rows.length > 100, `${edition}: черты собраны`);
+    const missed = rows.filter(e => !R.isFeatureRecord({ category: 'feat', data: e.data }))
+      .map(e => `${e.slug} (${e.data.kind})`);
+    assert.deepEqual(missed, [], `${edition}: каждая собранная черта — черта-умение`);
+    const kinds = [...new Set(rows.map(e => e.data.kind))].sort();
+    assert.deepEqual(kinds, ['class', 'race', 'subclass'], `${edition}: виды записей`);
+  }
+  // Черты для выбора игроком (наборы SRD) чертами-умениями не считаются — иначе человек 2024 не увидел бы
+  // ни одной черты происхождения, а список черт на повышении уровня заполонили бы умения классов.
+  for (const edition of ['2014', '2024']) {
+    const feats = read(`data_seed/srd_${edition}.json`).filter(e => e.category === 'feat');
+    assert.ok(feats.length > 0, `${edition}: черты игрока есть`);
+    assert.deepEqual(feats.filter(R.isFeatureRecord).map(e => e.slug), [], `${edition}: черты игрока не черты-умения`);
+  }
+  // Прочие категории и пустые записи не задеты.
+  assert.equal(R.isFeatureRecord({ category: 'race', data: { kind: 'race' } }), false);
+  assert.equal(R.isFeatureRecord({ category: 'feat', data: {} }), false);
+  assert.equal(R.isFeatureRecord(null), false);
+});
+
 test('slug uses the English name first, then the Russian name table', async () => {
   await ready;
   assert.equal(R.slugOf({ name: 'Жрец', data: { name_en: 'Cleric' } }), 'cleric');

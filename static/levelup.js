@@ -1046,7 +1046,9 @@ window.LevelUp = (() => {
         try {
           const { list, entry } = await findClass(sheet, campaignId); st.classes = list;
           const [feat, spell] = await Promise.all([loadCatalog('feat', sheet, campaignId), loadCatalog('spell', sheet, campaignId)]);
-          st.catalogs = { feat, spell };
+          // Черты-умения (черты рас, умения классов и подклассов) игроку не предлагаются: они приходят
+          // вместе с записью расы или класса, а в справочнике живут ради ссылок из редакторов.
+          st.catalogs = { feat: feat.filter(e => !window.ClassRules.isFeatureRecord(e)), spell };
           st.loading = false;
           if (entry) { st.entry = entry; init(); } else render();
         } catch (e) { st.loading = false; st.error = e.message; render(); }

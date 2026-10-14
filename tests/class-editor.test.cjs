@@ -45,12 +45,12 @@ test('круг чтения и записи: данные класса дохо�
   assert.deepEqual(plain(st.saves), ['int', 'con']);
   assert.equal(st.skills.choose, 2);
   assert.deepEqual(plain(st.skills.from), ['Магия', 'История']);
-  assert.deepEqual(plain(st.features['1']), [{ name: 'Мастер ремесла', text: 'Даёт владение инструментами.' }]);
+  assert.deepEqual(plain(st.features['1']), [{ name: 'Мастер ремесла', text: 'Даёт владение инструментами.', feat: '' }]);
   assert.equal(st.levels['1'].cantrips, 2);
   assert.equal(st.levels['1'].slots[0], 2);
   assert.deepEqual(plain(st.languages), { fixed: ['Гномий'], extra: 1 });
   assert.equal(st.subclasses.length, 1);
-  assert.deepEqual(plain(st.subclasses[0].features), [{ level: 3, name: 'Зельеварение', text: 'Варите зелья.' }]);
+  assert.deepEqual(plain(st.subclasses[0].features), [{ level: 3, name: 'Зельеварение', text: 'Варите зелья.', feat: '' }]);
   assert.equal(st.caster.level, 'half');
 
   const out = CE.writeData(st, entry(data));
@@ -432,7 +432,9 @@ test('класс правится в окне редактора записи, �
     'кнопка конструктора названа своим именем');
   assert.match(compendium, /onclick: \(\) => editEntry\(e, \{ campaignId: e\.campaign_id, packId: e\.pack_id, onSaved: opts\.onChanged \}\) \}, EDITOR_LABELS\[e\.category\] \|\| 'Редактировать'\)/,
     'кнопка в карточке открывает окно редактора записи: конструктор для класса, раса, предыстория');
-  assert.match(compendium, /category === 'class' && window\.ClassEditor[\s\S]{0,140}const r = await window\.ClassEditor\.edit\(e, o\); if \(!r\) return;[\s\S]{0,140}result = \{ name: r\.name, data: \{ \.\.\.e\?\.data, \.\.\.r\.data/,
+  // Список черт справочника редактор получает вместе с карточкой: умения уровня и подкласса
+  // ссылаются на записи категории «Черты» (см. tests/feats.test.cjs).
+  assert.match(compendium, /category === 'class' && window\.ClassEditor[\s\S]*?const r = await window\.ClassEditor\.edit\(e, \{ \.\.\.o, feats: await categoryCatalog\('feat'\) \}\); if \(!r\) return;[\s\S]{0,200}result = \{ name: r\.name, data: \{ \.\.\.e\?\.data, \.\.\.r\.data/,
     'в окне для класса открывается конструктор и его поля ложатся в запись');
   assert.match(compendium, /if \(e\?\.id\) await API\.patch\('\/api\/compendium\/' \+ e\.id, body\); else await API\.post\('\/api\/compendium', body\)/,
     'результат конструктора сохраняется в саму запись справочника');

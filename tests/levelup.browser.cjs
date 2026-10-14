@@ -13,16 +13,16 @@ const browserLaunchOptions = require('./browser-launch.cjs');
 const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js', 'node-menu.js', 'mechanics-graph.js', 'modules.js', 'compendium.js', 'class-rules.js', 'levelup.js'];
 const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => f === 'node-registry.js' ? `<script src="/static/${f}"></script>` + NODE_SCRIPTS : `<script src="/static/${f}"></script>`).join('')}</body></html>`;
-const SEED = loadSrd('data_seed/srd_2014.json');
+// Каталог — как у сервера: набор SRD плюс собранные из него черты (data_seed/feats_2014.json).
+const SEED = loadSrd('data_seed/srd_2014.json').concat(loadSrd('data_seed/feats_2014.json'));
 const catalog = category => SEED.filter(r => r.category === category).map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));
 
-(async () => {
-  const browser = await chromium.launch(await browserLaunchOptions());
-  try {
-    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, reducedMotion: 'reduce' });
-    const errors = [];
-    page.on('pageerror', e => errors.push(e.message));
-    await page.route('https://levelup.test/**', async route => {
+/// Общая обвязка сценария: фикстура со скриптами фронта, маршрут справочника из набора SRD.
+async function openLevelUp(browser, sheet) {
+  const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, reducedMotion: 'reduce' });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('https://levelup.test/**', async route => {
       const url = new URL(route.request().url());
       const json = data => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
       if (url.pathname === '/fixture') return route.fulfill({ contentType: 'text/html', body: FIXTURE });
@@ -33,17 +33,21 @@ const catalog = category => SEED.filter(r => r.category === category).map(r => (
       if (url.pathname === '/api/compendium') return json(catalog(url.searchParams.get('category')));
       return json([]);
     });
-    await page.goto('https://levelup.test/fixture');
-    await page.waitForFunction(() => window.Presets && window.Presets.classRules('2014', 'wizard') && window.LevelUp);
+  await page.goto('https://levelup.test/fixture');
+  await page.waitForFunction(() => window.Presets && window.Presets.classRules('2014', 'wizard') && window.LevelUp);
+  // Мастер меняет лист на месте и возвращает true после применения.
+  await page.evaluate(sheet => {
+    window.__sheet = sheet;
+    window.__done = window.LevelUp.open({ sheet: window.__sheet, campaignId: null, onApply: () => {} }).then(ok => { window.__ok = ok; });
+  }, sheet);
+  return { page, errors, shell: page.locator('.lu-shell') };
+}
 
-    // Лист волшебника 1 уровня; мастер меняет его на месте и возвращает true после применения.
-    await page.evaluate(() => {
-      window.__sheet = { edition: '2014', level: 1, class: 'Волшебник', subclass: '', abilities: { str: 10, dex: 14, con: 14, int: 16, wis: 10, cha: 10 }, skills: [], expertise: [], features: [], hp: { max: 8, current: 8, temp: 0, hit_dice: '1d6' }, spells: { ability: 'int', slots: {}, known: [] }, proficiency_bonus: 2, classes: [{ name: 'Волшебник', level: 1, hit_die: 6 }] };
-      window.__done = window.LevelUp.open({ sheet: window.__sheet, campaignId: null, onApply: () => {} }).then(ok => { window.__ok = ok; });
-    });
-
+async function scenarioWizard(browser) {
+  // Лист волшебника 1 уровня.
+  const { page, errors, shell } = await openLevelUp(browser, { edition: '2014', level: 1, class: 'Волшебник', subclass: '', abilities: { str: 10, dex: 14, con: 14, int: 16, wis: 10, cha: 10 }, skills: [], expertise: [], features: [], hp: { max: 8, current: 8, temp: 0, hit_dice: '1d6' }, spells: { ability: 'int', slots: {}, known: [] }, proficiency_bonus: 2, classes: [{ name: 'Волшебник', level: 1, hit_die: 6 }] });
+  try {
     // Шаг «Класс»: каталог загружен, класс выбран по листу.
-    const shell = page.locator('.lu-shell');
     await shell.locator('.lu-kick', { hasText: 'Какой класс повышаем' }).waitFor();
     await shell.getByRole('button', { name: 'Далее →' }).click();
 
@@ -81,9 +85,38 @@ const catalog = category => SEED.filter(r => r.category === category).map(r => (
     assert.ok(sheet.hp.max > 8, 'максимум хитов вырос');
     assert.equal(sheet.spells.known.filter(s => s.level === 1).length, 2, 'два новых заклинания в книге');
     assert.deepEqual(errors, [], `ошибки страницы: ${errors.join('; ')}`);
-    await page.close();
-    console.log('OK: мастер повышения уровня проходит все шаги, волшебник 1 → 2');
   } finally {
-    await browser.close();
+    await page.close();
   }
-})().catch(e => { console.error(e); process.exit(1); });
+}
+
+async function scenarioAsiFeat(browser) {
+  // Шаг «Улучшение характеристик» («★ Взять черту») предлагает черты для игрока: собранные из рас и классов
+  // черты-умения (data.kind) в списке не показываются.
+  const { page, errors, shell } = await openLevelUp(browser, { edition: '2014', level: 3, class: 'Волшебник', subclass: 'Школа Воплощения', abilities: { str: 14, dex: 14, con: 14, int: 16, wis: 10, cha: 10 }, skills: [], expertise: [], features: [], hp: { max: 22, current: 22, temp: 0, hit_dice: '3d6' }, spells: { ability: 'int', slots: {}, known: [] }, proficiency_bonus: 2, classes: [{ name: 'Волшебник', level: 3, hit_die: 6, subclass: 'Школа Воплощения' }] });
+  try {
+    await shell.locator('.lu-kick', { hasText: 'Какой класс повышаем' }).waitFor();
+    for (let i = 0; i < 2; i++) await shell.getByRole('button', { name: 'Далее →' }).click();
+    await shell.locator('.lu-kick', { hasText: 'Кость хитов' }).waitFor();
+    await shell.getByRole('button', { name: 'Далее →' }).click();
+    // Шаг «Улучшение характеристик»: вкладка «Взять черту».
+    await shell.getByRole('button', { name: '★ Взять черту' }).click();
+    const cards = shell.locator('.lu-cards .lu-pick');
+    // 2014: единственная черта игрока — «Борец» (Сила 13), умений классов и черт рас в списке нет.
+    await page.waitForFunction(() => document.querySelectorAll('.lu-cards .lu-pick').length > 0);
+    assert.deepEqual((await cards.locator('.lu-pick-t b').allInnerTexts()).map(s => s.trim()), ['Борец'], 'в списке только черты для игрока');
+    assert.equal(await cards.count(), 1, 'черты-умения не предлагаются');
+    assert.deepEqual(errors, [], `ошибки страницы: ${errors.join('; ')}`);
+  } finally {
+    await page.close();
+  }
+}
+
+(async () => {
+  // Отдельный браузер на сценарий: сборка @sparticuz/chromium работает в одном процессе.
+  for (const [name, scenario] of [['волшебник 1 → 2 проходит все шаги', scenarioWizard], ['черта на улучшении характеристик 2014', scenarioAsiFeat]]) {
+    const browser = await chromium.launch(await browserLaunchOptions());
+    try { await scenario(browser); console.log(`levelup.browser: ${name} — PASS`); }
+    finally { await browser.close(); }
+  }
+})().catch(e => { console.error('levelup.browser: FAIL', (e && e.stack) || e); process.exit(1); });

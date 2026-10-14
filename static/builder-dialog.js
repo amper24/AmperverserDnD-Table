@@ -215,7 +215,9 @@ window.newCharacterDialog = async function (defaults = {}) {
       if (defaults.campaignId) params.set('campaign_id', defaults.campaignId);
       const result = await Promise.all(['race', 'class', 'background', 'feat', 'spell', 'item'].map(category => API.get('/api/compendium?' + params + '&category=' + category)));
       if (version !== request) return;
-      entries = result.flat(); draft.catalog = entries;
+      // Черты-умения (черты рас, умения классов и подклассов) — не выбор игрока: в каталоге мастера
+      // создания их нет, иначе «чертой происхождения» человека стали бы умения всех классов сразу.
+      entries = result.flat().filter(e => !window.ClassRules.isFeatureRecord(e)); draft.catalog = entries;
     } catch (e) { if (version === request) error = e.message; }
     if (version === request) { loading = false; render(); }
   }

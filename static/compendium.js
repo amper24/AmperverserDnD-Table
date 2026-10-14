@@ -49,6 +49,12 @@ window.Compendium = (function () {
         if (d.stealth_disadvantage) add('Скрытность', 'Помеха'); if (d.str_req) add('Требование', 'Сила ' + d.str_req);
         break;
       case 'spell': add('Уровень', d.level === 0 ? 'Заговор' : d.level); add('Школа', d.school); add('Время', d.casting_time); add('Дистанция', d.range); add('Компоненты', d.components); add('Длительность', (d.concentration ? 'Концентрация, ' : '') + (d.duration || '')); add('Ритуал', d.ritual && 'Да'); add('Классы', d.classes); break;
+      case 'feat':
+        // Черта справочника: имя, вид и владельцы (раса, класс, подкласс), уровни и ключ записи —
+        // по нему на черту ссылаются редакторы расы и класса.
+        add('Вид', { race: 'Черта расы', class: 'Умение класса', subclass: 'Умение подкласса' }[d.kind]);
+        add('Владельцы', d.owners); add('Уровни', d.levels); add('Предпосылки', d.prerequisites); add('Категория', d.category);
+        add('Ключ записи', e.slug); add('Редакция', d.edition); break;
       case 'skill': add('Характеристика', ABIL[d.ability] || d.ability); add('Ключ', d.key); add('Английское название', d.name_en); break;
       case 'npc': add('Роль', d.role); add('Раса', d.race); add('Фракция', d.faction); add('Отношение', d.attitude); add('Место', d.location); add('Голос и манеры', d.voice); if (d.abilities) { add('КД', d.ac); add('Хиты', d.hp); add('Скорость', d.speed); } add('Добыча', d.loot); break;
       case 'lore': add('Тип', { rule: 'Правило', place: 'Место', faction: 'Фракция', event: 'Событие', deity: 'Божество', other: 'Другое' }[d.kind]); add('Теги', d.tags); break;
@@ -70,7 +76,9 @@ window.Compendium = (function () {
     if (d.hooks) wrap.append(el('p', {}, el('b', {}, 'Зацепки. '), M().rich(d.hooks, ctx, { prose:!!d.mechanics, prefix: e.name })));
     if (Array.isArray(d.actions) && d.actions.length && d.actions[0].roll !== undefined) wrap.append(M().actionButtons(d, ctx, e.name));
     const block = (title, arr, f) => { if (arr && arr.length) { wrap.append(el('h3', { style: 'margin-top:12px' }, title)); arr.forEach(x => wrap.append(f(x))); } };
-    block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${t.name}` })));
+    // Черты записи: у черт SRD рядом стоит ссылка на запись справочника (поле feat).
+    block('Особенности', d.traits, t => el('p', {}, el('b', {}, t.name + '. '), M().rich(t.text, ctx, { prose:!!d.mechanics, prefix: `${e.name}: ${t.name}` }),
+      t.feat ? el('span', { class: 'muted small', title: 'Запись справочника «Черты»' }, ' · черта: ' + t.feat) : null));
     // Заклинания расы: свои поля данных, иначе набор правил (у высшего эльфа — «Заговор высшего эльфа»).
     if (e.category === 'race') {
       const rr = window.RaceEditor?.presetRaceRules?.(e) || {};
@@ -202,15 +210,17 @@ window.Compendium = (function () {
       result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
     } else if (category === 'race' && window.RaceEditor) {
       // Раса правится отдельным редактором: характеристики, языки, навыки и черты — своими разделами.
-      const r = await window.RaceEditor.edit(e, { ...o, catalog: await categoryCatalog('race') }); if (!r) return;
+      // и черты — ссылками на записи категории «Черты» (список передаётся редактору).
+      const r = await window.RaceEditor.edit(e, { ...o, catalog: await categoryCatalog('race'), feats: await categoryCatalog('feat') }); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else if (category === 'background' && window.BackgroundEditor) {
       // Предыстория правится отдельным редактором: навыки, языки, снаряжение и умение — своими разделами.
       const r = await window.BackgroundEditor.edit(e, o); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else if (category === 'class' && window.ClassEditor) {
-      // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами.
-      const r = await window.ClassEditor.edit(e, o); if (!r) return;
+      // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами,
+      // а умения уровней и подклассов — ссылками на записи категории «Черты».
+      const r = await window.ClassEditor.edit(e, { ...o, feats: await categoryCatalog('feat') }); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else {
       const r = await M().editGeneric(e, category, { folders: o.folders, folder: o.folder }); if (!r) return; result = r;
@@ -480,7 +490,7 @@ window.Compendium = (function () {
         rows.set(e.id, row);
         row.addEventListener('click', () => showEntry(e, row));
         row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showEntry(e, row); } });
-        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); if (e.category === 'feat') ev.dataTransfer.setData('application/x-feat', JSON.stringify({ entry: e, slug: e.slug, name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
         lst.append(row);
       }
       const active = items.find(e => e.id === activeId);
@@ -683,7 +693,7 @@ window.Compendium = (function () {
         rows.set(e.id, row);
         row.addEventListener('click', () => selectEntry(e, row, true));
         row.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectEntry(e, row, true); } });
-        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
+        row.addEventListener('dragstart', ev => { ev.dataTransfer.setData('application/x-compendium', JSON.stringify(e)); if (e.category === 'item') ev.dataTransfer.setData('application/x-item', JSON.stringify({ item: M().itemFromCompendium(e) })); if (e.category === 'spell') ev.dataTransfer.setData('application/x-spell', JSON.stringify({ spell: M().spellFromCompendium(e) })); if (e.category === 'skill') ev.dataTransfer.setData('application/x-skill', JSON.stringify({ entry: e, key: e.data?.key || '', name: e.name })); if (e.category === 'feat') ev.dataTransfer.setData('application/x-feat', JSON.stringify({ entry: e, slug: e.slug, name: e.name })); ev.dataTransfer.setData('text/plain', e.name); ev.dataTransfer.effectAllowed = 'copy'; });
         lst.append(row);
       }
       const active = items.find(e => e.id === activeId);

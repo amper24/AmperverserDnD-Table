@@ -12,9 +12,10 @@ const browserLaunchOptions = require('./browser-launch.cjs');
 
 const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'];
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => `<script src="/static/${f}"></script>`).join('')}</body></html>`;
+// Каталог — как у сервера: набор SRD плюс собранные из него черты (data_seed/feats_*.json).
 const SEEDS = {
-  2014: loadSrd('data_seed/srd_2014.json'),
-  2024: loadSrd('data_seed/srd_2024.json'),
+  2014: loadSrd('data_seed/srd_2014.json').concat(loadSrd('data_seed/feats_2014.json')),
+  2024: loadSrd('data_seed/srd_2024.json').concat(loadSrd('data_seed/feats_2024.json')),
 };
 const catalog = (edition, category) => SEEDS[edition].filter(r => r.category === category).map(r => ({ ...r, id: r.slug, source: `SRD ${edition}` }));
 
@@ -92,9 +93,27 @@ async function scenarioMagicInitiate(browser) {
   await page.close();
 }
 
+async function scenarioHumanFeat(browser) {
+  // Редакция 2024, человек: «черта происхождения» выбирается из черт игрока. Умения классов и черты рас
+  // (записи категории «Черты» с полем data.kind) в этот список не попадают — иначе человек выбирал бы
+  // «Тёмное зрение» или «Ярость», а список разрастался бы на сотни записей.
+  const { page, errors } = await openWizard(browser, '2024');
+  await page.locator('select[aria-label="Расы"]').selectOption('srd24-human');
+  const panel = page.locator('.builder-panel').filter({ hasText: 'Универсальность · черта происхождения' }).first();
+  await panel.waitFor();
+  const names = (await panel.locator('label.builder-choice-option b').allInnerTexts()).map(s => s.trim()).sort();
+  // Черта игрока — запись категории «Черты» без поля data.kind (у черт-умений оно есть: race/class/subclass).
+  const expected = SEEDS[2024].filter(e => e.category === 'feat' && !e.data.kind && !e.data.prerequisites).map(e => e.name).sort();
+  assert.deepEqual(names, expected, 'в списке только черты происхождения');
+  assert.equal(await panel.locator('label.builder-choice-option').count(), expected.length);
+  assert.deepEqual(errors, [], `ошибки страницы: ${errors.join('; ')}`);
+  await page.close();
+}
+
 (async () => {
   // Отдельный браузер на сценарий: сборка @sparticuz/chromium работает в одном процессе.
-  for (const [name, scenario] of [['боевой стиль воина 2014', scenarioFighter], ['Посвящённый в магию 2024', scenarioMagicInitiate]]) {
+  for (const [name, scenario] of [['боевой стиль воина 2014', scenarioFighter], ['Посвящённый в магию 2024', scenarioMagicInitiate],
+    ['черта происхождения человека 2024', scenarioHumanFeat]]) {
     const browser = await chromium.launch(await browserLaunchOptions());
     try { await scenario(browser); console.log(`class-choices.browser: ${name} — PASS`); }
     finally { await browser.close(); }

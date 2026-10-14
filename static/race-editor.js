@@ -18,6 +18,10 @@
 // Сырые поля (data.speed, data.languages, data.asi, data.skills, data.traits)
 // пишутся рядом: их читают карточка справочника и старые листы.
 //
+// Черты расы — отдельные записи справочника (категория «Черты», data_seed/feats_*.json):
+// у каждой черты в data.traits лежит ссылка feat на слаг записи, а раздел «Черты» даёт
+// выбрать запись списком или перетащить её из справочника — как навык в разделе «Навыки».
+//
 // Даёт: window.RaceEditor { edit, readState, writeData, emptyData, SECTIONS }.
 // ---------------------------------------------------------------------------
 window.RaceEditor = (() => {
@@ -96,6 +100,37 @@ window.RaceEditor = (() => {
     const taken = nodesOf(graph).filter(n => n.type === 'action.program').map(n => num(String(n.params?.program_id || '').replace(/\D/g, ''), 0));
     return 'p' + (Math.max(0, ...taken) + 1);
   };
+  // ---------- Черты справочника ----------
+  // Каждая черта расы — отдельная запись справочника (категория «Черты», data_seed/feats_*.json):
+  // редактор хранит ссылку на запись (слаг) в поле data.traits[i].feat и подтягивает из неё
+  // название с текстом, а текст и дальше едет в программу графа.
+  const featKey = entry => str(entry?.slug || entry?.data?.key);
+  const FEAT_KINDS = { race: 'черты рас', class: 'умения классов', subclass: 'умения подклассов', '': 'черты' };
+  /// Записи «Черт» нужных видов: черты своей расы вперёд, дальше по названию.
+  const featCatalog = (list, kinds) => (Array.isArray(list) ? list : []).filter(e => str(e?.category) === 'feat' && kinds.includes(str(e?.data?.kind)));
+  const featEntryOf = (catalog, key) => (catalog || []).find(e => featKey(e) === str(key)) || null;
+  const featOwners = entry => (Array.isArray(entry?.data?.owners) ? entry.data.owners : []);
+  /// Подпись записи в списке: название и владелец (раса, класс или подкласс).
+  const featLabel = entry => {
+    const owners = featOwners(entry);
+    if (!owners.length) return `${entry.name} — ${FEAT_KINDS[str(entry?.data?.kind)] || 'черта'}`;
+    return `${entry.name} — ${owners[0]}${owners.length > 1 ? ` и ещё ${owners.length - 1}` : ''}`;
+  };
+  /// Черты своей расы первыми: их и выбирают чаще всего.
+  const featOptions = (catalog, st) => catalog.slice().sort((a, b) => {
+    const own = e => (featOwners(e).includes(str(st.name)) || featOwners(e).includes(str(st.name_en)) ? 0 : 1);
+    return own(a) - own(b) || str(a.name).localeCompare(str(b.name), 'ru');
+  });
+  /// Взять название и текст из записи: текст перезаписывается, только если он пуст или остался
+  /// прежним текстом той же записи (свои правки не теряются).
+  function applyFeat(trait, record, previous) {
+    if (!record) return;
+    trait.feat = featKey(record);
+    trait.name = str(record.name);
+    const was = previous ? str(previous.data?.desc) : '';
+    if (!str(trait.text).trim() || (was && str(trait.text) === was)) trait.text = str(record.data?.desc);
+  }
+
   /// Программы черт расы (group: 'traits'): по одной на черту, с текстом в action.manual.
   function syncTraits(graph, traits) {
     const programs = nodesOf(graph).filter(n => n.type === 'action.program' && str(n.params?.group) === 'traits');
@@ -249,7 +284,7 @@ window.RaceEditor = (() => {
       },
       spells: readSpells(d, graph, entry, catalog),
       profs: ruleNodes(graph, 'rule.proficiencies').map(n => ({ kind: str(n.params?.kind), values: listOf(n) })),
-      traits: (Array.isArray(d.traits) ? d.traits : []).map(t => ({ name: str(t?.name), text: str(t?.text) })),
+      traits: (Array.isArray(d.traits) ? d.traits : []).map(t => ({ name: str(t?.name), text: str(t?.text), feat: str(t?.feat) })),
       subraces: (Array.isArray(d.subraces) ? d.subraces : []).map(str).filter(Boolean),
     };
   }
@@ -314,8 +349,13 @@ window.RaceEditor = (() => {
     }
     syncSpellNodes(graph, spellGroups);
 
-    // Черты: сырым полем data.traits и программами графа (кнопки бросков в описании черты).
-    const traits = st.traits.map(t => ({ name: str(t.name).trim(), text: str(t.text) })).filter(t => t.name);
+    // Черты: сырым полем data.traits (со ссылкой на запись справочника) и программами графа
+    // (кнопки бросков в описании черты).
+    const traits = st.traits.map(t => {
+      const row = { name: str(t.name).trim(), text: str(t.text) };
+      if (str(t.feat).trim()) row.feat = str(t.feat).trim();
+      return row;
+    }).filter(t => t.name);
     d.traits = traits;
     syncTraits(graph, traits);
 
@@ -402,7 +442,7 @@ window.RaceEditor = (() => {
     { id: 'skills', title: 'Навыки', hint: 'Владение навыками и выбор игрока' },
     { id: 'languages', title: 'Языки', hint: 'Какими языками владеет раса' },
     { id: 'proficiencies', title: 'Владения', hint: 'Доспехи, оружие, инструменты' },
-    { id: 'traits', title: 'Черты', hint: 'Особенности расы с текстами' },
+    { id: 'traits', title: 'Черты', hint: 'Черты расы ссылками на записи справочника «Черты»' },
     { id: 'spells', title: 'Заклинания', hint: 'Заговоры и заклинания расы: известные сразу и выбор игрока' },
     { id: 'subraces', title: 'Подрасы', hint: 'Разновидности расы' },
   ];
@@ -530,18 +570,49 @@ window.RaceEditor = (() => {
     return box;
   }
 
-  function traitsSection(st, render) {
+  function traitsSection(st, render, catalog = []) {
     const box = el('div', {});
+    const linked = st.traits.filter(t => str(t.feat).trim()).length;
+    box.append(el('div', { class: 'ced-row' },
+      el('label', { class: 'ced-inline' }, el('span', {}, 'Черты справочника'),
+        el('small', { class: 'muted' }, 'выберите запись — название и текст придут из неё')),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'ced-counter' + (linked ? ' ok' : '') },
+        `${linked} из ${st.traits.length} со ссылкой`)));
     st.traits.forEach((t, index) => {
       const card = el('section', { class: 'ced-block' });
       card.append(blockHead('черта',
         el('input', { class: 'grow', value: str(t.name), placeholder: 'Название черты', oninput: e => t.name = e.target.value }),
         el('button', { type: 'button', class: 'small ghost', onclick: () => { st.traits.splice(index, 1); render(); } }, '×')));
+      // Ссылка на запись справочника: выбор черты и подтягивание текста (как выбор навыка).
+      const record = featEntryOf(catalog, t.feat);
+      const pick = select(t.feat || '', [{ value: '', label: '— своя черта, без ссылки —' },
+        ...catalog.map(e => ({ value: featKey(e), label: featLabel(e) }))], value => {
+        const chosen = featEntryOf(catalog, value);
+        if (!chosen) { t.feat = ''; render(); return; }
+        applyFeat(t, chosen, record);
+        render();
+      });
+      pick.setAttribute('aria-label', 'Черта из справочника');
+      card.append(el('div', { class: 'ced-row ced-feat-row' },
+        el('span', { class: 'muted small' }, 'Из справочника'),
+        pick,
+        record ? el('button', { type: 'button', class: 'small', title: 'Взять название и текст из записи справочника',
+          onclick: () => { t.name = str(record.name); t.text = str(record.data?.desc); render(); } }, 'Взять из справочника') : null,
+        el('span', { class: 'muted small' }, record ? `ссылка: ${featKey(record)}` : 'своя, без ссылки')));
       card.append(el('textarea', { rows: 3, placeholder: 'Текст черты', oninput: e => t.text = e.target.value }, str(t.text)));
       box.append(card);
     });
-    box.append(el('button', { type: 'button', class: 'small', onclick: () => { st.traits.push({ name: '', text: '' }); render(); } }, '+ черта'));
-    box.append(el('p', { class: 'muted small' }, 'Черта попадает и в поле данных, и в программу графа: кнопки бросков в её тексте работают на листе.'));
+    box.append(el('div', { class: 'ced-row' },
+      el('button', { type: 'button', class: 'small', onclick: () => { st.traits.push({ name: '', text: '' }); render(); } }, '+ черта'),
+      dropZone('или перетащите черту из справочника', ['application/x-feat', 'application/x-compendium'], payload => {
+        const entry = payload.entry || payload;
+        if (entry?.category !== 'feat') { toast('Сюда можно перетащить только запись из раздела «Черты»'); return; }
+        st.traits.push({ name: str(entry.name), text: str(entry.data?.desc), feat: featKey(entry) });
+        render();
+      })));
+    box.append(el('p', { class: 'muted small' },
+      'Черта попадает и в поле данных (data.traits со ссылкой feat на запись справочника), и в программу графа: кнопки бросков в её тексте работают на листе. У черт SRD ссылка уже проставлена — название и текст в редакторе совпадают с записью «Черты».'));
     return box;
   }
 
@@ -629,6 +700,9 @@ window.RaceEditor = (() => {
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
   function edit(entry, opts = {}) {
     const st = readState(entry, opts.catalog);
+    // Черты справочника (категория «Черты»): список передаёт справочник, иначе черты правятся
+    // как раньше — своими названием и текстом.
+    const feats = featOptions(featCatalog(opts.feats, ['race']), st);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
     const nav = el('div', { class: 'ced-nav' });
@@ -641,7 +715,7 @@ window.RaceEditor = (() => {
           : sec.id === 'skills' ? skillsSection(st, render)
             : sec.id === 'languages' ? languagesSection(st, render)
               : sec.id === 'proficiencies' ? proficienciesSection(st, render)
-                : sec.id === 'traits' ? traitsSection(st, render)
+                : sec.id === 'traits' ? traitsSection(st, render, feats)
                   : sec.id === 'spells' ? spellsSection(st, render)
                     : subracesSection(st, render);
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));

@@ -19,6 +19,11 @@
 //   data.subclasses                     — подклассы с умениями по уровням;
 //   data.caster                         — режим заклинаний (читает ClassRules).
 //
+// Умения класса и подкласса — отдельные записи справочника (категория «Черты», data_seed/feats_*.json):
+// редактор хранит ссылку на запись и подтягивает из неё название и текст. Ссылки лежат в
+// data.feature_feats { уровень: { название: слаг } } (у подкласса — в его поле) и в таблице узла
+// rule.class_features полем feat — так же, как черты расы держат поле data.traits[i].feat.
+//
 // Даёт: window.ClassEditor { edit, readState, writeData, emptyData,
 //   equipmentText, blocksFromText, skillKeyOfName, skillsCatalog, SECTIONS }.
 // ---------------------------------------------------------------------------
@@ -52,6 +57,37 @@ window.ClassEditor = (() => {
   const skillNameOfKey = key => (skillsCatalog().find(s => s.key === key) || {}).name || str(key);
   /// Навык из записи справочника (категория «Навыки»): ключ берётся из data.key, иначе по названию.
   const skillFromEntry = entry => (entry?.category === 'skill' ? (skillKeyOfName(entry.data?.key) || skillKeyOfName(entry.name)) : '');
+
+  // ---------- Черты справочника ----------
+  // Умение класса и умение подкласса — отдельные записи справочника (категория «Черты»): редактор
+  // хранит ссылку на запись (слаг) и подтягивает из неё название с текстом. Ссылки живут в поле
+  // data.feature_feats = { уровень: { название умения: слаг } } (у подкласса — в его собственном
+  // поле) и дублируются в таблице узла rule.class_features полем feat у строки умения: граф —
+  // единственный источник для мастера повышения уровня.
+  const featKey = entry => str(entry?.slug || entry?.data?.key);
+  const FEAT_KINDS = { class: 'умения классов', subclass: 'умения подклассов', race: 'черты рас', '': 'черты' };
+  /// Записи «Черт» нужных видов: свой вид вперёд, дальше по названию.
+  const featCatalog = (list, kinds) => (Array.isArray(list) ? list : []).filter(e => str(e?.category) === 'feat' && kinds.includes(str(e?.data?.kind)))
+    .sort((a, b) => kinds.indexOf(str(a.data?.kind)) - kinds.indexOf(str(b.data?.kind)) || str(a.name).localeCompare(str(b.name), 'ru'));
+  /// Подпись записи в списке: название и владелец (класс, подкласс или раса).
+  const featLabel = entry => {
+    const owners = Array.isArray(entry?.data?.owners) ? entry.data.owners : [];
+    if (owners.length) return `${entry.name} — ${owners[0]}${owners.length > 1 ? ` и ещё ${owners.length - 1}` : ''}`;
+    return `${entry.name} — ${FEAT_KINDS[str(entry?.data?.kind)] || 'черта'}`;
+  };
+  const featEntryOf = (catalog, key) => (catalog || []).find(e => featKey(e) === str(key)) || null;
+  /// Ссылки подкласса (или класса) на черты: { уровень: { название: слаг } }.
+  const featRefsOf = sub => (sub?.feature_feats && typeof sub.feature_feats === 'object' && !Array.isArray(sub.feature_feats) ? sub.feature_feats : {});
+  const featRefAt = (sub, level, name) => str((featRefsOf(sub)[str(level)] || {})[name]);
+  /// Взять название и текст из записи справочника: текст перезаписывается, только если он пуст
+  /// или остался прежним текстом той же записи (свои правки не теряются).
+  function applyFeat(item, record, previous) {
+    if (!record) return;
+    item.feat = featKey(record);
+    item.name = str(record.name);
+    const was = previous ? str(previous.data?.desc) : '';
+    if (!str(item.text).trim() || (was && str(item.text) === was)) item.text = str(record.data?.desc);
+  }
 
   // ---------- Граф механик ----------
   // Правила класса живут и в узлах графа, и мастер создания читает их оттуда: базовые владения,
@@ -118,12 +154,16 @@ window.ClassEditor = (() => {
     const levels = table?.levels;
     if (!levels || typeof levels !== 'object' || Array.isArray(levels)) return readFeatures(d);
     const texts = d.feature_texts || {};
+    const refs = featRefsOf(d);
     const out = {};
     for (const [level, items] of Object.entries(levels)) {
       const list = (Array.isArray(items) ? items : [])
-        .map(x => (typeof x === 'string' ? { name: str(x), text: '' } : { name: str(x?.name), text: str(x?.text) }))
+        .map(x => (typeof x === 'string' ? { name: str(x), text: '' } : { name: str(x?.name), text: str(x?.text), feat: str(x?.feat) }))
         .filter(x => x.name);
-      for (const item of list) if (!item.text) item.text = str(texts[item.name]);
+      for (const item of list) {
+        if (!item.text) item.text = str(texts[item.name]);
+        if (!item.feat) item.feat = str((refs[level] || {})[item.name]);
+      }
       if (list.length) out[level] = list;
     }
     return out;
@@ -132,7 +172,12 @@ window.ClassEditor = (() => {
   function featureLevels(features) {
     const levels = {};
     for (const [level, items] of Object.entries(features || {})) {
-      const list = (items || []).map(f => ({ name: str(f.name).trim(), text: str(f.text) })).filter(f => f.name);
+      // Ссылка на черту справочника едет в таблицу узла рядом с названием и текстом.
+      const list = (items || []).map(f => {
+        const row = { name: str(f.name).trim(), text: str(f.text) };
+        if (str(f.feat).trim()) row.feat = str(f.feat).trim();
+        return row;
+      }).filter(f => f.name);
       if (list.length) levels[String(level)] = list;
     }
     return levels;
@@ -186,13 +231,18 @@ window.ClassEditor = (() => {
     return out;
   }
 
-  /// Умения: { уровень: [{ name, text }] } — из data.features + data.feature_texts.
+  /// Умения: { уровень: [{ name, text, feat }] } — из data.features + data.feature_texts,
+  /// ссылка на черту справочника — из data.feature_feats (или из строки узла, если она есть).
   function readFeatures(d) {
     const texts = d.feature_texts || {};
+    const refs = featRefsOf(d);
     const out = {};
     for (const [level, names] of Object.entries(d.features || {})) {
-      const list = (Array.isArray(names) ? names : []).map(n => (typeof n === 'string' ? { name: n, text: '' } : { name: str(n?.name), text: str(n?.text) }));
-      for (const item of list) if (!item.text) item.text = str(texts[item.name]);
+      const list = (Array.isArray(names) ? names : []).map(n => (typeof n === 'string' ? { name: n, text: '' } : { name: str(n?.name), text: str(n?.text), feat: str(n?.feat) }));
+      for (const item of list) {
+        if (!item.text) item.text = str(texts[item.name]);
+        if (!item.feat) item.feat = str((refs[level] || {})[item.name]);
+      }
       if (list.length) out[level] = list;
     }
     return out;
@@ -201,7 +251,7 @@ window.ClassEditor = (() => {
   const readSubFeatures = sub => readFeatures(sub || {});
   function subFeatureList(sub) {
     const out = [];
-    for (const [level, items] of Object.entries(readSubFeatures(sub))) for (const item of items) out.push({ level: num(level), name: item.name, text: item.text });
+    for (const [level, items] of Object.entries(readSubFeatures(sub))) for (const item of items) out.push({ level: num(level), name: item.name, text: item.text, feat: item.feat });
     return out.sort((a, b) => a.level - b.level);
   }
 
@@ -355,25 +405,35 @@ window.ClassEditor = (() => {
     if (st.languages.fixed.length) d.languages_fixed = st.languages.fixed.map(s => str(s).trim()).filter(Boolean); else delete d.languages_fixed;
     if (num(st.languages.extra) > 0) d.languages_extra = num(st.languages.extra); else delete d.languages_extra;
 
-    // Умения: { уровень: [названия] } + тексты по названию.
-    const features = {}, texts = {};
+    // Умения: { уровень: [названия] } + тексты по названию + ссылки на черты справочника
+    // (data.feature_feats = { уровень: { название: слаг } }).
+    const features = {}, texts = {}, refs = {};
     for (const [level, items] of Object.entries(st.features)) {
       const list = (items || []).map(f => str(f.name).trim()).filter(Boolean);
       if (!list.length) continue;
       features[String(level)] = list;
-      for (const f of items) if (str(f.text).trim()) texts[str(f.name).trim()] = str(f.text);
+      const levelRefs = {};
+      for (const f of items) {
+        const name = str(f.name).trim();
+        if (str(f.text).trim()) texts[name] = str(f.text);
+        if (name && str(f.feat).trim()) levelRefs[name] = str(f.feat).trim();
+      }
+      if (Object.keys(levelRefs).length) refs[String(level)] = levelRefs;
     }
     d.features = features; d.feature_texts = texts;
+    if (Object.keys(refs).length) d.feature_feats = refs; else delete d.feature_feats;
 
     d.subclasses = st.subclasses.filter(s => str(s.name).trim()).map(s => {
-      const features2 = {}, texts2 = {};
+      const features2 = {}, texts2 = {}, refs2 = {};
       for (const f of s.features || []) {
         const name = str(f.name).trim(); if (!name) continue;
         const lv = String(Math.min(MAX_LEVEL, Math.max(1, num(f.level, 1))));
         (features2[lv] ||= []).push(name);
         if (str(f.text).trim()) texts2[name] = str(f.text);
+        if (str(f.feat).trim()) (refs2[lv] ||= {})[name] = str(f.feat).trim();
       }
       const out = { name: str(s.name).trim() };
+      if (Object.keys(refs2).length) out.feature_feats = refs2;
       if (str(s.name_en).trim()) out.name_en = str(s.name_en).trim();
       if (str(s.flavor).trim()) out.flavor = str(s.flavor).trim();
       if (str(s.desc).trim()) out.desc = str(s.desc).trim();
@@ -458,6 +518,34 @@ window.ClassEditor = (() => {
   const chip = (text, onRemove, extra = {}) => el('span', { class: 'ced-chip' + (extra.class ? ' ' + extra.class : ''), title: extra.title || null },
     el('b', {}, text), extra.note ? el('small', {}, extra.note) : null,
     onRemove ? el('button', { type: 'button', class: 'ced-chip-x', title: 'Убрать', onclick: onRemove }, '×') : null);
+
+  /// Строка выбора черты справочника у умения: список записей, подтягивание текста и подпись «своё».
+  function featRow(item, catalog, refresh) {
+    const linked = featEntryOf(catalog, item.feat);
+    const pick = select(item.feat || '', [{ value: '', label: '— не из справочника —' },
+      ...catalog.map(e => ({ value: featKey(e), label: featLabel(e) }))], value => {
+      const record = featEntryOf(catalog, value);
+      if (!record) { item.feat = ''; refresh(); return; }
+      applyFeat(item, record, linked);
+      refresh();
+    });
+    pick.setAttribute('aria-label', 'Черта из справочника');
+    return el('div', { class: 'ced-row ced-feat-row' },
+      el('span', { class: 'muted small' }, 'Черта'),
+      pick,
+      linked ? el('button', { type: 'button', class: 'small', title: 'Взять название и текст из записи справочника',
+        onclick: () => { item.name = str(linked.name); item.text = str(linked.data?.desc); refresh(); } }, 'Взять из справочника') : null,
+      el('span', { class: 'muted small' }, linked ? `ссылка: ${featKey(linked)}` : 'своя, без ссылки'));
+  }
+
+  /// Зона приёма черты из справочника: кладёт в умение название, текст и ссылку на запись.
+  function featDrop(add, label) {
+    return dropZone(label, ['application/x-feat', 'application/x-compendium'], payload => {
+      const entry = payload.entry || payload;
+      if (entry?.category !== 'feat') { toast('Сюда можно перетащить только запись из раздела «Черты»'); return; }
+      add({ name: str(entry.name), text: str(entry.data?.desc), feat: featKey(entry) });
+    });
+  }
 
   /// Зона, принимающая перетаскивание: типы данных — как в справочнике.
   function dropZone(label, types, onDrop) {
@@ -630,7 +718,7 @@ window.ClassEditor = (() => {
     { name: 'Компетентность', text: 'Выберите два владения навыками: бонус мастерства в них удваивается.' },
   ];
 
-  function levelsSection(st) {
+  function levelsSection(st, catalog = []) {
     let open = null; // раскрытый уровень
     const box = el('div', {});
     const table = el('div', { class: 'ced-levels' });
@@ -657,7 +745,7 @@ window.ClassEditor = (() => {
           el('button', { type: 'button', class: 'ced-feat-btn' + (feats.length ? ' on' : ''), onclick: () => { open = open === key ? null : key; draw(); } },
             feats.length ? `${feats.length} ${plural(feats.length, 'умение', 'умения', 'умений')}` : 'нет умений'));
         table.append(rowEl);
-        if (open === key) table.append(featureEditor(st, key, draw));
+        if (open === key) table.append(featureEditor(st, key, draw, catalog));
       }
     };
     box.append(el('p', { class: 'muted small' }, 'Кнопка «умения» раскрывает редактор умений уровня. Известные и подготовленные — числом; пустое поле значит «не показывать в таблице» (как у классов без известных заклинаний). Ячейки — по кругам 1–9.'));
@@ -666,7 +754,7 @@ window.ClassEditor = (() => {
     return box;
   }
 
-  function featureEditor(st, level, onChanged) {
+  function featureEditor(st, level, onChanged, catalog = []) {
     const items = st.features[level] || (st.features[level] = []);
     const box = el('div', { class: 'ced-features' });
     const draw = () => {
@@ -676,12 +764,14 @@ window.ClassEditor = (() => {
           el('div', { class: 'ced-row' },
             el('input', { class: 'grow', value: str(f.name), placeholder: 'Название умения', oninput: e => f.name = e.target.value }),
             el('button', { type: 'button', class: 'small ghost', onclick: () => { items.splice(index, 1); refresh(); } }, '×')),
+          featRow(f, catalog, refresh),
           el('textarea', { rows: 3, placeholder: 'Текст умения', oninput: e => f.text = e.target.value }, str(f.text))));
       });
       box.append(el('div', { class: 'ced-row' },
         el('button', { type: 'button', class: 'small', onclick: () => { items.push({ name: '', text: '' }); refresh(); } }, '+ умение'),
         ...STANDARD_FEATURES.map(sf => el('button', { type: 'button', class: 'small', title: sf.text,
-          onclick: () => { items.push({ name: sf.name, text: sf.text }); refresh(); } }, '+ ' + sf.name.split(' ')[0]))));
+          onclick: () => { items.push({ name: sf.name, text: sf.text }); refresh(); } }, '+ ' + sf.name.split(' ')[0])),
+        featDrop(item => { items.push(item); refresh(); }, 'или перетащите черту из справочника')));
     };
     // Своя перерисовка плюс обновление строки уровня (счётчик умений в таблице).
     const refresh = () => { draw(); onChanged && onChanged(); };
@@ -690,7 +780,7 @@ window.ClassEditor = (() => {
   }
 
   // ---------- Подклассы ----------
-  function subclassesSection(st, render) {
+  function subclassesSection(st, render, catalog = []) {
     const box = el('div', {});
     st.subclasses.forEach((sub, index) => {
       const card = el('section', { class: 'ced-block' });
@@ -712,9 +802,12 @@ window.ClassEditor = (() => {
               el('span', { class: 'ced-inline' }, el('small', { class: 'muted' }, 'уровень'), numInput(f.level, v => f.level = Math.min(MAX_LEVEL, Math.max(1, v)), { min: 1, max: MAX_LEVEL })),
               el('input', { class: 'grow', value: str(f.name), placeholder: 'Название умения', oninput: e => f.name = e.target.value }),
               el('button', { type: 'button', class: 'small ghost', onclick: () => { sub.features.splice(fi, 1); draw(); } }, '×')),
+            featRow(f, catalog, draw),
             el('textarea', { rows: 2, placeholder: 'Текст умения', oninput: e => f.text = e.target.value }, str(f.text))));
         });
-        list.append(el('button', { type: 'button', class: 'small', onclick: () => { (sub.features ||= []).push({ level: 3, name: '', text: '' }); draw(); } }, '+ умение'));
+        list.append(el('div', { class: 'ced-row' },
+          el('button', { type: 'button', class: 'small', onclick: () => { (sub.features ||= []).push({ level: 3, name: '', text: '' }); draw(); } }, '+ умение'),
+          featDrop(item => { (sub.features ||= []).push({ level: 3, ...item }); draw(); }, 'или перетащите черту из справочника')));
       };
       draw();
       card.append(list);
@@ -752,6 +845,10 @@ window.ClassEditor = (() => {
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
   function edit(entry, opts = {}) {
     const st = readState(entry);
+    // Черты справочника (категория «Черты»): реестр передаёт их списком, иначе список пуст —
+    // умения тогда правятся как раньше, своими названием и текстом.
+    const catalog = featCatalog(opts.feats, ['class', '']);
+    const subCatalog = featCatalog(opts.feats, ['subclass']);
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
     const nav = el('div', { class: 'ced-nav' });
@@ -760,11 +857,11 @@ window.ClassEditor = (() => {
       nav.replaceChildren(...SECTIONS.map(s => el('button', { type: 'button', class: 'ced-nav-btn' + (s.id === sec.id ? ' on' : ''),
         onclick: () => { section = s.id; render(); } }, s.title)));
       const body = sec.id === 'common' ? commonSection(st)
-        : sec.id === 'levels' ? levelsSection(st)
+        : sec.id === 'levels' ? levelsSection(st, catalog)
           : sec.id === 'skills' ? skillsSection(st, render)
             : sec.id === 'languages' ? languagesSection(st, render)
               : sec.id === 'equipment' ? equipmentSection(st, render)
-                : sec.id === 'subclasses' ? subclassesSection(st, render)
+                : sec.id === 'subclasses' ? subclassesSection(st, render, subCatalog)
                   : casterSection(st);
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));
     };

@@ -33,10 +33,18 @@ window.ClassRules = (() => {
   const casterOf = (entry, edition) => rulesOf(entry, edition).caster || {};
   // Значение может быть строкой (набор, узел) или объектом по редакции (старый блок caster).
   const byEdition = (value, edition) => (value && typeof value === 'object' ? value[String(edition || '2014')] : value) || '';
+  // Черта-умение: запись категории «Черты», вынутая из расы, класса или подкласса (data.kind). Это текст
+  // умения, а не черта для выбора игроком: такие записи приходят вместе с расой или классом и живут в
+  // справочнике ради ссылок из редакторов (data.traits[i].feat, data.feature_feats). В списках черт для
+  // игрока (мастер создания, повышение уровня) их нет — иначе чертой «Универсальность» человека стали бы
+  // и «Тёмное зрение», и «Ярость», и «Увеличение характеристики».
+  const FEATURE_KINDS = ['race', 'class', 'subclass'];
+  const isFeatureRecord = entry => String(entry?.category || '') === 'feat' && FEATURE_KINDS.indexOf(String(entry?.data?.kind || '')) >= 0;
   return {
     RU_NAMES,
     refresh: fillNames,
     slugOf,
+    isFeatureRecord,
     rulesOf,
     casterOf,
     // 'full' | 'half' | '' — для мультикласса заклинателей.
