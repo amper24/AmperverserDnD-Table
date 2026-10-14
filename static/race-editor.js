@@ -2,8 +2,10 @@
 // race-editor.js — отдельный редактор расы справочника (по образу редактора класса).
 //
 // Открывается там же, где раньше создавалась раса: «Создать свою запись» →
-// категория «Расы» и кнопка «Редактировать» в карточке расы. Разделы:
-// Общее · Характеристики · Языки · Заклинания · Навыки · Владения · Черты · Подрасы.
+// категория «Расы» и кнопка «Редактор расы» в карточке расы — в том же окне
+// редактора записи, что и конструктор класса, и тем же устройством разделов:
+// Общее · Характеристики · Навыки · Языки · Владения · Черты · Заклинания · Подрасы.
+// Порядок и вид — как у класса: списки чипами, счётчики, карточки .ced-block с меткой.
 //
 // Правила расы живут в графе механик (узлы rule.*), поэтому редактор правит и
 // сырые поля записи, и узлы графа — иначе правку не увидел бы мастер создания:
@@ -40,6 +42,8 @@ window.RaceEditor = (() => {
   }
   const skillNameOfKey = key => (skillsCatalog().find(s => s.key === key) || {}).name || str(key);
   const skillFromEntry = entry => (entry?.category === 'skill' ? (skillKeyOfName(entry.data?.key) || skillKeyOfName(entry.name)) : '');
+  // Характеристика навыка по названию или ключу — для подписи на чипе навыка.
+  const skillAbil = value => (skillsCatalog().find(s => s.name === value || s.key === value) || {}).ability || '';
 
   // ---------- Заклинания (набор правил расы + собственные данные записи) ----------
   const LEVELS = [0, 1, 2, 3, 4, 5];
@@ -236,7 +240,7 @@ window.RaceEditor = (() => {
       age: str(d.age),
       size_description: str(d.size_description),
       asi,
-      languages: { fixed, note: rawLangs.filter(x => str(x).length > 40).join('\n') },
+      languages: { fixed, extra: num(d.languages_extra), note: rawLangs.filter(x => str(x).length > 40).join('\n') },
       skills: {
         fixed: skillNode ? listOf(skillNode) : (Array.isArray(d.skills) && d.skills.length ? d.skills.map(str) : passiveSkills),
         choose: num(rulesNode?.params?.count, 0),
@@ -276,6 +280,7 @@ window.RaceEditor = (() => {
     const note = str(st.languages.note).trim();
     syncNodes(graph, 'rule.languages', langs.length ? [{ params: { value: langs } }] : []);
     if (langs.length || note) d.languages = note ? [...langs, note] : [...langs]; else delete d.languages;
+    if (num(st.languages.extra) > 0) d.languages_extra = num(st.languages.extra); else delete d.languages_extra;
 
     // Навыки: владение — узлом rule.skill_proficiency, выбор игрока — узлом rule.skills.
     const skillNames = st.skills.fixed.map(s => str(s).trim()).filter(Boolean);
@@ -387,16 +392,22 @@ window.RaceEditor = (() => {
   }
 
   // ---------- Разделы ----------
+  // Порядок и вид разделов — как у редактора класса: общее, характеристики, навыки,
+  // языки, владения, черты, заклинания, подрасы. Списки-карточки (владения, черты,
+  // заклинания) рисуются теми же блоками .ced-block с меткой в шапке, что подклассы
+  // и снаряжение класса, а списки навыков — теми же чипами и строкой добавления.
   const SECTIONS = [
     { id: 'common', title: 'Общее', hint: 'Название, размер, скорость, описание' },
     { id: 'abilities', title: 'Характеристики', hint: 'Увеличение характеристик расы' },
-    { id: 'languages', title: 'Языки', hint: 'Какими языками владеет раса' },
-    { id: 'spells', title: 'Заклинания', hint: 'Заговоры и заклинания расы: известные сразу и выбор игрока' },
     { id: 'skills', title: 'Навыки', hint: 'Владение навыками и выбор игрока' },
+    { id: 'languages', title: 'Языки', hint: 'Какими языками владеет раса' },
     { id: 'proficiencies', title: 'Владения', hint: 'Доспехи, оружие, инструменты' },
     { id: 'traits', title: 'Черты', hint: 'Особенности расы с текстами' },
+    { id: 'spells', title: 'Заклинания', hint: 'Заговоры и заклинания расы: известные сразу и выбор игрока' },
     { id: 'subraces', title: 'Подрасы', hint: 'Разновидности расы' },
   ];
+  // Заголовок набора (badge) в шапке карточки — как «подкласс» и «выдаётся всегда» у класса.
+  const blockHead = (label, ...rest) => el('div', { class: 'ced-block-head' }, el('span', { class: 'badge' }, label), ...rest);
 
   function commonSection(st) {
     const box = el('div', { class: 'ced-grid' });
@@ -416,14 +427,77 @@ window.RaceEditor = (() => {
 
   function abilitiesSection(st) {
     const box = el('div', { class: 'ced-grid' });
-    for (const key of KEYS) box.append(field(ABIL[key] || key, numInput(st.asi[key] || 0, v => st.asi[key] = Math.max(-5, Math.min(6, v)), { min: -5, max: 6 }), `+${num(st.asi[key])}`));
+    // Ряд как «Спасброски» у класса: подпись и значения одной компактной строкой.
+    box.append(el('div', { class: 'ced-field wide' }, el('span', {}, 'Увеличение характеристик'),
+      el('div', { class: 'ced-saves' }, ...KEYS.map(key => el('label', { class: 'ced-check' },
+        el('span', {}, ABIL_SHORT[key]),
+        numInput(st.asi[key] || 0, v => st.asi[key] = Math.max(-5, Math.min(6, v)), { min: -5, max: 6 }))))));
     box.append(el('p', { class: 'muted small wide' },
       'Бонусы 2014 фиксированы расой и попадают в лист сразу (узлы rule.ability_bonus). В редакции 2024 игрок сам распределяет +2 и +1 на шаге характеристик — поля оставьте пустыми.'));
     return box;
   }
 
+  // ---------- Навыки ----------
+  // Строка-счётчик, чипы и строка добавления — ровно как в разделе «Навыки» редактора класса.
+  function skillList(values, render, o) {
+    const list = el('div', { class: 'ced-chips' });
+    const draw = () => {
+      list.replaceChildren(...values.map((name, i) => chip(str(name), () => { values.splice(i, 1); render(); },
+        { note: ABIL_SHORT[skillAbil(name)] || '' })));
+      if (!values.length) list.append(el('span', { class: 'muted small' }, str(o.empty)));
+    };
+    draw();
+    const add = value => {
+      const name = skillNameOfKey(value);
+      if (!name || values.some(x => skillKeyOfName(x) === skillKeyOfName(name))) return;
+      values.push(name); render();
+    };
+    return el('div', {},
+      list,
+      el('div', { class: 'ced-row' },
+        select('', [{ value: '', label: '+ добавить навык…' },
+          ...skillsCatalog().filter(s => !values.some(x => skillKeyOfName(x) === s.key))
+            .map(s => ({ value: s.key, label: `${s.name} (${ABIL[s.ability] || s.ability})` }))], v => { if (v) add(v); }),
+        dropZone(str(o.drop), ['application/x-skill', 'application/x-compendium'], payload => {
+          // Принимаем только навыки: свою запись раздела «Навыки» или название из словаря листа.
+          const entry = payload.entry || payload;
+          const key = payload.key || skillFromEntry(entry) || skillKeyOfName(entry?.name || payload?.name);
+          if (!key) { toast('Сюда можно перетащить только запись из раздела «Навыки»'); return; }
+          add(key);
+        })));
+  }
+
+  function skillsSection(st, render) {
+    const box = el('div', {});
+    box.append(el('h4', { class: 'ced-sub' }, 'Владение навыками'));
+    box.append(skillList(st.skills.fixed, render, {
+      empty: 'Раса не даёт владения навыками.',
+      drop: 'Перетащите навык во владения сюда',
+    }));
+    // Выбор игрока — строка-счётчик и добавление ровно как в разделе «Навыки» редактора класса.
+    box.append(el('h4', { class: 'ced-sub' }, 'Выбор игрока'));
+    box.append(el('div', { class: 'ced-row' },
+      el('label', { class: 'ced-inline' }, el('span', {}, 'Игрок выбирает'),
+        numInput(st.skills.choose, v => { st.skills.choose = Math.max(0, v); render(); }, { max: 18 }),
+        el('small', { class: 'muted' }, 'навыков из списка ниже')),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, st.skills.from.length ? `${st.skills.from.length} в списке` : 'пусто — любой навык')));
+    box.append(skillList(st.skills.from, render, {
+      empty: 'Пустой список — игрок выбирает любой навык, целиком из справочника «Навыки».',
+      drop: 'Перетащите навык в список выбора сюда',
+    }));
+    box.append(el('p', { class: 'muted small' },
+      'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника, а выбор пишется правилом rule.skills (id «raceSkills»).'));
+    return box;
+  }
+
   function languagesSection(st, render) {
     const box = el('div', {});
+    box.append(el('div', { class: 'ced-row' },
+      el('label', { class: 'ced-inline' }, el('span', {}, 'Дополнительных языков по выбору'),
+        numInput(st.languages.extra, v => { st.languages.extra = Math.max(0, v); render(); }, { max: 9 })),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'ced-counter' }, `${st.languages.fixed.length} фиксированных`)));
     box.append(listEditor(st.languages.fixed, render, {
       options: ((B()?.LANGUAGES || [])).map(l => ({ value: l, label: l })), addLabel: '+ добавить язык…',
       placeholder: 'свой язык', empty: 'Раса не даёт языков автоматически.',
@@ -434,43 +508,82 @@ window.RaceEditor = (() => {
     return box;
   }
 
+  function proficienciesSection(st, render) {
+    const box = el('div', {});
+    st.profs.forEach((row, index) => {
+      const card = el('section', { class: 'ced-block' });
+      card.append(blockHead('владения',
+        select(row.kind, [...PROF_KINDS, ...(PROF_KINDS.includes(row.kind) ? [] : [row.kind])].map(k => ({ value: k, label: k })),
+          v => { row.kind = v; render(); }),
+        el('span', { class: 'grow' }),
+        el('button', { type: 'button', class: 'small ghost', title: 'Убрать вид владений', onclick: () => { st.profs.splice(index, 1); render(); } }, '×')));
+      card.append(listEditor(row.values, render, { placeholder: 'что именно', empty: 'Пока пусто.' }));
+      box.append(card);
+    });
+    // Пусто — подсказка и кнопки добавления рядом (как «Владений нет» у класса в разделе владений).
+    const addRow = el('div', { class: 'ced-row' }, ...PROF_KINDS.map(kind => el('button', { type: 'button', class: 'small',
+      onclick: () => { if (!st.profs.some(p => p.kind === kind)) { st.profs.push({ kind, values: [] }); render(); } } }, '+ ' + kind)),
+      el('button', { type: 'button', class: 'small', onclick: () => { st.profs.push({ kind: 'Владения', values: [] }); render(); } }, '+ своё'));
+    if (!st.profs.length) box.append(el('p', { class: 'muted small' }, 'Владений нет — у большинства рас они описаны в чертах.'), addRow);
+    else box.append(addRow);
+    box.append(el('p', { class: 'muted small' }, 'Каждый вид владений — свой узел rule.proficiencies: мастер создания покажет их во владениях персонажа.'));
+    return box;
+  }
+
+  function traitsSection(st, render) {
+    const box = el('div', {});
+    st.traits.forEach((t, index) => {
+      const card = el('section', { class: 'ced-block' });
+      card.append(blockHead('черта',
+        el('input', { class: 'grow', value: str(t.name), placeholder: 'Название черты', oninput: e => t.name = e.target.value }),
+        el('button', { type: 'button', class: 'small ghost', onclick: () => { st.traits.splice(index, 1); render(); } }, '×')));
+      card.append(el('textarea', { rows: 3, placeholder: 'Текст черты', oninput: e => t.text = e.target.value }, str(t.text)));
+      box.append(card);
+    });
+    box.append(el('button', { type: 'button', class: 'small', onclick: () => { st.traits.push({ name: '', text: '' }); render(); } }, '+ черта'));
+    box.append(el('p', { class: 'muted small' }, 'Черта попадает и в поле данных, и в программу графа: кнопки бросков в её тексте работают на листе.'));
+    return box;
+  }
+
   function spellsSection(st, render) {
     const box = el('div', {});
-    box.append(el('h4', { class: 'ced-sub' }, 'Заклинания, известные сразу'));
-    const rows = el('div', { class: 'ced-features' });
-    const draw = () => {
-      rows.replaceChildren(...st.spells.fixed.map((row, index) => el('div', { class: 'ced-feature' },
-        el('div', { class: 'ced-row' },
+    // «Известны сразу» — блок с меткой, как «выдаётся всегда» в снаряжении класса.
+    const known = el('section', { class: 'ced-block' });
+    const rows = el('div', { class: 'ced-eq-rows' });
+    const drawKnown = () => {
+      // Строка заклинания — карточка с названием и настройками на второй строке:
+      // так же устроены варианты снаряжения класса, и ничего не переносится некрасиво.
+      rows.replaceChildren(...st.spells.fixed.map((row, index) => el('div', { class: 'ced-eq-option' },
+        el('div', { class: 'ced-eq-option-head' },
           el('input', { class: 'grow', value: str(row.name), placeholder: 'Название заклинания из справочника', oninput: e => row.name = e.target.value }),
+          el('button', { type: 'button', class: 'small ghost', title: 'Убрать заклинание', onclick: () => { st.spells.fixed.splice(index, 1); render(); } }, '×')),
+        el('div', { class: 'ced-eq-row' },
           select(num(row.level), LEVELS.map(l => ({ value: l, label: levelLabel(l) })), v => { row.level = num(v); render(); }),
-          select(str(row.ability), ABILITY_OPTIONS, v => { row.ability = v; render(); }),
-          el('button', { type: 'button', class: 'small ghost', title: 'Убрать заклинание', onclick: () => { st.spells.fixed.splice(index, 1); render(); } }, '×')))));
-      if (!st.spells.fixed.length) rows.append(el('span', { class: 'muted small' }, 'Известных сразу заклинаний нет.'));
+          select(str(row.ability), ABILITY_OPTIONS, v => { row.ability = v; render(); })))));
+      rows.append(el('div', { class: 'ced-row' },
+        el('button', { type: 'button', class: 'small', onclick: () => { st.spells.fixed.push({ name: '', level: 0, ability: '' }); render(); } }, '+ заклинание'),
+        dropZone('Перетащите заклинание из справочника сюда', ['application/x-spell', 'application/x-compendium'], payload => {
+          const entry = payload.entry || (payload.spell ? { name: payload.spell.name, category: 'spell', data: { level: payload.spell.level } } : payload);
+          if (entry?.category !== 'spell') { toast('Сюда можно перетащить только запись из раздела «Заклинания»'); return; }
+          const name = str(entry.name).trim();
+          if (!name || st.spells.fixed.some(r => norm(r.name) === norm(name))) return;
+          st.spells.fixed.push({ name, level: num(entry.data?.level), ability: '' });
+          render();
+        })));
     };
-    draw();
-    box.append(rows);
-    const addSpell = (name, level) => {
-      const value = str(name).trim();
-      if (!value || st.spells.fixed.some(r => norm(r.name) === norm(value))) return false;
-      st.spells.fixed.push({ name: value, level: num(level), ability: '' });
-      render(); return true;
-    };
-    box.append(el('div', { class: 'ced-row' },
-      el('button', { type: 'button', class: 'small', onclick: () => { st.spells.fixed.push({ name: '', level: 0, ability: '' }); render(); } }, '+ заклинание'),
-      dropZone('Перетащите заклинание из справочника сюда', ['application/x-spell', 'application/x-compendium'], payload => {
-        const entry = payload.entry || (payload.spell ? { name: payload.spell.name, category: 'spell', data: { level: payload.spell.level } } : payload);
-        if (entry?.category !== 'spell') { toast('Сюда можно перетащить только запись из раздела «Заклинания»'); return; }
-        addSpell(entry.name, entry.data?.level);
-      })));
+    drawKnown();
+    known.append(blockHead('известны сразу', el('span', { class: 'muted small' }, 'Заклинания, которые раса даёт просто так.')), rows);
+    box.append(known);
 
-    box.append(el('h4', { class: 'ced-sub' }, 'Выбор игрока'));
-    const choices = el('div', { class: 'ced-features' });
+    // «Выбор игрока» — блок с вложенными вариантами, как варианты снаряжения класса.
+    const choose = el('section', { class: 'ced-block' });
+    const choices = el('div', { class: 'ced-eq-rows' });
     const drawChoices = () => {
-      choices.replaceChildren(...st.spells.choices.map((row, index) => el('div', { class: 'ced-feature' },
-        el('div', { class: 'ced-row' },
+      choices.replaceChildren(...st.spells.choices.map((row, index) => el('div', { class: 'ced-eq-option' },
+        el('div', { class: 'ced-eq-option-head' },
           el('input', { class: 'grow', value: str(row.title), placeholder: 'Заголовок выбора, например «Заговор высшего эльфа»', oninput: e => row.title = e.target.value }),
           el('button', { type: 'button', class: 'small ghost', title: 'Убрать выбор', onclick: () => { st.spells.choices.splice(index, 1); render(); } }, '×')),
-        el('div', { class: 'ced-row' },
+        el('div', { class: 'ced-eq-row' },
           select(num(row.level), LEVELS.map(l => ({ value: l, label: levelLabel(l) })), v => { row.level = num(v); render(); }),
           el('input', { class: 'grow', value: str(row.classes), placeholder: 'классы через запятую: волшебник, wizard', oninput: e => row.classes = e.target.value }),
           select(str(row.ability), [{ value: 'choice', label: 'характеристика игрока' }, ...KEYS.map(k => ({ value: k, label: ABIL[k] || k }))], v => { row.ability = v; render(); })),
@@ -478,19 +591,21 @@ window.RaceEditor = (() => {
       if (!st.spells.choices.length) choices.append(el('span', { class: 'muted small' }, 'Выбора заговора нет — раса даёт только известные сразу.'));
     };
     drawChoices();
-    box.append(choices);
-    box.append(el('div', { class: 'ced-row' },
-      el('button', { type: 'button', class: 'small', onclick: () => { st.spells.choices.push({ key: '', title: '', hint: '', ability: 'choice', level: 0, classes: '' }); render(); } }, '+ выбор заговора'),
-      el('span', { class: 'muted small' }, 'Игрок выберет одно заклинание из списка класса по уровню.')));
+    choose.append(blockHead('выбор игрока', el('span', { class: 'muted small' }, 'Игрок выберет одно заклинание из списка класса по уровню.')), choices,
+      el('div', { class: 'ced-row' }, el('button', { type: 'button', class: 'small', onclick: () => { st.spells.choices.push({ key: '', title: '', hint: '', ability: 'choice', level: 0, classes: '' }); render(); } }, '+ выбор заговора')));
+    box.append(choose);
 
+    // Заклинательная характеристика — обычным полем, как характеристика заклинаний у класса.
     const ab = st.spells.ability;
-    box.append(el('h4', { class: 'ced-sub' }, 'Заклинательная характеристика'));
-    box.append(el('div', { class: 'ced-row' },
-      select(ab.mode, [{ value: 'inherit', label: 'Наследуется от набора правил' }, { value: 'on', label: 'Игрок выбирает из списка' }, { value: 'off', label: 'Не задана' }], v => { ab.mode = v; render(); }),
-      ab.mode === 'on' ? el('div', { class: 'ced-row' }, ...KEYS.map(k => el('label', { class: 'ced-inline' },
-        el('input', { type: 'checkbox', checked: ab.options.includes(k) ? '' : null, onchange: e => {
-          ab.options = e.target.checked ? [...new Set([...ab.options, k])] : ab.options.filter(x => x !== k); render();
-        } }), el('span', {}, ABIL[k] || k)))) : null));
+    box.append(el('div', { class: 'ced-grid' },
+      field('Заклинательная характеристика',
+        select(ab.mode, [{ value: 'inherit', label: 'Наследуется от набора правил' }, { value: 'on', label: 'Игрок выбирает из списка' }, { value: 'off', label: 'Не задана' }], v => { ab.mode = v; render(); }),
+        'Для заклинаний расы: своей или по выбору игрока'),
+      ab.mode === 'on' ? el('div', { class: 'ced-field' }, el('span', {}, 'Из чего выбирает игрок'),
+        el('div', { class: 'ced-saves' }, ...KEYS.map(k => el('label', { class: 'ced-check' },
+          el('input', { type: 'checkbox', checked: ab.options.includes(k) ? '' : null, onchange: e => {
+            ab.options = e.target.checked ? [...new Set([...ab.options, k])] : ab.options.filter(x => x !== k); render();
+          } }), el('span', {}, ABIL[k] || k))))) : null));
     if (ab.mode === 'on' && !ab.options.length) box.append(el('p', { class: 'danger small' }, 'Отметьте хотя бы одну характеристику — иначе игроку нечего выбирать.'));
     if (st.spells.fixed.some(r => str(r.ability) === 'choice') && ab.mode !== 'on') box.append(el('p', { class: 'muted small' },
       'Часть заклинаний использует характеристику по выбору игрока — включите «Игрок выбирает из списка».'));
@@ -498,68 +613,6 @@ window.RaceEditor = (() => {
       'Известные сразу заклинания пишутся узлом rule.spell_list и полем data.cantrips, выбор игрока — полями data.spell_choices и data.spell_ability_choice. '
       + 'Мастер создания задаёт вопрос на шаге расы и выдаёт заклинания листу.'));
     return box;
-  }
-
-  function skillsSection(st, render) {
-    const box = el('div', {});
-    box.append(el('h4', { class: 'ced-sub' }, 'Владение навыками'));
-    box.append(listEditor(st.skills.fixed, render, {
-      options: skillsCatalog().map(s => ({ value: s.name, label: `${s.name} (${ABIL[s.ability] || s.ability})` })),
-      addLabel: '+ добавить навык…', placeholder: 'свой навык', drop: 'Перетащите навык из справочника сюда',
-      empty: 'Раса не даёт владения навыками.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
-    }));
-    box.append(el('h4', { class: 'ced-sub' }, 'Выбор игрока'));
-    box.append(el('div', { class: 'ced-row' },
-      el('label', { class: 'ced-inline' }, el('span', {}, 'Игрок выбирает'),
-        numInput(st.skills.choose, v => { st.skills.choose = Math.max(0, v); render(); }, { max: 18 }),
-        el('small', { class: 'muted' }, 'навыков из списка ниже')),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'ced-counter' + (st.skills.from.length ? ' ok' : '') }, st.skills.from.length ? `${st.skills.from.length} в списке` : 'пусто — любой навык')));
-    box.append(listEditor(st.skills.from, render, {
-      options: skillsCatalog().map(s => ({ value: s.name, label: `${s.name} (${ABIL[s.ability] || s.ability})` })),
-      addLabel: '+ добавить навык…', placeholder: 'свой навык', drop: 'Перетащите навык из справочника сюда',
-      empty: 'Пустой список — игрок выбирает любой навык.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '', skillOnly: true,
-    }));
-    box.append(el('p', { class: 'muted small' },
-      'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника: перетаскивайте навыки прямо сюда.'));
-    return box;
-  }
-  const skillAbil = value => (skillsCatalog().find(s => s.name === value || s.key === value) || {}).ability || '';
-
-  function proficienciesSection(st, render) {
-    const box = el('div', {});
-    const rows = el('div', { class: 'ced-features' });
-    const draw = () => {
-      rows.replaceChildren(...st.profs.map((row, index) => el('div', { class: 'ced-feature' },
-        el('div', { class: 'ced-row' },
-          select(row.kind, [...PROF_KINDS, ...(PROF_KINDS.includes(row.kind) ? [] : [row.kind])].map(k => ({ value: k, label: k })), v => { row.kind = v; render(); }),
-          el('span', { class: 'grow' }),
-          el('button', { type: 'button', class: 'small ghost', title: 'Убрать вид владений', onclick: () => { st.profs.splice(index, 1); render(); } }, '×')),
-        listEditor(row.values, render, { placeholder: 'что именно', empty: 'Пока пусто.' }))));
-      if (!st.profs.length) rows.append(el('span', { class: 'muted small' }, 'Владений нет — у большинства рас они описаны в чертах.'));
-    };
-    draw();
-    box.append(rows);
-    box.append(el('div', { class: 'ced-row' }, ...PROF_KINDS.map(kind => el('button', { type: 'button', class: 'small',
-      onclick: () => { if (!st.profs.some(p => p.kind === kind)) { st.profs.push({ kind, values: [] }); render(); } } }, '+ ' + kind)),
-      el('button', { type: 'button', class: 'small', onclick: () => { st.profs.push({ kind: 'Владения', values: [] }); render(); } }, '+ своё')));
-    box.append(el('p', { class: 'muted small' }, 'Каждый вид владений — свой узел rule.proficiencies: мастер создания покажет их во владениях персонажа.'));
-    return box;
-  }
-
-  function traitsSection(st, render) {
-    const box = el('div', { class: 'ced-features' });
-    const draw = () => {
-      box.replaceChildren(...st.traits.map((t, index) => el('div', { class: 'ced-feature' },
-        el('div', { class: 'ced-row' },
-          el('input', { class: 'grow', value: str(t.name), placeholder: 'Название черты', oninput: e => t.name = e.target.value }),
-          el('button', { type: 'button', class: 'small ghost', onclick: () => { st.traits.splice(index, 1); render(); } }, '×')),
-        el('textarea', { rows: 3, placeholder: 'Текст черты', oninput: e => t.text = e.target.value }, str(t.text)))));
-    };
-    draw();
-    return el('div', {}, box,
-      el('button', { type: 'button', class: 'small', onclick: () => { st.traits.push({ name: '', text: '' }); render(); } }, '+ черта'),
-      el('p', { class: 'muted small' }, 'Черта попадает и в поле данных, и в программу графа: кнопки бросков в её тексте работают на листе.'));
   }
 
   function subracesSection(st, render) {
@@ -571,6 +624,7 @@ window.RaceEditor = (() => {
       'Списком подрасы видны в карточке. Саму разновидность создайте отдельной записью расы и укажите в ней родительскую расу (раздел «Общее»).'));
     return box;
   }
+
 
   /// Открыть редактор: возвращает { name, data } (сохранение делает справочник) или null.
   function edit(entry, opts = {}) {
@@ -584,12 +638,12 @@ window.RaceEditor = (() => {
         onclick: () => { section = s.id; render(); } }, s.title)));
       const body = sec.id === 'common' ? commonSection(st)
         : sec.id === 'abilities' ? abilitiesSection(st)
-          : sec.id === 'languages' ? languagesSection(st, render)
-            : sec.id === 'spells' ? spellsSection(st, render)
-              : sec.id === 'skills' ? skillsSection(st, render)
+          : sec.id === 'skills' ? skillsSection(st, render)
+            : sec.id === 'languages' ? languagesSection(st, render)
               : sec.id === 'proficiencies' ? proficienciesSection(st, render)
                 : sec.id === 'traits' ? traitsSection(st, render)
-                  : subracesSection(st, render);
+                  : sec.id === 'spells' ? spellsSection(st, render)
+                    : subracesSection(st, render);
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));
     };
     render();

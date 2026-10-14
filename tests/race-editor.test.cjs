@@ -377,3 +377,66 @@ test('редактор расы открывается: все разделы р
   assert.deepEqual(JSON.parse(JSON.stringify(sheet.skills)), ['stealth']);
   assert.deepEqual(JSON.parse(JSON.stringify(sheet.languages)), ['Общий']);
 });
+
+// ---------- Вид редактора: разделы расы устроены как разделы редактора класса ----------
+const KEYS_ALL = ['Сила', 'Ловкость', 'Телосложение', 'Интеллект', 'Мудрость', 'Харизма'];
+test('редактор расы разложен как редактор класса: те же чипы, счётчики и карточки с меткой', async () => {
+  await domPresets;
+  let captured = null;
+  domCtx.modal = (title, content, buttons, opts) => { captured = { title, content, buttons, opts }; return Promise.resolve(null); };
+  const RE3 = domCtx.window.RaceEditor;
+  const source = raceByName('Высший эльф');
+  await RE3.edit(source, {});
+
+  // Навигация — тот же список кнопок того же класса, что у редактора класса.
+  const nav = all(captured.content, 'ced-nav-btn').map(text);
+  assert.deepEqual(nav, plain(RE3.SECTIONS.map(s => s.title)), 'разделы расы идут как у класса: общее, характеристики, навыки, языки, …');
+  assert.deepEqual(nav.slice(2, 4), ['Навыки', 'Языки'], 'сначала навыки, потом языки — порядок класса');
+  assert.ok(captured.opts.wide, 'окно на всю ширину, как у редактора класса');
+
+  const navTo = title => { clickNode(all(captured.content, 'ced-nav-btn').find(b => text(b) === title)); };
+  const section = () => all(captured.content, 'ced-section')[0];
+
+  // Навыки: подразделы, счётчик и чипы — как в классе.
+  navTo('Навыки');
+  assert.deepEqual(all(section(), 'ced-sub').map(text), ['Владение навыками', 'Выбор игрока'], 'подразделы навыков');
+  assert.deepEqual(all(all(section(), 'ced-row')[1], 'ced-counter').map(text).concat(all(section(), 'ced-counter').map(text)).slice(0, 1),
+    ['пусто — любой навык'], 'счётчик выбора навыков');
+  assert.equal(all(section(), 'ced-chips').length, 2, 'у навыков владения и выбора — свои списки-чипы');
+  const addSelects = allTag(section(), 'select').filter(s => (s.children || []).some(o => o.attributes?.value === '' && text(o) === '+ добавить навык…'));
+  assert.equal(addSelects.length, 2, 'навык добавляется из справочника той же строкой, что в классе');
+  assert.equal(all(section(), 'ced-drop').length, 2, 'навык можно перетащить в оба списка');
+
+  // Владения: кнопка добавляет вид владений карточкой с меткой.
+  navTo('Владения');
+  clickNode(allTag(section(), 'button').find(b => text(b) === '+ Доспехи'));
+  const profBlocks = all(section(), 'ced-block');
+  assert.equal(profBlocks.length, 1, 'вид владений — карточка .ced-block');
+  assert.equal(text(all(profBlocks[0], 'badge')[0]), 'владения', 'метка вида владений в шапке карточки');
+  assert.ok(all(profBlocks[0], 'ced-block-head').length, 'шапка карточки та же, что у подклассов класса');
+
+  // Черты: каждая — карточка с меткой и названием в шапке, а не голое поле.
+  navTo('Черты');
+  const traitBlocks = all(section(), 'ced-block');
+  assert.equal(traitBlocks.length, 3, 'каждая черта — карточка');
+  assert.deepEqual(all(section(), 'ced-block-head').map(b => text(all(b, 'badge')[0])), ['черта', 'черта', 'черта'], 'метка в шапке каждой карточки');
+  assert.deepEqual(all(section(), 'ced-block-head').map(b => allTag(b, 'input')[0].attributes.value),
+    ['Эльфийская боевая подготовка', 'Заговор высшего эльфа', 'Дополнительный язык'], 'название черты — в шапке карточки');
+
+  // Заклинания: два блока с метками (как «выдаётся всегда» и «выбор варианта» у класса).
+  navTo('Заклинания');
+  assert.deepEqual(all(section(), 'ced-block-head').map(b => text(all(b, 'badge')[0])), ['известны сразу', 'выбор игрока'], 'заклинания сгруппированы блоками с метками');
+  assert.equal(all(section(), 'ced-eq-option').length, 1, 'выбор заговора — карточкой варианта, как варианты снаряжения');
+  const abilityField = all(section(), 'ced-field').find(f => text(f).includes('Заклинательная характеристика'));
+  assert.ok(abilityField, 'заклинательная характеристика — обычным полем, как у класса');
+  // Характеристика по выбору игрока: галочки отмечаются той же строкой, что спасброски класса.
+  const modeSel = allTag(abilityField, 'select')[0];
+  modeSel.value = 'on'; fire(modeSel, 'change', { target: modeSel });
+  assert.equal(all(section(), 'ced-saves').length, 1, 'характеристики выбора — строка с галочками');
+  assert.equal(all(section(), 'ced-check').length, KEYS_ALL.length, 'по галочке на каждую характеристику');
+
+  // Языки: число дополнительных языков и счётчик фиксированных — как в классе.
+  navTo('Языки');
+  assert.match(text(section()), /Дополнительных языков по выбору/, 'условные языки задаются числом');
+  assert.deepEqual(all(section(), 'ced-counter').map(text), ['0 фиксированных'], 'счётчик фиксированных языков');
+});
