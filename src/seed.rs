@@ -271,6 +271,22 @@ mod tests {
         assert_eq!(classify(&cur_with, "Х", &new_data, "Х", None), Upgrade::Keep);
     }
 
+    /// Название без скобочных обозначений: у черт-умений в имени остаются SRD-обозначения вроде «(d6)»
+    /// или «(60 ft.)» — проверка подписи смотрит на остальную часть названия.
+    fn without_latin_notations(name: &str) -> String {
+        let mut out = String::new();
+        let mut depth = 0usize;
+        for c in name.chars() {
+            match c {
+                '(' => depth += 1,
+                ')' if depth > 0 => depth -= 1,
+                _ if depth == 0 => out.push(c),
+                _ => {}
+            }
+        }
+        out
+    }
+
     #[test]
     fn embedded_reference_is_fully_localized_and_covered_by_legacy_hashes() {
         let legacy: LegacyHashes = serde_json::from_slice(&SeedFiles::get("legacy_hashes.json").expect("legacy_hashes.json вшит").data).unwrap();
@@ -282,15 +298,20 @@ mod tests {
             const NEW_AFTER_LOCALIZATION: &[&str] = &["item/srd24-shield-magic"];
             // Категория «Навыки» появилась позже снимков SRD целиком.
             const NEW_CATEGORIES: &[&str] = &["skill"];
+            // Записи, собранные заново из рас, классов и подклассов (tools/srd/build_feats.py, origin
+            // «srd-feats-graph-v1»): их не было ни в одной поставке, и хешей старой версии у них быть не может.
+            const NEW_RECORD_ORIGINS: &[&str] = &["srd-feats-graph-v1"];
             for e in &entries {
                 let en = &e.data["i18n"]["en"];
                 let en_name = en["name"].as_str().unwrap_or("");
                 assert!(!en_name.is_empty(), "{}: нет английского названия", e.slug);
                 assert!(!en_name.chars().any(|c| ('\u{400}'..='\u{4FF}').contains(&c)), "{}: кириллица в английском названии", e.slug);
-                assert!(!e.name.chars().any(|c| c.is_ascii_alphabetic()), "{}: латиница в русском названии «{}»", e.slug, e.name);
+                assert!(!without_latin_notations(&e.name).chars().any(|c| c.is_ascii_alphabetic()), "{}: латиница в русском названии «{}»", e.slug, e.name);
                 assert!(i18n::validate(&e.data).is_ok(), "{}: некорректный i18n", e.slug);
                 let key = format!("{}/{}", e.category, e.slug);
+                let origin = e.data["mechanics"]["origin"].as_str().unwrap_or("");
                 assert!(NEW_AFTER_LOCALIZATION.contains(&key.as_str()) || NEW_CATEGORIES.contains(&e.category.as_str())
+                    || NEW_RECORD_ORIGINS.contains(&origin)
                     || legacy[*edition].contains_key(&key), "{}: нет хеша старой версии", e.slug);
             }
         }

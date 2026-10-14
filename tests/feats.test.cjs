@@ -56,6 +56,20 @@ test('черты справочника собраны генератором и
   }
 });
 
+test('названия черт локализованы: латиница только в обозначениях из SRD', () => {
+  // Та же проверка, что в Rust-тесте src/seed.rs (embedded_reference_is_fully_localized_and_covered_by_legacy_hashes):
+  // в русском названии черты латиница допустима только внутри скобок — это обозначения из SRD, а не перевод.
+  const withoutNotations = name => name.replace(/\((?:[^()]*)\)/g, ' ');
+  const latin = [];
+  for (const edition of EDITIONS) for (const record of feats[edition])
+    if (/[A-Za-z]/.test(withoutNotations(record.name))) latin.push(`${record.slug}: ${record.name}`);
+  assert.deepEqual(latin, [], 'латиница в русском названии черты');
+  const notations = EDITIONS.flatMap(edition => feats[edition].filter(r => /[A-Za-z]/.test(r.name)).map(r => r.name));
+  assert.deepEqual(notations.sort(), ['Вдохновение барда (d10)', 'Вдохновение барда (d12)', 'Вдохновение барда (d6)', 'Вдохновение барда (d8)',
+    'Песнь отдыха (d10)', 'Песнь отдыха (d12)', 'Песнь отдыха (d6)', 'Песнь отдыха (d8)',
+    'Тёмное зрение. (120 ft.)', 'Тёмное зрение. (60 ft.)'].sort(), 'обозначения в названиях черт');
+});
+
 test('каждая черта набора — ссылка на запись справочника (все черты, а не часть)', () => {
   for (const edition of EDITIONS) {
     for (const kind of ['race', 'class', 'subclass']) {
