@@ -466,7 +466,7 @@ fn dice_term(d: &Value) -> Option<String> {
     let bonus = json_integer(&d["bonus"]).unwrap_or(0); let stat = d["stat"].as_str().unwrap_or("");
     let mut out = if count > 0 { format!("{count}d{sides}") } else { String::new() };
     if bonus != 0 { out.push_str(&if out.is_empty() { bonus.to_string() } else { format!("{bonus:+}") }); }
-    if !stat.is_empty() { out.push_str(&format!("+@{stat}")); }
+    if !stat.is_empty() { if out.is_empty() { out.push('@'); out.push_str(&stat); } else { out.push_str(&format!("+@{stat}")); } }
     if out.is_empty() { out = "0".into(); }
     Some(out)
 }
