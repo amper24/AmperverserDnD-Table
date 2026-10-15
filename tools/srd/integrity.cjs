@@ -705,11 +705,27 @@ function checkRuntime(opts = {}) {
     report.error('client-server-parity', 'static/common.js', 'SKILLS', `идентификаторы навыков клиента и сервера (SKILL_IDS) различаются: только у клиента ${only(skillIds, rust.SKILL_IDS) || '—'}; только у сервера ${only(rust.SKILL_IDS, skillIds) || '—'}`);
   }
   const abilityValues = [...new Set(Object.values(Registry.NODE_DEFS).map(d => d.defaults && d.defaults.value).filter(v => isStr(v) && v.length === 3 && rust.ABILITIES.includes(v)))];
-  for (const type of ['data.ability']) {
-    const values = (Registry.NODE_DEFS[type] && Registry.NODE_DEFS[type].values) || null;
-    if (values && values.slice().sort().join() !== rust.ABILITIES.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', type, 'список характеристик не совпадает с ABILITIES сервера');
+  if ((Registry.ABILITIES || []).slice().sort().join() !== rust.ABILITIES.slice().sort().join()) {
+    report.error('client-server-parity', 'static/node-registry.js', 'ABILITIES', `характеристики клиента (${(Registry.ABILITIES || []).join(',')}) и сервера (${rust.ABILITIES.join(',')}) различаются`);
   }
-  report.stats.parity = { abilities: abilityValues.length, skills: skillIds.length };
+  // Типы сокетов: клиент описывает их в VALUE_TYPES, сервер — в SOCKET_TYPES (проверка интерфейса групп).
+  if ((Registry.VALUE_TYPES || []).slice().sort().join() !== rust.SOCKET_TYPES.slice().sort().join()) {
+    report.error('client-server-parity', 'static/node-registry.js', 'VALUE_TYPES', `типы сокетов клиента (${(Registry.VALUE_TYPES || []).join(',')}) и сервера SOCKET_TYPES (${rust.SOCKET_TYPES.join(',')}) различаются`);
+  }
+  // Порты узлов: ни один вход не должен требовать значение, которое не производит ни один узел,
+  // и ни один выход (кроме конечных эффектов) не должен оставаться без потребителя.
+  const ports = { in: new Map(), out: new Map() };
+  for (const [type, def] of Object.entries(Registry.NODE_DEFS)) {
+    for (const kind of Object.values(def.inputs || {})) ports.in.set(kind, [...(ports.in.get(kind) || []), type]);
+    for (const kind of Object.values(def.outputs || {})) ports.out.set(kind, [...(ports.out.get(kind) || []), type]);
+  }
+  for (const [kind, types] of ports.in) {
+    if (!ports.out.has(kind)) report.error('node-sockets', 'static/node-registry.js', kind, `тип сокета «${kind}» принимают узлы (${types.join(',')}), но не производит ни один узел — вход невозможно подключить`);
+  }
+  for (const [kind, types] of ports.out) {
+    if (kind !== 'effect' && !ports.in.has(kind)) report.error('node-sockets', 'static/node-registry.js', kind, `тип сокета «${kind}» производят узлы (${types.join(',')}), но не принимает ни один узел — значение некуда подключить`);
+  }
+  report.stats.parity = { abilities: abilityValues.length, skills: skillIds.length, socket_types: ports.in.size };
   report.stats.client_nodes = exposed.length;
   report.stats.server_nodes = rust.NODE_TYPES.length;
   return report;

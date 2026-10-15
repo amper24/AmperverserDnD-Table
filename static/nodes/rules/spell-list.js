@@ -6,7 +6,7 @@
     static type = 'rule.spell_list';
     static label = 'Список заклинаний';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', spells: 'list' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { mode: 'known', ability: 'int', spells: [] };
     static isRule = true;

@@ -9,7 +9,7 @@ const presetsReady=require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-params-form.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-registry.js','utf8'),ctx);require('../tools/nodes/node-loader.cjs').nodeFiles().forEach(f=>vm.runInContext(fs.readFileSync(f,'utf8'),ctx));vm.runInContext(fs.readFileSync('static/mechanics-graph.js','utf8'),ctx);const G=ctx.window.Mechanics;
 const srd=f=>loadSrd(f).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,mechanics:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));
-test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+0+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
+test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
 test('each use program is one button: attack and damage in one program are a single chain, not two buttons',()=>{
   ctx.window.SHEET_CTX={};
   const pair=[{id:'a',kind:'attack',dice:M.dice('d20+5')},{id:'d',kind:'damage',dice:M.dice('1d8+3')}];

@@ -49,11 +49,6 @@
     const term = ABILITIES.includes(id) ? (p.mode === 'score' ? `@${id}_score` : `@${id}`) : (p.mode === 'score' ? `10+@${id}` : `@${id}`);
     return { count: 0, sides: 6, bonus: 0, stat: '', advanced: term };
   }
-  // Текст формулы кости в том же виде, что Mechanics.expression и серверная formula().
-  function diceTerm(d) {
-    if (d?.advanced) return String(d.advanced);
-    return (d.count ? `${d.count}d${d.sides}` : '0') + (Number(d.bonus) >= 0 ? '+' : '') + (Number(d.bonus) || 0) + (d.stat ? `+@${d.stat}` : '');
-  }
   // Значение узла по значениям входов: get(socket) отдаёт значение входа или undefined. Неизвестное — undefined.
   function computedValue(type, p, get) {
     const def = NodeRegistry.nodeDef(type);
@@ -519,7 +514,7 @@
     for (const node of ordered) {
       context.nodeId = node.id;
       const p = node.params || {}, type = node.type;
-      if (type === 'data.number' || type === 'data.dice' || type === 'data.ability' || type === 'data.table' || type === 'data.choice' || type === 'data.text') values.outputs.set(`${node.id}:value`, clone(p.value));
+      if (type === 'data.number' || type === 'data.dice' || type === 'data.table' || type === 'data.text') values.outputs.set(`${node.id}:value`, clone(p.value));
       else if (type === 'condition.edition') values.outputs.set(`${node.id}:value`, (p.editions || []).map(String).includes(edition));
       else if (type === 'condition.level') values.outputs.set(`${node.id}:value`, level >= p.min && level <= p.max);
       else if (type === 'condition.subclass') values.outputs.set(`${node.id}:value`, String(context.subclass) === String(p.id));

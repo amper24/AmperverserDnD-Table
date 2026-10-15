@@ -12,7 +12,7 @@
     static type = 'rule.skills';
     static label = 'Выбор навыков';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', options: 'list', count: 'number' };
+    static inputs = { enabled: 'bool', count: 'number' };
     static outputs = { effect: 'effect' };
     static defaults = { id: '', count: 1, options: [] };
     static isRule = true;

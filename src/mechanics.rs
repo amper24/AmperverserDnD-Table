@@ -157,7 +157,13 @@ fn formula(b: &Value) -> ApiResult<String> {
     if let Some(s)=d["advanced"].as_str().filter(|s|!s.is_empty()) { if s.len()>128 { return Err(bad("Формула слишком длинная")); } return Ok(s.into()); }
     let count=bounded(d,"count",0,100)?; let sides=bounded(d,"sides",1,1000)?; let bonus=bounded(d,"bonus",-1_000_000,1_000_000)?;
     let stat=text(d,"stat"); if !["","str","dex","con","int","wis","cha","best","prof","atk","atk_str","atk_dex","spell","spell_mod","level","dc"].contains(&stat) { return Err(bad("Неизвестный модификатор")); }
-    Ok(format!("{}{}{:+}{}",if count>0{count.to_string()}else{"0".into()},if count>0{format!("d{sides}")}else{String::new()},bonus,if stat.is_empty(){String::new()}else{format!("+@{stat}")}))
+    // Каноничный вид формулы — как Mechanics.expression: нулевой бонус не пишется, «1d20+@atk_str»,
+    // «2d8+@spell_mod», «@dex», «5». Иначе игрок видел «1d20+0+@atk_str».
+    let mut out=if count>0{format!("{count}d{sides}")}else{String::new()};
+    if bonus!=0 { out.push_str(&if out.is_empty(){bonus.to_string()}else{format!("{bonus:+}")}); }
+    if !stat.is_empty() { out.push_str(&format!("+@{stat}")); }
+    if out.is_empty() { out="0".into(); }
+    Ok(out)
 }
 fn spend(s: &mut Value, doc: &Value, category: &str, b: &Value, times: i64, spent: &mut Vec<Value>) -> ApiResult<()> {
     let mut need=num(b,"amount")*times; if need==0 { return Ok(()); } let resource=text(b,"resource");
@@ -309,6 +315,15 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut blank=one.clone();blank[0]["options"][0]["value"]=json!({});assert!(validate_choices(&blank).is_err());
         let mut empty=one.clone();empty[0]["options"]=json!([]);assert!(validate_choices(&empty).is_err());
         assert!(validate_choices(&json!({})).is_err());
+    }
+    #[test] fn formula_skips_zero_bonus(){ // Вид формулы совпадает с Mechanics.expression на клиенте: «1d20+@atk_str», «7», «@dex».
+        assert_eq!(formula(&json!({"dice":{"count":1,"sides":20,"bonus":0,"stat":"atk_str"}})).unwrap(),"1d20+@atk_str");
+        assert_eq!(formula(&json!({"dice":{"count":0,"sides":6,"bonus":7,"stat":""}})).unwrap(),"7");
+        assert_eq!(formula(&json!({"dice":{"count":0,"sides":6,"bonus":0,"stat":"dex"}})).unwrap(),"@dex");
+        assert_eq!(formula(&json!({"dice":{"count":2,"sides":6,"bonus":-1,"stat":""}})).unwrap(),"2d6-1");
+        assert_eq!(formula(&json!({"dice":{"count":1,"sides":8,"bonus":0,"stat":""}})).unwrap(),"1d8");
+        assert_eq!(formula(&json!({"dice":{"count":0,"sides":6,"bonus":0,"stat":""}})).unwrap(),"0");
+        assert_eq!(formula(&json!({"dice":{"count":1,"sides":20,"bonus":0,"stat":"","advanced":"d20+5"}})).unwrap(),"d20+5");
     }
     #[test] fn healing_does_not_include_proficiency(){let s=json!({"abilities":{"wis":16},"proficiency_bonus":4,"spells":{"ability":"wis"}});assert_eq!(inventory::resolve("1d8+@spell_mod",&s).unwrap(),"1d8+3");}
     #[test] fn program_modes_apply_to_d20_and_non_d20_rolls(){

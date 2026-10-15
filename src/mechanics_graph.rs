@@ -30,24 +30,22 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
     match kind {
         "data.number" => { outputs.insert("value".into(), "number".into()); }
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
-        "data.ability" => { outputs.insert("value".into(), "ability".into()); }
         "data.table" => { outputs.insert("value".into(), "table".into()); }
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.op" | "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.not" => { inputs.insert("a".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
-        "data.choice" => { outputs.insert("value".into(), "choice".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
         "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.ability_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.speed" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.languages" | "rule.proficiencies" | "rule.saving_throws" | "rule.skill_proficiency" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.languages" | "rule.proficiencies" | "rule.saving_throws" | "rule.skill_proficiency" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hit_die" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("options".into(), "list".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("spells".into(), "list".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spellcasting" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -137,8 +135,7 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             let stat = match value.get("stat") { None | Some(Value::Null) => "", Some(value) => value.as_str().unwrap_or("\0") };
             if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(bad("Узел кости должен содержать количество и грани.")); }
         }
-        "data.ability" if !ABILITIES.contains(&p["value"].as_str().unwrap_or("")) => return Err(bad("Выберите характеристику из закрытого списка.")),
-        "data.table" | "data.choice" if !p["value"].is_object() => return Err(bad("Табличный или выборный узел должен содержать JSON-объект.")),
+        "data.table" if !p["value"].is_object() => return Err(bad("Табличный узел должен содержать JSON-объект.")),
         "data.text" if p["value"].as_str().is_none() || utf16_len(p["value"].as_str().unwrap_or("")) > 4000 => return Err(bad("Текстовый узел: до 4000 символов.")),
         "condition.edition" => {
             let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
@@ -292,7 +289,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.ability", "data.table", "data.choice", "data.text", "data.stat", "dice.combine",
+    "data.number", "data.dice", "data.table", "data.text", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
     "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
@@ -462,12 +459,16 @@ fn stat_dice(params: &Value) -> Value {
     let term = if ABILITIES.contains(&id) { if score { format!("@{id}_score") } else { format!("@{id}") } } else if score { format!("10+@{id}") } else { format!("@{id}") };
     json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": term})
 }
-// Текст формулы кости: как diceTerm в static/mechanics-graph.js.
+// Текст формулы кости: как NodeRegistry.diceTerm → Mechanics.expression на клиенте (нулевой бонус не пишется).
 fn dice_term(d: &Value) -> Option<String> {
     if let Some(s) = d["advanced"].as_str().filter(|s| !s.is_empty()) { return Some(s.to_string()); }
     let count = json_integer(&d["count"])?; let sides = json_integer(&d["sides"])?;
     let bonus = json_integer(&d["bonus"]).unwrap_or(0); let stat = d["stat"].as_str().unwrap_or("");
-    Some(format!("{}{}{:+}{}", if count > 0 { count.to_string() } else { "0".into() }, if count > 0 { format!("d{sides}") } else { String::new() }, bonus, if stat.is_empty() { String::new() } else { format!("+@{stat}") }))
+    let mut out = if count > 0 { format!("{count}d{sides}") } else { String::new() };
+    if bonus != 0 { out.push_str(&if out.is_empty() { bonus.to_string() } else { format!("{bonus:+}") }); }
+    if !stat.is_empty() { out.push_str(&format!("+@{stat}")); }
+    if out.is_empty() { out = "0".into(); }
+    Some(out)
 }
 fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<bool> {
     graph_input_value(node, socket, incoming, nodes, context, None).and_then(|value| value.as_bool())
@@ -719,6 +720,15 @@ mod hit_gate_tests {
         graph["graph"]["links"].as_array_mut().unwrap().push(json!({"from": {"node": "h", "socket": "value"}, "to": {"node": "d", "socket": "enabled"}}));
         let list = problems(&graph).unwrap();
         assert!(list.iter().any(|message| message.contains("только ко входу")), "{list:?}");
+    }
+
+    #[test]
+    fn dice_term_skips_zero_bonus() { // Как NodeRegistry.diceTerm → Mechanics.expression на клиенте.
+        assert_eq!(dice_term(&json!({"count": 1, "sides": 8, "bonus": 0, "stat": "str"})).unwrap(), "1d8+@str");
+        assert_eq!(dice_term(&json!({"count": 0, "sides": 6, "bonus": 0, "stat": "dex"})).unwrap(), "@dex");
+        assert_eq!(dice_term(&json!({"count": 0, "sides": 6, "bonus": 5, "stat": ""})).unwrap(), "5");
+        assert_eq!(dice_term(&json!({"count": 2, "sides": 6, "bonus": 3, "stat": ""})).unwrap(), "2d6+3");
+        assert_eq!(dice_term(&json!({"advanced": "2d20kh1+@prof"})).unwrap(), "2d20kh1+@prof");
     }
 
     #[test]

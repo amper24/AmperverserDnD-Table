@@ -28,7 +28,6 @@
   const BUTTON_STYLE_OPTIONS = Object.entries(BUTTON_STYLES).map(([value, s]) => ({ value, label: s.label }));
   // Поля, которые задают узел-тип (переопределяют общие ENUMS для конкретного типа узла).
   const TYPE_ENUMS = {
-    'data.ability': { value: ABILS },
     'rule.ability_bonus': { ability: ABILS },
     'rule.spell_list': { mode: SPELL_MODES },
     'action.program': { style: BUTTON_STYLE_OPTIONS },

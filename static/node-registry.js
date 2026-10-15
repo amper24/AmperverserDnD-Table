@@ -34,9 +34,15 @@
     const term = ABILITIES.includes(id) ? (p.mode === 'score' ? `@${id}_score` : `@${id}`) : (p.mode === 'score' ? `10+@${id}` : `@${id}`);
     return { count: 0, sides: 6, bonus: 0, stat: '', advanced: term };
   }
+  // Текст формулы кости — одна реализация на проект: Mechanics.expression (совпадает с серверной formula()).
   function diceTerm(d) {
+    if (window.Mechanics?.expression) return window.Mechanics.expression(d);
     if (d?.advanced) return String(d.advanced);
-    return (d.count ? `${d.count}d${d.sides}` : '0') + (Number(d.bonus) >= 0 ? '+' : '') + (Number(d.bonus) || 0) + (d.stat ? `+@${d.stat}` : '');
+    const count = Number(d?.count) || 0, sides = Number(d?.sides) || 0, bonus = Number(d?.bonus) || 0;
+    let out = count > 0 && sides > 0 ? `${count}d${sides}` : '';
+    if (bonus) out += out ? (bonus > 0 ? '+' : '') + bonus : String(bonus);
+    if (d?.stat) out += (out ? '+' : '') + '@' + d.stat;
+    return out || '0';
   }
   // Общие проверки параметров, переиспользуемые классами узлов в validate().
   const idText = (value, max = 80) => typeof value === 'string' && value.length > 0 && value.length <= max;

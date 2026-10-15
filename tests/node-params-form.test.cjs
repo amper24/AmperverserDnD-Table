@@ -49,9 +49,9 @@ test('speed node shows a numeric field, not a JSON textarea, and commits typed v
 });
 
 test('ability and spell-mode nodes use dropdowns with Russian labels', () => {
-  const dice = NF.nodeParams({ id: 'd', type: 'data.ability', params: { value: 'dex' } });
+  const dice = NF.nodeParams({ id: 'd', type: 'data.stat', params: { id: 'dex', mode: 'bonus' } });
   const select = findAll(dice, n => n.tag === 'select')[0];
-  assert.ok(select, 'data.ability value is a dropdown');
+  assert.ok(select, 'data.stat id is a dropdown');
   const options = select.children.map(o => o.attrs.value);
   eq(options, ['str', 'dex', 'con', 'int', 'wis', 'cha']);
   assert.equal(select.children.find(o => o.attrs.value === 'dex').attrs.selected, '');

@@ -51,7 +51,18 @@ window.Mechanics = (() => {
     if(!m || (!m[1]&&!m[2]&&!m[3]&&!m[4])) return {count:0,sides:6,bonus:0,stat:'',advanced:text};
     return {count:m[2]?Number(m[1]||1):0,sides:Number(m[2]||6),bonus:Number(m[3]||0),stat:m[4]||''};
   }
-  function expression(d) { if(d?.advanced) return d.advanced; return (d?.count ? `${d.count}d${d.sides}` : '0') + (Number(d?.bonus)>=0?'+':'') + (Number(d?.bonus)||0) + (d?.stat?'+@'+d.stat:''); }
+  /// Формула кости в каноничном виде: «1d20+@atk», «2к6+3», «@dex», «5». Нулевой бонус не пишется —
+  /// иначе на кнопке действия появлялось «1d20+0+@atk_str». Тот же вид у серверной formula() и у
+  /// NodeRegistry.diceTerm: формулу показывает кнопка, ею же считает лист.
+  function expression(d) {
+    if (!d) return '';
+    if (d.advanced) return String(d.advanced);
+    const count = Number(d.count) || 0, sides = Number(d.sides) || 0, bonus = Number(d.bonus) || 0;
+    let out = count > 0 && sides > 0 ? `${count}d${sides}` : '';
+    if (bonus) out += out ? (bonus > 0 ? '+' : '') + bonus : String(bonus);
+    if (d.stat) out += (out ? '+' : '') + '@' + d.stat;
+    return out || '0';
+  }
   // Умолчания полей блока по виду — набор block_defaults (dice — строка формулы, condition_key — ключ состояния).
   function blockDefaults(kind) {
     const fields = window.Presets?.item('block_defaults', kind)?.table || {};
@@ -179,9 +190,16 @@ window.Mechanics = (() => {
     return '';
   }
   function programSummary(p) { return p.blocks.filter(b=>b.enabled!==false).map(b=>TYPES[b.kind]?.[0]||b.kind).join(' → '); }
+  // Живой контекст листа: ctxFromSheet() заполняет prof/level, пустой объект — справочник без листа.
+  const liveContext = ctx => ctx && typeof ctx === 'object' && Number.isFinite(ctx.prof) ? ctx : null;
   function preview(m, ctx) {
     if(!m) return null;
-    return el('div',{class:'mechanics-preview'},...programsOf(m).map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+expression(b.dice):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа. Alt — преимущество, Ctrl — помеха, правая кнопка — выбрать режим',onclick:e=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...window.Modules?.modeFromEvent(e)}),oncontextmenu:e=>window.Modules?.openModeMenu?.(e,'Отдельный бросок: '+p.name,mode=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...mode}))},'Бросить отдельно · без эффектов'):null)) )));
+    return el('div',{class:'mechanics-preview'},...programsOf(m).map(p=>el('details',{},el('summary',{},p.name,' · ',p.trigger==='passive'?'параметры':`${p.blocks.length} блоков`),...p.blocks.map(b=>el('div',{class:'mechanic-preview-block '+(TYPES[b.kind]?.[1]||'')},el('b',{},TYPES[b.kind]?.[0]||b.kind),b.enabled===false?' · выключен':b.dice?' · '+shownDice(b.dice,ctx):b.kind==='consume'?` · −${b.amount} (${b.source})`:b.kind==='grant_item'?` · +${b.amount} ${b.item?.name||''}`:b.kind==='manual'?' · вручную':b.kind==='passive'?` · ${b.field}: ${JSON.stringify(b.value)}`:'',b.text?el('p',{class:'small muted'},b.text):null, b.dice?el('button',{class:'small',title:'Только кубики, без расхода и изменения листа. Alt — преимущество, Ctrl — помеха, правая кнопка — выбрать режим',onclick:e=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...window.Modules?.modeFromEvent(e)}),oncontextmenu:e=>window.Modules?.openModeMenu?.(e,'Отдельный бросок: '+p.name,mode=>Modules.roll(expression(b.dice),'Отдельный бросок: '+p.name,{ctx,kind:['attack','damage'].includes(b.kind)?b.kind:'other',...mode}))},'Бросить отдельно · без эффектов'):null)) )));
+  }
+  // Формула на экране: с листа — посчитанная («1d20+7»), без листа — знаками («1d20+@atk»).
+  function shownDice(d, ctx) {
+    const formula = expression(d), live = liveContext(ctx);
+    return live && window.Modules?.resolve ? window.Modules.resolve(formula, live) : formula;
   }
   function buttons(doc, options={}) {
     const root=el('div',{class:'action-buttons mechanics-buttons'});
@@ -194,12 +212,15 @@ window.Mechanics = (() => {
       const rolls=blocks.filter(b=>rollKinds.includes(b.kind)&&b.dice);
       const pure=blocks.length===1&&blocks[0].kind==='roll';
       const formula=rolls.map(b=>expression(b.dice)).join(' · ');
+      // На листе формула показана посчитанной («1d20+7»), в справочнике без листа — знаками («1d20+@atk»).
+      const live=liveContext(options.context);
+      const shown=formula&&live?formula.split(' · ').map(part=>window.Modules.resolve(part,live)).join(' · '):formula;
       const caption=pure?(blocks[0].name||p.name):p.name;
       const fire=mode=>{ if(options.onProgram) options.onProgram(p,mode||{}); else toast('Исполняемые эффекты применяются с листа персонажа. Справочник — только шаблон.'); };
       // Правый клик по кнопке с бросками: обычный бросок / помеха / преимущество — как у характеристик и навыков листа.
       const modeMenu=rolls.length&&options.onProgram&&window.Modules?.openModeMenu;
       const hint=rolls.length&&options.onProgram?'\nAlt — преимущество, Ctrl — помеха, Shift — только мастеру, правая кнопка — выбрать режим':'';
-      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:(formula?`${caption} · ${formula}`:programSummary(p))+hint,onclick:e=>{e.stopPropagation(); fire(window.Modules?.modeFromEvent(e)||{});},...(modeMenu?{oncontextmenu:e=>window.Modules.openModeMenu(e,caption,fire)}:{})},window.icon?.(st.icon,13),el('span',{},caption),el('small',{},formula?` ${formula}`:` ${blocks.length} блоков`));
+      const program=el('button',{class:'act-btn btn-style-'+(window.BUTTON_STYLES?.[p.style]?p.style:'default'),disabled:options.disabled?'':null,title:(shown?`${caption} · ${shown}`:programSummary(p))+hint,onclick:e=>{e.stopPropagation(); fire(window.Modules?.modeFromEvent(e)||{});},...(modeMenu?{oncontextmenu:e=>window.Modules.openModeMenu(e,caption,fire)}:{})},window.icon?.(st.icon,13),el('span',{},caption),el('small',{},shown?` ${shown}`:` ${blocks.length} блоков`));
       root.append(program);
     }
     return root;

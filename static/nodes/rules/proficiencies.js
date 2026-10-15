@@ -6,7 +6,7 @@
     static type = 'rule.proficiencies';
     static label = 'Владения';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', value: 'list' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { kind: 'general', value: [] };
     static isRule = true;
