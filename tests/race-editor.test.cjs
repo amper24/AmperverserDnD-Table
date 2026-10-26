@@ -4,6 +4,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
 const ctx = { console, crypto: require('node:crypto').webcrypto, window: {}, localStorage: { getItem: () => null, setItem() { }, removeItem() { } },
@@ -19,7 +20,7 @@ before(() => presetsReady);
 // node-loader отдаёт абсолютные пути, остальные файлы — относительно static/.
 const FILES = ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
   ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'race-editor.js'];
-for (const f of FILES) vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
+for (const f of FILES) vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 
 const RE = ctx.window.RaceEditor;
 const M = ctx.window.Mechanics;
@@ -292,7 +293,7 @@ domCtx.window = domCtx;
 domCtx.globalThis = domCtx;
 vm.createContext(domCtx);
 const domPresets = require('../tools/presets/node-loader.cjs').loadPresets(domCtx);
-for (const f of FILES) vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
+for (const f of FILES) vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
 
 const walk = (node, fn) => { fn(node); for (const c of node.children || []) walk(c, fn); };
 const text = node => !node ? '' : node.nodeType === 3 ? node.textContent : (node.children || []).map(text).join('');

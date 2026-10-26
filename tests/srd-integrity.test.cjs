@@ -53,7 +53,8 @@ test('сводка механик (docs/mechanics-migration.json) соответ
 
 test('навыки справочника собраны генератором и несут граф владения', () => {
   // data_seed/skills.json собирает tools/srd/build_skills.py; --check ловит забытую пересборку.
-  const out = execFileSync('python3', [path.join(ROOT, 'tools', 'srd', 'build_skills.py'), '--check']).toString();
+  const out = execFileSync('python3', [path.join(ROOT, 'tools', 'srd', 'build_skills.py'), '--check'],
+    { env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } }).toString();
   assert.match(out, /актуален \(18 навыков\)/);
   const skills = JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed', 'skills.json'), 'utf8'));
   assert.equal(skills.length, 18);

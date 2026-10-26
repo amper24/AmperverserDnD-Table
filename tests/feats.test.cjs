@@ -45,7 +45,10 @@ function tableRows(row) {
 }
 
 test('черты справочника собраны генератором и разложены по редакциям', () => {
-  const out = execFileSync('python3', [path.join(ROOT, 'tools', 'srd', 'build_feats.py'), '--check']).toString();
+  // Python на Windows пишет в stdout в кодировке локали (cp1251) — вывод генератора сравнивается
+  // с русским текстом, поэтому кодировка задаётся явно и не зависит от настроек терминала.
+  const out = execFileSync('python3', [path.join(ROOT, 'tools', 'srd', 'build_feats.py'), '--check'],
+    { env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } }).toString();
   assert.match(out, /черты и ссылки на них актуальны/);
   for (const edition of EDITIONS) {
     const rows = feats[edition];
@@ -111,7 +114,7 @@ test('запись черты: текст, английский слой и гр
   const files = ['static/common.js', 'static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js',
     'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js'];
   for (const file of files)
-    vm.runInContext(fs.readFileSync(file.startsWith('/') ? file : path.join(ROOT, file), 'utf8'), ctx, { filename: file });
+    vm.runInContext(fs.readFileSync(path.isAbsolute(file) ? file : path.join(ROOT, file), 'utf8'), ctx, { filename: file });
   const Mechanics = ctx.window.Mechanics;
   for (const edition of EDITIONS) {
     for (const record of feats[edition]) {

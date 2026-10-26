@@ -3,10 +3,34 @@
 set -euo pipefail
 BIN="${1:-target/release/dnd-table}"
 export PORT="${PORT:-8099}" HOST=127.0.0.1 DEV_SHOW_CODE=true
+# Python разбирает JSON из ответов: фиксируем UTF-8, иначе на Windows stdin/stdout идут в cp1251.
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 B="http://127.0.0.1:$PORT"
+
+# Git Bash (MSYS2) перекодирует аргументы командной строки в ANSI, когда запускает нативный
+# curl.exe, поэтому JSON с кириллицей доезжает до сервера битым («invalid unicode code point»).
+# Тело запроса всегда передаём файлом: --data-binary @файл не перекодируется. На Linux/macOS
+# результат тот же, что у -d (в телах теста нет переводов строк, которые -d вырезает).
+BODIES=$(mktemp -d "${TMPDIR:-/tmp}/dnd-smoke.XXXXXX")
+BODY_N=0
+curl() {
+  local args=() f
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -d|--data|--data-ascii)
+        BODY_N=$((BODY_N + 1)); f="$BODIES/$BODY_N.json"
+        printf '%s' "$2" > "$f"; args+=(--data-binary "@$f"); shift 2 ;;
+      -d*)
+        BODY_N=$((BODY_N + 1)); f="$BODIES/$BODY_N.json"
+        printf '%s' "${1#-d}" > "$f"; args+=(--data-binary "@$f"); shift ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  command curl "${args[@]}"
+}
 "$BIN" > server.log 2>&1 &
 PID=$!
-trap 'kill $PID 2>/dev/null || true; echo "--- server.log ---"; tail -n 40 server.log' EXIT
+trap 'kill $PID 2>/dev/null || true; rm -rf "$BODIES"; echo "--- server.log ---"; tail -n 40 server.log' EXIT
 trap 'echo "!!! SMOKE FAILED at line $LINENO: $BASH_COMMAND"' ERR
 for i in $(seq 1 60); do curl -fs "$B/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fs "$B/api/health" | grep -q '"ok":true'
@@ -47,7 +71,7 @@ echo "[2] справочник"
 [ "$(gm "$B/api/compendium?category=feat&edition=2024&limit=3000" | J "len(d)")" = "299" ]  # 282 + 17 черт для выбора игроком
 gm "$B/api/compendium?category=skill" | J "[e['data']['key'] for e in d]" | grep acrobatics >/dev/null
 gm "$B/api/compendium?q=fireball" | J "[e['name'] for e in d]" | grep "Огненный шар" >/dev/null
-gm "$B/api/compendium?q=меч" | J "[e['name'] for e in d]" | grep "Длинный меч" >/dev/null
+gm "$B/api/compendium?q=%D0%BC%D0%B5%D1%87" | J "[e['name'] for e in d]" | grep "Длинный меч" >/dev/null
 HB=$(gm -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Меч Ампера\",\"campaign_id\":\"$CID\",\"data\":{\"type\":\"magic\"}}" | J "d['source']")
 [ "$HB" = "Homebrew" ]
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"x\",\"campaign_id\":\"$CID\",\"data\":{}}")
@@ -55,15 +79,26 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X 
 
 echo "[3] ассеты (встроенные + загрузка + распаковка)"
 [ "$(gm "$B/api/assets?kind=token" | J "len(d)")" -ge 18 ]
-python3 -c "
-from PIL import Image; Image.new('RGB',(3000,2000),'green').save('/tmp/map.png')" 2>/dev/null || python3 -c "
-import zlib,struct
-def png(w,h):
-  raw=b''.join(b'\x00'+b'\x00\x80\x00'*w for _ in range(h))
-  def chunk(t,d): return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
-  return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
-open('/tmp/map.png','wb').write(png(3000,2000))"
-UP=$(gm -X POST "$B/api/assets" -F "file=@/tmp/map.png" -F "kind=map" -F "campaign_id=$CID")
+# Путь к картинке — в виде, понятном и Git Bash, и нативным Python/curl: /tmp в MSYS2 — это
+# отдельный mount, Windows-программы его не видят (получают C:\tmp) и падают с FileNotFoundError.
+MAP_PATH="$BODIES/map.png"
+if command -v cygpath >/dev/null 2>&1; then MAP_PATH=$(cygpath -m "$MAP_PATH"); fi
+python3 - "$MAP_PATH" <<'PY'
+import sys
+try:
+    from PIL import Image
+    Image.new('RGB', (3000, 2000), 'green').save(sys.argv[1])
+except ImportError:  # без Pillow — тот же PNG вручную
+    import zlib, struct
+    def chunk(t, d):
+        return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    w, h = 3000, 2000
+    raw = b''.join(b'\x00' + b'\x00\x80\x00' * w for _ in range(h))
+    png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+           + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+    open(sys.argv[1], 'wb').write(png)
+PY
+UP=$(gm -X POST "$B/api/assets" -F "file=@$MAP_PATH" -F "kind=map" -F "campaign_id=$CID")
 AID=$(echo "$UP" | J "d['id']"); echo "$UP" | J "(d['width'],d['height'],d['mime'],d['raw_size'],d['stored_size'])"
 [ "$(echo "$UP" | J "d['width']")" = "3000" ]
 gm "$B/api/assets/$AID" | python3 -c "
@@ -81,8 +116,8 @@ pl -X PATCH "$B/api/characters/$CH" >/dev/null   # пустой PATCH (пров�
 echo "[4b] наборы (packs)"
 PACK=$(pl -X POST "$B/api/packs" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":false}' | J "d['id']")
 pl -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"category\":\"item\",\"name\":\"Кинжал Теней\",\"pack_id\":\"$PACK\",\"data\":{\"type\":\"weapon\",\"actions\":[{\"name\":\"Атака\",\"kind\":\"attack\",\"roll\":\"1d20+@atk\"}]}}" | J "d['pack_id']" | grep -q "$PACK"
-pl "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)" | grep -q 1          # владелец видит свой набор
-[ "$(gm "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)")" = "0" ]        # мастер — нет, набор не подключён и не публичный
+pl "$B/api/compendium?q=%D0%9A%D0%B8%D0%BD%D0%B6%D0%B0%D0%BB%20%D0%A2%D0%B5%D0%BD%D0%B5%D0%B9&campaign_id=$CID" | J "len(d)" | grep -q 1          # владелец видит свой набор
+[ "$(gm "$B/api/compendium?q=%D0%9A%D0%B8%D0%BD%D0%B6%D0%B0%D0%BB%20%D0%A2%D0%B5%D0%BD%D0%B5%D0%B9&campaign_id=$CID" | J "len(d)")" = "0" ]        # мастер — нет, набор не подключён и не публичный
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/campaigns/$CID/packs/$PACK"); [ "$code" = "403" ]
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","is_public":true}'); [ "$code" = "400" ]   # публикация без описания запрещена
 # доступ по ссылке: мастер подписывается по коде и видит набор
@@ -90,7 +125,7 @@ SHARE=$(pl -X POST "$B/api/packs/$PACK/share" | J "d['share_code']")
 [ "$(gm "$B/api/packs/join/$SHARE" | J "d['entries']")" = "1" ]
 gm -X POST "$B/api/packs/join/$SHARE" | grep -q '"ok":true'
 [ "$(gm "$B/api/packs?scope=subscribed" | J "len(d)")" = "1" ]
-[ "$(gm "$B/api/compendium?q=Кинжал%20Теней" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/compendium?q=%D0%9A%D0%B8%D0%BD%D0%B6%D0%B0%D0%BB%20%D0%A2%D0%B5%D0%BD%D0%B5%D0%B9" | J "len(d)")" = "1" ]
 gm -X POST "$B/api/campaigns/$CID/packs/$PACK" | grep -q '"ok":true'
 # соавтор: мастер может добавлять записи, папки
 pl -X POST "$B/api/packs/$PACK/editors" -H 'content-type: application/json' -d '{"email":"gm@test.ru"}' | grep -q '"ok":true'
@@ -100,11 +135,11 @@ gm -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"catego
 [ "$(pl "$B/api/packs/$PACK" | J "d['version']")" -ge "2" ]
 pl -X DELETE "$B/api/packs/$PACK/editors/$(gm "$B/api/auth/me" | J "d['id']")" | grep -q '"ok":true'
 pl -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","description":"Тестовый набор для каталога","is_public":true,"tags":"тест"}' | J "d['is_public']" | grep -qi true
-[ "$(gm "$B/api/packs?scope=public&q=игрока" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/packs?scope=public&q=%D0%B8%D0%B3%D1%80%D0%BE%D0%BA%D0%B0" | J "len(d)")" = "1" ]
 CLONE=$(gm -X POST "$B/api/packs/$PACK/clone" | J "d['id']")
 [ "$(gm "$B/api/packs/$CLONE" | J "d['entries']")" = "2" ]
 gm -X DELETE "$B/api/packs/$CLONE" | grep -q '"ok":true'
-[ "$(gm "$B/api/compendium?q=Кинжал%20Теней&campaign_id=$CID" | J "len(d)")" = "1" ]
+[ "$(gm "$B/api/compendium?q=%D0%9A%D0%B8%D0%BD%D0%B6%D0%B0%D0%BB%20%D0%A2%D0%B5%D0%BD%D0%B5%D0%B9&campaign_id=$CID" | J "len(d)")" = "1" ]
 [ "$(gm "$B/api/campaigns/$CID/packs" | J "d[0]['entries']")" = "2" ]
 EXP=$(pl "$B/api/packs/$PACK/export")
 IMP=$(gm -X POST "$B/api/packs/import" -H 'content-type: application/json' -d "$(echo "$EXP" | python3 -c "import sys,json; d=json.load(sys.stdin); d['name']='Импорт'; print(json.dumps(d))")")
@@ -224,7 +259,7 @@ COOK=$(echo "$hdrs" | grep -i '^set-cookie: dnd_session_x=' | sed 's/^[Ss]et-[Cc
 curl -fs -H "Cookie: $COOK" "$B/api/auth/me" | J "d['name']" | grep -q Мастер   # вход по «фреймовому» cookie
 gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d '{"name":"Мастер Игры"}' | grep -q '"ok":true'
 gm "$B/api/auth/me" | J "d['name']" | grep -q "Мастер Игры"
-AV=$(gm -X POST "$B/api/assets" -F "file=@/tmp/map.png" -F "kind=portrait" -F "name=avatar" | J "d['id']")
+AV=$(gm -X POST "$B/api/assets" -F "file=@$MAP_PATH" -F "kind=portrait" -F "name=avatar" | J "d['id']")
 gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d "{\"avatar_asset_id\":\"$AV\"}" | grep -q '"ok":true'
 [ "$(gm "$B/api/auth/me" | J "d['avatar_asset_id']")" = "$AV" ]
 pl "$B/api/assets/$AV" | J "d['id']" | grep -q "$AV"   # чужой аватар доступен для показа

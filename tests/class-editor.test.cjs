@@ -4,6 +4,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
 const ctx = { console, crypto: require('node:crypto').webcrypto, window: {}, localStorage: { getItem: () => null, setItem() { }, removeItem() { } },
@@ -19,7 +20,7 @@ before(() => presetsReady);
 // Графовый слой: правила класса живут в узлах (rule.*), и мастер создания читает их движком узлов.
 for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
   ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
-  vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
+  vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 const CE = ctx.window.ClassEditor;
 // Объекты из vm — другого окружения: сравнение идёт через JSON.
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -312,7 +313,7 @@ const domPresets = require('../tools/presets/node-loader.cjs').loadPresets(domCt
 // Графовый слой нужен и здесь: редактор пишет правила в узлы, и граф должен остаться валидным.
 for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
   ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
-  vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
+  vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
 
 const walk = (node, fn) => { fn(node); for (const c of node.children || []) walk(c, fn); };
 const text = node => !node ? '' : node.nodeType === 3 ? node.textContent : (node.children || []).map(text).join('');

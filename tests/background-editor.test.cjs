@@ -4,6 +4,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
 const ctx = { console, crypto: require('node:crypto').webcrypto, window: {}, localStorage: { getItem: () => null, setItem() { }, removeItem() { } },
@@ -17,7 +18,7 @@ const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx
 before(() => presetsReady);
 const FILES = ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
   ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'background-editor.js'];
-for (const f of FILES) vm.runInContext(fs.readFileSync(f.startsWith('/') ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
+for (const f of FILES) vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 
 const BE = ctx.window.BackgroundEditor;
 const M = ctx.window.Mechanics;
