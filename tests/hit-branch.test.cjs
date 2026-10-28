@@ -36,11 +36,11 @@ test('a v1 gated block becomes a condition node and compiles back to the same wh
 test('the then and else outputs gate hit and miss blocks separately', () => {
   const graph = { version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Выбор', trigger: 'use' } },
-    { id: 'a', type: 'action.attack', params: { block_id: 'atk', ...attackBlock, enabled: true } },
+    { id: 'a', type: 'action.roll', params: { block_id: 'atk', roll_kind: 'attack', enabled: true, dice: attackBlock.dice, dc: 3 } },
     { id: 'h', type: 'condition.hit', params: {} },
     { id: 'f', type: 'flow.if', params: {} },
-    { id: 'd', type: 'action.damage', params: { block_id: 'dmg', enabled: true, dice: hitDamage.dice } },
-    { id: 'm', type: 'action.heal', params: { block_id: 'heal', enabled: true, dice: missHeal.dice, target: 'self', apply: true } },
+    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: hitDamage.dice } },
+    { id: 'm', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', enabled: true, dice: missHeal.dice } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'a', socket: 'exec' } },
     { from: { node: 'a', socket: 'exec' }, to: { node: 'f', socket: 'exec' } },
@@ -64,7 +64,7 @@ test('a hit condition wired to anything but a branch is saved but not executed',
   const graph = { version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Удар', trigger: 'use' } },
     { id: 'h', type: 'condition.hit', params: {} },
-    { id: 'd', type: 'action.damage', params: { block_id: 'dmg', enabled: true, dice: hitDamage.dice } },
+    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: hitDamage.dice } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'd', socket: 'exec' } },
     { from: { node: 'h', socket: 'value' }, to: { node: 'd', socket: 'enabled' } },

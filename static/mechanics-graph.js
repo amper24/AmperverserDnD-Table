@@ -15,24 +15,9 @@
   const NodeRegistry = window.NodeRegistry;
   if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
   const { ACTION_KINDS, ROLL_KINDS, LOGIC_OPS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
-  // Определение узла с учётом псевдонимов: старые типы (action.attack, logic.and, …) читаются как абстрактные узлы.
+  // Определение узла: тип — закрытое имя реестра, псевдонимов нет.
   const defOf = type => NodeRegistry.nodeDef(type);
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
-  // Перевод узла на абстрактный тип на месте: параметры псевдонима (roll_kind, op) задаёт сам тип.
-  function upgradeNode(node) {
-    const target = NodeRegistry.resolveType(node.type);
-    if (target === node.type) return false;
-    node.params = { ...(node.params || {}), ...(NodeRegistry.aliasParams(node.type) || {}) };
-    node.type = target;
-    return true;
-  }
-  // Перевод всего графа (включая узлы групп) на абстрактные узлы. Возвращает, были ли замены.
-  function upgradeGraph(graph) {
-    let changed = false;
-    for (const node of graph?.nodes || []) changed = upgradeNode(node) || changed;
-    for (const group of graph?.groups || []) for (const node of group.nodes || []) changed = upgradeNode(node) || changed;
-    return changed;
-  }
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
@@ -196,8 +181,8 @@
     function collect(ctx, path) {
       for (const node of ctx.nodes) {
         if (node.type === 'group.instance') { const child = ctx.children.get(node.id); if (child) collect(child, [...path, child]); continue; }
-        // Развёрнутые узлы сразу переводятся на абстрактные типы: исполнение и компиляция видят только их.
-        if (!boundaryTypes.has(node.type)) { const expandedNode = { ...clone(node), id: `${ctx.prefix}${node.id}` }; upgradeNode(expandedNode); nodes.push(expandedNode); }
+        // Развёрнутые узлы групп сохраняют свои канонические типы: исполнение и компиляция видят их напрямую.
+        if (!boundaryTypes.has(node.type)) nodes.push({ ...clone(node), id: `${ctx.prefix}${node.id}` });
       }
       for (const link of ctx.links) {
         const fromNode = ctx.nodes.find(node => node.id === link.from.node), toNode = ctx.nodes.find(node => node.id === link.to.node);
@@ -399,10 +384,9 @@
     return '';
   }
   function validateNodeParams(node) {
-    // Псевдонимы проверяются как их абстрактный узел: параметры типа (roll_kind, op) добавляются сами.
-    const type = NodeRegistry.resolveType(node.type);
-    const p = { ...(node.params || {}), ...(NodeRegistry.aliasParams(node.type) || {}) };
-    const def = NodeRegistry.nodeDef(node.type);
+    const type = node.type;
+    const p = node.params || {};
+    const def = NodeRegistry.nodeDef(type);
     if (def && typeof def.validate === 'function') {
       const err = def.validate(p);
       if (err) return err;
@@ -646,8 +630,6 @@
     if (mechanics.version !== GRAPH_VERSION) mechanics = v1ToV2(seed);
     // Записи, сохранённые с полем «Когда», переводятся в узлы при открытии (см. liftWhenGates).
     const liftedWhen = liftWhenGates(mechanics.graph);
-    // Специализированные узлы прошлых версий (атака/урон/лечение, И/ИЛИ/НЕ) становятся абстрактными при открытии.
-    const liftedAliases = upgradeGraph(mechanics.graph);
     // Форма вызывается с копией записи; исходник не отправляется на сервер до внешнего «Сохранить».
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
@@ -658,7 +640,7 @@
     // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
     root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null,
-      status = [liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', liftedAliases ? 'Узлы переведены на абстрактные: настраиваемый «Бросок» и «Логика».' : ''].filter(Boolean).join(' '), search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
+      status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     // Активное действие и id узлов, которые сейчас показаны на холсте (пересчитываются в render).
     let activeAction = '', shownIds = new Set();
@@ -710,8 +692,6 @@
         const params = { ...clone(defOf(n.type)?.defaults || {}), ...clone(n.params || {}) };
         if (actionType(n.type)) params.block_id = mkId('b');
         const inserted = { id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y }, action: activeAction };
-        // Шаблоны прошлых версий могли хранить специализированные узлы: они вставляются уже абстрактными.
-        upgradeNode(inserted);
         graph.nodes.push(inserted);
       }
       for (const [from, fromSocket, to, toSocket] of starter.links) graph.links.push({ from: { node: ids.get(from), socket: fromSocket }, to: { node: ids.get(to), socket: toSocket } });
@@ -1194,7 +1174,6 @@
     GRAPH_VERSION,
     NODE_DEFS,
     nodeLabel,
-    upgradeGraph,
     toGraph,
     toLegacy: v2ToV1,
     validateGraph,

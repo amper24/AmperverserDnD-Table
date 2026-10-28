@@ -17,9 +17,9 @@ function twoActions() {
   const graph = { nodes: [
     { id: 'startA', type: 'action.program', params: { program_id: 'a', name: 'Удар', trigger: 'use' }, position: { x: 0, y: 0 }, action: 'startA' },
     { id: 'endA', type: 'flow.end', params: {}, position: { x: 300, y: 0 }, action: 'startA' },
-    { id: 'dmgA', type: 'action.damage', params: { block_id: 'bA', damage: '1d6' }, position: { x: 150, y: 0 }, action: 'startA' },
+    { id: 'dmgA', type: 'action.roll', params: { block_id: 'bA', roll_kind: 'damage', dice: { count: 1, sides: 6, bonus: 0, stat: '' } }, position: { x: 150, y: 0 }, action: 'startA' },
     { id: 'startB', type: 'action.program', params: { program_id: 'b', name: 'Лечение', trigger: 'use' }, position: { x: 0, y: 200 }, action: 'startB' },
-    { id: 'healB', type: 'action.heal', params: { block_id: 'bB', amount: '1d4' }, position: { x: 150, y: 200 } },
+    { id: 'healB', type: 'action.roll', params: { block_id: 'bB', roll_kind: 'heal', dice: { count: 1, sides: 4, bonus: 0, stat: '' } }, position: { x: 150, y: 200 } },
   ], links: [
     { from: { node: 'startA', socket: 'exec' }, to: { node: 'dmgA', socket: 'exec' } },
     { from: { node: 'dmgA', socket: 'exec' }, to: { node: 'endA', socket: 'exec' } },

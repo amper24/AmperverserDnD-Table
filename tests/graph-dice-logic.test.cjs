@@ -15,7 +15,7 @@ const R = ctx.window.NodeRegistry;
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const node = (id, type, params = {}) => ({ id, type, params: { ...plain(R.NODE_DEFS[type]?.defaults || {}), ...params } });
-const actionNode = (id, kind, params = {}) => node(id, `action.${kind}`, { block_id: id, ...params });
+const actionNode = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, ...params });
 const link = (fromNode, fromSocket, toNode, toSocket) => ({ from: { node: fromNode, socket: fromSocket }, to: { node: toNode, socket: toSocket } });
 const start = node('start', 'action.program', { program_id: 'p', name: 'Тест', trigger: 'use' });
 const mech = (nodes, links) => ({ version: 2, graph: { nodes: [start, ...nodes], links, frames: [], groups: [] } });
@@ -54,7 +54,7 @@ test('dice input without a wire keeps the block dice field', () => {
 test('flow condition built from logic AND follows the edition and level context', () => {
   const level = node('lv', 'condition.level', { min: 3, max: 10 });
   const edition = node('ed', 'condition.edition', { editions: ['2014'] });
-  const and = node('and', 'logic.and');
+  const and = node('and', 'logic.op', { op: 'and' });
   const branch = node('if', 'flow.if');
   const yes = actionNode('yes', 'damage'), no = actionNode('no', 'heal');
   const graph = mech([level, edition, and, branch, yes, no], [
@@ -71,7 +71,7 @@ test('flow condition built from logic AND follows the edition and level context'
 test('comparison of numbers negated with NOT chooses the else branch', () => {
   const five = node('n5', 'data.number', { value: 5 }), three = node('n3', 'data.number', { value: 3 });
   const cmp = node('cmp', 'condition.compare', { op: '>' });
-  const not = node('not', 'logic.not');
+  const not = node('not', 'logic.op', { op: 'not' });
   const branch = node('if', 'flow.if');
   const graph = mech([five, three, cmp, not, branch, actionNode('yes', 'damage'), actionNode('no', 'heal')], [
     link('n5', 'value', 'cmp', 'a'), link('n3', 'value', 'cmp', 'b'), link('cmp', 'value', 'not', 'a'), link('not', 'value', 'if', 'condition'),
@@ -106,7 +106,7 @@ test('invalid stat, comparison and dice types are refused', () => {
 });
 
 test('logic nodes never take the hit condition; only the if node does', () => {
-  const hit = node('h', 'condition.hit'), and = node('and', 'logic.and');
+  const hit = node('h', 'condition.hit'), and = node('and', 'logic.op', { op: 'and' });
   const graph = mech([hit, and], [link('h', 'value', 'and', 'a')]);
   assert.ok(M.problems(graph).length > 0);
 });

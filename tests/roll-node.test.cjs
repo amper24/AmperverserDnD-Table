@@ -21,7 +21,6 @@ const mech = (nodes, links) => ({ version: 2, graph: { nodes: [program, ...nodes
 
 test('реестр палитры отдаёт только абстрактные узлы: без отдельных атак, уронов и И/ИЛИ/НЕ', () => {
   const listed = plain(R.catalog('').flatMap(section => section.items.map(item => item.type)));
-  for (const legacy of Object.keys(R.ALIASES)) assert.ok(!listed.includes(legacy), legacy);
   assert.ok(listed.includes('action.roll'));
   assert.ok(listed.includes('logic.op'));
   assert.ok(!('action.attack' in R.NODE_DEFS) && !('logic.and' in R.NODE_DEFS));
@@ -72,34 +71,9 @@ test('logic.op исполняет И, ИЛИ и НЕ; неизвестная о�
   assert.notEqual(M.validate(boolGraph('xor', true, true)), '');
 });
 
-test('старые типы узлов — псевдонимы: граф читается, а upgradeGraph переводит его на абстрактные узлы', () => {
-  const legacy = mech([
-    { id: 'a', type: 'condition.level', params: { min: 1, max: 20 } },
-    { id: 'b', type: 'condition.level', params: { min: 1, max: 20 } },
-    { id: 'and', type: 'logic.and', params: {} },
-    { id: 'if', type: 'flow.if', params: {} },
-    { id: 'dmg', type: 'action.damage', params: { block_id: 'dmg', dice: { count: 2, sides: 6, bonus: 0, stat: '' } } },
-  ], [
-    link('a', 'value', 'and', 'a'), link('b', 'value', 'and', 'b'), link('and', 'value', 'if', 'condition'),
-    link('start', 'exec', 'if', 'exec'), link('if', 'then', 'dmg', 'exec'),
-  ]);
-  assert.equal(M.validate(legacy), '', 'старый граф сохраняется без миграции вручную');
-  assert.deepEqual(plain(M.problems(legacy)), []);
-  assert.deepEqual(plain(M.toLegacy(legacy, { level: 5 }).programs[0].blocks.map(x => x.kind)), ['damage']);
-  const changed = M.upgradeGraph(legacy.graph);
-  assert.equal(changed, true);
-  const types = Object.fromEntries(legacy.graph.nodes.map(n => [n.id, n.type]));
-  assert.equal(types.and, 'logic.op');
-  assert.equal(types.dmg, 'action.roll');
-  assert.equal(legacy.graph.nodes.find(n => n.id === 'and').params.op, 'and');
-  assert.equal(legacy.graph.nodes.find(n => n.id === 'dmg').params.roll_kind, 'damage');
-  assert.equal(M.upgradeGraph(legacy.graph), false, 'повторный перевод ничего не меняет');
-});
-
 test('заголовок карточки показывает выбранный режим настраиваемого узла', () => {
   assert.equal(R.nodeTitle('action.roll', { roll_kind: 'attack' }), 'Бросок · Атака');
   assert.equal(R.nodeTitle('action.roll', {}), 'Бросок · Свободный');
-  assert.equal(R.nodeTitle('action.damage', {}), 'Бросок · Урон', 'псевдоним наследует режим своего типа');
   assert.equal(R.nodeTitle('logic.op', { op: 'not' }), 'Логика · НЕ');
-  assert.equal(R.nodeTitle('logic.or', {}), 'Логика · ИЛИ');
+  assert.equal(R.nodeTitle('logic.op', { op: 'or' }), 'Логика · ИЛИ');
 });

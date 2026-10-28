@@ -5,7 +5,7 @@
 // поведение (validate/compute/project) и регистрирует себя через Nodes.register.
 // Реестр собирает NODE_DEFS из классов и сохраняет прежний публичный API NodeRegistry
 // (catalog/sameType/nodeTitle/...), который читают интерфейс, движок и мастера.
-// Старые типы узлов (action.attack, logic.and, …) — псевдонимы (ALIASES), читаются без миграции.
+// Тип узла — закрытое имя из реестра: незнакомый тип не имеет определения и в меню не попадает.
 // Загружается после mechanics.js и до файлов static/nodes/*. Даёт: window.NodeRegistry, window.Nodes.
 // ---------------------------------------------------------------------------
 (() => {
@@ -90,28 +90,14 @@
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
     return base;
   }
-  // Псевдонимы старых специализированных узлов: тип → [абстрактный тип, параметры, которые задаёт тип].
-  // Нужны, чтобы графы из базы, шаблоны и пресеты прошлых версий читались без миграции данных вручную.
-  const ALIASES = {
-    'action.attack': ['action.roll', { roll_kind: 'attack' }],
-    'action.damage': ['action.roll', { roll_kind: 'damage' }],
-    'action.heal': ['action.roll', { roll_kind: 'heal' }],
-    'action.temp_hp': ['action.roll', { roll_kind: 'temp_hp' }],
-    'logic.and': ['logic.op', { op: 'and' }],
-    'logic.or': ['logic.op', { op: 'or' }],
-    'logic.not': ['logic.op', { op: 'not' }],
-  };
-  const resolveType = type => (ALIASES[type] ? ALIASES[type][0] : type);
-  const aliasParams = type => (ALIASES[type] ? clone(ALIASES[type][1]) : null);
-  const nodeDef = type => NODE_DEFS[resolveType(type)];
+  const nodeDef = type => NODE_DEFS[type];
   // Заголовок карточки: настраиваемые узлы показывают выбранный режим («Бросок · Атака», «Логика · И»).
   function nodeTitle(type, params = null) {
-    const resolved = resolveType(type);
-    const def = NODE_DEFS[resolved];
+    const def = NODE_DEFS[type];
     if (!def) return type;
-    const p = { ...(aliasParams(type) || {}), ...(params || {}) };
-    if (resolved === 'action.roll') return `${def.label} · ${ROLL_KIND_LABELS[p.roll_kind] || ROLL_KIND_LABELS.roll}`;
-    if (resolved === 'logic.op') return `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
+    const p = params || {};
+    if (type === 'action.roll') return `${def.label} · ${ROLL_KIND_LABELS[p.roll_kind] || ROLL_KIND_LABELS.roll}`;
+    if (type === 'logic.op') return `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
     return def.label;
   }
   // Категории меню (порядок показа). Узел попадает в первую подходящую категорию.
@@ -128,7 +114,7 @@
     { id: 'other', title: 'Прочее', match: type => type.startsWith('action.') },
   ];
   const INTERNAL = new Set(['group.input', 'group.output']);
-  const categoryOf = type => (CATEGORIES.find(c => c.id !== 'other' && c.match(resolveType(type))) || CATEGORIES[CATEGORIES.length - 1]);
+  const categoryOf = type => (CATEGORIES.find(c => c.id !== 'other' && c.match(type)) || CATEGORIES[CATEGORIES.length - 1]);
   // Сокеты совместимы, только если типы совпадают: это же правило проверяет движок (validateGraph).
   const sameType = (fromType, toType) => Boolean(fromType) && fromType === toType;
   // Каталог для меню: категории с узлами, внутренние узлы групп не показываются. Псевдонимы в меню не попадают.
@@ -146,6 +132,6 @@
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
     COMPUTED, STAT_MODES, COMPARE_OPS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
-    NODE_DEFS, ALIASES, resolveType, aliasParams, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
+    NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
   };
 })();

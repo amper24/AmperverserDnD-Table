@@ -16,10 +16,10 @@ const WAND = {
   uid: 'wand', name: 'Жезл', type: 'consumable', qty: 1, rarity: 'Обычный', weight: 0, cost: '', desc: '', equipped: false, attuned: false, attunement: false, charges: null, actions: [], tags: [], icon: '', asset_id: null, token_asset_id: null, source: '',
   mechanics: { version: 2, origin: 'test', graph: { frames: [], groups: [], nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Удар жезлом', trigger: 'use' }, position: { x: 0, y: 0 } },
-    { id: 'atk', type: 'action.attack', params: { block_id: 'atk', enabled: true, dice: { count: 0, sides: 20, bonus: 5, stat: '' }, dc: 12 }, position: { x: 260, y: 0 } },
+    { id: 'atk', type: 'action.roll', params: { block_id: 'atk', roll_kind: 'attack', enabled: true, dice: { count: 0, sides: 20, bonus: 5, stat: '' }, dc: 12 }, position: { x: 260, y: 0 } },
     { id: 'hit', type: 'condition.hit', params: {}, position: { x: 520, y: 130 } },
     { id: 'if', type: 'flow.if', params: {}, position: { x: 520, y: 0 } },
-    { id: 'dmg', type: 'action.damage', params: { block_id: 'dmg', enabled: true, dice: { count: 1, sides: 8, bonus: 0, stat: '' } }, position: { x: 780, y: 0 } },
+    { id: 'dmg', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: { count: 1, sides: 8, bonus: 0, stat: '' } }, position: { x: 780, y: 0 } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'atk', socket: 'exec' } },
     { from: { node: 'atk', socket: 'exec' }, to: { node: 'if', socket: 'exec' } },
