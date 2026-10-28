@@ -1787,3 +1787,12 @@ body.lu-open { overflow: hidden; }
 .graph-node.flow-node{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 12px 26px rgba(0,0,0,.38)}
 .node-world .node-wire.flow-wire{stroke-width:4;filter:drop-shadow(0 0 5px currentColor)}
 .graph-node.flow-node .graph-node-head{filter:brightness(1.15)}
+
+/* Светлая тема: контраст шапки, портов и подписей полей (тёмный текст на светлых тонах). */
+[data-theme="light"] .graph-node-head{background:linear-gradient(180deg,color-mix(in srgb,var(--node-cat) 22%,#fff),color-mix(in srgb,var(--node-cat) 10%,#fff))}
+[data-theme="light"] .graph-node-head b{color:#14171c}
+[data-theme="light"] .node-id{color:#5a616c;opacity:1}
+[data-theme="light"] .node-socket{color:#262b33}
+[data-theme="light"] .node-socket-label{color:#262b33}
+[data-theme="light"] .node-body .node-field > span,[data-theme="light"] .node-raw summary{color:#4b525d}
+[data-theme="light"] .node-body input,[data-theme="light"] .node-body select{color:#14171c}
