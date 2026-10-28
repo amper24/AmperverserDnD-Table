@@ -123,7 +123,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--check', action='store_true', help='проверить, что файл не отличается от сборки')
     args = ap.parse_args()
-    text = json.dumps(entries(), ensure_ascii=False, indent=1) + '\n'
+    text = json.dumps(entries(), ensure_ascii=False, separators=(',', ':'))
     current = OUT.read_text(encoding='utf-8') if OUT.exists() else ''
     if args.check:
         if current != text:

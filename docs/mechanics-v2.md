@@ -11,10 +11,10 @@
   "graph": {
     "nodes": [
       { "id": "n1", "type": "data.number", "params": { "value": 30 }, "position": { "x": 80, "y": 90 } },
-      { "id": "n2", "type": "rule.speed", "params": {}, "position": { "x": 360, "y": 90 } }
+      { "id": "n2", "type": "rule.value", "params": { "kind": "speed", "amount": 30 }, "position": { "x": 360, "y": 90 } }
     ],
     "links": [
-      { "from": { "node": "n1", "socket": "value" }, "to": { "node": "n2", "socket": "value" } }
+      { "from": { "node": "n1", "socket": "value" }, "to": { "node": "n2", "socket": "amount" } }
     ],
     "frames": [{ "id": "f1", "title": "Передвижение", "nodes": ["n1", "n2"] }],
     "groups": []
@@ -37,7 +37,7 @@
 - **Логика:** один настраиваемый узел `logic.op` (входы `a`, `b: bool`; выход `value: bool`), операция `op` = `and` / `or` / `not` (для `not` используется только вход `a`). Неизвестное значение остаётся неизвестным, и обе ветви «Если» сохраняются. Вход «Попадание атаки» (`condition.hit`) к логике не подключается, только ко входу «Если». Старые типы `logic.and` / `logic.or` / `logic.not` — псевдонимы и переводятся редактором в `logic.op`.
 - **Конец:** `flow.end` принимает несколько проводов (в конец могут прийти несколько узлов). В одном действии редактор не даёт добавить второй «Конец». Остальные входы принимают один провод.
 - **Поток управления:** `flow.if`: вход `exec: flow` и `condition: bool`, выходы `then` / `else: flow`. Переводчик для исполнения выбирает ветку по контексту редакции, уровня, подкласса и `choices`; проверка без контекста сохраняет обе ветви.
-- **Правила персонажа:** `rule.ability_bonus`, `rule.speed`, `rule.languages`, `rule.proficiencies`, `rule.hit_die`, `rule.saving_throws`, `rule.feature`, `rule.skills`, `rule.spell_list`, `rule.spell_slots`, `rule.asi`, `rule.class_progression`, `rule.armor_formula` (защита без доспехов: `formula`, необязательные `name` и `no_shield`), `rule.hp_bonus`, `rule.manual`, `rule.equipment` (фиксированный список стартового снаряжения: `items: [{name, qty}]`), `rule.equipment_choice` (выбор варианта снаряжения: `id`, `title`, `options: [{name, items, gold}]`). Формула — выражение из `static/formulas.js`: числа, `+ − * /`, скобки, `min`/`max`, переменные `@name` из реестра `VARIABLES`.
+- **Правила персонажа:** `rule.value` — одно правило с параметром `kind`: `ability` (`ability` + `amount`), `speed` (`amount`), `hp` (`amount`), `hit_die` (`value`), `asi` (`table`), `armor_formula` (`formula`, необязательные `name` и `no_shield`); `rule.languages`, `rule.proficiencies`, `rule.saving_throws`, `rule.feature`, `rule.skills`, `rule.spell_list`, `rule.spell_slots`, `rule.class_progression`, `rule.manual`, `rule.equipment` (фиксированный список стартового снаряжения: `items: [{name, qty}]`), `rule.equipment_choice` (выбор варианта снаряжения: `id`, `title`, `options: [{name, items, gold}]`). Формула — выражение из `static/formulas.js`: числа, `+ − * /`, скобки, `min`/`max`, переменные `@name` из реестра `VARIABLES`.
 
 ## Узлы — классы
 

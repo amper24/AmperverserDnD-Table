@@ -107,13 +107,13 @@ test('graph effects preview and project through typed values without accumulatin
       nodes: [
         { id: 'edition', type: 'condition.edition', params: { editions: ['2024'] } },
         { id: 'speed-value', type: 'data.number', params: { value: 35 } },
-        { id: 'speed', type: 'rule.speed', params: { value: 30 } },
+        { id: 'speed', type: 'rule.value', params: { kind: 'speed', amount: 30 } },
         { id: 'bonus-value', type: 'data.number', params: { value: 2 } },
-        { id: 'bonus', type: 'rule.ability_bonus', params: { ability: 'dex', amount: 1 } },
+        { id: 'bonus', type: 'rule.value', params: { kind: 'ability', ability: 'dex', amount: 1 } },
       ],
       links: [
         { from: { node: 'edition', socket: 'value' }, to: { node: 'speed', socket: 'enabled' } },
-        { from: { node: 'speed-value', socket: 'value' }, to: { node: 'speed', socket: 'value' } },
+        { from: { node: 'speed-value', socket: 'value' }, to: { node: 'speed', socket: 'amount' } },
         { from: { node: 'bonus-value', socket: 'value' }, to: { node: 'bonus', socket: 'amount' } },
       ],
       frames: [], groups: [],

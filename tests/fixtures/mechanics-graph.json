@@ -30,9 +30,10 @@
             },
             {
               "id": "s",
-              "type": "rule.speed",
+              "type": "rule.value",
               "params": {
-                "value": 30
+                "amount": 30,
+                "kind": "speed"
               }
             }
           ],
@@ -44,7 +45,7 @@
               },
               "to": {
                 "node": "s",
-                "socket": "value"
+                "socket": "amount"
               }
             }
           ],
@@ -61,11 +62,30 @@
         "version": 2,
         "graph": {
           "nodes": [
-            { "id": "n", "type": "data.number", "params": { "value": 35 } },
-            { "id": "c", "type": "flow.if", "params": {} }
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 35
+              }
+            },
+            {
+              "id": "c",
+              "type": "flow.if",
+              "params": {}
+            }
           ],
           "links": [
-            { "from": { "node": "n", "socket": "value" }, "to": { "node": "c", "socket": "condition" } }
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "c",
+                "socket": "condition"
+              }
+            }
           ],
           "frames": [],
           "groups": []
@@ -159,9 +179,10 @@
           "nodes": [
             {
               "id": "s",
-              "type": "rule.speed",
+              "type": "rule.value",
               "params": {
-                "value": "30"
+                "amount": "30",
+                "kind": "speed"
               }
             }
           ],
@@ -1215,14 +1236,56 @@
         "version": 2,
         "graph": {
           "nodes": [
-            { "id": "a", "type": "data.number", "params": { "value": 7 } },
-            { "id": "b", "type": "data.number", "params": { "value": 2 } },
-            { "id": "m", "type": "data.math", "params": { "op": "mul" } },
-            { "id": "t", "type": "data.boolean", "params": { "value": true } }
+            {
+              "id": "a",
+              "type": "data.number",
+              "params": {
+                "value": 7
+              }
+            },
+            {
+              "id": "b",
+              "type": "data.number",
+              "params": {
+                "value": 2
+              }
+            },
+            {
+              "id": "m",
+              "type": "data.math",
+              "params": {
+                "op": "mul"
+              }
+            },
+            {
+              "id": "t",
+              "type": "data.boolean",
+              "params": {
+                "value": true
+              }
+            }
           ],
           "links": [
-            { "from": { "node": "a", "socket": "value" }, "to": { "node": "m", "socket": "a" } },
-            { "from": { "node": "b", "socket": "value" }, "to": { "node": "m", "socket": "b" } }
+            {
+              "from": {
+                "node": "a",
+                "socket": "value"
+              },
+              "to": {
+                "node": "m",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "b",
+                "socket": "value"
+              },
+              "to": {
+                "node": "m",
+                "socket": "b"
+              }
+            }
           ],
           "frames": [],
           "groups": []

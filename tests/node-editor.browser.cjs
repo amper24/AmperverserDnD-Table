@@ -24,7 +24,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
       window.doc = Modules.newItem({ name: 'Холст', type: 'feature', mechanics: { version: 2, origin: 'test', graph: {
         nodes: [
           { id: 'a', type: 'data.number', params: { value: 5 }, position: { x: 80, y: 80 } },
-          { id: 'b', type: 'rule.speed', params: { value: 30 }, position: { x: 420, y: 80 } },
+          { id: 'b', type: 'rule.value', params: { kind: 'speed', amount: 30 }, position: { x: 420, y: 80 } },
           { id: 'c', type: 'condition.level', params: { min: 1, max: 20 }, position: { x: 80, y: 320 } },
           { id: 'd', type: 'flow.if', params: {}, position: { x: 420, y: 320 } },
           { id: 'e', type: 'data.number', params: { value: 7 }, position: { x: 80, y: 540 } },
@@ -102,17 +102,17 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.mouse.click(box.x + 20, box.y + 20);
     await page.locator('.graph-node[data-node-id="a"]').click();
     const outA = socket('a', 'outputs', 'value');
-    const inB = socket('b', 'inputs', 'value');
+    const inB = socket('b', 'inputs', 'amount');
     const inD = socket('d', 'inputs', 'condition');
     const p = await center(outA);
     await page.mouse.move(p.x, p.y); await page.mouse.down();
     const q = await center(inB);
     await page.mouse.move(q.x, q.y, { steps: 6 });
     const compatibleInputs = await page.locator('.node-socket.compatible').evaluateAll(list => list.map(s => `${s.dataset.node}.${s.dataset.socket}`));
-    assert.ok(compatibleInputs.includes('b.value'), `подсвечен совместимый вход: ${compatibleInputs}`);
+    assert.ok(compatibleInputs.includes('b.amount'), `подсвечен совместимый вход: ${compatibleInputs}`);
     assert.ok(!compatibleInputs.includes('d.condition'), 'несовместимый вход не подсвечен');
     await page.mouse.up();
-    assert.deepEqual(await linkOf(), ['a.value->b.value'], 'связь number→number создана');
+    assert.deepEqual(await linkOf(), ['a.value->b.amount'], 'связь number→number создана');
 
     await dragWire(outA, inD);
     assert.equal(await linkCount(), 1, 'связь number→bool отклонена движком');
@@ -127,15 +127,15 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     const wantX = (dot.x - cb.x - Number(tr[1])) / k, wantY = (dot.y - cb.y - Number(tr[2])) / k;
     assert.ok(Math.abs(endX - wantX) < 3 && Math.abs(endY - wantY) < 3, `конец провода в точке сокета: (${endX.toFixed(1)}, ${endY.toFixed(1)}) vs (${wantX.toFixed(1)}, ${wantY.toFixed(1)})`);
 
-    // 8. Переподключение: вход b.value перетаскиваем с a на второе число e — связь переходит к e.
+    // 8. Переподключение: вход b.amount перетаскиваем с a на второе число e — связь переходит к e.
     await dragWire(inB, socket('e', 'outputs', 'value'));
-    assert.deepEqual(await linkOf(), ['e.value->b.value'], 'подключённый вход переподключён к другому выходу того же типа');
+    assert.deepEqual(await linkOf(), ['e.value->b.amount'], 'подключённый вход переподключён к другому выходу того же типа');
     // Неверный тип при переподключении: вход b возвращает прежнюю связь, если бросок отклонён.
     await dragWire(inB, socket('c', 'outputs', 'value'));
-    assert.deepEqual(await linkOf(), ['e.value->b.value'], 'бросок на несовместимый выход откатывает связь');
+    assert.deepEqual(await linkOf(), ['e.value->b.amount'], 'бросок на несовместимый выход откатывает связь');
     // Условие: bool → условие flow.if, затем отвод провода на пустое место удаляет связь.
     await dragWire(socket('c', 'outputs', 'value'), inD);
-    assert.deepEqual(await linkOf(), ['e.value->b.value', 'c.value->d.condition'], 'bool → условие создано');
+    assert.deepEqual(await linkOf(), ['e.value->b.amount', 'c.value->d.condition'], 'bool → условие создано');
     // Ищем пустую точку от правого нижнего угла холста: карточки с полями занимают больше места, чем раньше.
     const cvs = await canvas.boundingBox();
     const empty = await page.evaluate(([x0, y0]) => {
@@ -149,7 +149,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.ok(await page.evaluate(([x, y]) => !document.elementFromPoint(x, y)?.closest('.graph-node, .node-menu'), [empty.x, empty.y]), 'точка отвода действительно пустая');
     const cond = await center(socket('d', 'inputs', 'condition'));
     await page.mouse.move(cond.x, cond.y); await page.mouse.down(); await page.mouse.move(empty.x, empty.y, { steps: 6 }); await page.mouse.up();
-    assert.deepEqual(await linkOf(), ['e.value->b.value'], 'подключённый вход брошен на пустое место — провод удалён');
+    assert.deepEqual(await linkOf(), ['e.value->b.amount'], 'подключённый вход брошен на пустое место — провод удалён');
 
     // 9. Удаление провода кликом по линии.
     // Реальный клик мышью по свободной точке зоны попадания; если линия целиком под карточками — событие click на самой зоне.

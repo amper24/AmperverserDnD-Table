@@ -97,6 +97,7 @@ window.ClassEditor = (() => {
   const nodesOf = g => { if (!g) return []; if (!Array.isArray(g.nodes)) g.nodes = []; return g.nodes; };
   const linksOf = g => { if (!g) return []; if (!Array.isArray(g.links)) g.links = []; return g.links; };
   const ruleNodesOf = (d, type) => nodesOf(d?.mechanics?.graph).filter(n => n.type === type);
+  const valueRuleOf = (d, kind) => ruleNodesOf(d, 'rule.value').find(n => str(n.params?.kind) === kind) || null;
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let seq = 0;
   const nodeId = prefix => `${prefix}-${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -123,6 +124,19 @@ window.ClassEditor = (() => {
       const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
       if (found) { used.add(found.id); if (!(item.same && item.same(found))) found.params = { ...found.params, ...item.params }; continue; }
       const node = newNode(graph, nodeId(type.split('.').pop() || 'rule'), type, item.params);
+      nodesOf(graph).push(node); used.add(node.id);
+    }
+    for (const node of existing) if (!used.has(node.id)) removeNode(graph, node.id);
+  }
+  /// Узлы rule.value одного вида (params.kind) под список значений: лишние удаляются,
+  /// совпавшие обновляются (совпадение — match, item.same — «значение уже ровно это»).
+  function syncValueNodes(graph, kind, wanted, match) {
+    const existing = nodesOf(graph).filter(n => n.type === 'rule.value' && str(n.params?.kind) === kind);
+    const used = new Set();
+    for (const item of wanted) {
+      const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
+      if (found) { used.add(found.id); if (!(item.same && item.same(found))) found.params = { ...found.params, kind, ...item.params }; continue; }
+      const node = newNode(graph, nodeId(kind), 'rule.value', { kind, ...item.params });
       nodesOf(graph).push(node); used.add(node.id);
     }
     for (const node of existing) if (!used.has(node.id)) removeNode(graph, node.id);
@@ -347,7 +361,8 @@ window.ClassEditor = (() => {
     const profText = kind => { const node = ruleNodesOf(d, 'rule.proficiencies').find(n => str(n.params?.kind) === kind);
       if (!node) return ''; const value = node.params?.value; return Array.isArray(value) ? value.map(str).join(', ') : str(value); };
     const skillNode = ruleNodesOf(d, 'rule.skills')[0];
-    const hitDie = ruleValue('rule.hit_die');
+    const hitRule = valueRuleOf(d, 'hit_die');
+    const hitDie = hitRule ? str(hitRule.params?.value) : null;
     const saves = ruleValue('rule.saving_throws');
     const casting = ruleValue('rule.spellcasting');
     const languages = ruleValue('rule.languages');
@@ -449,7 +464,7 @@ window.ClassEditor = (() => {
     // Правила — и в узлах графа: мастер создания читает их оттуда. Значения, которые не меняли,
     // не переписываются, поэтому тексты и таблицы SRD остаются прежними.
     const graph = graphOf(d);
-    syncNodes(graph, 'rule.hit_die', [{ params: { value: str(st.hit_die) || 'd8' } }]);
+    syncValueNodes(graph, 'hit_die', [{ params: { value: str(st.hit_die) || 'd8' } }]);
     syncNodes(graph, 'rule.saving_throws', [{ params: { value: d.saves.filter(k => KEYS.includes(k)) } }]);
     syncNodes(graph, 'rule.spellcasting', str(d.spellcasting).trim() ? [{ params: { ability: str(d.spellcasting) } }] : []);
     // «—» в поле владений значит «нет владений»: узел для такого вида не создаётся (как в наборе SRD).

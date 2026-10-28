@@ -38,14 +38,14 @@ test('pure helpers keep stored copies immutable', () => {
 });
 
 test('speed node shows a numeric field, not a JSON textarea, and commits typed values', () => {
-  const node = { id: 's', type: 'rule.speed', params: { value: 30 } };
+  const node = { id: 's', type: 'rule.value', params: { kind: 'speed', amount: 30 } };
   let committed = null;
   const form = NF.nodeParams(node, { onChange: next => { committed = next; } });
   assert.equal(textareasOf(form).length, 0, 'no JSON textarea in the default form');
   const number = inputsOf(form).find(i => i.attrs.type === 'number');
   assert.equal(number.attrs.value, '30');
   number.attrs.onchange({ target: { value: '35' } });
-  eq(committed, { value: 35 });
+  eq(committed, { kind: 'speed', amount: 35 });
 });
 
 test('ability and spell-mode nodes use dropdowns with Russian labels', () => {

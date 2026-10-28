@@ -65,7 +65,7 @@ const WAND = {
       window.doc = Modules.newItem({ name: 'Карточка', type: 'feature', mechanics: { version: 2, origin: 'test', graph: {
         nodes: [
           { id: 'num', type: 'data.number', params: { value: 5 }, position: { x: 80, y: 80 } },
-          { id: 'spd', type: 'rule.speed', params: { value: 30 }, position: { x: 420, y: 80 } },
+          { id: 'spd', type: 'rule.value', params: { kind: 'speed', amount: 30 }, position: { x: 420, y: 80 } },
         ], links: [], frames: [], groups: [] } } });
       Modules.editItem(window.doc);
     });
@@ -94,7 +94,7 @@ const WAND = {
     assert.deepEqual(await pos('spd'), before, 'протяжка по полю не двигает узел');
 
     // Провод от числа к скорости: после правки значения провод остаётся на месте.
-    const a = await center(socket('num', 'outputs', 'value')), b = await center(socket('spd', 'inputs', 'value'));
+    const a = await center(socket('num', 'outputs', 'value')), b = await center(socket('spd', 'inputs', 'amount'));
     await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 8 }); await page.mouse.up();
     assert.equal((await graph()).links.length, 1, 'провод соединён');
     const wiresBefore = await wireCount();
@@ -102,8 +102,8 @@ const WAND = {
     // Значение меняется на карточке: change → граф обновлён, провод и позиция на месте.
     await speedInput.fill('35');
     await speedInput.press('Enter');
-    await page.waitForFunction(() => document.querySelector('.node-editor').getGraph().nodes.find(n => n.id === 'spd').params.value === 35);
-    assert.equal(await paramOf('spd', 'value'), 35, 'параметр записан в граф с карточки');
+    await page.waitForFunction(() => document.querySelector('.node-editor').getGraph().nodes.find(n => n.id === 'spd').params.amount === 35);
+    assert.equal(await paramOf('spd', 'amount'), 35, 'параметр записан в граф с карточки');
     assert.deepEqual(await pos('spd'), before, 'правка значения не сдвигает узел');
     assert.equal((await graph()).links.length, 1, 'провод не потерян после правки');
     assert.equal(await wireCount(), wiresBefore, 'провод на холсте остался');

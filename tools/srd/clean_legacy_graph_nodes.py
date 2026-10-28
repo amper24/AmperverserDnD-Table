@@ -15,7 +15,7 @@
 2. Заклинания и владения рас из набора race_rules переезжают в запись: `cantrips` →
    `data.cantrips`, `choices` вида `spell` → `data.spell_choices`, выбор характеристики
    (`raceSpellAbility`) → `data.spell_ability_choice`, `weapons` → узел
-   `rule.proficiencies` («Оружие»), `hp_bonus` → `rule.hp_bonus`, `always_prepared` →
+   `rule.proficiencies` («Оружие»), `hp_bonus` → `rule.value` (kind: hp), `always_prepared` →
    `rule.spell_list` с режимом `prepared`. Эти ключи убираются из набора правил.
 3. Лишние узлы. `action.passive` с полем, которое уже закрыто узлом rule.*, удаляется
    вместе с опустевшей программой-обёрткой «Параметры при создании»: у рас это скорость,
@@ -62,7 +62,7 @@ def dump(path: Path, data) -> None:
     if path in SEED_PATHS.values():
         path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     else:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 # Английские названия для слоя i18n.en: их вид проверяет tests/i18n.test.cjs (в английском виде
@@ -160,6 +160,11 @@ def graph_of(data: dict) -> dict:
 
 def nodes_of(graph: dict, kind: str) -> list:
     return [n for n in graph["nodes"] if n.get("type") == kind]
+
+
+def value_nodes(graph: dict, kind: str) -> list:
+    """Узлы универсального правила-значения выбранного вида (rule.value + params.kind)."""
+    return [n for n in nodes_of(graph, "rule.value") if (n.get("params") or {}).get("kind") == kind]
 
 
 def add_node(graph: dict, node: dict) -> None:
@@ -330,8 +335,8 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
     if weapons and not any(n["params"].get("kind") == "Оружие" for n in nodes_of(graph, "rule.proficiencies")):
         add_node(graph, {"id": "race_weapons", "type": "rule.proficiencies", "params": {"kind": "Оружие", "value": weapons}})
         overlay.append({"id": "race_weapons", "params": {"kind": "Weapons", "value": en_names(weapons, names)}})
-    if (table or {}).get("hp_bonus") and not nodes_of(graph, "rule.hp_bonus"):
-        add_node(graph, {"id": "race_hp_bonus", "type": "rule.hp_bonus", "params": {"amount": int(table["hp_bonus"])}})
+    if (table or {}).get("hp_bonus") and not value_nodes(graph, "hp"):
+        add_node(graph, {"id": "race_hp_bonus", "type": "rule.value", "params": {"kind": "hp", "amount": int(table["hp_bonus"])}})
     prepared = [str(x).strip() for x in (table or {}).get("always_prepared") or [] if str(x).strip()]
     if prepared and not nodes_of(graph, "rule.spell_list"):
         add_node(graph, {"id": "race_prepared", "type": "rule.spell_list", "params": {"mode": "prepared", "spells": prepared}})
@@ -339,7 +344,7 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
 
     # 6. Чистка лишних пассивных блоков: их поля закрыты узлами rule.*.
     covered = set(RACE_COVERED_FIELDS)
-    covered.update(f"asi.{n['params'].get('ability')}" for n in nodes_of(graph, "rule.ability_bonus"))
+    covered.update(f"asi.{n['params'].get('ability')}" for n in value_nodes(graph, "ability"))
     if nodes_of(graph, "rule.skill_proficiency"):
         covered.add("skills")
     for node in list(nodes_of(graph, "action.passive")):

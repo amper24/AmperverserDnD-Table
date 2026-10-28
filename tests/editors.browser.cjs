@@ -184,7 +184,7 @@ async function scenarioRace(browser) {
   assert.equal(patch.body.category, 'race');
   assert.equal(patch.body.name, 'Высший эльф Подлунья');
   assert.equal(patch.body.data.traits.length, 3, 'черты записи на месте');
-  assert.ok(patch.body.data.mechanics.graph.nodes.some(n => n.type === 'rule.ability_bonus'), 'бонусы характеристик — в узлах графа');
+  assert.ok(patch.body.data.mechanics.graph.nodes.some(n => n.type === 'rule.value' && n.params.kind === 'ability'), 'бонусы характеристик — в узлах графа');
 
   assert.deepEqual(errors, [], `ошибки страницы: ${errors.join(' ')}`);
   await page.close();

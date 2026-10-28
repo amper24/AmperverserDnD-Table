@@ -28,10 +28,10 @@
   const BUTTON_STYLE_OPTIONS = Object.entries(BUTTON_STYLES).map(([value, s]) => ({ value, label: s.label }));
   // Поля, которые задают узел-тип (переопределяют общие ENUMS для конкретного типа узла).
   const TYPE_ENUMS = {
-    'rule.ability_bonus': { ability: ABILS },
     'rule.spell_list': { mode: SPELL_MODES },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
     'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
     'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
     // Один настраиваемый узел всех бросков: тип броска выбирается выпадающим списком прямо на карточке.

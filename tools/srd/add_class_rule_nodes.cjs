@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Переносит базовые правила SRD-классов из полей data.* в узлы rule.* графа записи класса
 // (data_seed/srd_*.json), чтобы мастер создания и повышения уровня читали их из графа:
-//   rule.hit_die        — кость хитов (data.hit_die);
+//   rule.value (kind: hit_die) — кость хитов (data.hit_die);
 //   rule.saving_throws  — спасброски (data.saves);
 //   rule.proficiencies  — доспехи/оружие/инструменты (data.armor / weapons / tools);
 //   rule.class_features — умения по уровням (data.features + data.feature_texts) таблицей;
@@ -17,7 +17,7 @@ const RULE_IDS = new Set(['rule_hit_die', 'rule_saving_throws', 'rule_prof_armor
 const build = (rec) => {
   const d = rec.data || {};
   const out = [];
-  if (typeof d.hit_die === 'string' && d.hit_die) out.push({ id: 'rule_hit_die', type: 'rule.hit_die', params: { value: d.hit_die } });
+  if (typeof d.hit_die === 'string' && d.hit_die) out.push({ id: 'rule_hit_die', type: 'rule.value', params: { kind: 'hit_die', value: d.hit_die } });
   if (Array.isArray(d.saves) && d.saves.length) out.push({ id: 'rule_saving_throws', type: 'rule.saving_throws', params: { value: d.saves } });
   const prof = (id, kind, raw) => {
     const list = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.trim() ? [raw] : [];

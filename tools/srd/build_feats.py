@@ -72,6 +72,13 @@ def arr(value):
     return value if isinstance(value, list) else []
 
 
+def ordered_levels(value):
+    """Ключи-уровни в числовом порядке: сборка ссылок идёт по чертам, а не по уровням, и без
+    сортировки порядок ключей зависел бы от порядка записей (файл «дрожал» бы при --check)."""
+    mapping = obj(value)
+    return {key: mapping[key] for key in sorted(mapping, key=lambda key: (0, int(key)) if str(key).isdigit() else (1, str(key)))}
+
+
 def en_of(entry):
     return obj(obj(entry.get('data')).get('i18n', {}).get('en'))
 
@@ -242,6 +249,13 @@ def build(rows, prefix, edition):
     for record in records:
         for row, ref in record['refs']:
             link(row, ref, record['slug'])
+    for row in rows:
+        data = obj(row.get('data'))
+        if isinstance(data.get('feature_feats'), dict):
+            data['feature_feats'] = ordered_levels(data['feature_feats'])
+        for sub in arr(data.get('subclasses')):
+            if isinstance(obj(sub).get('feature_feats'), dict):
+                sub['feature_feats'] = ordered_levels(sub['feature_feats'])
     return [entry_of(record, edition) for record in records]
 
 
@@ -310,7 +324,7 @@ def main():
         entries = build(rows, prefix, edition)
         updated = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
         feats = original_feats = out_path.read_text(encoding='utf-8') if out_path.exists() else ''
-        expected = json.dumps(entries, ensure_ascii=False, indent=1) + '\n'
+        expected = json.dumps(entries, ensure_ascii=False, separators=(',', ':'))
         if args.check:
             if original != updated:
                 problems.append(f'data_seed/srd_{edition}.json: не проставлены ссылки на черты — '

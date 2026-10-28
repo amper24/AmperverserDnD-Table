@@ -180,7 +180,7 @@ const record = (slug, name) => { const list = slug.startsWith('srd24') ? seed24 
 
 test('правила читаются из узлов: кость хитов, спасброски, владения, навыки, умения и заклинатель', () => {
   const st = CE.readState(record('srd14-barbarian', 'Варвар'));
-  assert.equal(st.hit_die, 'd12', 'кость хитов из узла rule.hit_die');
+  assert.equal(st.hit_die, 'd12', 'кость хитов из узла rule.value (kind hit_die)');
   assert.deepEqual(plain(st.saves), ['str', 'con']);
   assert.equal(st.weapons, 'Простое оружие, воинское оружие', 'владения из узлов rule.proficiencies');
   assert.equal(st.armor, 'Лёгкие доспехи, средние доспехи, щиты');
@@ -209,7 +209,7 @@ test('правки редактора доходят до мастера соз�
   st.features['1'] = [{ name: 'Новое умение', text: 'Текст нового умения.' }];
   const out = CE.writeData(st, source);
 
-  assert.equal(nodesOfType(out, 'rule.hit_die')[0].params.value, 'd10');
+  assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'hit_die')[0].params.value, 'd10');
   assert.deepEqual(plain(nodesOfType(out, 'rule.saving_throws')[0].params.value), ['str', 'dex']);
   const profs = Object.fromEntries(nodesOfType(out, 'rule.proficiencies').map(n => [n.params.kind, plain(n.params.value)]));
   assert.deepEqual(profs['Доспехи'], ['Лёгкие доспехи']);

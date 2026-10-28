@@ -9,7 +9,7 @@
 //
 // Правила расы живут в графе механик (узлы rule.*), поэтому редактор правит и
 // сырые поля записи, и узлы графа — иначе правку не увидел бы мастер создания:
-//   rule.speed / rule.languages / rule.ability_bonus — скорость, языки, бонусы;
+//   rule.value (kind: speed | ability) / rule.languages — скорость, бонусы, языки;
 //   rule.skill_proficiency                          — владение навыком (как у записи навыка);
 //   rule.skills                                     — выбор навыков игроком;
 //   rule.spell_list                                 — заклинания, известные расе сразу;
@@ -96,6 +96,19 @@ window.RaceEditor = (() => {
     }
     for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
   }
+  /// Привести узлы rule.value одного вида (params.kind) к списку wanted: лишние удаляются,
+  /// нужные обновляются (id и связи сохраняются). Узел всегда остаётся rule.value + kind.
+  function syncValueNodes(graph, kind, wanted, match) {
+    const existing = valueNodes(graph, kind);
+    const used = new Set();
+    for (const item of wanted) {
+      const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
+      if (found) { found.params = { ...found.params, kind, ...item.params }; used.add(found.id); continue; }
+      const node = { id: nodeId(kind), type: 'rule.value', params: { kind, ...clone(item.params) }, position: { x: 40, y: 40 + (nodesOf(graph).length % 12) * 60 } };
+      nodesOf(graph).push(node); used.add(node.id);
+    }
+    for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
+  }
   const nextProgramId = graph => {
     const taken = nodesOf(graph).filter(n => n.type === 'action.program').map(n => num(String(n.params?.program_id || '').replace(/\D/g, ''), 0));
     return 'p' + (Math.max(0, ...taken) + 1);
@@ -177,6 +190,8 @@ window.RaceEditor = (() => {
     return graph;
   }
   const ruleNodes = (graph, type) => nodesOf(graph).filter(n => n.type === type);
+  /// Узлы универсального правила-значения выбранного вида (rule.value + params.kind).
+  const valueNodes = (graph, kind) => ruleNodes(graph, 'rule.value').filter(n => str(n.params?.kind) === kind);
   const listOf = node => (Array.isArray(node?.params?.value) ? node.params.value.map(str).filter(Boolean) : []);
   /// Пассивные блоки старого формата (action.passive) ещё читает лист — правим их вместе с узлами.
   const passiveNodes = (graph, field) => nodesOf(graph).filter(n => n.type === 'action.passive' && str(n.params?.field) === field);
@@ -250,7 +265,7 @@ window.RaceEditor = (() => {
   function readState(entry, catalog) {
     const d = entry?.data || {};
     const graph = d.mechanics?.graph || { nodes: [] };
-    const asiNodes = ruleNodes(graph, 'rule.ability_bonus');
+    const asiNodes = valueNodes(graph, 'ability');
     const asi = {};
     for (const key of KEYS) {
       const node = asiNodes.find(n => str(n.params?.ability) === key);
@@ -267,7 +282,7 @@ window.RaceEditor = (() => {
       name_en: str(d.name_en),
       edition: str(d.edition) || '2014',
       size: str(d.size) || 'Средний',
-      speed: num(ruleNodes(graph, 'rule.speed')[0]?.params?.value ?? d.speed, 30),
+      speed: num(valueNodes(graph, 'speed')[0]?.params?.amount ?? d.speed, 30),
       parent: str(d.parent),
       desc: str(d.desc),
       age: str(d.age),
@@ -300,13 +315,13 @@ window.RaceEditor = (() => {
     if (st.age.trim()) d.age = st.age.trim(); else delete d.age;
     if (st.size_description.trim()) d.size_description = st.size_description.trim(); else delete d.size_description;
 
-    // Характеристики: сырое поле и узлы rule.ability_bonus (их читает мастер создания).
+    // Характеристики: сырое поле и узлы rule.value (kind: ability) — их читает мастер создания.
     const asi = {};
     for (const key of KEYS) if (num(st.asi[key])) asi[key] = num(st.asi[key]);
     if (Object.keys(asi).length) d.asi = asi; else delete d.asi;
-    syncNodes(graph, 'rule.ability_bonus', KEYS.filter(k => num(st.asi[k])).map(k => ({ params: { ability: k, amount: num(st.asi[k]) } })),
+    syncValueNodes(graph, 'ability', KEYS.filter(k => num(st.asi[k])).map(k => ({ params: { ability: k, amount: num(st.asi[k]) } })),
       (node, item) => str(node.params?.ability) === item.params.ability);
-    syncNodes(graph, 'rule.speed', [{ params: { value: num(st.speed, 30) } }]);
+    syncValueNodes(graph, 'speed', [{ params: { amount: num(st.speed, 30) } }]);
 
     // Языки: узлом rule.languages (имена) и сырым полем (имена + примечание текстом).
     const langs = st.languages.fixed.map(s => str(s).trim()).filter(Boolean);
@@ -471,7 +486,7 @@ window.RaceEditor = (() => {
         el('span', {}, ABIL_SHORT[key]),
         numInput(st.asi[key] || 0, v => st.asi[key] = Math.max(-5, Math.min(6, v)), { min: -5, max: 6 }))))));
     box.append(el('p', { class: 'muted small wide' },
-      'Бонусы 2014 фиксированы расой и попадают в лист сразу (узлы rule.ability_bonus). В редакции 2024 игрок сам распределяет +2 и +1 на шаге характеристик — поля оставьте пустыми.'));
+      'Бонусы 2014 фиксированы расой и попадают в лист сразу (узлы rule.value, kind: ability). В редакции 2024 игрок сам распределяет +2 и +1 на шаге характеристик — поля оставьте пустыми.'));
     return box;
   }
 

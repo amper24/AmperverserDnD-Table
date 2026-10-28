@@ -32,9 +32,9 @@
 
 | Что | Узел | Поле записи |
 |---|---|---|
-| скорость | `rule.speed` | `data.speed` |
+| скорость | `rule.value` (kind `speed`, поле `amount`) | `data.speed` |
 | языки | `rule.languages` | `data.languages` (имена + примечание), `data.languages_extra` (сколько по выбору) |
-| бонусы характеристик | `rule.ability_bonus` (по узлу на характеристику) | `data.asi` |
+| бонусы характеристик | `rule.value` (kind `ability`, по узлу на характеристику) | `data.asi` |
 | владение навыком | `rule.skill_proficiency` | `data.skills` |
 | выбор навыков игроком | `rule.skills` (id, count, options) | — |
 | владения | `rule.proficiencies` (по узлу на вид) | — |

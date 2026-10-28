@@ -52,7 +52,8 @@ window.CharacterBuilder = (() => {
   register('race', (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name;
     // Правила расы (скорость, языки, ASI 2014) перенесены в узлы rule.* — придут из applyGraphRules ниже.
-    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.speed' || n.type === 'rule.languages' || n.type === 'rule.ability_bonus');
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.languages'
+      || (n.type === 'rule.value' && (n.params?.kind === 'speed' || n.params?.kind === 'ability')));
     if (!hasRules) {
       // Старый формат записи без узлов правил — читаем сырые поля.
       if (d.speed) s.speed = d.speed;

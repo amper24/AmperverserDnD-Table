@@ -1,5 +1,5 @@
 // Регрессия редактора расы (static/race-editor.js): чтение/запись записи, узлы графа
-// (rule.speed, rule.languages, rule.ability_bonus, rule.skill_proficiency, rule.skills,
+// (rule.value с kind speed/ability, rule.languages, rule.skill_proficiency, rule.skills,
 // rule.proficiencies) и программы черт. Скрипт запускается в vm со стабом DOM и наборами данных.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,7 +36,7 @@ test('круг чтения и записи: правки доходят до м
   const source = raceByName('Эльф');
   const st = RE.readState(source);
   assert.equal(st.speed, 30);
-  assert.equal(st.asi.dex, 2, 'бонус прочитан из узла rule.ability_bonus');
+  assert.equal(st.asi.dex, 2, 'бонус прочитан из узла rule.value (kind ability)');
   assert.ok(st.languages.fixed.includes('Эльфийский'));
   assert.ok(st.languages.note.includes('говорить, читать и писать'), 'длинное примечание отделено от имён');
   assert.deepEqual(plain(st.skills.fixed), ['Восприятие'], 'владение навыком из пассивного блока/поля');
@@ -49,8 +49,8 @@ test('круг чтения и записи: правки доходят до м
   st.traits[0].text = 'Новый текст черты.';
   const out = RE.writeData(st, source);
   assert.equal(out.speed, 35);
-  assert.equal(nodesOfType(out, 'rule.speed')[0].params.value, 35, 'узел скорости обновлён');
-  assert.equal(nodesOfType(out, 'rule.ability_bonus').find(n => n.params.ability === 'dex').params.amount, 3);
+  assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'speed')[0].params.amount, 35, 'узел скорости обновлён');
+  assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'ability').find(n => n.params.ability === 'dex').params.amount, 3);
   assert.deepEqual(plain(nodesOfType(out, 'rule.languages')[0].params.value), ['Общий', 'Эльфийский', 'Драконий']);
   assert.deepEqual(plain(nodesOfType(out, 'rule.skill_proficiency')[0].params.value), ['Восприятие', 'Скрытность']);
   assert.ok(out.languages.includes('Драконий'));
@@ -64,12 +64,12 @@ test('круг чтения и записи: правки доходят до м
 
 test('узлы правил обновляются на месте: связи условия редакции не рвутся', () => {
   const source = raceByName('Дварф');
-  const speedId = nodesOfType(source.data, 'rule.speed')[0].id;
+  const speedId = nodesOfType(source.data, 'rule.value').filter(n => n.params.kind === 'speed')[0].id;
   const links = source.data.mechanics.graph.links.filter(l => l.to.node === speedId).length;
   const st = RE.readState(source);
   st.speed = 25;
   const out = RE.writeData(st, source);
-  assert.equal(nodesOfType(out, 'rule.speed')[0].id, speedId, 'тот же узел');
+  assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'speed')[0].id, speedId, 'тот же узел');
   assert.equal(out.mechanics.graph.links.filter(l => l.to.node === speedId).length, links);
 });
 
@@ -79,7 +79,7 @@ test('характеристики: убрали бонус — узел уда�
   st.asi.dex = 0;
   st.asi.cha = 1;
   const out = RE.writeData(st, source);
-  const nodes = nodesOfType(out, 'rule.ability_bonus');
+  const nodes = nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'ability');
   assert.deepEqual(plain(nodes.map(n => n.params.ability)), ['cha']);
   assert.equal(nodes[0].params.amount, 1);
   assert.deepEqual(plain(out.asi), { cha: 1 });

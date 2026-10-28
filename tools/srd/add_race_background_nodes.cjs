@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Переносит базовые правила рас и предысторий из data.* в узлы rule.* (data_seed/srd_*.json):
-//   Расы: rule.speed, rule.languages (без описаний), rule.ability_bonus (asi 2014, гейт edition).
+//   Расы: rule.value (kind: speed | ability), rule.languages (без описаний), бонусы 2014 (гейт edition).
 //   Предыстории: rule.proficiencies (tools), rule.feature (feature + feature_text).
 // Идемпотентно. Поля data.* не трогаются. node tools/srd/add_race_background_nodes.cjs
 const fs = require('node:fs'), vm = require('node:vm');
@@ -13,7 +13,7 @@ const values = raw => (Array.isArray(raw) ? raw : typeof raw === 'string' && raw
 function raceNodes(rec) {
   const d = rec.data || {};
   const nodes = [], links = [];
-  if (typeof d.speed === 'number') nodes.push({ id: 'race_speed', type: 'rule.speed', params: { value: d.speed } });
+  if (typeof d.speed === 'number') nodes.push({ id: 'race_speed', type: 'rule.value', params: { kind: 'speed', amount: d.speed } });
   const langs = (Array.isArray(d.languages) ? d.languages : []).filter(isLangName).map(x => x.trim()).filter(Boolean);
   if (langs.length) nodes.push({ id: 'race_languages', type: 'rule.languages', params: { value: langs } });
   const asi = Object.entries(d.asi || {}).filter(([, v]) => Number(v));
@@ -21,7 +21,7 @@ function raceNodes(rec) {
     nodes.push({ id: 'race_edition', type: 'condition.edition', params: { editions: ['2014'] } });
     for (const [ability, amount] of asi) {
       const id = `race_asi_${ability}`;
-      nodes.push({ id, type: 'rule.ability_bonus', params: { ability, amount: Number(amount) } });
+      nodes.push({ id, type: 'rule.value', params: { kind: 'ability', ability, amount: Number(amount) } });
       links.push({ from: { node: 'race_edition', socket: 'value' }, to: { node: id, socket: 'enabled' } });
     }
   }

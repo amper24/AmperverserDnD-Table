@@ -72,22 +72,37 @@ test('умолчания узлов проходят проверку, прав�
     assert.ok(typeof def.label === 'string' && def.label.length, `${type}: подпись`);
     assert.ok(typeof def.group === 'string' && def.group.length, `${type}: группа меню`);
   }
-  const sheet = sheetFixture(), emitted = [];
+  const sheet = sheetFixture(), emitted = new Set();
+  // У одного узла rule.value шесть видов: каждый вид обязан пройти проверку и дать эффект на лист.
+  const valueParams = {
+    ability: { kind: 'ability', ability: 'dex', amount: 1 },
+    speed: { kind: 'speed', amount: 30 },
+    hp: { kind: 'hp', amount: 2 },
+    hit_die: { kind: 'hit_die', value: 'd8' },
+    asi: { kind: 'asi', table: { 1: { str: 1 } } },
+    armor_formula: { kind: 'armor_formula', formula: '10+@dex' },
+  };
+  assert.deepEqual(Object.keys(valueParams).sort(), Object.keys(R.RULE_VALUE_KINDS).sort(), 'проверены все виды rule.value');
   for (const [type, def] of Object.entries(R.NODE_DEFS)) {
     if (typeof def.compute === 'function') {
       assert.doesNotThrow(() => def.compute(paramsOf(type), () => undefined), `${type}: вычисление не падает`);
     }
     if (!type.startsWith('rule.')) continue;
-    const context = { edition: '2014', level: 1, subclass: '', choices: {}, source: '', nodeId: 'n1', effects: [] };
-    const params = paramsOf(type);
-    const env = { get: () => undefined, value: key => params[key] ?? params.value, emit: (kind, data = {}) => context.effects.push({ kind, ...clone(data) }),
-      sheet, context, clone, valuesOf: value => Array.isArray(value) ? value : value === undefined || value === null || value === '' ? [] : [value],
-      appendProficiency() {}, normalizeEquipmentItems: () => [], normalizeEquipmentOptions: () => [] };
-    assert.doesNotThrow(() => def.project(params, env), `${type}: проекция не падает`);
-    assert.ok(context.effects.length, `${type}: правило сообщает результат на лист`);
-    emitted.push(type);
+    const variants = type === 'rule.value' ? Object.values(valueParams) : [paramsOf(type)];
+    for (const params of variants) {
+      const error = typeof def.validate === 'function' ? def.validate(params) : '';
+      assert.equal(error, '', `${type} ${params.kind || ''}: параметры правила допустимы`);
+      const context = { edition: '2014', level: 1, subclass: '', choices: {}, source: '', nodeId: 'n1', effects: [] };
+      const env = { get: () => undefined, value: key => params[key] ?? params.value, emit: (kind, data = {}) => context.effects.push({ kind, ...clone(data) }),
+        sheet, context, clone, valuesOf: value => Array.isArray(value) ? value : value === undefined || value === null || value === '' ? [] : [value],
+        appendProficiency() {}, normalizeEquipmentItems: () => [], normalizeEquipmentOptions: () => [] };
+      assert.doesNotThrow(() => def.project(params, env), `${type} ${params.kind || ''}: проекция не падает`);
+      assert.ok(context.effects.length, `${type} ${params.kind || ''}: правило сообщает результат на лист`);
+    }
+    emitted.add(type);
   }
-  assert.ok(emitted.length >= 20, `правил персонажа не меньше 20, а не ${emitted.length}`);
+  assert.deepEqual([...emitted].sort(), Object.keys(R.NODE_DEFS).filter(type => type.startsWith('rule.')).sort(),
+    'каждый узел правил персонажа проверен');
 });
 
 test('форма параметров строится для каждого узла меню', () => {

@@ -11,7 +11,7 @@ const MY_SET = {
   kind: 'graph_starter', id: 'user.my-sets', name: 'Мои варианты', items: [
     { id: 'my-level-speed', name: 'Моя скорость с 3 уровня', hint: 'Свой набор: скорость 40 фт', nodes: [
       { key: 'lvl', type: 'condition.level', params: { min: 3, max: 20 }, x: 0, y: 0 },
-      { key: 'spd', type: 'rule.speed', params: { value: 40 }, x: 260, y: 0 }], links: [['lvl', 'value', 'spd', 'enabled']] },
+      { key: 'spd', type: 'rule.value', params: { kind: 'speed', amount: 40 }, x: 260, y: 0 }], links: [['lvl', 'value', 'spd', 'enabled']] },
   ],
 };
 
@@ -30,6 +30,8 @@ const MY_SET = {
     await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => { window.g = Modules.editItem(null, { noPresets: true }); });
     await page.locator('.node-editor').waitFor();
+    // Стартовые графы показываются в пустом действии: у новой записи сначала нет ни одного.
+    await page.locator('button[data-action="new-action"]').click();
     const starterButtons = () => page.locator('.node-starters button');
     // Диалог наборов поверх окна редактора предмета: ищем его по заголовку.
     const dialog = () => page.locator('.modal', { has: page.locator('h2', { hasText: 'Наборы данных' }) });

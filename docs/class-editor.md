@@ -68,7 +68,7 @@
 
 | Раздел | Узлы |
 |---|---|
-| Общее | `rule.hit_die`, `rule.saving_throws`, `rule.spellcasting` |
+| Общее | `rule.value` (kind `hit_die`), `rule.saving_throws`, `rule.spellcasting` |
 | Владения | `rule.proficiencies` по видам «Доспехи», «Оружие», «Инструменты» |
 | Навыки | `rule.skills` (id `classSkills`; пустой список — «любой навык») — это правило читают мастер создания (`CharacterBuilder.skillsState` через `ClassRules.skillsOf`), карточка класса и мастер повышения уровня (ограничение экспертизы) |
 | Языки | `rule.languages` |
