@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
 // `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
-const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","save","grant_item","condition","adjust","require","manual","passive"];
+const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive"];
 fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
 fn num(v: &Value, k: &str) -> i64 { v[k].as_i64().unwrap_or(0) }
@@ -14,13 +14,12 @@ pub fn validate(m: &Value) -> ApiResult<()> { validate_nested(m, 0) }
 fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
     if depth > 4 { return Err(bad("Слишком глубокая вложенность механик")); }
     match m["version"].as_i64() {
-        Some(1) => validate_depth(m, depth),
         Some(2) => {
             crate::mechanics_graph::validate(m)?;
             if !crate::mechanics_graph::is_executable(m) { return Ok(()); }
-            validate_depth(&crate::mechanics_graph::to_v1(m), depth)
+            validate_plan(&crate::mechanics_graph::to_v1(m), depth)
         }
-        _ => Err(bad("Неподдерживаемая или слишком большая схема механик")),
+        _ => Err(bad("Механики должны быть графом версии 2")),
     }
 }
 /// Выбор «либо / либо» при создании персонажа: `data.choices` расы, класса или предыстории.
@@ -71,8 +70,8 @@ pub fn validate_choices(v: &Value) -> ApiResult<()> {
     }
     Ok(())
 }
-fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
-    if depth>4 || m.to_string().len()>1_000_000 || m["version"]!=1 { return Err(bad("Неподдерживаемая или слишком большая схема механик")); }
+fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
+    if depth>4 || m.to_string().len()>1_000_000 || m["version"]!=1 { return Err(bad("Внутренний план механики некорректен")); }
     let ps=m["programs"].as_array().filter(|a|a.len()<=256).ok_or_else(||bad("Некорректные действия"))?;
     let mut ids=HashSet::new();
     for p in ps {
@@ -85,10 +84,9 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
             if !KINDS.contains(&kind)||text(b,"id").is_empty()||!bids.insert(text(b,"id")) { return Err(bad("Неизвестный блок или повторяющийся ID")); }
             if b["enabled"]==false { continue; }
             if !["","always","hit","miss"].contains(&text(b,"when")) || (["hit","miss"].contains(&text(b,"when"))&&!gate) { return Err(bad("Условному блоку нужна предшествующая атака или спасбросок")); }
-            if ["attack","save"].contains(&kind) { gate=true; }
+            if ["attack"].contains(&kind) { gate=true; }
             if !["","self","target"].contains(&text(b,"target")) { return Err(bad("Неизвестная цель")); }
-            // Старый блок спасброска при выполнении становится броском d20, поэтому кубы в нём необязательны.
-            if ["attack","damage","heal","temp_hp","roll"].contains(&kind) || (kind == "save" && !b["dice"].is_null()) { formula(b)?; }
+            if ["attack","damage","heal","temp_hp","roll"].contains(&kind) { formula(b)?; }
             match kind {
                 "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",1,9)?; } }
                 "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_nested(&b["item"]["mechanics"], depth + 1)?; } }
@@ -96,7 +94,6 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
                 "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
                 "condition" => { if text(b,"condition").trim().is_empty()||text(b,"condition").len()>200||!["add","remove"].contains(&text(b,"operation")) { return Err(bad("Неверное состояние")); } }
-                "save" => { bounded(b,"dc",1,40)?; if !["str","dex","con","int","wis","cha"].contains(&text(b,"ability")) { return Err(bad("Неверный спасбросок")); } }
                 "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
                 _ => {}
             }
@@ -104,53 +101,6 @@ fn validate_depth(m: &Value, depth: usize) -> ApiResult<()> {
         }
     }
     Ok(())
-}
-/// Короткий код характеристики для текста правила: `dex` → «ЛОВ» (как `Mechanics.abilityCode`).
-fn ability_code(value: &str) -> String {
-    match value.trim().to_lowercase().as_str() {
-        "str" | "сил" | "сила" | "strength" => "СИЛ".into(),
-        "dex" | "лов" | "ловкость" | "dexterity" => "ЛОВ".into(),
-        "con" | "тел" | "телосложение" | "constitution" => "ТЕЛ".into(),
-        "int" | "инт" | "интеллект" | "intelligence" => "ИНТ".into(),
-        "wis" | "мдр" | "мудрость" | "wisdom" => "МДР".into(),
-        "cha" | "хар" | "харизма" | "charisma" => "ХАР".into(),
-        other => other.to_string(),
-    }
-}
-/// Приводит старую схему к текущей: спасбросок цели становится правилом для мастера (игрок его не
-/// кидает), чужих целей нет — эффекты идут владельцу листа, а ветвление, державшееся на спасброске,
-/// становится безусловным. Зеркалит `normalize()` из `static/mechanics.js`.
-fn normalize(m: &Value) -> Value {
-    let mut out = m.clone();
-    let Some(programs) = out["programs"].as_array_mut() else { return out };
-    for p in programs {
-        let Some(blocks) = p["blocks"].as_array_mut() else { continue };
-        let mut gate = false;
-        for b in blocks {
-            if b["kind"] == "save" {
-                // Чужой бросок игроку не показываем: спасбросок кидает цель или ДМ — остаётся правило.
-                let ability = ability_code(text(b, "ability")); let dc = num(b, "dc");
-                if let Some(o) = b.as_object_mut() {
-                    o.insert("kind".into(), json!("manual"));
-                    o.insert("when".into(), json!("always"));
-                    o.insert("text".into(), json!(format!("Спасбросок{}{}: бросает цель или ДМ, а не игрок.{}",
-                        if ability.is_empty() { String::new() } else { format!(" ({ability})") },
-                        if dc > 0 { format!(" · СЛ {dc}") } else { String::new() },
-                        if dc > 0 { " СЛ из записи.".to_string() } else { " СЛ = 8 + владение + модификатор характеристики заклинаний.".to_string() })));
-                    o.remove("target"); o.remove("apply"); o.remove("dice"); o.remove("name");
-                }
-            }
-            let kind = b["kind"].as_str().unwrap_or("").to_string();
-            if let Some(o) = b.as_object_mut() {
-                if ["attack", "damage", "roll"].contains(&kind.as_str()) { o.remove("target"); o.remove("apply"); }
-                if ["heal", "temp_hp", "condition", "adjust", "grant_item"].contains(&kind.as_str()) { o.insert("target".into(), json!("self")); }
-                let when = o.get("when").and_then(Value::as_str).unwrap_or("").to_string();
-                if ["hit", "miss"].contains(&when.as_str()) && !gate { o.insert("when".into(), json!("always")); }
-            }
-            if kind == "attack" { gate = true; }
-        }
-    }
-    out
 }
 fn formula(b: &Value) -> ApiResult<String> {
     let d=&b["dice"];
@@ -209,9 +159,9 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         "subclass": s.get("subclass").cloned().unwrap_or(json!("")),
         "choices": s.pointer("/creation/rule_choices").filter(|value| value.is_object()).cloned().unwrap_or(json!({})),
     });
-    if doc["mechanics"]["version"] == 2 && !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
-    let legacy = if doc["mechanics"]["version"] == 2 { crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context) } else { doc["mechanics"].clone() };
-    let m=normalize(&legacy);validate(&m)?;
+    if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
+    let m = crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
+    validate_plan(&m, 0)?;
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
     if category=="item" { inventory::validate_use(&doc)?; }
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();
@@ -259,11 +209,46 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
 
 #[cfg(test)] mod tests {
     use super::*;
-    fn fixture() -> Value {json!({"hp":{"max":20,"current":1,"temp":0},"inventory":[{"uid":"p","name":"Potion","qty":2,"type":"consumable","mechanics":{"version":1,"programs":[{"id":"use","name":"Drink","trigger":"use","blocks":[{"id":"c","kind":"consume","resource":"quantity","source":"self","amount":1,"trigger":"use"},{"id":"h","kind":"heal","target":"self","dice":{"count":0,"sides":6,"bonus":7,"stat":""}},{"id":"g","kind":"grant_item","target":"self","amount":1,"item":{"name":"Vial","type":"gear"}}]}]}}]})}
+    /// Узел v2: тип, параметры и координата; ID уникален внутри графа.
+    fn node(id: &str, kind: &str, params: Value) -> Value {
+        json!({"id": id, "type": kind, "params": params, "position": {"x": 0, "y": 0}})
+    }
+    /// Провод между сокетами; `link` — обычный поток управления exec → exec.
+    fn wire(from: &str, out_socket: &str, to: &str, in_socket: &str) -> Value {
+        json!({"from": {"node": from, "socket": out_socket}, "to": {"node": to, "socket": in_socket}})
+    }
+    fn link(from: &str, to: &str) -> Value { wire(from, "exec", to, "exec") }
+    /// Оболочка графа v2 — единственная схема, которую принимает сервер после удаления старых механик.
+    fn mech(nodes: Vec<Value>, links: Vec<Value>) -> Value {
+        json!({"version": 2, "origin": "test", "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}})
+    }
+    /// Зелье: расход → лечение → выдача пузырька — одна цепочка v2.
+    fn fixture() -> Value {
+        json!({"hp": {"max": 20, "current": 1, "temp": 0}, "inventory": [{
+            "uid": "p", "name": "Potion", "qty": 2, "type": "consumable",
+            "mechanics": mech(vec![
+                node("p", "action.program", json!({"program_id": "use", "name": "Drink", "trigger": "use"})),
+                node("c", "action.consume", json!({"block_id": "c", "resource": "quantity", "source": "self", "amount": 1, "trigger": "use"})),
+                node("h", "action.roll", json!({"block_id": "h", "roll_kind": "heal", "target": "self", "dice": {"count": 0, "sides": 6, "bonus": 7, "stat": ""}})),
+                node("g", "action.grant_item", json!({"block_id": "g", "target": "self", "amount": 1, "item": {"name": "Vial", "type": "gear"}}))
+            ], vec![link("p", "c"), link("c", "h"), link("h", "g")])
+        }]})
+    }
     #[test] fn potion_is_atomic_and_stacks_identical_rewards(){let mut s=fixture();execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["hp"]["current"],8);assert_eq!(s["inventory"][0]["qty"],1);execute(&mut s,"item","p","use","",false).unwrap();assert_eq!(s["inventory"].as_array().unwrap().len(),2);assert_eq!(s["inventory"][1]["qty"],2);let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
-    #[test] fn late_failure_rolls_back_everything(){let mut s=fixture();s["inventory"][0]["mechanics"]["programs"][0]["blocks"].as_array_mut().unwrap().push(json!({"id":"x","kind":"adjust","field":"currency.gp","amount":5}));let before=s.clone();assert!(execute(&mut s,"item","p","use","",false).is_err());assert_eq!(s,before);}
+    #[test] fn late_failure_rolls_back_everything(){
+        let mut s=fixture();
+        // Ошибка в самом конце цепочки: расход, лечение и выдача успели сработать, а у листа нет валюты.
+        s["inventory"][0]["mechanics"]["graph"]["nodes"].as_array_mut().unwrap().push(node("x","action.adjust",json!({"block_id":"x","field":"currency.gp","amount":5})));
+        s["inventory"][0]["mechanics"]["graph"]["links"].as_array_mut().unwrap().push(link("g","x"));
+        let before=s.clone();
+        assert!(execute(&mut s,"item","p","use","",false).is_err());
+        assert_eq!(s,before);
+    }
     #[test] fn item_program_requires_attunement_and_equipping_before_use() {
-        let mk = |attuned: bool, equipped: bool| json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"ring","name":"Ring of Protection","type":"magic","qty":1,"attunement":true,"attuned":attuned,"equipped":equipped,"worn_slot":if equipped {json!("ring1")} else {Value::Null},"mechanics":{"version":1,"programs":[{"id":"use","name":"Activate","trigger":"use","blocks":[{"id":"m","kind":"manual","text":"Rule"}]}]}}]});
+        let mk = |attuned: bool, equipped: bool| json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"ring","name":"Ring of Protection","type":"magic","qty":1,"attunement":true,"attuned":attuned,"equipped":equipped,"worn_slot":if equipped {json!("ring1")} else {Value::Null},"mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Activate","trigger":"use"})),
+            node("m","action.manual",json!({"block_id":"m","text":"Rule"}))
+        ], vec![link("p","m")])}]});
         let mut un_attuned = mk(false, true); let before = un_attuned.clone();
         assert!(execute(&mut un_attuned,"item","ring","use","",true).is_err()); assert_eq!(un_attuned,before);
         let mut not_worn = mk(true, false); let before = not_worn.clone();
@@ -271,12 +256,16 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut ready = mk(true, true);
         assert!(execute(&mut ready,"item","ring","use","",true).is_ok());
     }
-    /// Чужих целей нет: урон никому не списывается, спасбросок цели стал правилом для мастера.
+    /// Чужих целей нет: урон никому не списывается, а спасбросок цели — ручное правило мастера.
     #[test] fn damage_and_saves_are_custom_actions(){
-        let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Burst","trigger":"use","blocks":[
-            {"id":"s","kind":"save","ability":"dex","dc":15},
-            {"id":"d","kind":"damage","target":"target","apply":true,"when":"hit","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}]}]}}]});
-        // Правило подтверждается игроком до расхода — без подтверждения сервер отказывает.
+        const RULE: &str = "Спасбросок ЛОВ Сл 15; при провале цель получает урон — решает мастер, не игрок.";
+        let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Burst","trigger":"use"})),
+            node("m","action.manual",json!({"block_id":"m","text":RULE})),
+            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}))
+        ], vec![link("p","m"), link("m","d")])}]});
+        // Текст правила передаётся в графе как есть: спасбросок больше не генерируется автоматически.
+        // Правило подтверждается игроком — без подтверждения сервер отказывает до любых эффектов.
         assert!(execute(&mut s,"item","w","use","",false).is_err());
         let r=execute(&mut s,"item","w","use","",true).unwrap();
         assert_eq!(s["hp"]["current"],20);
@@ -287,14 +276,17 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let effects=r["effects"].as_array().unwrap();
         assert_eq!(effects.len(),1);
         assert_eq!(effects[0]["kind"],"manual");
-        assert!(effects[0]["text"].as_str().unwrap().contains("не игрок"));
-        assert!(effects[0]["text"].as_str().unwrap().contains("ЛОВ"));
+        assert_eq!(effects[0]["text"], RULE);
     }
     /// Ветка попадания считается только по броску и КД: чужой лист (тут AC 99) не участвует.
     #[test] fn hit_branch_uses_only_the_roll(){
-        let mk=|dc:i64| json!({"hp":{"max":20,"current":10,"temp":0},"ac":99,"inventory":[{"uid":"w","name":"W","qty":1,"type":"gear","mechanics":{"version":1,"programs":[{"id":"use","name":"Hit","trigger":"use","blocks":[
-            {"id":"a","kind":"attack","dc":dc,"dice":{"count":0,"sides":20,"bonus":5,"stat":""}},
-            {"id":"h","kind":"heal","when":"hit","dice":{"count":0,"sides":6,"bonus":7,"stat":""}}]}]}}]});
+        let mk=|dc:i64| json!({"hp":{"max":20,"current":10,"temp":0},"ac":99,"inventory":[{"uid":"w","name":"W","qty":1,"type":"gear","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Hit","trigger":"use"})),
+            node("a","action.roll",json!({"block_id":"a","roll_kind":"attack","dc":dc,"dice":{"count":0,"sides":20,"bonus":5,"stat":""}})),
+            node("hit","condition.hit",json!({})),
+            node("f","flow.if",json!({})),
+            node("heal","action.roll",json!({"block_id":"h","roll_kind":"heal","dice":{"count":0,"sides":6,"bonus":7,"stat":""}}))
+        ], vec![link("p","a"), link("a","f"), wire("hit","value","f","condition"), wire("f","then","heal","exec")])}]});
         let mut hit=mk(3); // результат 5 достигает КД 3 — срабатывает ветка попадания
         let r=execute(&mut hit,"item","w","use","",false).unwrap();
         assert_eq!(r["rolls"].as_array().unwrap().len(),2);
@@ -327,14 +319,19 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     }
     #[test] fn healing_does_not_include_proficiency(){let s=json!({"abilities":{"wis":16},"proficiency_bonus":4,"spells":{"ability":"wis"}});assert_eq!(inventory::resolve("1d8+@spell_mod",&s).unwrap(),"1d8+3");}
     #[test] fn program_modes_apply_to_d20_and_non_d20_rolls(){
-        let attack=||json!({"features":[{"uid":"f","name":"Проверка","mechanics":{"version":1,"programs":[{"id":"p","name":"Бросок","trigger":"use","blocks":[{"id":"b","kind":"attack","dice":{"count":1,"sides":20,"bonus":5,"stat":"","advanced":"d20+5"}}]}]}}]});
+        let attack=||json!({"features":[{"uid":"f","name":"Проверка","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"p","name":"Бросок","trigger":"use"})),
+            node("r","action.roll",json!({"block_id":"b","roll_kind":"attack","dice":{"count":1,"sides":20,"bonus":5,"stat":"","advanced":"d20+5"}}))
+        ], vec![link("p","r")])}]});
         for (mode,expected) in [("adv","2d20kh1+5"),("dis","2d20kl1+5")] {
             let mut sheet=attack();let result=execute(&mut sheet,"feature","f","p",mode,false).unwrap();
             assert_eq!(result["rolls"][0]["expr"],expected);
         }
-        let generic=||json!({"hp":{"max":20,"current":0,"temp":0},"features":[{"uid":"f","name":"Проверка","mechanics":{"version":1,"programs":[{"id":"p","name":"Бросок","trigger":"use","blocks":[
-            {"id":"d","kind":"damage","dice":{"count":1,"sides":8,"bonus":2,"stat":"","advanced":"d8+2"}},
-            {"id":"h","kind":"heal","dice":{"count":1,"sides":4,"bonus":1,"stat":"","advanced":"d4+1"}}]}]}}]});
+        let generic=||json!({"hp":{"max":20,"current":0,"temp":0},"features":[{"uid":"f","name":"Проверка","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"p","name":"Бросок","trigger":"use"})),
+            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":1,"sides":8,"bonus":2,"stat":"","advanced":"d8+2"}})),
+            node("h","action.roll",json!({"block_id":"h","roll_kind":"heal","dice":{"count":1,"sides":4,"bonus":1,"stat":"","advanced":"d4+1"}}))
+        ], vec![link("p","d"), link("d","h")])}]});
         for (mode,damage,heal) in [("adv","2d8kh1+2","2d4kh1+1"),("dis","2d8kl1+2","2d4kl1+1")] {
             let mut sheet=generic();let result=execute(&mut sheet,"feature","f","p",mode,false).unwrap();
             assert_eq!(result["rolls"][0]["expr"],damage);
@@ -352,10 +349,10 @@ mod graph_hit_tests {
     fn sheet_with(dc: i64) -> Value {
         json!({"hp": {"max": 20, "current": 10, "temp": 0}, "inventory": [{"uid": "w", "name": "Клинок", "qty": 1, "type": "gear", "mechanics": {"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}, "position": {"x": 0, "y": 0}},
-            {"id": "a", "type": "action.attack", "params": {"block_id": "atk", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
             {"id": "h", "type": "condition.hit", "params": {}, "position": {"x": 520, "y": 120}},
             {"id": "f", "type": "flow.if", "params": {}, "position": {"x": 520, "y": 0}},
-            {"id": "d", "type": "action.damage", "params": {"block_id": "dmg", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}}
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
             {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},

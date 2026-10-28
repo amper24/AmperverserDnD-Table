@@ -485,9 +485,10 @@
             },
             {
               "id": "a",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "block_id": "atk",
+                "roll_kind": "attack",
                 "enabled": true,
                 "dice": {
                   "count": 0,
@@ -510,9 +511,10 @@
             },
             {
               "id": "dmg",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "block_id": "dmg",
+                "roll_kind": "damage",
                 "enabled": true,
                 "dice": {
                   "count": 1,
@@ -590,9 +592,10 @@
             },
             {
               "id": "a",
-              "type": "action.attack",
+              "type": "action.roll",
               "params": {
                 "block_id": "atk",
+                "roll_kind": "attack",
                 "enabled": true,
                 "dice": {
                   "count": 0,
@@ -615,9 +618,10 @@
             },
             {
               "id": "dmg",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "block_id": "dmg",
+                "roll_kind": "damage",
                 "enabled": true,
                 "dice": {
                   "count": 1,
@@ -705,9 +709,10 @@
             },
             {
               "id": "a",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "block_id": "a",
+                "roll_kind": "damage",
                 "dice": {
                   "count": 1,
                   "sides": 6,
@@ -718,9 +723,10 @@
             },
             {
               "id": "b",
-              "type": "action.heal",
+              "type": "action.roll",
               "params": {
                 "block_id": "b",
+                "roll_kind": "heal",
                 "dice": {
                   "count": 1,
                   "sides": 4,
@@ -809,9 +815,10 @@
             },
             {
               "id": "d",
-              "type": "action.damage",
+              "type": "action.roll",
               "params": {
                 "block_id": "d",
+                "roll_kind": "damage",
                 "dice": {
                   "count": 0,
                   "sides": 6,

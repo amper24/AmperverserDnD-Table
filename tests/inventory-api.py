@@ -89,12 +89,27 @@ try:
     # Split creates a new UID while conserving quantities.
     assert api('POST', f'/api/characters/{x}/inventory', dict(request_id=uuid.uuid4().hex, op='split', item_uid='arrows', qty=0))[0] == 400
     # Program execution uses a stored definition; consume + heal + reward commit once.
-    potion = dict(uid='potion', name='Atomic potion', type='consumable', qty=2,
-                  mechanics=dict(version=1, programs=[dict(id='drink', name='Drink', trigger='use', blocks=[
-                      dict(id='cost', kind='consume', source='self', resource='quantity', amount=1, trigger='use'),
-                      dict(id='heal', kind='heal', target='self', dice=dict(count=0, sides=6, bonus=7, stat='')),
-                      dict(id='vial', kind='grant_item', target='self', amount=1, item=dict(name='Empty vial', type='gear')),
-                  ])]))
+    def node(i, t, p, x=0):
+        return dict(id=i, type=t, params=p, position=dict(x=x, y=0))
+
+    def link(a, b):
+        return {'from': dict(node=a, socket='exec'), 'to': dict(node=b, socket='exec')}
+
+    def drink_graph(extra=None):
+        nodes = [
+            node('program', 'action.program', dict(program_id='drink', name='Drink', trigger='use')),
+            node('cost', 'action.consume', dict(block_id='cost', amount=1, source='self', resource='quantity', trigger='use')),
+            node('heal', 'action.roll', dict(block_id='heal', roll_kind='heal', dice=dict(count=0, sides=6, bonus=7, stat=''))),
+            node('vial', 'action.grant_item', dict(block_id='vial', amount=1, item=dict(name='Empty vial', type='gear'))),
+            node('end', 'flow.end', {}),
+        ]
+        links = [link('program', 'cost'), link('cost', 'heal'), link('heal', 'vial'), link('vial', 'end')]
+        if extra:
+            nodes.append(node('missing', 'action.consume', dict(block_id='missing', **extra)))
+            links = [link('program', 'cost'), link('cost', 'heal'), link('heal', 'vial'), link('vial', 'missing'), link('missing', 'end')]
+        return dict(version=2, origin='test', graph=dict(nodes=nodes, links=links, frames=[], groups=[]))
+
+    potion = dict(uid='potion', name='Atomic potion', type='consumable', qty=2, mechanics=drink_graph())
     sheet = ok('GET', f'/api/characters/{x}')['sheet']
     sheet['hp'] = dict(current=2, max=20, temp=0)
     sheet['inventory'].append(potion)
@@ -109,7 +124,7 @@ try:
     # An error AFTER consuming and healing still rolls everything back.
     sheet = again['character']['sheet']
     p = next(i for i in sheet['inventory'] if i['uid']=='potion')
-    p['mechanics']['programs'][0]['blocks'].append(dict(id='missing', kind='consume', source='item', item_uid='missing-resource', resource='quantity', amount=1, trigger='use'))
+    p['mechanics'] = drink_graph(dict(source='item', item_uid='missing-resource', resource='quantity', amount=1, trigger='use'))
     saved = ok('PATCH', f'/api/characters/{x}', dict(sheet=sheet))
     program['request_id'] = uuid.uuid4().hex
     assert api('POST', f'/api/characters/{x}/inventory', program)[0] == 400

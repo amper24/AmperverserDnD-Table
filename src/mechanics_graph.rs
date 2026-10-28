@@ -34,8 +34,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
-        "logic.op" | "logic.and" | "logic.or" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
-        "logic.not" => { inputs.insert("a".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
+        "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "data.text" => { outputs.insert("value".into(), "text".into()); }
         "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
@@ -290,9 +289,9 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.table", "data.text", "data.stat", "dice.combine",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "logic.and", "logic.or", "logic.not", "flow.if", "flow.end",
+    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
-    "action.program", "action.consume", "action.attack", "action.damage", "action.heal", "action.temp_hp", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
+    "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 
 fn group_boundaries_match(group: &Value) -> bool {
@@ -502,17 +501,6 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
                 _ => None,
             },
         },
-        "logic.and" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
-            (Some(false), _) | (_, Some(false)) => Some(json!(false)),
-            (Some(true), Some(true)) => Some(json!(true)),
-            _ => None,
-        },
-        "logic.or" => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
-            (Some(true), _) | (_, Some(true)) => Some(json!(true)),
-            (Some(false), Some(false)) => Some(json!(false)),
-            _ => None,
-        },
-        "logic.not" => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
         kind if kind.starts_with("data.") => params.get("value").cloned(),
         "condition.edition" => {
             let edition = context.get("edition")?.as_str()?;
@@ -639,10 +627,10 @@ mod hit_gate_tests {
     fn hit_chain() -> Value {
         json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
-            {"id": "a", "type": "action.attack", "params": {"block_id": "atk", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
             {"id": "h", "type": "condition.hit", "params": {}},
             {"id": "f", "type": "flow.if", "params": {}},
-            {"id": "d", "type": "action.damage", "params": {"block_id": "dmg", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}}
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
             {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
