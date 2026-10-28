@@ -598,6 +598,11 @@
                 },
                 "when": "always"
               }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
             }
           ],
           "links": [
@@ -618,6 +623,16 @@
               },
               "to": {
                 "node": "r",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "r",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
                 "socket": "exec"
               }
             }
@@ -847,6 +862,11 @@
                   "stat": ""
                 }
               }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
             }
           ],
           "links": [
@@ -887,6 +907,26 @@
               },
               "to": {
                 "node": "dmg",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "dmg",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "else"
+              },
+              "to": {
+                "node": "end",
                 "socket": "exec"
               }
             }
@@ -1150,6 +1190,11 @@
                   "stat": ""
                 }
               }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
             }
           ],
           "links": [
@@ -1170,6 +1215,16 @@
               },
               "to": {
                 "node": "d",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "d",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
                 "socket": "exec"
               }
             }
@@ -1274,6 +1329,11 @@
                   "stat": ""
                 }
               }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
             }
           ],
           "links": [
@@ -1284,6 +1344,16 @@
               },
               "to": {
                 "node": "r",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "r",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
                 "socket": "exec"
               }
             }
@@ -1399,6 +1469,11 @@
                 "text": "then",
                 "when": "always"
               }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
             }
           ],
           "links": [
@@ -1449,6 +1524,26 @@
               },
               "to": {
                 "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "else"
+              },
+              "to": {
+                "node": "end",
                 "socket": "exec"
               }
             }
@@ -1616,6 +1711,176 @@
         }
       },
       "executable": true
+    },
+    {
+      "name": "flow-chain-without-end",
+      "valid": true,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture-flow",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Обрыв",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Правило",
+                "when": "always"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "flow-chain-with-end",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture-flow",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Обрыв",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Правило",
+                "when": "always"
+              }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "flow-end-without-input",
+      "valid": true,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture-flow",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Обрыв",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Правило",
+                "when": "always"
+              }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
+            },
+            {
+              "id": "stray",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
     }
   ]
 }

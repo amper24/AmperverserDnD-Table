@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Добавляет исполняемые узлы урона (action.roll) предметам и заклинаниям, у которых в описании
 // есть бросок урона вида «XdN урона <типом>» / «XdN <тип> урона», но нет action.roll-узлов.
-// Узел: программа «Урон» (style damage) → action.roll (roll_kind damage). Идемпотентно.
+// Узел: программа «Урон» (style damage) → action.roll (roll_kind damage) → flow.end. Идемпотентно.
 //   node tools/srd/add_missing_damage_rolls.cjs
 const fs = require('node:fs'), vm = require('node:vm');
 
@@ -48,7 +48,10 @@ async function main() {
       const pid = `auto-dmg-${rec.slug}`, rid = `${pid}-1`;
       graph.nodes.push({ id: pid, type: 'action.program', params: { program_id: 'auto-dmg', name: 'Урон', trigger: 'use', style: 'damage' }, position: { x: 40, y: 40 } });
       graph.nodes.push({ id: rid, type: 'action.roll', params: { enabled: true, when: 'always', dice: { count: r.count, sides: r.sides, bonus: 0, stat: '' }, damage_type: r.dtype, block_id: 'auto-dmg-b1', roll_kind: 'damage' }, position: { x: 320, y: 40 } });
+      // Поток действия обязан доходить до «Конца»: программа → бросок → «Конец».
+      graph.nodes.push({ id: `${pid}-end`, type: 'flow.end', params: {}, position: { x: 600, y: 40 } });
       graph.links.push({ from: { node: pid, socket: 'exec' }, to: { node: rid, socket: 'exec' } });
+      graph.links.push({ from: { node: rid, socket: 'exec' }, to: { node: `${pid}-end`, socket: 'exec' } });
       // Английский оверлей: имя программы и тип урона.
       if (rec.data.i18n?.en) {
         const en = rec.data.i18n.en;

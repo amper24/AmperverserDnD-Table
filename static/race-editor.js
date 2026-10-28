@@ -14,7 +14,8 @@
 //   rule.list (kind: skills)                         — выбор навыков игроком;
 //   rule.list (kind: spell_list)                     — заклинания, известные расе сразу;
 //   rule.list (kind: proficiencies)                  — владения (доспехи, оружие, инструменты);
-//   action.program (group: 'traits') + action.manual — черты расы с текстом.
+//   action.program (group: 'traits') + action.manual + flow.end — черты расы с текстом
+//                                     (поток действия обязан доходить до «Конца»).
 // Сырые поля (data.speed, data.languages, data.asi, data.skills, data.traits)
 // пишутся рядом: их читают карточка справочника и старые листы.
 //
@@ -158,8 +159,7 @@ window.RaceEditor = (() => {
   }
 
   /// Программы черт расы (group: 'traits'): по одной на черту, с текстом в action.manual.
-  function syncTraits(graph, traits) {
-    const programs = nodesOf(graph).filter(n => n.type === 'action.program' && str(n.params?.group) === 'traits');
+  function syncTraits(graph, traits) {    const programs = nodesOf(graph).filter(n => n.type === 'action.program' && str(n.params?.group) === 'traits');
     const used = new Set();
     traits.forEach((t, i) => {
       const name = str(t.name).trim(); if (!name) return;
@@ -189,6 +189,15 @@ window.RaceEditor = (() => {
       }
       removeNode(graph, p.id);
     }
+  }
+
+  /// «Конец» без входящего потока (остался от удалённой черты) убираем: с ним граф не исполняется.
+  /// Затем достраиваем «Концы» программам, у которых поток оборвался (см. Mechanics.addFlowEnds).
+  function syncFlowEnds(graph) {
+    for (const node of nodesOf(graph).filter(n => n.type === 'flow.end')) {
+      if (!linksOf(graph).some(l => l.to?.node === node.id)) removeNode(graph, node.id);
+    }
+    window.Mechanics?.addFlowEnds?.(graph);
   }
 
   // ---------- Чтение и запись записи ----------
@@ -386,6 +395,8 @@ window.RaceEditor = (() => {
     }).filter(t => t.name);
     d.traits = traits;
     syncTraits(graph, traits);
+    // Каждая программа черты — цепочка «Начало → Конец»: достраиваем «Конец» там, где его нет.
+    syncFlowEnds(graph);
 
     // Пассивные блоки старого формата — в ногу с узлами: иначе лист показал бы прежние значения.
     syncPassive(graph, {

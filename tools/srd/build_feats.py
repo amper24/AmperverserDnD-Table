@@ -197,7 +197,7 @@ def merge(items):
 
 
 def graph(body):
-    """Граф записи черты — как у черт набора SRD: программа «Правила применения» и текстовый блок."""
+    """Граф записи черты — как у черт набора SRD: программа «Правила применения», текстовый блок и «Конец»."""
     return {
         'origin': ORIGIN,
         'version': 2,
@@ -209,9 +209,13 @@ def graph(body):
                 {'id': 'action-feat-1', 'type': 'action.manual',
                  'params': {'enabled': True, 'when': 'always', 'text': body, 'block_id': 'b1'},
                  'position': {'x': 330, 'y': 70}},
+                {'id': 'end-feat-1', 'type': 'flow.end', 'params': {},
+                 'position': {'x': 590, 'y': 70}},
             ],
             'links': [{'from': {'node': 'program-feat', 'socket': 'exec'},
-                       'to': {'node': 'action-feat-1', 'socket': 'exec'}}],
+                       'to': {'node': 'action-feat-1', 'socket': 'exec'}},
+                      {'from': {'node': 'action-feat-1', 'socket': 'exec'},
+                       'to': {'node': 'end-feat-1', 'socket': 'exec'}}],
             'frames': [],
             'groups': [],
         },

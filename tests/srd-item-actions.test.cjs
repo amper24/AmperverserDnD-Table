@@ -31,10 +31,13 @@ for (const edition of ['2014', '2024']) {
       const typeOf = id => g.nodes.find(n => n.id === id).type;
       // Все броски — один настраиваемый узел action.roll; смысл задаёт параметр roll_kind.
       const kindOf = id => { const n = g.nodes.find(x => x.id === id); return n.type === 'action.roll' ? `roll:${n.params.roll_kind || 'roll'}` : n.type; };
-      const attackChain = [];
-      for (let id = first(attack.id); id; id = first(id)) attackChain.push(kindOf(id));
-      const damageChain = [];
-      for (let id = first(damage.id); id; id = first(id)) damageChain.push(kindOf(id));
+      // Цепочка действия заканчивается узлом flow.end: он не блок и в проверку вида не входит.
+      const chainOf = id => {
+        const chain = [];
+        for (let next = first(id); next && typeOf(next) !== 'flow.end'; next = first(next)) chain.push(kindOf(next));
+        return chain;
+      };
+      const attackChain = chainOf(attack.id), damageChain = chainOf(damage.id);
       assert.ok(attackChain.includes('roll:attack') && !attackChain.includes('roll:damage'), `${row.slug}: attack chain ${attackChain}`);
       assert.ok(damageChain.length && damageChain.every(t => t === 'roll:damage' || t === 'action.manual'), `${row.slug}: damage chain ${damageChain}`);
       assert.equal(M.problems(row.data.mechanics).length, 0, `${row.slug}: graph is valid`);

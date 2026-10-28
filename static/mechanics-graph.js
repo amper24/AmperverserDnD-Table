@@ -247,6 +247,110 @@
     const def = defOf(node.type);
     return def ? { inputs: def.inputs, outputs: def.outputs } : { inputs: {}, outputs: {} };
   }
+  // Поток исполнения: сокеты типа flow (exec у действий, then/else у «Если», flow-порты групп).
+  // Правило «начало → конец»: каждое действие идёт от «Начала» (action.program) до «Конца» (flow.end),
+  // и каждая ветвь «Если» тоже завершается «Концом». Это смысловые проблемы (запись сохраняется,
+  // граф не исполняется), а не структурные ошибки схемы.
+  const FLOW_END_UNWIRED = '«Конец» ни к чему не подключён';
+  const FLOW_BRANCH_UNFINISHED = 'Ветка не завершается узлом «Конец»';
+  const flowActionUnfinished = name => `Действие «${name}» не завершается узлом «Конец»`;
+  function flowPorts(node, groups, ownerGroup) {
+    const map = socketMap(node, groups, ownerGroup);
+    return {
+      outputs: Object.entries(map.outputs || {}).filter(([, type]) => type === 'flow').map(([socket]) => socket),
+      inputs: new Set(Object.entries(map.inputs || {}).filter(([, type]) => type === 'flow').map(([socket]) => socket)),
+    };
+  }
+  // Связи потока: только провода между flow-выходом и flow-входом (остальные проверяет validateGraph).
+  function flowLinks(nodes, links, groups, ownerGroup) {
+    const byId = new Map(nodes.map(node => [node.id, node])), ports = new Map(), outgoing = new Map(), incoming = new Map();
+    for (const node of nodes) ports.set(node.id, flowPorts(node, groups, ownerGroup));
+    for (const link of links) {
+      const source = link?.from, target = link?.to;
+      if (!source || !target || !byId.has(source.node) || !byId.has(target.node)) continue;
+      if (!(ports.get(source.node)?.outputs || []).includes(source.socket)) continue;
+      if (!ports.get(target.node)?.inputs.has(target.socket)) continue;
+      const key = `${source.node}:${source.socket}`;
+      if (!outgoing.has(key)) outgoing.set(key, []);
+      outgoing.get(key).push(target.node);
+      incoming.set(target.node, (incoming.get(target.node) || 0) + 1);
+    }
+    return { byId, ports, outgoing, incoming };
+  }
+  // Проверка завершённости: у каждого action.program поток (включая обе ветви flow.if) должен
+  // доходить до flow.end, а «Конец» без входящего потока — проблема.
+  function addFlowProblems(nodes, links, groups, ownerGroup, problems) {
+    const { byId, ports, outgoing, incoming } = flowLinks(nodes, links, groups, ownerGroup);
+    const reported = new Set(), report = message => { if (!reported.has(message)) { reported.add(message); problems.push(message); } };
+    const visiting = new Set(), finished = new Set();
+    // true — все продолжения потока этого узла заканчиваются «Концом»; у «Если» проверяются обе ветви.
+    function terminates(id, inBranch, actionName) {
+      if (visiting.has(id) || finished.has(id)) return true;
+      const node = byId.get(id);
+      if (!node || node.type === 'flow.end') { finished.add(id); return true; }
+      const branchNode = node.type === 'flow.if', outputs = ports.get(id)?.outputs || [];
+      visiting.add(id);
+      let ok = true;
+      if (!outputs.length) { ok = false; report(inBranch ? FLOW_BRANCH_UNFINISHED : flowActionUnfinished(actionName)); }
+      for (const socket of outputs) {
+        const targets = outgoing.get(`${id}:${socket}`) || [];
+        if (!targets.length) { ok = false; report(branchNode || inBranch ? FLOW_BRANCH_UNFINISHED : flowActionUnfinished(actionName)); continue; }
+        for (const target of targets) if (!terminates(target, inBranch || branchNode, actionName)) ok = false;
+      }
+      visiting.delete(id);
+      if (ok) finished.add(id);
+      return ok;
+    }
+    for (const node of nodes) {
+      if (node.type === 'flow.end') { if (!incoming.get(node.id)) report(FLOW_END_UNWIRED); continue; }
+      if (node.type !== 'action.program') continue;
+      const name = String(node.params?.name || node.params?.program_id || node.id);
+      let started = false;
+      for (const socket of ports.get(node.id)?.outputs || []) for (const target of outgoing.get(`${node.id}:${socket}`) || []) { started = true; terminates(target, false, name); }
+      if (!started) report(flowActionUnfinished(name));
+    }
+  }
+  // Обход потока одного действия от «Начала»: порядок узлов, висячие exec-выходы и достигнутые «Концы».
+  function flowReach(graph, program) {
+    const nodes = graph.nodes || [], links = graph.links || [], groups = new Map((graph.groups || []).map(group => [group.id, group]));
+    const { byId, ports, outgoing } = flowLinks(nodes, links, groups, null);
+    const order = [], dangling = [], ends = [], seen = new Set([program.id]), queue = [program.id];
+    while (queue.length) {
+      const id = queue.shift(), node = byId.get(id);
+      if (!node) continue;
+      if (node.type === 'flow.end') { ends.push(id); continue; }
+      const index = order.push(id) - 1;
+      for (const socket of ports.get(id)?.outputs || []) {
+        const targets = outgoing.get(`${id}:${socket}`) || [];
+        if (!targets.length) { dangling.push({ node: id, socket, index }); continue; }
+        for (const target of targets) if (!seen.has(target)) { seen.add(target); queue.push(target); }
+      }
+    }
+    return { order, dangling, ends };
+  }
+  // Достраивает «Конец» действию с оборванным потоком: висячие exec-выходы подключаются к «Концу»
+  // действия, а если его ещё нет — создаётся узел. Граф меняется на месте; повторный вызов ничего не меняет.
+  function addFlowEnds(graph) {
+    const nodes = graph.nodes || [], links = graph.links || [];
+    let added = 0;
+    for (const program of nodes.filter(node => node.type === 'action.program')) {
+      const flow = flowReach(graph, program);
+      if (!flow.dangling.length) continue;
+      const owned = nodes.find(node => node.type === 'flow.end' && node.action === program.id);
+      let end = (flow.ends.length && nodes.find(node => node.id === flow.ends[0])) || owned || null;
+      if (!end) {
+        const anchor = nodes.find(node => node.id === flow.dangling[flow.dangling.length - 1].node) || program;
+        end = { id: mkId('node'), type: 'flow.end', params: {}, position: { x: (anchor.position?.x || 0) + 260, y: anchor.position?.y || 0 }, action: program.id };
+        nodes.push(end); added++;
+      }
+      for (const item of flow.dangling) {
+        if (links.some(link => link.from.node === item.node && link.from.socket === item.socket && link.to.node === end.id)) continue;
+        links.push({ from: { node: item.node, socket: item.socket }, to: { node: end.id, socket: 'exec' } });
+        added++;
+      }
+    }
+    return added;
+  }
   const fail = message => message;
   const idText = (value, max = 80) => typeof value === 'string' && value.length > 0 && value.length <= max;
   function validateInterface(list) {
@@ -261,7 +365,7 @@
   // Смысловые проблемы связей (сокеты, типы, цикл, незавершённость) собираются в список problems:
   // сохранение их не блокирует, исполнение пропускает граф. Без списка функция работает строго (первая ошибка).
   function soft(problems, message) { if (!problems) return fail(message); problems.push(message); return ''; }
-  function validateGraph(graph, groups = [], nested = false, ownerGroup = null, problems = null) {
+  function validateGraph(graph, groups = [], nested = false, ownerGroup = null, problems = null, options = {}) {
     if (!graph || typeof graph !== 'object' || Array.isArray(graph)) return fail('Граф должен быть объектом.');
     const nodes = graph.nodes, links = graph.links, frames = graph.frames || [];
     if (!nested && !Array.isArray(groups)) return fail('Не более 50 групп повторного использования.');
@@ -312,6 +416,13 @@
     while (queue.length) { const current = queue.pop(); visited++; for (const target of adjacency.get(current)) { indegree.set(target, indegree.get(target) - 1); if (indegree.get(target) === 0) queue.push(target); } }
     if (visited !== nodeIds.size) { const e = soft(problems, 'Цикл в графе запрещён.'); if (e) return e; }
     if (gatedHitNesting(nodes, links.filter(l => nodeIds.has(l.from?.node) && nodeIds.has(l.to?.node)))) { const e = soft(problems, 'Ветвление по попаданию нельзя вкладывать в другое ветвление по попаданию.'); if (e) return e; }
+    // Завершённость потока («Начало → Конец») — смысловая проблема, а не структурная: связь можно
+    // провести, запись сохранить; connectionError эту проверку пропускает (options.completion).
+    if (options.completion !== false) {
+      const unfinished = [];
+      addFlowProblems(nodes, links, groupMap, ownerGroup, unfinished);
+      for (const message of unfinished) { const e = soft(problems, message); if (e) return e; }
+    }
     const frameIds = new Set(), framedNodes = new Set();
     for (const frame of frames) {
       if (!frame || !idText(frame.id, 64) || frameIds.has(frame.id) || typeof frame.title !== 'string' || !frame.title.trim() || frame.title.length > 120 || !Array.isArray(frame.nodes) || frame.nodes.length > 100) return fail('Некорректная рамка графа.');
@@ -333,7 +444,7 @@
       };
       for (const id of refs.keys()) if (!walk(id)) return fail('Рекурсивная ссылка или цикл между группами запрещён.');
       for (const group of groups) {
-        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group, problems);
+        const error = validateGraph({ nodes: group.nodes, links: group.links, frames: group.frames || [] }, groups, true, group, problems, options);
         if (error) return `Группа «${group.name}»: ${error}`;
         const boundaryInputs = (group.nodes || []).filter(n => n.type === 'group.input').map(n => n.params?.socket_id);
         const boundaryOutputs = (group.nodes || []).filter(n => n.type === 'group.output').map(n => n.params?.socket_id);
@@ -371,7 +482,9 @@
     if (!mechanics.graph || !Array.isArray(mechanics.graph.groups)) return 'Не более 50 групп повторного использования.';
     if (JSON.stringify(mechanics).length > 1_000_000) return 'Неподдерживаемая или слишком большая схема механик.';
     const list = [];
-    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list);
+    // Завершённость потока здесь не проверяется: это смысловая проблема (запись сохраняется), и она
+    // не должна отменять проверку плана — иначе незакрытая цепочка скрыла бы ошибки в блоках.
+    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list, { completion: false });
     if (error) return error;
     if (list.length) return '';
     const planError = Base.validate(v2ToV1(mechanics));
@@ -384,9 +497,10 @@
     return '';
   }
   // Список проблем графа без сохранения: пустой список значит, что граф можно исполнять.
-  function graphProblems(graph, groups = graph?.groups || []) {
+  // options.completion = false — без проверки завершённости потока (нужно при правке проводов).
+  function graphProblems(graph, groups = graph?.groups || [], options = {}) {
     const list = [];
-    const error = validateGraph(graph, groups, false, null, list);
+    const error = validateGraph(graph, groups, false, null, list, options);
     return error ? [error] : list;
   }
   function problems(mechanics) {
@@ -542,8 +656,10 @@
     if (wouldCycle(rest, link.from.node, link.to.node)) return 'Связь создаёт цикл.';
     // Незавершённый граф (например, не подключено условие у «Если») не блокирует новую связь:
     // отклоняется только ошибка, которую добавила именно эта связь. Полная проверка — при сохранении.
+    // Проверку «Начало → Конец» здесь пропускаем: переподключение провода в середине цепочки
+    // на миг оставляет поток незавершённым, и это не повод отказывать в связи.
     const groupsList = graph.groups || [];
-    const before = graphProblems(graph, groupsList), after = graphProblems({ ...graph, links: [...rest, link] }, groupsList);
+    const before = graphProblems(graph, groupsList, { completion: false }), after = graphProblems({ ...graph, links: [...rest, link] }, groupsList, { completion: false });
     return after.find(problem => !before.includes(problem)) || '';
   }
 
@@ -629,11 +745,26 @@
     }
     function addNode(type, params = null, at = null) {
       if (!NODE_DEFS[type]) return;
-      if (type === 'flow.end') { const owners = actionOwners(graph); if (graph.nodes.some(n => n.type === 'flow.end' && owners.get(n.id) === activeAction)) { status = 'У действия уже есть «Конец».'; return render(); } }
+      if (type === 'flow.end') return addEndNode();
       if (type === 'action.program') return createAction();
       const id = mkId('node'), count = graph.nodes.length;
       graph.nodes.push({ id, type, params: params ? clone(params) : clone(NODE_DEFS[type].defaults), position: at || { x: 60 + (count % 4) * 250, y: 70 + Math.floor(count / 4) * 170 }, action: activeAction });
       checkpoint(); activeNode = id; selected = new Set([id]); render();
+    }
+    // «Конец» из тулбара/меню: узел к текущему действию и провод от последнего узла с висячим
+    // exec-выходом (если таких несколько — от выбранного, иначе от последнего в цепочке).
+    function addEndNode() {
+      if (!activeAction) { status = 'Сначала добавьте действие.'; render(); return; }
+      const owners = actionOwners(graph);
+      if (graph.nodes.some(n => n.type === 'flow.end' && owners.get(n.id) === activeAction)) { status = 'У действия уже есть «Конец».'; render(); return; }
+      const program = nodeById(activeAction), flow = program ? flowReach(graph, program) : { dangling: [] };
+      if (!flow.dangling.length) { status = 'У действия нечего завершать: добавьте блок.'; render(); return; }
+      const chosen = [...selected].map(nodeById).find(node => node && flow.dangling.some(item => item.node === node.id));
+      const anchor = chosen || nodeById(flow.dangling.reduce((last, item) => (item.index >= last.index ? item : last), flow.dangling[0]).node);
+      const end = { id: mkId('node'), type: 'flow.end', params: {}, position: { x: (anchor?.position?.x || 0) + 260, y: anchor?.position?.y || 0 }, action: activeAction };
+      graph.nodes.push(end);
+      for (const item of flow.dangling.filter(dangling => dangling.node === anchor?.id)) graph.links.push({ from: { node: item.node, socket: item.socket }, to: { node: end.id, socket: 'exec' } });
+      checkpoint(); selected = new Set([end.id]); activeNode = end.id; status = ''; render();
     }
     // Копии выделенных узлов со сдвигом; связи не копируются. block_id действия создаётся заново (уникален в графе).
     function duplicateNodes(ids) {
@@ -671,7 +802,25 @@
       // Стиль кнопки (иконка) задаётся в «Начале»; меняем его, только если там стиль по умолчанию.
       if (starter.style && program && (!program.params?.style || program.params.style === 'default')) program.params = { ...program.params, style: starter.style };
       const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
-      if (starter.attach && program && head && defOf(head.type)?.inputs?.exec && !graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec')) graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
+      if (starter.attach && program && head && defOf(head.type)?.inputs?.exec) {
+        // Прямой провод «Начало» → «Конец» (действие было пустым) заменяем цепочкой шаблона:
+        // «Начало» → первый узел, висячие exec-выходы цепочки → тот же «Конец».
+        const direct = graph.links.find(l => l.from.node === program.id && l.from.socket === 'exec' && nodeById(l.to.node)?.type === 'flow.end');
+        const hasChain = graph.links.some(l => l.from.node === program.id && l.from.socket === 'exec' && nodeById(l.to.node)?.type !== 'flow.end');
+        if (!hasChain) {
+          if (direct) graph.links = graph.links.filter(l => l !== direct);
+          graph.links.push({ from: { node: program.id, socket: 'exec' }, to: { node: ids.get(head.key), socket: 'exec' } });
+          if (direct) {
+            for (const id of ids.values()) {
+              for (const [socket, type] of Object.entries(defOf(nodeById(id)?.type)?.outputs || {})) {
+                if (type !== 'flow') continue;
+                if (graph.links.some(l => l.from.node === id && l.from.socket === socket)) continue;
+                graph.links.push({ from: { node: id, socket }, to: { node: direct.to.node, socket: 'exec' } });
+              }
+            }
+          }
+        }
+      }
       checkpoint(); selected = new Set(); activeNode = ''; status = ''; render();
     }
     // Шаблоны графов: свои цепочки хранятся в наборе graph_starter пользовательского слоя Presets (в этом браузере).
@@ -984,12 +1133,18 @@
       // Начало действия удаляется только вместе с действием (кнопка «Удалить действие»).
       if (ids.some(id => nodeById(id)?.type === 'action.program')) { status = 'Начало действия удаляется кнопкой «Удалить действие».'; ids = ids.filter(id => nodeById(id)?.type !== 'action.program'); }
       if (!ids.length) { render(); return; }
+      const droppedEnd = ids.some(id => nodeById(id)?.type === 'flow.end');
       const drop = new Set(ids);
       graph.nodes = graph.nodes.filter(n => !drop.has(n.id));
       graph.links = graph.links.filter(l => !drop.has(l.from.node) && !drop.has(l.to.node));
       graph.frames.forEach(f => f.nodes = f.nodes.filter(n => !drop.has(n)));
       selected = new Set([...selected].filter(id => !drop.has(id)));
       if (drop.has(activeNode)) activeNode = '';
+      // Действие без «Конца» сохраняется, но не исполняется: говорим об этом сразу.
+      if (droppedEnd) {
+        const message = '«Конец» удалён: действие осталось без «Конца», граф не исполняется.';
+        status = message; window.toast?.(message);
+      }
       checkpoint(); render();
     }
     let menuHandle = null;
@@ -1266,6 +1421,7 @@
     validateGraph,
     problems,
     graphProblems,
+    addFlowEnds,
     connectionError,
     wouldCycle,
     graphPreview: previewGraph,

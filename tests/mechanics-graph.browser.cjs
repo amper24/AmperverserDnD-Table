@@ -25,11 +25,13 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
           { id: 'consume', type: 'action.consume', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always', enabled: true }, position: { x: 330, y: 70 } },
           { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
           { id: 'vial', type: 'action.grant_item', params: { block_id: 'vial', item: { name: 'Пустой флакон', type: 'gear', qty: 1 }, amount: 1, when: 'always', enabled: true }, position: { x: 850, y: 70 } },
+          { id: 'end', type: 'flow.end', params: {}, position: { x: 1110, y: 70 } },
         ],
         links: [
           { from: { node: 'potion', socket: 'exec' }, to: { node: 'consume', socket: 'exec' } },
           { from: { node: 'consume', socket: 'exec' }, to: { node: 'heal', socket: 'exec' } },
           { from: { node: 'heal', socket: 'exec' }, to: { node: 'vial', socket: 'exec' } },
+          { from: { node: 'vial', socket: 'exec' }, to: { node: 'end', socket: 'exec' } },
         ], frames: [], groups: [],
       } };
       window.editing = Modules.editItem(Modules.newItem({ name: 'Эликсир', type: 'consumable', qty: 3, mechanics: window.mechanics }));
@@ -37,7 +39,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.node-editor').waitFor();
     assert.ok(await page.locator('.node-preview').isVisible(), 'edition/level preview is part of the editor');
     assert.ok(await page.getByLabel('Выборы для предпросмотра').isVisible(), 'preview can receive non-persisted choices');
-    assert.equal(await page.locator('.graph-node').count(), 4, 'every graph node appears on the canvas');
+    assert.equal(await page.locator('.graph-node').count(), 5, 'every graph node appears on the canvas');
 
     // Add a node, then exercise local undo/redo without saving an intermediate state.
     const originalCount = await page.locator('.graph-node').count();

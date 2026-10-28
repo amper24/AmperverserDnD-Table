@@ -197,6 +197,93 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
     Ok(())
 }
 // Смысловые проблемы связей пишутся в problems (сохранение их не блокирует, исполнение пропускает граф).
+const FLOW_END_UNWIRED: &str = "«Конец» ни к чему не подключён";
+const FLOW_BRANCH_UNFINISHED: &str = "Ветка не завершается узлом «Конец»";
+fn flow_action_unfinished(name: &str) -> String { format!("Действие «{}» не завершается узлом «Конец»", name) }
+/// Выходы узла с типом flow (exec у действий, then/else у «Если», flow-порты групп) — как flowPorts в JS.
+fn flow_output_names(outs: &HashMap<String, String>) -> Vec<String> {
+    let mut names: Vec<String> = outs.iter().filter(|(_, kind)| kind.as_str() == "flow").map(|(socket, _)| socket.clone()).collect();
+    names.sort();
+    names
+}
+struct FlowCtx<'a> {
+    ports: &'a HashMap<String, Ports>,
+    types: &'a HashMap<String, String>,
+    outgoing: &'a HashMap<(String, String), Vec<String>>,
+    visiting: HashSet<String>,
+    finished: HashSet<String>,
+    reported: HashSet<String>,
+    problems: Vec<String>,
+}
+impl<'a> FlowCtx<'a> {
+    fn report(&mut self, message: String) { if self.reported.insert(message.clone()) { self.problems.push(message); } }
+    /// true — все продолжения потока узла заканчиваются «Концом»; у «Если» проверяются обе ветви.
+    fn terminates(&mut self, id: &str, in_branch: bool, action: &str) -> bool {
+        if self.visiting.contains(id) || self.finished.contains(id) { return true; }
+        if self.types.get(id).map(|kind| kind.as_str()) == Some("flow.end") { self.finished.insert(id.to_string()); return true; }
+        let Some((_, outs)) = self.ports.get(id) else { return true; };
+        let sockets = flow_output_names(outs);
+        let branch_node = self.types.get(id).map(|kind| kind.as_str()) == Some("flow.if");
+        self.visiting.insert(id.to_string());
+        let mut ok = true;
+        if sockets.is_empty() { ok = false; self.report(if in_branch { FLOW_BRANCH_UNFINISHED.to_string() } else { flow_action_unfinished(action) }); }
+        for socket in &sockets {
+            let targets = self.outgoing.get(&(id.to_string(), socket.clone())).cloned().unwrap_or_default();
+            if targets.is_empty() {
+                ok = false;
+                self.report(if branch_node || in_branch { FLOW_BRANCH_UNFINISHED.to_string() } else { flow_action_unfinished(action) });
+                continue;
+            }
+            for target in targets { if !self.terminates(&target, in_branch || branch_node, action) { ok = false; } }
+        }
+        self.visiting.remove(id);
+        if ok { self.finished.insert(id.to_string()); }
+        ok
+    }
+}
+/// Правило «начало → конец»: поток каждого action.program (вместе с обеими ветвями flow.if) обязан
+/// доходить до flow.end, а «Конец» без входящего потока — проблема (как addFlowProblems в JS).
+fn flow_problems(nodes: &[Value], links: &[Value], groups: &[Value], owner_group: Option<&Value>, problems: &mut Vec<String>) {
+    let mut ports: HashMap<String, Ports> = HashMap::new();
+    let mut types: HashMap<String, String> = HashMap::new();
+    for node in nodes {
+        let Some(id) = node["id"].as_str() else { continue };
+        types.insert(id.to_string(), node["type"].as_str().unwrap_or("").to_string());
+        ports.insert(id.to_string(), ports_for(node["type"].as_str().unwrap_or(""), &node["params"], groups, owner_group));
+    }
+    let mut outgoing: HashMap<(String, String), Vec<String>> = HashMap::new();
+    let mut incoming: HashSet<String> = HashSet::new();
+    for link in links {
+        let (from, to) = (&link["from"], &link["to"]);
+        let (Some(source), Some(target), Some(from_socket), Some(to_socket)) = (from["node"].as_str(), to["node"].as_str(), from["socket"].as_str(), to["socket"].as_str()) else { continue };
+        let Some((_, outs)) = ports.get(source) else { continue };
+        if outs.get(from_socket).map(|kind| kind.as_str()) != Some("flow") { continue; }
+        let Some((ins, _)) = ports.get(target) else { continue };
+        if ins.get(to_socket).map(|kind| kind.as_str()) != Some("flow") { continue; }
+        outgoing.entry((source.to_string(), from_socket.to_string())).or_default().push(target.to_string());
+        incoming.insert(target.to_string());
+    }
+    let mut ctx = FlowCtx { ports: &ports, types: &types, outgoing: &outgoing, visiting: HashSet::new(), finished: HashSet::new(), reported: HashSet::new(), problems: Vec::new() };
+    for node in nodes {
+        let kind = node["type"].as_str().unwrap_or("");
+        let id = node["id"].as_str().unwrap_or("");
+        if kind == "flow.end" { if !incoming.contains(id) { ctx.report(FLOW_END_UNWIRED.to_string()); } continue; }
+        if kind != "action.program" { continue; }
+        let name = node["params"]["name"].as_str().filter(|name| !name.is_empty())
+            .or_else(|| node["params"]["program_id"].as_str().filter(|name| !name.is_empty()))
+            .unwrap_or(id).to_string();
+        let sockets = ctx.ports.get(id).map(|(_, outs)| flow_output_names(outs)).unwrap_or_default();
+        let mut started = false;
+        for socket in &sockets {
+            for target in ctx.outgoing.get(&(id.to_string(), socket.clone())).cloned().unwrap_or_default() {
+                started = true;
+                ctx.terminates(&target, false, &name);
+            }
+        }
+        if !started { ctx.report(flow_action_unfinished(&name)); }
+    }
+    problems.append(&mut ctx.problems);
+}
 fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>, problems: &mut Vec<String>) -> ApiResult<()> {
     if !graph.is_object() { return Err(bad("Граф должен быть объектом.")); }
     let nodes = graph["nodes"].as_array().filter(|a| a.len() <= 500).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
@@ -248,6 +335,8 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     while let Some(current) = queue.pop_front() { visited += 1; for target in adjacency.get(&current).into_iter().flatten() { let d = indegree.get_mut(target).unwrap(); *d -= 1; if *d == 0 { queue.push_back(target.clone()); } } }
     if visited != node_ids.len() { problems.push("Цикл в графе запрещён.".to_string()); }
     if gated_hit_nesting(nodes, links) { problems.push("Ветвление по попаданию нельзя вкладывать в другое ветвление по попаданию.".to_string()); }
+    // Завершённость потока («Начало → Конец») — смысловая проблема: запись сохраняется, граф не исполняется.
+    flow_problems(nodes, links, groups, owner_group, problems);
     let mut frame_ids = HashSet::new(); let mut framed_nodes = HashSet::new();
     for frame in frames {
         let id = frame["id"].as_str().unwrap_or(""); let title = frame["title"].as_str().unwrap_or("");
@@ -322,6 +411,15 @@ pub fn validate(mechanics: &Value) -> ApiResult<()> { check(mechanics, &mut Vec:
 /// Все проблемы графа (структура с ошибкой вернётся через Err). Пустой список значит, что граф исполняется.
 pub fn problems(mechanics: &Value) -> ApiResult<Vec<String>> { let mut list = Vec::new(); check(mechanics, &mut list)?; Ok(list) }
 pub fn is_executable(mechanics: &Value) -> bool { matches!(problems(mechanics), Ok(list) if list.is_empty()) }
+/// Проблема правила «начало → конец» (цепочка/ветвь без «Конца» или «Конец» без входа).
+pub fn is_completion_problem(message: &str) -> bool {
+    message == FLOW_END_UNWIRED || message == FLOW_BRANCH_UNFINISHED || message.ends_with("не завершается узлом «Конец»")
+}
+/// Проверять ли план блоков: незавершённый поток не отменяет проверку плана (как validate в JS),
+/// иначе незакрытая цепочка скрыла бы ошибки в параметрах блоков.
+pub fn plan_checks_apply(mechanics: &Value) -> bool {
+    matches!(problems(mechanics), Ok(list) if list.iter().all(|message| is_completion_problem(message)))
+}
 fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
     if mechanics["version"] != 2 || utf16_len(&mechanics.to_string()) > 1_000_000 { return Err(bad("Неподдерживаемая или слишком большая схема механик.")); }
     let graph = &mechanics["graph"];
@@ -631,18 +729,22 @@ mod hit_gate_tests {
     use super::*;
 
     /// Атака → «Если» по условию «Попадание атаки» → урон. Бросок атаки детерминирован (без костей, +5).
+    /// Обе ветви и хвост цепочки сходятся в «Конце»: поток действия завершён.
     fn hit_chain() -> Value {
         json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
             {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
             {"id": "h", "type": "condition.hit", "params": {}},
             {"id": "f", "type": "flow.if", "params": {}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}}
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}},
+            {"id": "e", "type": "flow.end", "params": {}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
             {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
             {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
-            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}},
+            {"from": {"node": "f", "socket": "else"}, "to": {"node": "e", "socket": "exec"}},
+            {"from": {"node": "d", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
         ], "frames": [], "groups": []}})
     }
 
@@ -652,10 +754,12 @@ mod hit_gate_tests {
         let graph = json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
             {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 1, "sides": 6, "bonus": 0, "stat": ""}}}
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 1, "sides": 6, "bonus": 0, "stat": ""}}},
+            {"id": "e", "type": "flow.end", "params": {}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
-            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "d", "socket": "exec"}}
+            {"from": {"node": "a", "socket": "exec"}, "to": {"node": "d", "socket": "exec"}},
+            {"from": {"node": "d", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
         ], "frames": [], "groups": []}});
         assert!(problems(&graph).unwrap().is_empty());
         let v1 = to_v1(&graph);
@@ -678,13 +782,16 @@ mod hit_gate_tests {
             {"id": "ed", "type": "condition.edition", "params": {"editions": ["2014"]}},
             {"id": "op", "type": "logic.op", "params": {"op": op}},
             {"id": "f", "type": "flow.if", "params": {}},
-            {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "then", "when": "always"}}
+            {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "then", "when": "always"}},
+            {"id": "e", "type": "flow.end", "params": {}}
         ], "links": [
             {"from": {"node": "lv", "socket": "value"}, "to": {"node": "op", "socket": "a"}},
             {"from": {"node": "ed", "socket": "value"}, "to": {"node": "op", "socket": "b"}},
             {"from": {"node": "op", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
-            {"from": {"node": "f", "socket": "then"}, "to": {"node": "m", "socket": "exec"}}
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "m", "socket": "exec"}},
+            {"from": {"node": "f", "socket": "else"}, "to": {"node": "e", "socket": "exec"}},
+            {"from": {"node": "m", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
         ], "frames": [], "groups": []}});
         let graph = make("and");
         assert!(problems(&graph).unwrap().is_empty());
@@ -737,5 +844,40 @@ mod hit_gate_tests {
         links.push(json!({"from": {"node": "f", "socket": "then"}, "to": {"node": "f2", "socket": "exec"}}));
         let list = problems(&graph).unwrap();
         assert!(list.iter().any(|message| message.contains("вкладывать")), "{list:?}");
+    }
+
+    /// «Начало → Конец»: цепочка без «Конца» не исполняется, но сохраняется; «Конец» без входа и
+    /// незавершённая ветвь — тоже проблемы. Сама схема при этом структурно корректна.
+    #[test]
+    fn flow_must_reach_the_end_node() {
+        // Цепочка «Начало» → ручное правило без «Конца».
+        let open_chain = json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Обрыв", "trigger": "use"}},
+            {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "Правило", "when": "always"}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "m", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        assert!(validate(&open_chain).is_ok(), "запись сохраняется");
+        let list = problems(&open_chain).unwrap();
+        assert!(list.contains(&"Действие «Обрыв» не завершается узлом «Конец»".to_string()), "{list:?}");
+
+        // Та же цепочка с «Концом» — исполняется.
+        let mut closed_chain = open_chain.clone();
+        closed_chain["graph"]["nodes"].as_array_mut().unwrap().push(json!({"id": "e", "type": "flow.end", "params": {}}));
+        closed_chain["graph"]["links"].as_array_mut().unwrap().push(json!({"from": {"node": "m", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}));
+        assert!(problems(&closed_chain).unwrap().is_empty());
+
+        // «Конец» без входящего потока — проблема, даже если цепочка действия завершена.
+        let mut stray_end = closed_chain.clone();
+        stray_end["graph"]["nodes"].as_array_mut().unwrap().push(json!({"id": "e2", "type": "flow.end", "params": {}}));
+        let list = problems(&stray_end).unwrap();
+        assert!(list.contains(&"«Конец» ни к чему не подключён".to_string()), "{list:?}");
+
+        // Ветвь «Если» без продолжения — проблема ветви, а не всего действия.
+        let mut branch = hit_chain();
+        let links = branch["graph"]["links"].as_array_mut().unwrap();
+        links.retain(|link| link["from"]["socket"] != "else");
+        let list = problems(&branch).unwrap();
+        assert!(list.contains(&"Ветка не завершается узлом «Конец»".to_string()), "{list:?}");
     }
 }

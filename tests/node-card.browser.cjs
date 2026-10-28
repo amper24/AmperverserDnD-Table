@@ -20,11 +20,14 @@ const WAND = {
     { id: 'hit', type: 'condition.hit', params: {}, position: { x: 520, y: 130 } },
     { id: 'if', type: 'flow.if', params: {}, position: { x: 520, y: 0 } },
     { id: 'dmg', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: { count: 1, sides: 8, bonus: 0, stat: '' } }, position: { x: 780, y: 0 } },
+    { id: 'end', type: 'flow.end', params: {}, position: { x: 1040, y: 0 } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'atk', socket: 'exec' } },
     { from: { node: 'atk', socket: 'exec' }, to: { node: 'if', socket: 'exec' } },
     { from: { node: 'hit', socket: 'value' }, to: { node: 'if', socket: 'condition' } },
     { from: { node: 'if', socket: 'then' }, to: { node: 'dmg', socket: 'exec' } },
+    { from: { node: 'if', socket: 'else' }, to: { node: 'end', socket: 'exec' } },
+    { from: { node: 'dmg', socket: 'exec' }, to: { node: 'end', socket: 'exec' } },
   ] } },
 };
 

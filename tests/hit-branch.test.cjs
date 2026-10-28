@@ -22,10 +22,17 @@ const node = (id, type, params = {}) => ({ id, type, params, position: { x: 0, y
 const program = (id = 'p', name = 'Удар') => node(id, 'action.program', { program_id: id, name, trigger: 'use' });
 const roll = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, enabled: true, when: 'always', ...params });
 const wire = (from, fromSocket, to, toSocket) => ({ from: { node: from, socket: fromSocket }, to: { node: to, socket: toSocket } });
-const vault = (nodes, links) => ({ version: 2, graph: { nodes, links, frames: [], groups: [] } });
+// Хелпер достраивает «Конец» каждой оборванной ветви (как редактор): графы тестов остаются исполнimыми.
+const vault = (nodes, links) => {
+  const graph = { nodes, links, frames: [], groups: [] };
+  M.addFlowEnds(graph);
+  return { version: 2, graph };
+};
 // Атака → «Попадание атаки» → «Если» → урон по ветке «да».
 const hitChain = () => vault([program(), roll('a', 'attack', { block_id: 'atk', dice: attackBlock.dice, dc: 3 }), node('h', 'condition.hit', {}), node('f', 'flow.if', {}), roll('d', 'damage', { block_id: 'dmg', dice: hitDamage.dice })],
   [wire('p', 'exec', 'a', 'exec'), wire('a', 'exec', 'f', 'exec'), wire('h', 'value', 'f', 'condition'), wire('f', 'then', 'd', 'exec')]);
+// Готовый граф в конверте v2: достроить «Конец» там, где поток обрывается.
+const withEnds = mechanics => { M.addFlowEnds(mechanics.graph); return mechanics; };
 
 test('v1 не принимается: ветка попадания задаётся узлами, а не старым полем when', () => {
   const v1 = { version: 1, origin: 'legacy', programs: [{ id: 'p', name: 'Удар', trigger: 'use', blocks: [attackBlock, hitDamage] }] };
@@ -39,7 +46,7 @@ test('v1 не принимается: ветка попадания задаёт
 });
 
 test('the then and else outputs gate hit and miss blocks separately', () => {
-  const graph = { version: 2, graph: { nodes: [
+  const graph = withEnds({ version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Выбор', trigger: 'use' } },
     { id: 'a', type: 'action.roll', params: { block_id: 'atk', roll_kind: 'attack', enabled: true, dice: attackBlock.dice, dc: 3 } },
     { id: 'h', type: 'condition.hit', params: {} },
@@ -52,7 +59,7 @@ test('the then and else outputs gate hit and miss blocks separately', () => {
     { from: { node: 'h', socket: 'value' }, to: { node: 'f', socket: 'condition' } },
     { from: { node: 'f', socket: 'then' }, to: { node: 'd', socket: 'exec' } },
     { from: { node: 'f', socket: 'else' }, to: { node: 'm', socket: 'exec' } },
-  ], frames: [], groups: [] } };
+  ], frames: [], groups: [] } });
   assert.equal(M.validate(graph), '');
   assert.equal(M.problems(graph).length, 0);
   const blocks = plain(M.toLegacy(graph).programs[0].blocks);
@@ -68,14 +75,14 @@ test('a branch continues with ungated nodes: only the node wired to the output i
 });
 
 test('a hit condition wired to anything but a branch is saved but not executed', () => {
-  const graph = { version: 2, graph: { nodes: [
+  const graph = withEnds({ version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Удар', trigger: 'use' } },
     { id: 'h', type: 'condition.hit', params: {} },
     { id: 'd', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: hitDamage.dice } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'd', socket: 'exec' } },
     { from: { node: 'h', socket: 'value' }, to: { node: 'd', socket: 'enabled' } },
-  ], frames: [], groups: [] } };
+  ], frames: [], groups: [] } });
   assert.equal(M.validate(graph), '', 'structure is fine, so the record can be saved');
   assert.ok(M.problems(graph).some(text => text.includes('только ко входу «Если»')));
   assert.match(M.evaluateGraph(graph).error, /Граф не исполняется/);
@@ -119,7 +126,7 @@ test('starter presets are data: every starter saves, the attached ones execute',
     for (const [from, out, to, into] of starter.links) links.push({ from: { node: ids2.get(from), socket: out }, to: { node: ids2.get(to), socket: into } });
     const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
     if (starter.attach && head) links.push({ from: { node: 'program', socket: 'exec' }, to: { node: ids2.get(head.key), socket: 'exec' } });
-    const graph = { version: 2, graph: { nodes, links, frames: [], groups: [] } };
+    const graph = withEnds({ version: 2, graph: { nodes, links, frames: [], groups: [] } });
     assert.equal(M.validate(graph), '', `${starter.id}: saves`);
     if (starter.attach) assert.equal(M.problems(graph).length, 0, `${starter.id}: executes`);
   }
@@ -143,7 +150,10 @@ test('weapon and spell templates split attack and damage into separate actions',
   for (const [id, [type, style]] of Object.entries(expect)) {
     const item = P.item('mechanic_templates', id);
     assert.ok(item, `${id} exists`);
-    const nodes = item.table.graph.nodes;
+    // Узел «Конец» в шаблон входит (поток действия обязан завершаться), но блоком не является.
+    const graphNodes = item.table.graph.nodes;
+    assert.ok(graphNodes.some(node => node.type === 'flow.end'), `${id}: «Конец» есть`);
+    const nodes = graphNodes.filter(node => node.type !== 'flow.end');
     assert.equal(nodes.length, 2, `${id}: program + one block`);
     assert.equal(nodes[1].type, 'action.roll', `${id}: single configurable roll node`);
     assert.equal(nodes[1].params.roll_kind, type, `${id}: roll kind`);

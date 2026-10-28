@@ -16,8 +16,8 @@
     "origin": {
       "srd-graph-v2": 981
     },
-    "nodes": 8848,
-    "links": 5084,
+    "nodes": 12473,
+    "links": 8722,
     "programs": 3625,
     "records_with_programs": 976,
     "node_types": {
@@ -29,6 +29,7 @@
       "action.roll": 1377,
       "condition.edition": 13,
       "condition.hit": 13,
+      "flow.end": 3625,
       "flow.if": 13,
       "rule.class": 32,
       "rule.list": 73,
@@ -52,8 +53,8 @@
     "origin": {
       "srd-graph-v2": 986
     },
-    "nodes": 8211,
-    "links": 4741,
+    "nodes": 11560,
+    "links": 8105,
     "programs": 3349,
     "records_with_programs": 977,
     "node_types": {
@@ -64,6 +65,7 @@
       "action.program": 3349,
       "action.roll": 1343,
       "condition.hit": 15,
+      "flow.end": 3349,
       "flow.if": 15,
       "rule.class": 32,
       "rule.list": 67,

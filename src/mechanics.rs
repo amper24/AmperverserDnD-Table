@@ -16,7 +16,9 @@ fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
     match m["version"].as_i64() {
         Some(2) => {
             crate::mechanics_graph::validate(m)?;
-            if !crate::mechanics_graph::is_executable(m) { return Ok(()); }
+            // Незавершённый поток («Начало → Конец») плану не мешает: проверяем блоки, как только
+            // исправлены все прочие проблемы (см. plan_checks_apply).
+            if !crate::mechanics_graph::plan_checks_apply(m) { return Ok(()); }
             validate_plan(&crate::mechanics_graph::to_v1(m), depth)
         }
         _ => Err(bad("Механики должны быть графом версии 2")),
@@ -218,9 +220,44 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         json!({"from": {"node": from, "socket": out_socket}, "to": {"node": to, "socket": in_socket}})
     }
     fn link(from: &str, to: &str) -> Value { wire(from, "exec", to, "exec") }
+    /// Достроить «Конец» каждой программе тестового графа: висячие flow-выходы (exec, then/else)
+    /// подключаются к узлу flow.end, а если его ещё нет — узел создаётся (как Mechanics.addFlowEnds).
+    fn terminate(graph: &mut Value) {
+        let nodes = graph["graph"]["nodes"].as_array().cloned().unwrap_or_default();
+        let kinds: std::collections::HashMap<String, String> = nodes.iter()
+            .filter_map(|node| Some((node["id"].as_str()?.to_string(), node["type"].as_str()?.to_string()))).collect();
+        let mut links = graph["graph"]["links"].as_array().cloned().unwrap_or_default();
+        fn has_link(links: &[Value], node: &str, socket: &str) -> bool {
+            links.iter().any(|link| link["from"]["node"] == node && link["from"]["socket"] == socket)
+        }
+        let mut dangling: Vec<(String, String)> = Vec::new();
+        for node in &nodes {
+            let id = node["id"].as_str().unwrap_or("");
+            let sockets: &[&str] = match kinds.get(id).map(String::as_str) {
+                Some("action.program") => &["exec"],
+                Some(kind) if kind.starts_with("action.") => &["exec"],
+                Some("flow.if") => &["then", "else"],
+                _ => &[],
+            };
+            for socket in sockets { if !has_link(&links, id, socket) { dangling.push((id.to_string(), (*socket).to_string())); } }
+        }
+        if dangling.is_empty() { return; }
+        let end = match nodes.iter().find(|node| node["type"] == "flow.end").and_then(|node| node["id"].as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                graph["graph"]["nodes"].as_array_mut().unwrap().push(json!({"id": "end", "type": "flow.end", "params": {}, "position": {"x": 900, "y": 0}}));
+                "end".to_string()
+            }
+        };
+        for (node, socket) in dangling { links.push(wire(&node, &socket, &end, "exec")); }
+        graph["graph"]["links"] = json!(links);
+    }
     /// Оболочка графа v2 — единственная схема, которую принимает сервер после удаления старых механик.
+    /// Поток достраивается до «Конца»: с незавершённым потоком граф не исполняется.
     fn mech(nodes: Vec<Value>, links: Vec<Value>) -> Value {
-        json!({"version": 2, "origin": "test", "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}})
+        let mut graph = json!({"version": 2, "origin": "test", "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}});
+        terminate(&mut graph);
+        graph
     }
     /// Зелье: расход → лечение → выдача пузырька — одна цепочка v2.
     fn fixture() -> Value {
@@ -238,8 +275,14 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     #[test] fn late_failure_rolls_back_everything(){
         let mut s=fixture();
         // Ошибка в самом конце цепочки: расход, лечение и выдача успели сработать, а у листа нет валюты.
-        s["inventory"][0]["mechanics"]["graph"]["nodes"].as_array_mut().unwrap().push(node("x","action.adjust",json!({"block_id":"x","field":"currency.gp","amount":5})));
-        s["inventory"][0]["mechanics"]["graph"]["links"].as_array_mut().unwrap().push(link("g","x"));
+        // Новый узел встаёт перед «Концом»: поток остаётся завершённым, и падает именно выполнение.
+        let graph = &mut s["inventory"][0]["mechanics"]["graph"];
+        let end = graph["nodes"].as_array().unwrap().iter().find(|node| node["type"] == "flow.end").unwrap()["id"].as_str().unwrap().to_string();
+        graph["nodes"].as_array_mut().unwrap().push(node("x","action.adjust",json!({"block_id":"x","field":"currency.gp","amount":5})));
+        let links = graph["links"].as_array_mut().unwrap();
+        links.retain(|link| !(link["from"]["node"] == "g" && link["to"]["node"] == end));
+        links.push(link("g","x"));
+        links.push(link("x", &end));
         let before=s.clone();
         assert!(execute(&mut s,"item","p","use","",false).is_err());
         assert_eq!(s,before);
@@ -346,18 +389,22 @@ mod graph_hit_tests {
     use serde_json::json;
 
     /// Лист с предметом-графом: атака (КД задаёт тест) → «Попадание атаки» → урон. Бросок атаки детерминирован.
+    /// Обе ветви «Если» и хвост цепочки сходятся в «Конце»: поток действия завершён.
     fn sheet_with(dc: i64) -> Value {
         json!({"hp": {"max": 20, "current": 10, "temp": 0}, "inventory": [{"uid": "w", "name": "Клинок", "qty": 1, "type": "gear", "mechanics": {"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}, "position": {"x": 0, "y": 0}},
             {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
             {"id": "h", "type": "condition.hit", "params": {}, "position": {"x": 520, "y": 120}},
             {"id": "f", "type": "flow.if", "params": {}, "position": {"x": 520, "y": 0}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}}
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}},
+            {"id": "e", "type": "flow.end", "params": {}, "position": {"x": 1040, "y": 0}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
             {"from": {"node": "a", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
             {"from": {"node": "h", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
-            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}}
+            {"from": {"node": "f", "socket": "then"}, "to": {"node": "d", "socket": "exec"}},
+            {"from": {"node": "f", "socket": "else"}, "to": {"node": "e", "socket": "exec"}},
+            {"from": {"node": "d", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
         ], "frames": [], "groups": []}}}]})
     }
 

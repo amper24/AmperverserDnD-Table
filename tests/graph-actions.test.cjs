@@ -20,10 +20,12 @@ function twoActions() {
     { id: 'dmgA', type: 'action.roll', params: { block_id: 'bA', roll_kind: 'damage', dice: { count: 1, sides: 6, bonus: 0, stat: '' } }, position: { x: 150, y: 0 }, action: 'startA' },
     { id: 'startB', type: 'action.program', params: { program_id: 'b', name: 'Лечение', trigger: 'use' }, position: { x: 0, y: 200 }, action: 'startB' },
     { id: 'healB', type: 'action.roll', params: { block_id: 'bB', roll_kind: 'heal', dice: { count: 1, sides: 4, bonus: 0, stat: '' } }, position: { x: 150, y: 200 } },
+    { id: 'endB', type: 'flow.end', params: {}, position: { x: 300, y: 200 }, action: 'startB' },
   ], links: [
     { from: { node: 'startA', socket: 'exec' }, to: { node: 'dmgA', socket: 'exec' } },
     { from: { node: 'dmgA', socket: 'exec' }, to: { node: 'endA', socket: 'exec' } },
     { from: { node: 'startB', socket: 'exec' }, to: { node: 'healB', socket: 'exec' } },
+    { from: { node: 'healB', socket: 'exec' }, to: { node: 'endB', socket: 'exec' } },
   ], frames: [], groups: [] };
   return { version: 2, graph };
 }

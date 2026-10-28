@@ -18,7 +18,12 @@ const node = (id, type, params = {}) => ({ id, type, params: { ...plain(R.NODE_D
 const actionNode = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, ...params });
 const link = (fromNode, fromSocket, toNode, toSocket) => ({ from: { node: fromNode, socket: fromSocket }, to: { node: toNode, socket: toSocket } });
 const start = node('start', 'action.program', { program_id: 'p', name: 'Тест', trigger: 'use' });
-const mech = (nodes, links) => ({ version: 2, graph: { nodes: [start, ...nodes], links, frames: [], groups: [] } });
+// Хелпер достраивает «Конец» действию (как редактор): иначе поток не исполняется.
+const mech = (nodes, links) => {
+  const graph = { nodes: [start, ...nodes], links, frames: [], groups: [] };
+  M.addFlowEnds(graph);
+  return { version: 2, graph };
+};
 const blocksOf = (mechanics, context = {}) => plain(M.toLegacy(mechanics, context).programs[0].blocks);
 
 test('characteristic and skill nodes produce dice formulas: bonus or score', () => {
@@ -121,4 +126,25 @@ test('math computes numbers and the boolean node is a constant', () => {
   assert.equal(bool.compute({ value: false }), false);
   const graph = mech([node('x', 'data.math', { op: 'mul' })], []);
   assert.equal(M.validate(graph), '');
+});
+
+test('поток действия обязан доходить до «Конца»: обрыв и незавершённая ветвь — проблемы, не ошибки схемы', () => {
+  // Хелпер addFlowEnds достраивает «Конец» и не дублирует его при повторном вызове.
+  const graph = { nodes: [start, actionNode('x', 'damage')], links: [link('start', 'exec', 'x', 'exec')], frames: [], groups: [] };
+  assert.equal(M.addFlowEnds(graph), 2, 'узел «Конец» и провод к нему');
+  assert.deepEqual(plain(M.problems({ version: 2, graph })), []);
+  assert.equal(M.addFlowEnds(graph), 0, 'повторный вызов ничего не меняет');
+  // Цепочка без «Конца»: запись сохраняется, но граф не исполняется.
+  const open = { version: 2, graph: { nodes: [start, actionNode('x', 'damage')], links: [link('start', 'exec', 'x', 'exec')], frames: [], groups: [] } };
+  assert.equal(M.validate(open), '', 'схема структурно корректна');
+  assert.deepEqual(plain(M.problems(open)), ['Действие «Тест» не завершается узлом «Конец»']);
+  assert.match(M.evaluateGraph(open).error, /Граф не исполняется/);
+  // Ветвь «Если» без продолжения — проблема ветви; «Конец» без входа — тоже проблема.
+  const branch = { version: 2, graph: { nodes: [start, node('lv', 'condition.level', { min: 1, max: 20 }), node('if', 'flow.if'), actionNode('yes', 'damage')],
+    links: [link('lv', 'value', 'if', 'condition'), link('start', 'exec', 'if', 'exec'), link('if', 'then', 'yes', 'exec')], frames: [], groups: [] } };
+  assert.equal(M.validate(branch), '');
+  assert.deepEqual(plain(M.problems(branch)), ['Ветка не завершается узлом «Конец»']);
+  const stray = { version: 2, graph: { nodes: [start, actionNode('x', 'damage'), node('end', 'flow.end'), node('stray', 'flow.end')],
+    links: [link('start', 'exec', 'x', 'exec'), link('x', 'exec', 'end', 'exec')], frames: [], groups: [] } };
+  assert.deepEqual(plain(M.problems(stray)), ['«Конец» ни к чему не подключён']);
 });

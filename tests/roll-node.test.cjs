@@ -17,7 +17,12 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 const link = (fromNode, fromSocket, toNode, toSocket) => ({ from: { node: fromNode, socket: fromSocket }, to: { node: toNode, socket: toSocket } });
 const program = { id: 'start', type: 'action.program', params: { program_id: 'p', name: 'Тест', trigger: 'use' } };
-const mech = (nodes, links) => ({ version: 2, graph: { nodes: [program, ...nodes], links, frames: [], groups: [] } });
+// Хелпер достраивает «Конец» действию (как редактор), чтобы поток был исполним.
+const mech = (nodes, links) => {
+  const graph = { nodes: [program, ...nodes], links, frames: [], groups: [] };
+  M.addFlowEnds(graph);
+  return { version: 2, graph };
+};
 
 test('реестр палитры отдаёт только абстрактные узлы: без отдельных атак, уронов и И/ИЛИ/НЕ', () => {
   const listed = plain(R.catalog('').flatMap(section => section.items.map(item => item.type)));

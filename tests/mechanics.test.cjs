@@ -11,7 +11,7 @@ vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContex
 const srd=f=>loadSrd(f).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,plan:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));
 const v2node=(id,type,params={})=>({id,type,params,position:{x:0,y:0}});
-const graphOf=(nodes,links=[])=>({version:2,graph:{nodes,links,frames:[],groups:[]}});
+const graphOf=(nodes,links=[])=>{const graph={nodes,links,frames:[],groups:[]};M.addFlowEnds(graph);return {version:2,graph};};
 const program=(id='p',name='Действие',params={})=>v2node(id,'action.program',{program_id:id,name,trigger:'use',...params});
 const wire=(from,fromSocket,to,toSocket)=>({from:{node:from,socket:fromSocket},to:{node:to,socket:toSocket}});
 test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});

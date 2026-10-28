@@ -44,6 +44,13 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.node-toolbar button.node-add[title="flow.end"]').click();
     assert.equal(await page.locator('.graph-node', { hasText: 'Конец' }).count(), 1, 'второй конец не создан');
 
+    // 2б. Удаление «Конца» предупреждает, что действие осталось без конца; кнопка возвращает его.
+    await page.locator('.graph-node', { hasText: 'Конец' }).locator('.node-delete').click();
+    assert.equal(await page.locator('.graph-node', { hasText: 'Конец' }).count(), 0, 'конец удалён');
+    assert.match(await page.locator('.node-status').innerText(), /без «Конца»/i, 'виден статус об удалённом «Конце»');
+    await page.locator('.node-toolbar button.node-add[title="flow.end"]').click();
+    assert.equal(await page.locator('.graph-node', { hasText: 'Конец' }).count(), 1, 'конец добавлен снова');
+
     // 3. Сохраняем цепочку действия как свой шаблон.
     await page.getByLabel('Название шаблона', { exact: true }).fill('Моё лечение');
     await page.getByRole('button', { name: 'Сохранить цепочку как шаблон', exact: true }).click();
@@ -59,6 +66,9 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.getByRole('button', { name: 'Вставить в действие', exact: true }).click();
     const after = await page.locator('.graph-node').count();
     assert.equal(after - before, saved.nodes.length, 'вставлены все узлы шаблона');
+    // Вставленная цепочка встаёт между «Началом» и «Концом», а не рядом с прямым проводом в «Конец».
+    const problems = await page.evaluate(() => window.Mechanics.problems({ version: 2, graph: document.querySelector('.node-editor').getGraph() }));
+    assert.deepEqual(problems, [], 'поток обоих действий завершается «Концом»');
 
     // 5. Свой шаблон можно удалить.
     await page.getByLabel('Шаблон графа', { exact: true }).selectOption({ label: 'Моё лечение · мой' });
