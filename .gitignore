@@ -9,3 +9,5 @@
 __pycache__/
 /config.yml
 /config.yml.bak
+# Готовая сборка для переноса (exe, config.yml рядом с ним, zip) — собирается локально
+/dist/
