@@ -977,7 +977,7 @@
     root.addEventListener('dragover', e => { if (M.hasType(e, 'application/x-compendium', 'application/x-item', 'application/x-spell', 'application/x-skill')) e.preventDefault(); });
     root.addEventListener('drop', e => { if (e.defaultPrevented) return; e.preventDefault(); handleDrop(e); });
   }
-  /// Владение навыком: из графа записи (узел rule.skill_proficiency), как у остальных объектов справочника.
+  /// Владение навыком: из графа записи (узел rule.list, kind: skill_proficiency), как у остальных объектов справочника.
   /// true — добавлено, 'dup' — уже есть, false — запись без графа и без ключа.
   function grantSkill(e, name) {
     const entry = e?.entry || e, label = String(name || entry?.name || '').trim();

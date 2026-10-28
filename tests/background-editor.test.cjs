@@ -1,5 +1,5 @@
 // Регрессия редактора предыстории (static/background-editor.js): чтение/запись записи, узлы графа
-// (rule.skill_proficiency, rule.skills, rule.proficiencies, rule.languages, rule.feature) и проекция
+// (rule.list с kind skill_proficiency/skills/proficiencies/languages/feature) и проекция
 // правок в мастера создания персонажа. Скрипт запускается в vm со стабом DOM и наборами данных.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -25,6 +25,7 @@ const M = ctx.window.Mechanics;
 const B = ctx.window.CharacterBuilder;
 const plain = x => JSON.parse(JSON.stringify(x));
 const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
+const nodesOfKind = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === kind);
 const entryOf = (data, name = 'Прислужник') => ({ id: 'b1', category: 'background', name, source: 'SRD 2014', data });
 const seed14 = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8')).filter(e => e.category === 'background');
 const seed24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'background');
@@ -46,16 +47,16 @@ test('круг чтения и записи: правки доходят до у
   st.feature.text = 'Новый текст умения.';
   const out = BE.writeData(st, entryOf(acolyte.data, acolyte.name));
 
-  assert.deepEqual(plain(nodesOfType(out, 'rule.skill_proficiency')[0].params.value), ['Проницательность', 'Религия', 'Медицина']);
+  assert.deepEqual(plain(nodesOfKind(out, 'skill_proficiency')[0].params.value), ['Проницательность', 'Религия', 'Медицина']);
   assert.deepEqual(plain(out.skills), ['Проницательность', 'Религия', 'Медицина'], 'поле data.skills идёт в ногу с узлом');
-  const choice = nodesOfType(out, 'rule.skills')[0];
+  const choice = nodesOfKind(out, 'skills')[0];
   assert.equal(choice.params.id, 'bg_skills_choice');
   assert.equal(choice.params.count, 1);
   assert.deepEqual(plain(choice.params.options), ['История', 'Природа']);
-  const tools = nodesOfType(out, 'rule.proficiencies').find(n => n.params.kind === 'Инструменты');
+  const tools = nodesOfKind(out, 'proficiencies').find(n => n.params.label === 'Инструменты');
   assert.deepEqual(plain(tools.params.value), ['Инструменты каллиграфа']);
-  assert.deepEqual(plain(nodesOfType(out, 'rule.languages')[0].params.value), ['Общий']);
-  const featureNode = nodesOfType(out, 'rule.feature')[0];
+  assert.deepEqual(plain(nodesOfKind(out, 'languages')[0].params.value), ['Общий']);
+  const featureNode = nodesOfKind(out, 'feature')[0];
   assert.equal(featureNode.params.name, 'Умение: Приют верующих');
   assert.equal(featureNode.params.text, 'Новый текст умения.');
   assert.equal(out.feature_text, 'Новый текст умения.');

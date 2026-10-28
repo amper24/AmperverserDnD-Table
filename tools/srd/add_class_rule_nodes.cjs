@@ -3,8 +3,8 @@
 // (data_seed/srd_*.json), чтобы мастер создания и повышения уровня читали их из графа:
 //   rule.value (kind: hit_die) — кость хитов (data.hit_die);
 //   rule.saving_throws  — спасброски (data.saves);
-//   rule.proficiencies  — доспехи/оружие/инструменты (data.armor / weapons / tools);
-//   rule.class_features — умения по уровням (data.features + data.feature_texts) таблицей;
+//   rule.list (kind: proficiencies) — доспехи/оружие/инструменты (data.armor / weapons / tools; метка вида — label);
+//   rule.list (kind: class_features) — умения по уровням (data.features + data.feature_texts) таблицей;
 //   rule.spellcasting   — заклинательная характеристика (data.spellcasting).
 // Идемпотентно: узлы с фиксированными id удаляются и добавляются заново. Поля data.* не трогаются.
 //   node tools/srd/add_class_rule_nodes.cjs
@@ -23,7 +23,7 @@ const build = (rec) => {
     const list = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.trim() ? [raw] : [];
     // «—» — маркер «нет владения», не настоящее владение.
     const values = list.map(x => String(x).trim()).filter(x => x && !['—', '–', '-', 'нет', 'none'].includes(x));
-    if (values.length) out.push({ id, type: 'rule.proficiencies', params: { kind, value: values } });
+    if (values.length) out.push({ id, type: 'rule.list', params: { kind: 'proficiencies', label: kind, value: values } });
   };
   prof('rule_prof_armor', 'Доспехи', d.armor);
   prof('rule_prof_weapons', 'Оружие', d.weapons);
@@ -33,7 +33,7 @@ const build = (rec) => {
     const items = (Array.isArray(names) ? names : []).map(name => ({ name: String(name), text: String(d.feature_texts?.[name] || '') }));
     if (items.length) levels[level] = items;
   }
-  out.push({ id: 'rule_class_features', type: 'rule.class_features', params: { table: { levels } } });
+  out.push({ id: 'rule_class_features', type: 'rule.list', params: { kind: 'class_features', table: { levels } } });
   if (typeof d.spellcasting === 'string' && d.spellcasting) out.push({ id: 'rule_spellcasting', type: 'rule.spellcasting', params: { ability: d.spellcasting } });
   return out;
 };
@@ -47,12 +47,12 @@ const enOverlay = (rec, nodes) => {
   const enTexts = en['feature_texts!'] || {};    // { enName: enText }
   const out = [];
   for (const n of nodes) {
-    if (n.type === 'rule.proficiencies') {
+    if (n.params?.kind === 'proficiencies') {
       const enVal = n.id === 'rule_prof_armor' ? en.armor : n.id === 'rule_prof_weapons' ? en.weapons : en.tools;
       const values = Array.isArray(enVal) ? enVal : typeof enVal === 'string' && enVal.trim() ? [enVal] : [];
       if (!values.length) continue;
-      out.push({ id: n.id, params: { kind: KIND_EN[n.params.kind] || n.params.kind, value: values } });
-    } else if (n.type === 'rule.class_features') {
+      out.push({ id: n.id, params: { kind: 'proficiencies', label: KIND_EN[n.params.label] || n.params.label, value: values } });
+    } else if (n.params?.kind === 'class_features') {
       const levels = {};
       for (const [level, items] of Object.entries(n.params.table.levels || {})) {
         const enNames = enFeatures[`${level}!`] || [];
@@ -62,7 +62,7 @@ const enOverlay = (rec, nodes) => {
         });
         if (mapped.length) levels[level] = mapped;
       }
-      out.push({ id: n.id, params: { table: { levels } } });
+      out.push({ id: n.id, params: { kind: 'class_features', table: { levels } } });
     }
   }
   return out;

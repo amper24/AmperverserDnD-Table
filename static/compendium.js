@@ -35,7 +35,7 @@ window.Compendium = (function () {
     switch (e.category) {
       case 'race': if (d.parent) add('Основной вид', d.parent); add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Тёмное зрение', d.darkvision && d.darkvision + ' фт'); add('Языки', d.languages); break;
       case 'class': {
-        // Навыки класса — правило графа (узел rule.skills, id classSkills): в карточке видно то же,
+        // Навыки класса — правило графа (узел rule.list, kind: skills, id classSkills): в карточке видно то же,
         // что спросит мастер создания. Запас — поле data.skills старого формата.
         const rule = window.ClassRules?.skillsOf?.(e) || {};
         const legacy = Array.isArray(d.skills) ? d.skills : d.skills && Array.isArray(d.skills.from) ? `${d.skills.choose ?? 2} из: ${d.skills.from.join(', ')}` : typeof d.skills === 'string' ? d.skills : '';

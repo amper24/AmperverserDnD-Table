@@ -178,8 +178,8 @@ test('every SRD class offers its complete, correctly sized skill-choice pool in 
       assert.equal(state.klass.options.length, klass.data.skills.from.length, `${edition} ${klass.name} option pool size`);
       assert.ok(state.klass.options.every(option => ctx.SKILLS.some(skill => skill[0] === option.key)), `${edition} ${klass.name} options map to known skills`);
       assert.equal(new Set(state.klass.options.map(option => option.key)).size, state.klass.options.length, `${edition} ${klass.name} options are distinct`);
-      // Список навыков — правило графа (узел rule.skills), и оно совпадает с полем записи.
-      const node = (klass.data.mechanics.graph.nodes || []).find(n => n.type === 'rule.skills');
+      // Список навыков — правило графа (узел rule.list, kind: skills), и оно совпадает с полем записи.
+      const node = (klass.data.mechanics.graph.nodes || []).find(n => n.type === 'rule.list' && n.params?.kind === 'skills');
       assert.ok(node, `${edition} ${klass.name} skill rule lives on the graph`);
       assert.equal(node.params.id, 'classSkills', `${edition} ${klass.name} choice key`);
       assert.equal(node.params.count, expected[slug], `${edition} ${klass.name} node count`);
@@ -191,28 +191,28 @@ test('every SRD class offers its complete, correctly sized skill-choice pool in 
   }
 });
 
-test('навыки класса: узел rule.skills важнее поля data.skills, поле — запасной путь', () => {
+test('навыки класса: узел rule.list (kind: skills) важнее поля data.skills, поле — запасной путь', () => {
   const source = loadSrd('data_seed/srd_2014.json').find(e => e.category === 'class' && e.name === 'Варвар');
   const record = () => JSON.parse(JSON.stringify(source));
-  const skillNode = e => e.data.mechanics.graph.nodes.find(n => n.type === 'rule.skills');
+  const skillNode = e => e.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'skills');
 
   // Правило графа — источник: поле записи устарело и на выбор не влияет.
   const withNode = record();
-  skillNode(withNode).params = { id: 'classSkills', count: 3, options: ['Атлетика', 'Природа'], title: 'Навыки класса' };
+  skillNode(withNode).params = { kind: 'skills', id: 'classSkills', count: 3, options: ['Атлетика', 'Природа'], title: 'Навыки класса' };
   const st = B.skillsState({ edition: '2014', selected: { class: withNode }, skills: [] });
   assert.equal(st.klass.choose, 2, 'берётся количество из узла (не больше списка)');
   assert.deepEqual(plain(st.klass.options.map(o => o.key)), ['athletics', 'nature'], 'список — из узла');
 
   // Пустой список в узле — «любой навык справочника»: выбор не пропадает.
   const any = record();
-  skillNode(any).params = { id: 'classSkills', count: 2, options: [] };
+  skillNode(any).params = { kind: 'skills', id: 'classSkills', count: 2, options: [] };
   const stAny = B.skillsState({ edition: '2014', selected: { class: any }, skills: [] });
   assert.equal(stAny.klass.choose, 2);
   assert.equal(stAny.klass.options.length, ctx.SKILLS.length, 'любой навык справочника');
 
   // Записи без узла (старые наборы) читаются по полю data.skills.
   const legacy = record();
-  legacy.data.mechanics.graph.nodes = legacy.data.mechanics.graph.nodes.filter(n => n.type !== 'rule.skills');
+  legacy.data.mechanics.graph.nodes = legacy.data.mechanics.graph.nodes.filter(n => !(n.type === 'rule.list' && n.params?.kind === 'skills'));
   const stLegacy = B.skillsState({ edition: '2014', selected: { class: legacy }, skills: [] });
   assert.equal(stLegacy.klass.choose, 2);
   assert.deepEqual(plain(stLegacy.klass.options.map(o => o.key)), source.data.skills.from.map(name => ctx.SKILLS.find(([, n]) => n === name)[0]), 'список из поля записи');

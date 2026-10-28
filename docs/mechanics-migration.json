@@ -30,15 +30,10 @@
       "condition.edition": 13,
       "condition.hit": 13,
       "flow.if": 13,
-      "rule.class_features": 12,
       "rule.class_progression": 12,
       "rule.class_rules": 12,
-      "rule.feature": 1,
-      "rule.languages": 9,
-      "rule.proficiencies": 23,
+      "rule.list": 61,
       "rule.saving_throws": 12,
-      "rule.skill_proficiency": 3,
-      "rule.skills": 13,
       "rule.spellcasting": 8,
       "rule.value": 42
     }
@@ -73,14 +68,10 @@
       "action.roll": 1343,
       "condition.hit": 15,
       "flow.if": 15,
-      "rule.class_features": 12,
       "rule.class_progression": 12,
       "rule.class_rules": 12,
-      "rule.proficiencies": 24,
+      "rule.list": 55,
       "rule.saving_throws": 12,
-      "rule.skill_proficiency": 4,
-      "rule.skills": 14,
-      "rule.spell_list": 1,
       "rule.spellcasting": 8,
       "rule.value": 22
     }

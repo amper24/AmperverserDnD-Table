@@ -22,9 +22,9 @@
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
-| `builder-dialog.js:118–126` | полуэльф 2014 — два навыка; эльф 2024 — один навык; человек 2024 — навык + черта | `rule.skills` с `count` и `options` на записи расы; `condition.edition` |
-| `builder-dialog.js:119, 533` и `character-builder.js:668` | дварф 2014 — обязательный инструмент | `rule.proficiencies` с выбором `count: 1` на записи расы |
-| `character-builder.js:28–29` | списки языков по редакции | `rule.languages` на записи расы/предыстории; общий список языков — в данных |
+| `builder-dialog.js:118–126` | полуэльф 2014 — два навыка; эльф 2024 — один навык; человек 2024 — навык + черта | `rule.list` (kind `skills`) с `count` и `options` на записи расы; `condition.edition` |
+| `builder-dialog.js:119, 533` и `character-builder.js:668` | дварф 2014 — обязательный инструмент | `rule.list` (kind `proficiencies`) с выбором `count: 1` на записи расы |
+| `character-builder.js:28–29` | списки языков по редакции | `rule.list` (kind `languages`) на записи расы/предыстории; общий список языков — в данных |
 | `character-builder.js:787` | дополнительная хит-кость дварфа 2024 (regex по имени расы) | `rule.value` (kind `hp`) на записи расы, без совпадения по имени |
 | `builder-dialog.js:531` | черта происхождения человека | выбор на записи (`data.choices`) с `options` из списка черт |
 
@@ -32,27 +32,27 @@
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
-| `builder-dialog.js:134–145`, `430–470` | боевой стиль воина 2014 и 2024; избранный враг/местность следопыта 2014; орден жреца и друида 2024; барды (инструменты, навыки) | `rule.feature`/`rule.skills` и выбор на записи (`data.choices`) с `condition.edition` и `condition.level` |
-| `builder-dialog.js:188, 593, 657` | плут 2024: «плут — 1 стандартный» и язык класса | `rule.languages`, выбор навыка/инструмента на записи класса |
+| `builder-dialog.js:134–145`, `430–470` | боевой стиль воина 2014 и 2024; избранный враг/местность следопыта 2014; орден жреца и друида 2024; барды (инструменты, навыки) | `rule.list` (kind `feature`)/`rule.list` (kind `skills`) и выбор на записи (`data.choices`) с `condition.edition` и `condition.level` |
+| `builder-dialog.js:188, 593, 657` | плут 2024: «плут — 1 стандартный» и язык класса | `rule.list` (kind `languages`), выбор навыка/инструмента на записи класса |
 | `builder-dialog.js:266–299` | слуги заговоров/заклинаний (жрец, друид, волшебник) и список «Жрец/Друид/Волшебник» | выбор на записи (`data.choices`) с `options` по записи класса; slug-и не нужны в UI |
-| `character-builder.js:53` | «Боевой стиль» для воина 2014 пропускается в умениях | `rule.feature` с признаком «выбор»; фильтр не по имени класса |
-| `character-builder.js:530–538` | `CLASS_SLUGS_RU` (русское название → slug) и фильтр оружия монаха | поле `slug`/`name_ru` в записи класса; фильтр оружия — `rule.proficiencies` |
-| `character-builder.js:549–561` | формулы заклинаний по классам (`wizard`, `cleric`/`druid`, паладин/рейнджер 2024) и режимы `prepared`/`book` | `rule.spell_list` с `mode` и формулой `count = 1 + mod` на записи класса (`spellcasting` уже в данных) |
+| `character-builder.js:53` | «Боевой стиль» для воина 2014 пропускается в умениях | `rule.list` (kind `feature`) с признаком «выбор»; фильтр не по имени класса |
+| `character-builder.js:530–538` | `CLASS_SLUGS_RU` (русское название → slug) и фильтр оружия монаха | поле `slug`/`name_ru` в записи класса; фильтр оружия — `rule.list` (kind `proficiencies`) |
+| `character-builder.js:549–561` | формулы заклинаний по классам (`wizard`, `cleric`/`druid`, паладин/рейнджер 2024) и режимы `prepared`/`book` | `rule.list` (kind `spell_list`) с `mode` и формулой `count = 1 + mod` на записи класса (`spellcasting` уже в данных) |
 | `character-builder.js:657` | бездоспешная защита варвара и монаха | **сделано:** пассивный блок `unarmored_defense` в записи класса; мастер читает поле, не имя класса |
-| `character-builder.js:691–740` | воин 2014/2024, жрец 2024 (орден, заклинания), друид/рейнджер/плут (языки, владения, экспертиза) | `rule.feature`, `rule.spell_list`, `rule.proficiencies`, `rule.skills` на записях классов |
+| `character-builder.js:691–740` | воин 2014/2024, жрец 2024 (орден, заклинания), друид/рейнджер/плут (языки, владения, экспертиза) | `rule.list` (kind `feature`), `rule.list` (kind `spell_list`), `rule.list` (kind `proficiencies`), `rule.list` (kind `skills`) на записях классов |
 
 ### 3. Повышение уровня (`levelup.js`)
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
 | `levelup.js:15–16` | `SLUG_RU` — карта русских имён классов | поле `slug`/`name_ru` в записи класса |
-| `levelup.js:19–20` | `PICKERS`, `FULL_CASTERS`, `HALF_CASTERS` — типы заклинателей | `rule.spell_list` (`mode`, `caster_type`) на записи класса |
-| `levelup.js:91–92` | подготовленные заклинания по классам | формула `prepared` в `rule.spell_list` |
+| `levelup.js:19–20` | `PICKERS`, `FULL_CASTERS`, `HALF_CASTERS` — типы заклинателей | `rule.list` (kind `spell_list`) (`mode`, `caster_type`) на записи класса |
+| `levelup.js:91–92` | подготовленные заклинания по классам | формула `prepared` в `rule.list` (kind `spell_list`) |
 | `levelup.js:146, 151` | подклассы, дающие заклинания или умения на определённом уровне (круг земли, коллегия знаний) | `condition.subclass` + `condition.level` на записи подкласса |
 | `levelup.js:172–197` | боевой стиль (воин/паладин/рейнджер), метамагия (чародей 2014), пакт (колдун 2014), рейнджер 2014 | выбор на записи (`data.choices`) + `condition.level` на записи класса |
-| `levelup.js:219, 234–247` | expertise волшебника 2024, спеллы и навыки бард/рейнджер/плут | `rule.skills` / `rule.spell_list` с условием уровня |
+| `levelup.js:219, 234–247` | expertise волшебника 2024, спеллы и навыки бард/рейнджер/плут | `rule.list` (kind `skills`) / `rule.list` (kind `spell_list`) с условием уровня |
 | `levelup.js:601` | «четыре» классов (бард/жрец/друид/волшебник) для выбора | выбор на записи класса, не список имён |
-| `levelup.js:626, 817` | expertise плута 2014 | `rule.skills` (`expertise: true`) на записи класса |
+| `levelup.js:626, 817` | expertise плута 2014 | `rule.list` (kind `skills`) (`expertise: true`) на записи класса |
 
 ### 4. Снаряжение (`equipment.js`)
 

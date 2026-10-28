@@ -24,11 +24,11 @@
 
 | Что | Узел | Поле записи |
 |---|---|---|
-| владение навыком | `rule.skill_proficiency` (id `bg_skills`) | `data.skills` |
-| выбор навыков игроком | `rule.skills` (id `bg_skills_choice`, count, options) | `data.skills_choice { count, from }` |
-| инструменты | `rule.proficiencies` (kind «Инструменты») | `data.tools` |
-| языки | `rule.languages` | `data.languages` — список, число («любые два языка») или примечание |
-| умение предыстории | `rule.feature` | `data.feature` / `data.feature_text` |
+| владение навыком | `rule.list` (kind `skill_proficiency`, id `bg_skills`) | `data.skills` |
+| выбор навыков игроком | `rule.list` (kind `skills`, id `bg_skills_choice`, count, options) | `data.skills_choice { count, from }` |
+| инструменты | `rule.list` (kind `proficiencies`, label «Инструменты») | `data.tools` |
+| языки | `rule.list` (kind `languages`) | `data.languages` — список, число («любые два языка») или примечание |
+| умение предыстории | `rule.list` (kind `feature`) | `data.feature` / `data.feature_text` |
 | черта 2024 | — | `data.feat` |
 | характеристики на выбор 2024 | — | `data.asi_options` (СИЛ, ЛОВ, …) |
 | стартовое снаряжение | — | `data.equipment` |
@@ -39,10 +39,10 @@
 
 ## Как это видят мастер создания и лист
 
-- `data.skills` и узел `rule.skill_proficiency` → владения навыками (проекция графа);
-- узел `rule.skills` → выбор навыков: значения приходят ключом `bg_skills_choice`
+- `data.skills` и узел `rule.list` (kind `skill_proficiency`) → владения навыками (проекция графа);
+- узел `rule.list` (kind `skills`) → выбор навыков: значения приходят ключом `bg_skills_choice`
   через `ruleChoices` (своя предыстория может спрашивать выбор, как раса или класс);
-- узел `rule.feature` → умение отдельной карточкой; `data.feat` → модуль черты с
+- узел `rule.list` (kind `feature`) → умение отдельной карточкой; `data.feat` → модуль черты с
   пометкой предыстории (`backgroundFeatModule`), а если записи черты нет —
   напоминание текстом;
 - `data.equipment` → стартовое снаряжение (парсер снаряжения мастера создания);

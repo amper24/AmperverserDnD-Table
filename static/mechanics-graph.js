@@ -1282,7 +1282,7 @@
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_rules || null);
     },
-    // Стартовое снаряжение из графа: rule.equipment (фиксированный список) и rule.equipment_choice (выбор варианта).
+    // Стартовое снаряжение из графа: rule.list (kind: equipment) и rule.list (kind: equipment_choice).
     equipment(mechanics, options = {}) {
       if (mechanics?.version !== GRAPH_VERSION) return { items: [], choices: [] };
       const result = evaluateGraph(mechanics, options);
@@ -1291,13 +1291,13 @@
       const choices = result.effects.filter(e => e.kind === 'equipment_choice').map(e => ({ id: e.id, title: e.title, options: e.options || [] }));
       return { items, choices };
     },
-    // Умения класса по уровням из узла rule.class_features; null, если узла нет.
+    // Умения класса по уровням из узла rule.list (kind: class_features); null, если узла нет.
     classFeatures(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_features || null);
     },
-    // Выбор навыков из узла rule.skills (params {id, count, options}) — для классов id «classSkills»;
+    // Выбор навыков из узла rule.list (kind: skills, params {id, count, options}) — для классов id «classSkills»;
     // null, если узла нет. Пустой список — «любой навык», как у расс.
     classSkills(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;

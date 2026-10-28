@@ -1,6 +1,6 @@
 // Регрессия редактора расы (static/race-editor.js): чтение/запись записи, узлы графа
-// (rule.value с kind speed/ability, rule.languages, rule.skill_proficiency, rule.skills,
-// rule.proficiencies) и программы черт. Скрипт запускается в vm со стабом DOM и наборами данных.
+// (rule.value с kind speed/ability, rule.list с kind languages/skill_proficiency/skills/proficiencies)
+// и программы черт. Скрипт запускается в vm со стабом DOM и наборами данных.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -30,6 +30,7 @@ const seed = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
 const RACES = seed.filter(e => e.category === 'race');
 const raceByName = name => RACES.find(e => e.name === name);
 const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
+const nodesOfKind = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === kind);
 const entryOf = (data, name = 'Дварф') => ({ id: 'r1', category: 'race', name, data });
 
 test('круг чтения и записи: правки доходят до мастера создания и не теряют узлы', () => {
@@ -51,8 +52,8 @@ test('круг чтения и записи: правки доходят до м
   assert.equal(out.speed, 35);
   assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'speed')[0].params.amount, 35, 'узел скорости обновлён');
   assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'ability').find(n => n.params.ability === 'dex').params.amount, 3);
-  assert.deepEqual(plain(nodesOfType(out, 'rule.languages')[0].params.value), ['Общий', 'Эльфийский', 'Драконий']);
-  assert.deepEqual(plain(nodesOfType(out, 'rule.skill_proficiency')[0].params.value), ['Восприятие', 'Скрытность']);
+  assert.deepEqual(plain(nodesOfKind(out, 'languages')[0].params.value), ['Общий', 'Эльфийский', 'Драконий']);
+  assert.deepEqual(plain(nodesOfKind(out, 'skill_proficiency')[0].params.value), ['Восприятие', 'Скрытность']);
   assert.ok(out.languages.includes('Драконий'));
   assert.ok(out.languages.some(x => x.includes('говорить, читать и писать')), 'примечание не потеряно');
   assert.equal(out.traits[0].text, 'Новый текст черты.');
@@ -91,8 +92,8 @@ test('навыки: владение узлом, выбор игрока — с�
   st.skills.choose = 2;
   st.skills.from.push('Скрытность', 'Магия');
   const out = RE.writeData(st, entryOf(RE.emptyData()));
-  assert.deepEqual(plain(nodesOfType(out, 'rule.skill_proficiency')[0].params.value), ['Восприятие']);
-  const choice = nodesOfType(out, 'rule.skills')[0];
+  assert.deepEqual(plain(nodesOfKind(out, 'skill_proficiency')[0].params.value), ['Восприятие']);
+  const choice = nodesOfKind(out, 'skills')[0];
   assert.equal(choice.params.count, 2);
   assert.deepEqual(plain(choice.params.options), ['Скрытность', 'Магия']);
   assert.equal(choice.params.id, 'race_skills');
@@ -148,12 +149,12 @@ test('новая раса: пустая запись собирает валид
 
 test('выбор навыков расы переживает сохранение записи: пустой список — любой навык', () => {
   // «Универсальность навыков» полуэльфа: сколько выбрать, список пуст (любой навык). Сохранение
-  // записи без правок не должно потерять узел rule.skills.
+  // записи без правок не должно потерять узел rule.list (kind: skills).
   const half = RE.readState(raceByName('Полуэльф'));
   assert.equal(half.skills.choose, 2);
   assert.deepEqual(plain(half.skills.from), []);
   const out = RE.writeData(half, raceByName('Полуэльф'));
-  const node = nodesOfType(out, 'rule.skills')[0];
+  const node = nodesOfKind(out, 'skills')[0];
   assert.ok(node, 'узел выбора навыков остался в графе');
   assert.equal(node.params.count, 2);
   assert.deepEqual(plain(node.params.options), []);
@@ -163,18 +164,18 @@ test('выбор навыков расы переживает сохранени
   half.skills.choose = 3;
   half.skills.from = ['Скрытность', 'Атлетика'];
   const out2 = RE.writeData(half, raceByName('Полуэльф'));
-  const node2 = nodesOfType(out2, 'rule.skills')[0];
+  const node2 = nodesOfKind(out2, 'skills')[0];
   assert.deepEqual(plain(node2.params.options), ['Скрытность', 'Атлетика']);
   assert.equal(node2.params.count, 2, 'выбор ограничен списком');
 });
 
-test('владения: по узлу rule.proficiencies на каждый вид', () => {
+test('владения: по узлу rule.list (kind: proficiencies) на каждый вид', () => {
   const st = RE.readState(entryOf(RE.emptyData()));
   st.profs.push({ kind: 'Оружие', values: ['Боевой топор', 'Ручной топор'] });
   st.profs.push({ kind: 'Инструменты', values: ['Кузнечные инструменты'] });
   const out = RE.writeData(st, entryOf(RE.emptyData()));
-  const nodes = nodesOfType(out, 'rule.proficiencies');
-  assert.deepEqual(plain(nodes.map(n => n.params.kind)), ['Оружие', 'Инструменты']);
+  const nodes = nodesOfKind(out, 'proficiencies');
+  assert.deepEqual(plain(nodes.map(n => n.params.label)), ['Оружие', 'Инструменты']);
   assert.deepEqual(plain(nodes[0].params.value), ['Боевой топор', 'Ручной топор']);
   const st2 = RE.readState({ data: out });
   assert.deepEqual(plain(st2.profs), [{ kind: 'Оружие', values: ['Боевой топор', 'Ручной топор'] }, { kind: 'Инструменты', values: ['Кузнечные инструменты'] }]);
@@ -212,7 +213,7 @@ test('известные сразу заклинания приходят из �
   assert.deepEqual(plain(wood.spells.fixed.map(r => r.name)), ['Искусство друидов']);
 });
 
-test('запись заклинаний: узлы rule.spell_list, поля данных и характеристика игрока', () => {
+test('запись заклинаний: узлы rule.list (kind: spell_list), поля данных и характеристика игрока', () => {
   const source = raceByName('Высший эльф');
   const st = RE.readState(source);
   st.spells.fixed.push({ name: 'Огненный снаряд', level: 0, ability: 'cha' });
@@ -227,7 +228,7 @@ test('запись заклинаний: узлы rule.spell_list, поля да
   assert.deepEqual(plain(out.spell_choices[0].filter), { level: 0, classes: ['волшебник'] });
   assert.deepEqual(plain(out.spell_ability_choice), { enabled: true, options: ['int', 'cha'], title: 'Заклинательная характеристика', hint: 'Выберите характеристику.' });
 
-  const nodes = nodesOfType(out, 'rule.spell_list');
+  const nodes = nodesOfKind(out, 'spell_list');
   assert.equal(nodes.length, 2, 'по узлу на характеристику');
   assert.deepEqual(plain(nodes.find(n => n.params.ability === 'cha').params.spells), ['Огненный снаряд']);
   assert.deepEqual(plain(nodes.find(n => !n.params.ability).params.spells), ['Свет'], 'характеристику выбирает игрок — узел без неё');
@@ -246,20 +247,20 @@ test('запись заклинаний: узлы rule.spell_list, поля да
   st3.spells.fixed = [];
   const out3 = RE.writeData(st3, { data: out });
   assert.deepEqual(plain(out3.cantrips), []);
-  assert.equal(nodesOfType(out3, 'rule.spell_list').length, 0);
+  assert.equal(nodesOfKind(out3, 'spell_list').length, 0);
 });
 
 test('заклинания расы доходят до листа персонажа: данные и граф механик', () => {
   const spells = seed.filter(e => e.category === 'spell');
   const race = { id: 'custom-race', category: 'race', name: 'Своя раса', source: 'Тест',
     data: { edition: '2014', name_en: 'My Race', speed: 30, cantrips: [{ name: 'Чудотворство', level: 0, ability: 'cha' }],
-      mechanics: { origin: 'race-editor-v2', version: 2, graph: { nodes: [{ id: 'sp1', type: 'rule.spell_list', position: { x: 0, y: 0 }, params: { mode: 'known', ability: 'int', spells: ['Огненный снаряд'] } }], links: [], frames: [], groups: [] } } } };
+      mechanics: { origin: 'race-editor-v2', version: 2, graph: { nodes: [{ id: 'sp1', type: 'rule.list', position: { x: 0, y: 0 }, params: { kind: 'spell_list', mode: 'known', ability: 'int', spells: ['Огненный снаряд'] } }], links: [], frames: [], groups: [] } } } };
   const sheet = ctx.window.CharacterBuilder.build({ name: 'Своя раса', edition: '2014',
     abilities: Object.fromEntries(ctx.window.CharacterBuilder.keys.map(k => [k, 10])), selected: { race },
     catalog: [...spells, race], spells: [], method: 'standard' });
   const known = plain(sheet.spells.known);
   assert.ok(known.some(s => s.name === 'Чудотворство' && s.spell_ability === 'cha'), 'известное сразу заклинание из данных');
-  assert.ok(known.some(s => s.name === 'Огненный снаряд' && s.spell_ability === 'int'), 'заклинание из узла rule.spell_list');
+  assert.ok(known.some(s => s.name === 'Огненный снаряд' && s.spell_ability === 'int'), 'заклинание из узла rule.list (kind: spell_list)');
   assert.ok(known.every(s => s.prepared), 'заклинания расы всегда доступны');
 });
 

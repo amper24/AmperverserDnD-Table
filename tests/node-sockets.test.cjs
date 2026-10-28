@@ -26,7 +26,6 @@ const listed = () => clone(R.catalog('').flatMap(section => section.items.map(it
 const REQUIRED = {
   'condition.choice': { id: 'styleChoice', value: 'duelist' },
   'condition.subclass': { id: 'champion' },
-  'rule.skills': { id: 'classSkills', count: 2, options: ['stealth', 'perception'] },
   'action.program': { program_id: 'p1', name: 'Действие', trigger: 'use' },
   'group.input': { socket_id: 'in' },
   'group.output': { socket_id: 'out' },
@@ -46,7 +45,7 @@ test('меню добавления совпадает с реестром, вн
 test('характеристику и навык задаёт один узел — дублей значений нет', () => {
   assert.ok(R.NODE_DEFS['data.stat']);
   assert.equal(R.NODE_DEFS['data.ability'], undefined, 'узел «Характеристика» удалён: значение характеристики берёт data.stat');
-  assert.equal(R.NODE_DEFS['data.choice'], undefined, 'узел «Выбор» удалён: выборы при создании задаёт data.choices записи, выбор навыков — rule.skills');
+  assert.equal(R.NODE_DEFS['data.choice'], undefined, 'узел «Выбор» удалён: выборы при создании задаёт data.choices записи, выбор навыков — rule.list (kind: skills)');
   assert.equal(listed().filter(type => type === 'data.stat').length, 1);
 });
 
@@ -83,12 +82,25 @@ test('умолчания узлов проходят проверку, прав�
     armor_formula: { kind: 'armor_formula', formula: '10+@dex' },
   };
   assert.deepEqual(Object.keys(valueParams).sort(), Object.keys(R.RULE_VALUE_KINDS).sort(), 'проверены все виды rule.value');
+  // У одного узла rule.list девять видов: каждый вид обязан пройти проверку и дать эффект на лист.
+  const listParams = {
+    languages: { kind: 'languages', value: ['Общий'] },
+    proficiencies: { kind: 'proficiencies', label: 'Доспехи', value: ['Лёгкие доспехи'] },
+    skill_proficiency: { kind: 'skill_proficiency', value: ['Восприятие'] },
+    skills: { kind: 'skills', id: 'classSkills', count: 2, options: ['stealth', 'acrobatics'] },
+    spell_list: { kind: 'spell_list', mode: 'known', ability: 'int', spells: [] },
+    feature: { kind: 'feature', name: 'Умение', text: '' },
+    class_features: { kind: 'class_features', table: { levels: { '1': [{ name: 'Умение', text: '' }] } } },
+    equipment: { kind: 'equipment', items: [{ name: 'Дорожная одежда', qty: 1 }] },
+    equipment_choice: { kind: 'equipment_choice', id: 'gear', title: 'Выберите снаряжение', options: [{ name: 'Вариант А', items: [{ name: 'Дорожная одежда', qty: 1 }], gold: 0 }] },
+  };
+  assert.deepEqual(Object.keys(listParams).sort(), Object.keys(R.RULE_LIST_KINDS).sort(), 'проверены все виды rule.list');
   for (const [type, def] of Object.entries(R.NODE_DEFS)) {
     if (typeof def.compute === 'function') {
       assert.doesNotThrow(() => def.compute(paramsOf(type), () => undefined), `${type}: вычисление не падает`);
     }
     if (!type.startsWith('rule.')) continue;
-    const variants = type === 'rule.value' ? Object.values(valueParams) : [paramsOf(type)];
+    const variants = type === 'rule.value' ? Object.values(valueParams) : type === 'rule.list' ? Object.values(listParams) : [paramsOf(type)];
     for (const params of variants) {
       const error = typeof def.validate === 'function' ? def.validate(params) : '';
       assert.equal(error, '', `${type} ${params.kind || ''}: параметры правила допустимы`);

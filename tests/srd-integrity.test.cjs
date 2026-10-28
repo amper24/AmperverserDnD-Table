@@ -61,7 +61,8 @@ test('навыки справочника собраны генератором 
   for (const row of skills) {
     const nodes = row.data.mechanics.graph.nodes;
     assert.equal(nodes.length, 1, `${row.name}: один узел`);
-    assert.equal(nodes[0].type, 'rule.skill_proficiency', `${row.name}: узел владения навыком`);
+    assert.equal(nodes[0].type, 'rule.list', `${row.name}: узел владения навыком`);
+    assert.equal(nodes[0].params.kind, 'skill_proficiency', `${row.name}: вид владения навыком`);
   }
 });
 

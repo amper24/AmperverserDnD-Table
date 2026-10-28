@@ -38,15 +38,12 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
-        "rule.languages" | "rule.proficiencies" | "rule.saving_throws" | "rule.skill_proficiency" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_slots" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.saving_throws" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_slots" | "rule.class_progression" | "rule.class_rules" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spellcasting" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.value" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.list" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.equipment" | "rule.equipment_choice" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
         x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => {
@@ -160,20 +157,24 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         }
         "group.instance" if !valid_id(&p["group_id"], 64) => return Err(bad("Узел группы требует ID группы.")),
         "group.input" | "group.output" if !valid_id(&p["socket_id"], 64) => return Err(bad("Узел границы группы должен ссылаться на сокет интерфейса.")),
-        "rule.languages" if p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200) => return Err(bad("Языки должны быть списком текстовых значений.")),
-        "rule.proficiencies" if (p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200)) || (p.get("kind").is_some() && (p["kind"].as_str().is_none() || utf16_len(p["kind"].as_str().unwrap_or("")) > 120)) => return Err(bad("Владения должны быть списком и иметь короткий тип.")),
-        "rule.skill_proficiency" if p.get("value").is_some() && !valid_string_list(&p["value"], 18, 200) => return Err(bad("Владение навыком: список названий (до 18).")),
         "rule.saving_throws" => {
             if p.get("value").is_some() && (!p["value"].as_array().map(|values| values.len() <= 6 && values.iter().all(|value| ABILITIES.contains(&value.as_str().unwrap_or("")))).unwrap_or(false)) { return Err(bad("Спасброски должны быть списком характеристик.")); }
         }
-        "rule.feature" if p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || (p.get("text").is_some() && (p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000)) => return Err(bad("Умение: название до 120 и текст до 4000 символов.")),
-        "rule.skills" => {
-            if !valid_id(&p["id"], 100) || json_integer(&p["count"]).map(|n| !(0..=18).contains(&n)).unwrap_or(true) || !valid_string_list(&p["options"], 18, 200) { return Err(bad("Выбор навыков: ID, список до 18 и количество от 0 до 18.")); }
+        "rule.list" => {
+            match p["kind"].as_str().unwrap_or("") {
+                "languages" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200) { return Err(bad("Языки должны быть списком текстовых значений.")); } }
+                "proficiencies" => { if (p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200)) || (p.get("label").is_some() && (p["label"].as_str().is_none() || utf16_len(p["label"].as_str().unwrap_or("")) > 120)) { return Err(bad("Владения должны быть списком и иметь короткую метку.")); } }
+                "skill_proficiency" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 18, 200) { return Err(bad("Владение навыком: список названий (до 18).")); } }
+                "skills" => { if !valid_id(&p["id"], 100) || json_integer(&p["count"]).map(|n| !(0..=18).contains(&n)).unwrap_or(true) || !valid_string_list(&p["options"], 18, 200) { return Err(bad("Выбор навыков: ID, список до 18 и количество от 0 до 18.")); } }
+                "spell_list" => { if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); } }
+                "feature" => { if p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || (p.get("text").is_some() && (p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000)) { return Err(bad("Умение: название до 120 и текст до 4000 символов.")); } }
+                "class_features" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
+                "equipment" => { if !valid_equipment_items(&p["items"]) { return Err(bad("Снаряжение: список предметов с названием (до 120) и количеством (1–1000).")); } }
+                "equipment_choice" => { if !valid_equipment_choice(&p) { return Err(bad("Выбор снаряжения: ID, название и варианты со списком предметов.")); } }
+                _ => return Err(bad("Список: неизвестный вид.")),
+            }
         }
-        "rule.spell_list" => {
-            if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); }
-        }
-        "rule.spell_slots" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
+        "rule.spell_slots" | "rule.class_progression" | "rule.class_rules" if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) => return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")),
         "rule.spellcasting" if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) => return Err(bad("Выберите заклинательную характеристику из закрытого списка.")),
         "rule.value" => {
             match p["kind"].as_str().unwrap_or("") {
@@ -187,8 +188,6 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             }
         }
         "rule.manual" if p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000 => return Err(bad("Ручное правило: до 4000 символов.")),
-        "rule.equipment" if !valid_equipment_items(&p["items"]) => return Err(bad("Снаряжение: список предметов с названием (до 120) и количеством (1–1000).")),
-        "rule.equipment_choice" if !valid_equipment_choice(&p) => return Err(bad("Выбор снаряжения: ID, название и варианты со списком предметов.")),
         _ => {}
     }
     if kind.starts_with("action.") && kind != "action.program" {
@@ -286,7 +285,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
-    "rule.value", "rule.languages", "rule.proficiencies", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.class_progression", "rule.class_rules", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
+    "rule.value", "rule.list", "rule.saving_throws", "rule.spell_slots", "rule.class_progression", "rule.class_rules", "rule.manual", "rule.spellcasting",
     "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
 

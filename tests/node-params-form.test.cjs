@@ -58,8 +58,8 @@ test('ability and spell-mode nodes use dropdowns with Russian labels', () => {
   const labels = select.children.map(o => o.children[0]);
   assert.equal(labels[0], 'Сила');
 
-  const spells = NF.nodeParams({ id: 'sp', type: 'rule.spell_list', params: { mode: 'known', ability: 'int', spells: [] } });
-  assert.ok(findAll(spells, n => n.tag === 'select').length >= 2, 'mode and ability are dropdowns');
+  const spells = NF.nodeParams({ id: 'sp', type: 'rule.list', params: { kind: 'spell_list', mode: 'known', ability: 'int', spells: [] } });
+  assert.ok(findAll(spells, n => n.tag === 'select').length >= 3, 'kind, mode and ability are dropdowns');
 });
 
 test('editions are multi-select checkboxes', () => {
@@ -91,10 +91,10 @@ test('spell slot table can add and remove rows without touching JSON', () => {
 
 test('list parameters are comma-separated and keep numbers numeric', () => {
   let committed = null;
-  const form = NF.nodeParams({ id: 'l', type: 'rule.languages', params: { value: ['Общий'] } }, { onChange: next => { committed = next; } });
+  const form = NF.nodeParams({ id: 'l', type: 'rule.list', params: { kind: 'languages', value: ['Общий'] } }, { onChange: next => { committed = next; } });
   const input = inputsOf(form).find(i => i.attrs.placeholder === 'через запятую');
   input.attrs.onchange({ target: { value: 'Общий,  Эльфийский, ' } });
-  eq(committed, { value: ['Общий', 'Эльфийский'] });
+  eq(committed, { kind: 'languages', value: ['Общий', 'Эльфийский'] });
   const nums = NF.nodeParams({ id: 'n', type: 'x', params: { levels: [1, 2] } }, { onChange: next => { committed = next; } });
   inputsOf(nums).find(i => i.attrs.placeholder === 'через запятую').attrs.onchange({ target: { value: '3, 4, x' } });
   eq(committed, { levels: [3, 4] });

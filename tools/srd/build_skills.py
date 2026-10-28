@@ -8,7 +8,7 @@
 Ключи и характеристики должны совпадать со списком клиента (SKILLS в static/common.js)
 и списком сервера (SKILL_IDS в src/mechanics_graph.rs) — это проверяет tools/srd/integrity.cjs.
 
-У каждой записи свой граф: узел `rule.skill_proficiency` раздаёт владение этим навыком,
+У каждой записи свой граф: узел `rule.list` (kind: skill_proficiency) раздаёт владение этим навыком,
 поэтому запись работает как и остальные объекты справочника — её можно перетащить в
 редактор расы или класса и на лист персонажа, и владение придёт из графа.
 """
@@ -81,15 +81,15 @@ ORIGIN = 'skill-graph-v2'
 
 
 def graph(name):
-    """Граф записи навыка: владение этим навыком (узел rule.skill_proficiency)."""
+    """Граф записи навыка: владение этим навыком (узел rule.list, kind: skill_proficiency)."""
     return {
         'origin': ORIGIN,
         'version': 2,
         'graph': {
             'nodes': [{
                 'id': 'skill_proficiency',
-                'type': 'rule.skill_proficiency',
-                'params': {'value': [name]},
+                'type': 'rule.list',
+                'params': {'kind': 'skill_proficiency', 'value': [name]},
                 'position': {'x': 40, 'y': 40},
             }],
             'links': [],

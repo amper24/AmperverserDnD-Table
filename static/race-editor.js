@@ -9,11 +9,11 @@
 //
 // Правила расы живут в графе механик (узлы rule.*), поэтому редактор правит и
 // сырые поля записи, и узлы графа — иначе правку не увидел бы мастер создания:
-//   rule.value (kind: speed | ability) / rule.languages — скорость, бонусы, языки;
-//   rule.skill_proficiency                          — владение навыком (как у записи навыка);
-//   rule.skills                                     — выбор навыков игроком;
-//   rule.spell_list                                 — заклинания, известные расе сразу;
-//   rule.proficiencies                              — владения (доспехи, оружие, инструменты);
+//   rule.value (kind: speed | ability) / rule.list (kind: languages) — скорость, бонусы, языки;
+//   rule.list (kind: skill_proficiency)              — владение навыком (как у записи навыка);
+//   rule.list (kind: skills)                         — выбор навыков игроком;
+//   rule.list (kind: spell_list)                     — заклинания, известные расе сразу;
+//   rule.list (kind: proficiencies)                  — владения (доспехи, оружие, инструменты);
 //   action.program (group: 'traits') + action.manual — черты расы с текстом.
 // Сырые поля (data.speed, data.languages, data.asi, data.skills, data.traits)
 // пишутся рядом: их читают карточка справочника и старые листы.
@@ -109,6 +109,19 @@ window.RaceEditor = (() => {
     }
     for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
   }
+  /// Привести узлы rule.list одного вида (params.kind) к списку wanted: лишние удаляются,
+  /// нужные обновляются (id и связи сохраняются). Узел всегда остаётся rule.list + kind.
+  function syncListNodes(graph, kind, wanted, match) {
+    const existing = listNodes(graph, kind);
+    const used = new Set();
+    for (const item of wanted) {
+      const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
+      if (found) { found.params = { ...found.params, kind, ...item.params }; used.add(found.id); continue; }
+      const node = { id: nodeId(kind), type: 'rule.list', params: { kind, ...clone(item.params) }, position: { x: 40, y: 40 + (nodesOf(graph).length % 12) * 60 } };
+      nodesOf(graph).push(node); used.add(node.id);
+    }
+    for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
+  }
   const nextProgramId = graph => {
     const taken = nodesOf(graph).filter(n => n.type === 'action.program').map(n => num(String(n.params?.program_id || '').replace(/\D/g, ''), 0));
     return 'p' + (Math.max(0, ...taken) + 1);
@@ -192,6 +205,8 @@ window.RaceEditor = (() => {
   const ruleNodes = (graph, type) => nodesOf(graph).filter(n => n.type === type);
   /// Узлы универсального правила-значения выбранного вида (rule.value + params.kind).
   const valueNodes = (graph, kind) => ruleNodes(graph, 'rule.value').filter(n => str(n.params?.kind) === kind);
+  /// Узлы универсального правила-списка выбранного вида (rule.list + params.kind).
+  const listNodes = (graph, kind) => ruleNodes(graph, 'rule.list').filter(n => str(n.params?.kind) === kind);
   const listOf = node => (Array.isArray(node?.params?.value) ? node.params.value.map(str).filter(Boolean) : []);
   /// Пассивные блоки старого формата (action.passive) ещё читает лист — правим их вместе с узлами.
   const passiveNodes = (graph, field) => nodesOf(graph).filter(n => n.type === 'action.passive' && str(n.params?.field) === field);
@@ -206,20 +221,20 @@ window.RaceEditor = (() => {
     }
   }
 
-  /// Заклинания, известные расе сразу: по узлу rule.spell_list на каждую характеристику (пусто — характеристику выбирает игрок).
+  /// Заклинания, известные расе сразу: по узлу rule.list (kind: spell_list) на каждую характеристику (пусто — характеристику выбирает игрок).
   function syncSpellNodes(graph, groups) {
-    const existing = ruleNodes(graph, 'rule.spell_list');
+    const existing = listNodes(graph, 'spell_list');
     const used = new Set();
     for (const [ability, spells] of groups) {
       let node = existing.find(n => !used.has(n.id) && (str(n.params?.ability) || '') === ability);
       if (!node) {
-        node = { id: nodeId('spell'), type: 'rule.spell_list', position: { x: 60, y: 60 + (nodesOf(graph).length % 12) * 60 }, params: {} };
+        node = { id: nodeId('spell'), type: 'rule.list', position: { x: 60, y: 60 + (nodesOf(graph).length % 12) * 60 }, params: { kind: 'spell_list' } };
         nodesOf(graph).push(node);
       }
       used.add(node.id);
       // Чужие параметры узла сохраняем, свои переписываем: характеристика без значения убирается совсем —
-      // rule.spell_list не принимает пустое значение (проверка узла отклонила бы весь граф).
-      node.params = { ...node.params, mode: 'known', spells: [...spells] };
+      // узел spell_list не принимает пустой список (проверка узла отклонила бы весь граф).
+      node.params = { ...node.params, kind: 'spell_list', mode: 'known', spells: [...spells] };
       if (ability) node.params.ability = ability; else delete node.params.ability;
     }
     for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
@@ -236,7 +251,7 @@ window.RaceEditor = (() => {
     const rootData = rootRecord(entry, catalog)?.data || {};
     // Поля записи перекрывают корень, корень — набор правил: та же очерёдность, что при сборке листа.
     const own = key => (key in d ? d[key] : (key in rootData ? rootData[key] : undefined));
-    const nodes = ruleNodes(graph, 'rule.spell_list');
+    const nodes = listNodes(graph, 'spell_list');
     const spellRow = c => (typeof c === 'string'
       ? { name: str(c), level: 0, ability: '' }
       : { name: str(c?.name), level: num(c?.level), ability: str(c?.ability) });
@@ -271,11 +286,11 @@ window.RaceEditor = (() => {
       const node = asiNodes.find(n => str(n.params?.ability) === key);
       asi[key] = node ? num(node.params?.amount) : num(d.asi?.[key]);
     }
-    const langs = ruleNodes(graph, 'rule.languages');
+    const langs = listNodes(graph, 'languages');
     const rawLangs = Array.isArray(d.languages) ? d.languages : [];
     const fixed = langs.length ? listOf(langs[0]) : rawLangs.filter(x => str(x).length <= 40);
-    const rulesNode = ruleNodes(graph, 'rule.skills')[0];
-    const skillNode = ruleNodes(graph, 'rule.skill_proficiency')[0];
+    const rulesNode = listNodes(graph, 'skills')[0];
+    const skillNode = listNodes(graph, 'skill_proficiency')[0];
     const passiveSkills = passiveNodes(graph, 'skills').flatMap(n => (Array.isArray(n.params?.value) ? n.params.value : [n.params?.value]).map(str).filter(Boolean));
     return {
       name: str(entry?.name),
@@ -296,7 +311,7 @@ window.RaceEditor = (() => {
         id: str(rulesNode?.params?.id) || 'race_skills',
       },
       spells: readSpells(d, graph, entry, catalog),
-      profs: ruleNodes(graph, 'rule.proficiencies').map(n => ({ kind: str(n.params?.kind), values: listOf(n) })),
+      profs: listNodes(graph, 'proficiencies').map(n => ({ kind: str(n.params?.label), values: listOf(n) })),
       traits: (Array.isArray(d.traits) ? d.traits : []).map(t => ({ name: str(t?.name), text: str(t?.text), feat: str(t?.feat) })),
       subraces: (Array.isArray(d.subraces) ? d.subraces : []).map(str).filter(Boolean),
     };
@@ -323,29 +338,29 @@ window.RaceEditor = (() => {
       (node, item) => str(node.params?.ability) === item.params.ability);
     syncValueNodes(graph, 'speed', [{ params: { amount: num(st.speed, 30) } }]);
 
-    // Языки: узлом rule.languages (имена) и сырым полем (имена + примечание текстом).
+    // Языки: узлом rule.list (kind: languages) (имена) и сырым полем (имена + примечание текстом).
     const langs = st.languages.fixed.map(s => str(s).trim()).filter(Boolean);
     const note = str(st.languages.note).trim();
-    syncNodes(graph, 'rule.languages', langs.length ? [{ params: { value: langs } }] : []);
+    syncListNodes(graph, 'languages', langs.length ? [{ params: { value: langs } }] : []);
     if (langs.length || note) d.languages = note ? [...langs, note] : [...langs]; else delete d.languages;
     if (num(st.languages.extra) > 0) d.languages_extra = num(st.languages.extra); else delete d.languages_extra;
 
-    // Навыки: владение — узлом rule.skill_proficiency, выбор игрока — узлом rule.skills.
+    // Навыки: владение — узлом rule.list (kind: skill_proficiency), выбор игрока — узлом rule.list (kind: skills).
     const skillNames = st.skills.fixed.map(s => str(s).trim()).filter(Boolean);
-    syncNodes(graph, 'rule.skill_proficiency', skillNames.length ? [{ params: { value: skillNames } }] : []);
+    syncListNodes(graph, 'skill_proficiency', skillNames.length ? [{ params: { value: skillNames } }] : []);
     if (skillNames.length) d.skills = skillNames; else delete d.skills;
     const from = st.skills.from.map(s => str(s).trim()).filter(Boolean);
     const choose = Math.max(0, num(st.skills.choose));
     // Пустой список — «любой навык»: узел остаётся, иначе сохранение записи потеряло бы выбор расы.
-    syncNodes(graph, 'rule.skills', choose > 0
+    syncListNodes(graph, 'skills', choose > 0
       ? [{ params: { id: str(st.skills.id).trim() || 'race_skills', count: from.length ? Math.min(choose, from.length) : choose, options: from } }] : []);
 
-    // Владения: по узлу rule.proficiencies на каждый вид.
-    syncNodes(graph, 'rule.proficiencies', st.profs.filter(p => str(p.kind).trim() && (p.values || []).length)
-      .map(p => ({ params: { kind: str(p.kind).trim(), value: p.values.map(str).filter(Boolean) } })),
-    (node, item) => str(node.params?.kind) === item.params.kind);
+    // Владения: по узлу rule.list (kind: proficiencies) на каждый вид.
+    syncListNodes(graph, 'proficiencies', st.profs.filter(p => str(p.kind).trim() && (p.values || []).length)
+      .map(p => ({ params: { label: str(p.kind).trim(), value: p.values.map(str).filter(Boolean) } })),
+    (node, item) => str(node.params?.label) === item.params.label);
 
-    // Заклинания: известные сразу — узлом rule.spell_list и полем data.cantrips; выбор игрока — data.spell_choices.
+    // Заклинания: известные сразу — узлом rule.list (kind: spell_list) и полем data.cantrips; выбор игрока — data.spell_choices.
     const spellRows = st.spells.fixed.map(r => ({ name: str(r.name).trim(), level: num(r.level), ability: str(r.ability) })).filter(r => r.name);
     d.cantrips = spellRows.map(r => ({ name: r.name, level: r.level, ability: r.ability }));
     const spellChoices = st.spells.choices.map((c, i) => ({ key: str(c.key).trim() || `spell_choice_${i + 1}`, kind: 'spell',
@@ -540,7 +555,7 @@ window.RaceEditor = (() => {
       drop: 'Перетащите навык в список выбора сюда',
     }));
     box.append(el('p', { class: 'muted small' },
-      'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника, а выбор пишется правилом rule.skills (id «raceSkills»).'));
+      'Владение записывается узлом rule.list (kind: skill_proficiency) — тем же, что несёт запись навыка из справочника, а выбор пишется правилом rule.list (kind: skills, id «raceSkills»).'));
     return box;
   }
 
@@ -557,7 +572,7 @@ window.RaceEditor = (() => {
     }));
     box.append(el('label', { class: 'ced-field' }, el('span', {}, 'Примечание о языках'),
       area(st.languages.note, 2, 'Вы можете говорить, читать и писать на Общем и Дварфийском…', v => st.languages.note = v)));
-    box.append(el('p', { class: 'muted small' }, 'Языки пишутся в узел rule.languages и в поле данных: их видит и мастер создания, и карточка справочника.'));
+    box.append(el('p', { class: 'muted small' }, 'Языки пишутся в узел rule.list (kind: languages) и в поле данных: их видит и мастер создания, и карточка справочника.'));
     return box;
   }
 
@@ -579,7 +594,7 @@ window.RaceEditor = (() => {
       el('button', { type: 'button', class: 'small', onclick: () => { st.profs.push({ kind: 'Владения', values: [] }); render(); } }, '+ своё'));
     if (!st.profs.length) box.append(el('p', { class: 'muted small' }, 'Владений нет — у большинства рас они описаны в чертах.'), addRow);
     else box.append(addRow);
-    box.append(el('p', { class: 'muted small' }, 'Каждый вид владений — свой узел rule.proficiencies: мастер создания покажет их во владениях персонажа.'));
+    box.append(el('p', { class: 'muted small' }, 'Каждый вид владений — свой узел rule.list (kind: proficiencies): мастер создания покажет их во владениях персонажа.'));
     return box;
   }
 
@@ -694,7 +709,7 @@ window.RaceEditor = (() => {
     if (st.spells.fixed.some(r => str(r.ability) === 'choice') && ab.mode !== 'on') box.append(el('p', { class: 'muted small' },
       'Часть заклинаний использует характеристику по выбору игрока — включите «Игрок выбирает из списка».'));
     box.append(el('p', { class: 'muted small' },
-      'Известные сразу заклинания пишутся узлом rule.spell_list и полем data.cantrips, выбор игрока — полями data.spell_choices и data.spell_ability_choice. '
+      'Известные сразу заклинания пишутся узлом rule.list (kind: spell_list) и полем data.cantrips, выбор игрока — полями data.spell_choices и data.spell_ability_choice. '
       + 'Мастер создания задаёт вопрос на шаге расы и выдаёт заклинания листу.'));
     return box;
   }

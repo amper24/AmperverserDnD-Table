@@ -8,11 +8,11 @@
 //
 // Редактор пишет в те же поля записи, которые читают мастер создания персонажа
 // и лист, поэтому ничего не мигрирует:
-//   rule.skill_proficiency (id bg_skills) и data.skills — владения навыками;
-//   rule.skills (id bg_skills_choice) и data.skills_choice { count, from } — выбор навыков;
-//   rule.proficiencies (kind «Инструменты») и data.tools — инструменты;
-//   rule.languages и data.languages           — языки;
-//   rule.feature и data.feature/feature_text  — умение предыстории;
+//   rule.list (kind: skill_proficiency, id bg_skills) и data.skills — владения навыками;
+//   rule.list (kind: skills, id bg_skills_choice) и data.skills_choice { count, from } — выбор навыков;
+//   rule.list (kind: proficiencies, label «Инструменты») и data.tools — инструменты;
+//   rule.list (kind: languages) и data.languages — языки;
+//   rule.list (kind: feature) и data.feature/feature_text — умение предыстории;
 //   data.feat                                  — черта 2024 (название из справочника);
 //   data.asi_options                           — варианты характеристик 2024;
 //   data.equipment                             — текст стартового снаряжения;
@@ -52,6 +52,8 @@ window.BackgroundEditor = (() => {
   const nodesOf = g => (Array.isArray(g?.nodes) ? g.nodes : (g.nodes = []));
   const linksOf = g => (Array.isArray(g?.links) ? g.links : (g.links = []));
   const ruleNodes = (graph, type) => nodesOf(graph).filter(n => n.type === type);
+  /// Узлы универсального правила-списка выбранного вида (rule.list + params.kind).
+  const listNodes = (graph, kind) => ruleNodes(graph, 'rule.list').filter(n => str(n.params?.kind) === kind);
   let seq = 0;
   const nodeId = prefix => `${prefix}-${Date.now().toString(36)}${(seq++).toString(36)}`;
   function removeNode(graph, id) {
@@ -83,11 +85,11 @@ window.BackgroundEditor = (() => {
   function readState(entry) {
     const d = entry?.data || {};
     const graph = d.mechanics?.graph || { nodes: [] };
-    const skillNode = ruleNodes(graph, 'rule.skill_proficiency')[0];
-    const choiceNode = ruleNodes(graph, 'rule.skills')[0];
-    const toolNode = ruleNodes(graph, 'rule.proficiencies').find(n => str(n.params?.kind) === 'Инструменты');
-    const langNode = ruleNodes(graph, 'rule.languages')[0];
-    const featureNode = ruleNodes(graph, 'rule.feature')[0];
+    const skillNode = listNodes(graph, 'skill_proficiency')[0];
+    const choiceNode = listNodes(graph, 'skills')[0];
+    const toolNode = listNodes(graph, 'proficiencies').find(n => str(n.params?.label) === 'Инструменты');
+    const langNode = listNodes(graph, 'languages')[0];
+    const featureNode = listNodes(graph, 'feature')[0];
     const rawSkills = Array.isArray(d.skills) ? d.skills.map(str) : [];
     const rawChoice = d.skills_choice && typeof d.skills_choice === 'object' ? d.skills_choice : null;
     const passiveSkills = ruleNodes(graph, 'action.passive').filter(n => str(n.params?.field) === 'skills')
@@ -129,32 +131,32 @@ window.BackgroundEditor = (() => {
     if (str(st.name_en).trim()) d.name_en = str(st.name_en).trim();
     d.desc = str(st.desc);
 
-    // Навыки: фиксированные — узлом rule.skill_proficiency, выбор игрока — узлом rule.skills.
+    // Навыки: фиксированные — узлом rule.list (kind: skill_proficiency), выбор игрока — узлом rule.list (kind: skills).
     const fixed = st.skills.fixed.map(s => str(s).trim()).filter(Boolean);
-    syncRule(graph, 'bg_skills', 'rule.skill_proficiency', { value: fixed }, fixed.length > 0);
+    syncRule(graph, 'bg_skills', 'rule.list', { kind: 'skill_proficiency', value: fixed }, fixed.length > 0);
     if (fixed.length) d.skills = fixed; else delete d.skills;
     const choose = Math.max(0, num(st.skills.choose, 0));
     const from = st.skills.from.map(s => str(s).trim()).filter(Boolean);
     const choice = choose > 0 ? { count: choose, from } : null;
-    syncRule(graph, 'bg_skills_choice', 'rule.skills', { id: 'bg_skills_choice', count: choose, options: from }, !!choice);
+    syncRule(graph, 'bg_skills_choice', 'rule.list', { kind: 'skills', id: 'bg_skills_choice', count: choose, options: from }, !!choice);
     if (choice) d.skills_choice = choice; else delete d.skills_choice;
 
-    // Инструменты: узел rule.proficiencies с видом «Инструменты» (его читает мастер создания).
+    // Инструменты: узел rule.list (kind: proficiencies, label «Инструменты») — его читает мастер создания.
     const tools = st.tools.map(s => str(s).trim()).filter(Boolean);
-    syncRule(graph, 'bg_tools', 'rule.proficiencies', { kind: 'Инструменты', value: tools }, tools.length > 0);
+    syncRule(graph, 'bg_tools', 'rule.list', { kind: 'proficiencies', label: 'Инструменты', value: tools }, tools.length > 0);
     if (tools.length) d.tools = tools; else delete d.tools;
 
-    // Языки: узел rule.languages (фиксированные названия) и текст примечания полем.
+    // Языки: узел rule.list (kind: languages) и текст примечания полем.
     const languages = st.languages.map(s => str(s).trim()).filter(Boolean);
-    syncRule(graph, 'bg_languages', 'rule.languages', { value: languages }, languages.length > 0);
+    syncRule(graph, 'bg_languages', 'rule.list', { kind: 'languages', value: languages }, languages.length > 0);
     const languagesCount = Math.max(0, num(st.languagesCount, 0));
     if (languages.length || st.languagesNote) d.languages = str(st.languagesNote) || languages;
     else if (languagesCount) d.languages = languagesCount; // «любые N языков» — число, как в записях SRD
     else delete d.languages;
 
-    // Умение предыстории: узел rule.feature и поля data.feature/feature_text (их читает билдер).
+    // Умение предыстории: узел rule.list (kind: feature) и поля data.feature/feature_text (их читает билдер).
     const featureName = str(st.feature.name).trim(), featureText = str(st.feature.text);
-    syncRule(graph, 'bg_feature', 'rule.feature', { name: featureName, text: featureText }, !!featureName);
+    syncRule(graph, 'bg_feature', 'rule.list', { kind: 'feature', name: featureName, text: featureText }, !!featureName);
     if (featureName) { d.feature = featureName; d.feature_text = featureText; } else { delete d.feature; delete d.feature_text; }
 
     if (str(st.equipment).trim()) d.equipment = str(st.equipment); else delete d.equipment;
@@ -258,13 +260,13 @@ window.BackgroundEditor = (() => {
     box.append(listEditor(st.skills.from, render, { options: skillOptions(), addLabel: '+ добавить навык…', placeholder: 'свой навык',
       drop: 'Перетащите навык из справочника сюда', empty: 'Списка выбора нет.', noteOf: value => ABIL_SHORT[skillAbil(value)] || '' }));
     box.append(el('p', { class: 'muted small' },
-      'Владение записывается узлом rule.skill_proficiency — тем же, что несёт запись навыка из справочника: перетаскивайте навыки прямо сюда.'));
+      'Владение записывается узлом rule.list (kind: skill_proficiency) — тем же, что несёт запись навыка из справочника: перетаскивайте навыки прямо сюда.'));
     return box;
   }
 
   function proficienciesSection(st, render) {
     const box = el('div', {});
-    box.append(el('p', { class: 'muted small' }, 'Инструменты записываются узлом rule.proficiencies с видом «Инструменты» — его читает мастер создания.'));
+    box.append(el('p', { class: 'muted small' }, 'Инструменты записываются узлом rule.list (kind: proficiencies, label «Инструменты») — его читает мастер создания.'));
     box.append(listEditor(st.tools, render, { placeholder: 'например, Инструменты каллиграфа', empty: 'Инструментов нет.' }));
     return box;
   }
@@ -293,7 +295,7 @@ window.BackgroundEditor = (() => {
     box.append(el('h4', { class: 'ced-sub' }, 'Умение предыстории'));
     box.append(field('Название', textInput(st.feature.name, 'например, Приют верующих', v => st.feature.name = v)));
     box.append(field('Текст', area(st.feature.text, 5, 'Что даёт умение', v => st.feature.text = v),
-      'Пишется узлом rule.feature и полем data.feature: лист покажет умение отдельной карточкой.'));
+      'Пишется узлом rule.list (kind: feature) и полем data.feature: лист покажет умение отдельной карточкой.'));
     box.append(el('h4', { class: 'ced-sub' }, 'Черта и характеристики 2024'));
     box.append(field('Черта (data.feat)', textInput(st.feat, 'например, Посвящённый в магию (Жрец)', v => st.feat = v),
       'Название записи справочника: мастер создания подставит черту как отдельный модуль.'));

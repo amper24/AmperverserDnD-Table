@@ -567,7 +567,7 @@ function checkSeed(edition, opts = {}) {
         const item = node.params && node.params.item;
         if (isObj(item) && isStr(item.name) && item.name && !itemNames.has(item.name)) report.warn('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.item.name`, `выдаваемый предмет «${item.name}» не найден в редакции ${edition}`);
       }
-      const learn = node.type === 'rule.spell_list' ? node.params && node.params.spells : null;
+      const learn = node.type === 'rule.list' && node.params && node.params.kind === 'spell_list' ? node.params.spells : null;
       for (const s of learn || []) {
         const value = isObj(s) ? s.name : s;
         if (isStr(value) && value && !spellNames.has(value)) report.warn('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.spells`, `заклинание «${value}» не найдено в редакции ${edition}`);

@@ -336,7 +336,7 @@ async function scenarioFeatsClass(browser) {
   assert.ok(patch && patch.url === '/api/compendium/c-1', 'правится та же запись класса');
   assert.equal(patch.body.data.feature_feats['1']['Безрассудная атака'], 'srd14-feat-reckless-attack', 'ссылка умения 1 уровня');
   assert.equal(patch.body.data.subclasses[0].feature_feats['3']['Бешенство'], 'srd14-feat-frenzy', 'ссылка умения подкласса');
-  const table = patch.body.data.mechanics.graph.nodes.find(n => n.type === 'rule.class_features').params.table.levels['1'];
+  const table = patch.body.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features').params.table.levels['1'];
   assert.equal(table[0].feat, 'srd14-feat-reckless-attack', 'ссылка — и в таблице умений узла');
   assert.deepEqual(errors, [], `ошибки страницы: ${errors.join(' ')}`);
   await page.close();

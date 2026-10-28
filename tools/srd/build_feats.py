@@ -15,9 +15,9 @@ i18n.en.features + feature_texts!, i18n.en.subclasses!).
 перечислены владельцы, а в data.levels — уровни, на которых черта встречается у классов.
 
 Обратная сторона ссылки: у черты расы появляется поле data.traits[i].feat, у класса и подкласса —
-data.feature_feats = { уровень: { название: слаг } } и то же самое в узле rule.class_features
+data.feature_feats = { уровень: { название: слаг } } и то же самое в узле rule.list (kind: class_features)
 (запись {name, text, feat}). Редакторы расы и класса читают эти ссылки и дают выбрать черту
-из справочника — так же, как навыки выбираются записью с узлом rule.skill_proficiency.
+из справочника — так же, как навыки выбираются записью с узлом rule.list (kind: skill_proficiency).
 
 Ссылки пишутся прямо в наборы SRD (как это делают tools/srd/add_*_nodes.cjs): наборы остаются
 единственным источником данных, а --check ловит забытую пересборку.
@@ -260,7 +260,7 @@ def build(rows, prefix, edition):
 
 
 def strip_links(rows):
-    """Снять прежние ссылки на черты: в data.traits, data.feature_feats и узле rule.class_features."""
+    """Снять прежние ссылки на черты: в data.traits, data.feature_feats и узле rule.list (kind: class_features)."""
     for row in rows:
         data = obj(row.get('data'))
         for trait in arr(data.get('traits')):
@@ -294,9 +294,9 @@ def link(row, ref, slug):
 
 
 def table_entries(row, level):
-    """Строки узла rule.class_features на уровне (там копия умений класса)."""
+    """Строки узла rule.list (kind: class_features) на уровне (там копия умений класса)."""
     for node in obj(obj(obj(row.get('data')).get('mechanics')).get('graph')).get('nodes', []):
-        if node.get('type') != 'rule.class_features':
+        if node.get('type') != 'rule.list' or obj(node.get('params')).get('kind') != 'class_features':
             continue
         levels = obj(obj(obj(node.get('params')).get('table')).get('levels'))
         items = levels.get(str(level))
@@ -333,7 +333,7 @@ def main():
                 problems.append(f'data_seed/feats_{edition}.json устарел — запустите python3 tools/srd/build_feats.py')
             continue
         write(seed_path, rows, pretty=False)
-        write(out_path, entries, pretty=True)
+        write(out_path, entries, pretty=False)
         print(f'data_seed/feats_{edition}.json: {len(entries)} черт; ссылки проставлены в srd_{edition}.json')
     if problems:
         raise SystemExit('\n'.join(problems))

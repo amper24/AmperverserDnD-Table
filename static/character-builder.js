@@ -52,7 +52,7 @@ window.CharacterBuilder = (() => {
   register('race', (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name;
     // Правила расы (скорость, языки, ASI 2014) перенесены в узлы rule.* — придут из applyGraphRules ниже.
-    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.languages'
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => (n.type === 'rule.list' && n.params?.kind === 'languages')
       || (n.type === 'rule.value' && (n.params?.kind === 'speed' || n.params?.kind === 'ability')));
     if (!hasRules) {
       // Старый формат записи без узлов правил — читаем сырые поля.
@@ -68,7 +68,7 @@ window.CharacterBuilder = (() => {
     const skipFeature = name => (window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name));
     // Правила классов перенесены в узлы rule.*: базовые владения, спасброски, кость хитов и
     // заклинательная характеристика придут из applyGraphRules ниже; здесь только умения 1-го уровня.
-    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.class_features' || n.type === 'rule.saving_throws');
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => (n.type === 'rule.list' && n.params?.kind === 'class_features') || n.type === 'rule.saving_throws');
     if (hasRules) {
       const cf = window.Mechanics?.classFeatures?.(e.data?.mechanics, s.edition);
       for (const item of cf?.levels?.['1'] || []) {
@@ -93,7 +93,7 @@ window.CharacterBuilder = (() => {
   register('background', (s, e) => {
     const d = e.data || {}; s.background = e.name;
     // Правила предыстории (инструменты, умение) перенесены в узлы rule.* — придут из applyGraphRules.
-    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.proficiencies' || n.type === 'rule.feature');
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.list' && (n.params?.kind === 'proficiencies' || n.params?.kind === 'feature'));
     for (const name of Array.isArray(d.skills) ? d.skills : []) { const key = skillKey(name); if (key) s.skills.push(key); }
     if (!hasRules) {
       appendProficiency(s, 'Инструменты предыстории', d.tools);
@@ -376,15 +376,15 @@ window.CharacterBuilder = (() => {
     }
     return blocks.map((block, index) => ({ ...block, source, index }));
   }
-  /// Снаряжение из узлов rule.equipment / rule.equipment_choice графа записи (источник правды), иначе null.
+  /// Снаряжение из узлов rule.list (kind: equipment / equipment_choice) графа записи (источник правды), иначе null.
   function graphEquipment(entry, draft) {
     const mechanics = entry?.data?.mechanics;
     if (!mechanics || mechanics.version !== 2 || !window.Mechanics?.equipment) return null;
-    const hasNodes = (mechanics.graph?.nodes || []).some(n => n.type === 'rule.equipment' || n.type === 'rule.equipment_choice');
+    const hasNodes = (mechanics.graph?.nodes || []).some(n => n.type === 'rule.list' && (n.params?.kind === 'equipment' || n.params?.kind === 'equipment_choice'));
     if (!hasNodes) return null;
     return window.Mechanics.equipment(mechanics, { edition: draft.edition, level: draft.level || 1, choices: draft.ruleChoices || {}, source: entry.name });
   }
-  /// План снаряжения выбранных модулей: узлы графа (rule.equipment/…_choice) или текст — мастер делает выбор игрока.
+  /// План снаряжения выбранных модулей: узлы графа (rule.list с kind equipment/equipment_choice) или текст — мастер делает выбор игрока.
   function equipmentPlan(draft) {
     const blocks = [];
     for (const [kind, entry] of [['class', draft.selected?.class], ['background', draft.selected?.background]]) {
@@ -626,7 +626,7 @@ window.CharacterBuilder = (() => {
     const taken = new Set(unique.map(g => g.key));
     const klass = draft.selected?.class;
     const data = ((klass && window.Mechanics?.passiveData?.(klass, context)) || klass)?.data || {};
-    // Навыки класса — правило графа (узел rule.skills): запасной путь для старых записей без него —
+    // Навыки класса — правило графа (узел rule.list, kind: skills): запасной путь для старых записей без него —
     // поле data.skills. Пустой список значит «любой навык справочника».
     const rule = (klass && window.ClassRules?.skillsOf?.(klass, context.edition)) || null;
     const legacyCount = Math.max(0, Number(data.skills?.choose) || 0);
@@ -681,9 +681,9 @@ window.CharacterBuilder = (() => {
           hint: abilityChoice.hint || '', options: abilityChoice.options.map(k => ({ value: k, name: ABIL[k] || k })) }]
         : rest;
     }
-    // Навыки расы (узел rule.skills в записи): раса сама описывает, сколько навыков выбирает игрок, —
+    // Навыки расы (узел rule.list, kind: skills в записи): раса сама описывает, сколько навыков выбирает игрок, —
     // набор правил для этого не нужен. Своя линия перекрывает корень, как и остальные поля.
-    const skillNodesOf = source => (((source?.data || {}).mechanics || {}).graph?.nodes || []).filter(n => n.type === 'rule.skills');
+    const skillNodesOf = source => (((source?.data || {}).mechanics || {}).graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === 'skills');
     const ownSkillNodes = skillNodesOf(entry);
     const skillNodes = ownSkillNodes.length ? ownSkillNodes : (rootEntry && rootEntry !== entry ? skillNodesOf(rootEntry) : []);
     if (skillNodes.length) {
@@ -975,7 +975,7 @@ window.CharacterBuilder = (() => {
       const found = (draft.catalog || []).find(e => e.category === 'spell' && normalizeName(entryName(e)) === normalizeName(c.name));
       if (found) racialCantrips.push({ entry: found, ability: c.ability === 'choice' ? ruleChoices.raceSpellAbility : c.ability });
     }
-    // Заклинания из графа механик (узел rule.spell_list): их несут расы и любые записи справочника.
+    // Заклинания из графа механик (узел rule.list, kind: spell_list): их несут расы и любые записи справочника.
     for (const rule of s.graph_spell_rules || []) {
       const ability = String(rule?.ability || '') || String(ruleChoices.raceSpellAbility || '');
       for (const name of rule?.spells || []) {

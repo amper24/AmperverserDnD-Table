@@ -1,6 +1,6 @@
 // Черты — отдельный элемент справочника: записи категории «feat» собирает tools/srd/build_feats.py,
 // а редакторы расы и класса ссылаются на них полем feat (data.traits[i].feat, data.feature_feats,
-// строка feat в узле rule.class_features). Проверки: сборка, полнота ссылок, граф и английский
+// строка feat в узле rule.list (kind: class_features)). Проверки: сборка, полнота ссылок, граф и английский
 // слой у записей, а также выбор черты из справочника в обоих редакторах (DOM-прогон).
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
@@ -37,9 +37,9 @@ function rowsOf(edition, kind) {
   }
   return out;
 }
-/// Строки узла rule.class_features: копия умений класса со ссылкой на черту.
+/// Строки узла rule.list (kind: class_features): копия умений класса со ссылкой на черту.
 function tableRows(row) {
-  const nodes = (row.data.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.class_features');
+  const nodes = (row.data.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === 'class_features');
   const levels = nodes[0]?.params?.table?.levels || {};
   return Object.entries(levels).flatMap(([level, items]) => (items || []).map(item => ({ level, ...item })));
 }
@@ -87,11 +87,11 @@ test('каждая черта набора — ссылка на запись с
         assert.equal(record.data.kind, kind, `${r.ref}: вид записи`);
       }
     }
-    // Умения класса скопированы в узел rule.class_features — ссылка должна быть и там.
+    // Умения класса скопированы в узел rule.list (kind: class_features) — ссылка должна быть и там.
     const classes = seeds[edition].filter(r => r.category === 'class');
     const missing = classes.flatMap(row => tableRows(row).filter(item => !item.feat || !bySlug[edition].has(item.feat))
       .map(item => `${row.slug} ${item.level} ${item.name}`));
-    assert.deepEqual(missing, [], `${edition}: строки узла rule.class_features со ссылкой`);
+    assert.deepEqual(missing, [], `${edition}: строки узла rule.list (kind: class_features) со ссылкой`);
   }
 });
 
@@ -269,7 +269,7 @@ test('редактор класса: умение уровня и подклас
   const plain = x => JSON.parse(JSON.stringify(x));
   assert.deepEqual(plain(save.data.feature_feats['1']), { 'Безрассудная атака': 'srd14-feat-reckless-attack', 'Защита без доспехов': 'srd14-feat-unarmored-defense' });
   assert.deepEqual(plain(save.data.subclasses[0].feature_feats['3']), { 'Бешенство': 'srd14-feat-frenzy' });
-  const node = save.data.mechanics.graph.nodes.find(n => n.type === 'rule.class_features');
+  const node = save.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features');
   assert.equal(node.params.table.levels['1'][0].feat, 'srd14-feat-reckless-attack', 'ссылка — и в таблице узла');
   assert.equal(domCtx.window.Mechanics.validate(save.data.mechanics) || '', '', 'граф записи валиден');
 });

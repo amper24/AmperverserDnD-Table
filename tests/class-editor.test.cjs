@@ -27,6 +27,7 @@ const plain = x => JSON.parse(JSON.stringify(x));
 const B = ctx.window.CharacterBuilder;
 const M = ctx.window.Mechanics;
 const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
+const nodesOfKind = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === kind);
 
 const entry = (data, name = 'Свой класс') => ({ id: 'c1', category: 'class', name, data });
 
@@ -182,11 +183,11 @@ test('правила читаются из узлов: кость хитов, с
   const st = CE.readState(record('srd14-barbarian', 'Варвар'));
   assert.equal(st.hit_die, 'd12', 'кость хитов из узла rule.value (kind hit_die)');
   assert.deepEqual(plain(st.saves), ['str', 'con']);
-  assert.equal(st.weapons, 'Простое оружие, воинское оружие', 'владения из узлов rule.proficiencies');
+  assert.equal(st.weapons, 'Простое оружие, воинское оружие', 'владения из узлов rule.list (kind: proficiencies)');
   assert.equal(st.armor, 'Лёгкие доспехи, средние доспехи, щиты');
   assert.equal(st.skills.choose, 2);
   assert.deepEqual(plain(st.skills.from), ['Уход за животными', 'Атлетика', 'Запугивание', 'Природа', 'Восприятие', 'Выживание']);
-  assert.deepEqual(plain(st.features['1'].map(f => f.name)), ['Ярость', 'Защита без доспехов'], 'умения из узла rule.class_features');
+  assert.deepEqual(plain(st.features['1'].map(f => f.name)), ['Ярость', 'Защита без доспехов'], 'умения из узла rule.list (kind: class_features)');
   assert.ok(st.features['1'][0].text.length > 20, 'текст умения из узла');
   assert.equal(st.levels['1'].pb, 2, 'таблица развития из узла rule.class_progression');
   assert.equal(st.levels['20'].pb, 6);
@@ -211,11 +212,11 @@ test('правки редактора доходят до мастера соз�
 
   assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'hit_die')[0].params.value, 'd10');
   assert.deepEqual(plain(nodesOfType(out, 'rule.saving_throws')[0].params.value), ['str', 'dex']);
-  const profs = Object.fromEntries(nodesOfType(out, 'rule.proficiencies').map(n => [n.params.kind, plain(n.params.value)]));
+  const profs = Object.fromEntries(nodesOfKind(out, 'proficiencies').map(n => [n.params.label, plain(n.params.value)]));
   assert.deepEqual(profs['Доспехи'], ['Лёгкие доспехи']);
   assert.deepEqual(profs['Оружие'], ['Простое оружие'], 'лишние виды владений удалены');
-  assert.equal(nodesOfType(out, 'rule.skills')[0].params.count, 3);
-  assert.deepEqual(plain(nodesOfType(out, 'rule.class_features')[0].params.table.levels['1'].map(f => f.name)), ['Новое умение']);
+  assert.equal(nodesOfKind(out, 'skills')[0].params.count, 3);
+  assert.deepEqual(plain(nodesOfKind(out, 'class_features')[0].params.table.levels['1'].map(f => f.name)), ['Новое умение']);
   assert.equal(out.hit_die, 'd10', 'сырое поле идёт в ногу с узлом');
   assert.deepEqual(plain(out.skills), { choose: 3, from: ['Атлетика', 'Природа', 'Выживание'] });
 
@@ -244,7 +245,7 @@ test('сохранение без правок не переписывает у�
     if (slug === 'srd14-bard') assert.equal(rules.params.table.caster.picker, true, 'picker сохранён');
     if (slug === 'srd24-wizard') assert.equal(rules.params.table.caster.start_prepared, 4, 'число осталось числом');
     // «—» в поле владений значит «нет владений»: лишний узел владений не создаётся.
-    if (slug === 'srd14-monk') assert.equal(nodesOfType(out, 'rule.proficiencies').length, 1, 'лишний узел владений не создан');
+    if (slug === 'srd14-monk') assert.equal(nodesOfKind(out, 'proficiencies').length, 1, 'лишний узел владений не создан');
   }
 });
 
@@ -274,7 +275,7 @@ test('новая запись класса собирает узлы прави�
   st.features = { 1: [{ name: 'Наследие', text: 'Текст.' }] };
   const out = CE.writeData(st, entry({ name_en: 'Новый', edition: '2014' }, 'Свой класс'));
   assert.equal(out.mechanics.version, 2);
-  assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.class_features').length, 1, 'узел умений создан');
+  assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.list' && n.params?.kind === 'class_features').length, 1, 'узел умений создан');
   assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.class_progression').length, 0, 'таблицу не трогали — узла таблицы нет');
   assert.equal(M.validate(out.mechanics) || '', '', 'граф новой записи валиден');
 });

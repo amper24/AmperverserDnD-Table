@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Переносит базовые правила рас и предысторий из data.* в узлы rule.* (data_seed/srd_*.json):
-//   Расы: rule.value (kind: speed | ability), rule.languages (без описаний), бонусы 2014 (гейт edition).
-//   Предыстории: rule.proficiencies (tools), rule.feature (feature + feature_text).
+//   Расы: rule.value (kind: speed | ability), rule.list (kind: languages, без описаний), бонусы 2014 (гейт edition).
+//   Предыстории: rule.list (kind: proficiencies, label «Инструменты»), rule.list (kind: feature, feature + feature_text).
 // Идемпотентно. Поля data.* не трогаются. node tools/srd/add_race_background_nodes.cjs
 const fs = require('node:fs'), vm = require('node:vm');
 
@@ -15,7 +15,7 @@ function raceNodes(rec) {
   const nodes = [], links = [];
   if (typeof d.speed === 'number') nodes.push({ id: 'race_speed', type: 'rule.value', params: { kind: 'speed', amount: d.speed } });
   const langs = (Array.isArray(d.languages) ? d.languages : []).filter(isLangName).map(x => x.trim()).filter(Boolean);
-  if (langs.length) nodes.push({ id: 'race_languages', type: 'rule.languages', params: { value: langs } });
+  if (langs.length) nodes.push({ id: 'race_languages', type: 'rule.list', params: { kind: 'languages', value: langs } });
   const asi = Object.entries(d.asi || {}).filter(([, v]) => Number(v));
   if (asi.length) {
     nodes.push({ id: 'race_edition', type: 'condition.edition', params: { editions: ['2014'] } });
@@ -32,8 +32,8 @@ function backgroundNodes(rec) {
   const d = rec.data || {};
   const nodes = [];
   const toolValues = values(d.tools);
-  if (toolValues.length) nodes.push({ id: 'bg_tools', type: 'rule.proficiencies', params: { kind: 'Инструменты', value: toolValues } });
-  if (typeof d.feature === 'string' && d.feature.trim()) nodes.push({ id: 'bg_feature', type: 'rule.feature', params: { name: d.feature, text: d.feature_text || '' } });
+  if (toolValues.length) nodes.push({ id: 'bg_tools', type: 'rule.list', params: { kind: 'proficiencies', label: 'Инструменты', value: toolValues } });
+  if (typeof d.feature === 'string' && d.feature.trim()) nodes.push({ id: 'bg_feature', type: 'rule.list', params: { kind: 'feature', name: d.feature, text: d.feature_text || '' } });
   return { nodes, links: [] };
 }
 
@@ -42,14 +42,14 @@ function enOverlay(rec, nodes) {
   if (!en) return [];
   const out = [];
   for (const n of nodes) {
-    if (n.type === 'rule.languages') {
+    if (n.params?.kind === 'languages') {
       const enLangs = (Array.isArray(en['languages!']) ? en['languages!'] : []).filter(isLangName).map(x => x.trim()).filter(Boolean);
-      if (enLangs.length) out.push({ id: n.id, params: { value: enLangs } });
-    } else if (n.type === 'rule.proficiencies') {
+      if (enLangs.length) out.push({ id: n.id, params: { kind: 'languages', value: enLangs } });
+    } else if (n.params?.kind === 'proficiencies') {
       const enVals = values(en['tools!'] ?? en.tools);
-      if (enVals.length) out.push({ id: n.id, params: { kind: 'Tools', value: enVals } });
-    } else if (n.type === 'rule.feature') {
-      out.push({ id: n.id, params: { name: en.feature || n.params.name, text: en.feature_text || '' } });
+      if (enVals.length) out.push({ id: n.id, params: { kind: 'proficiencies', label: 'Tools', value: enVals } });
+    } else if (n.params?.kind === 'feature') {
+      out.push({ id: n.id, params: { kind: 'feature', name: en.feature || n.params.name, text: en.feature_text || '' } });
     }
   }
   return out;

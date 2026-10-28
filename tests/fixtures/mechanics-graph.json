@@ -56,6 +56,156 @@
       "executable": true
     },
     {
+      "name": "rule-list-kinds",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "languages",
+              "type": "rule.list",
+              "params": {
+                "kind": "languages",
+                "value": [
+                  "Общий"
+                ]
+              }
+            },
+            {
+              "id": "proficiencies",
+              "type": "rule.list",
+              "params": {
+                "kind": "proficiencies",
+                "label": "Доспехи",
+                "value": [
+                  "Лёгкие доспехи"
+                ]
+              }
+            },
+            {
+              "id": "skill-proficiency",
+              "type": "rule.list",
+              "params": {
+                "kind": "skill_proficiency",
+                "value": [
+                  "Восприятие"
+                ]
+              }
+            },
+            {
+              "id": "skills",
+              "type": "rule.list",
+              "params": {
+                "kind": "skills",
+                "id": "classSkills",
+                "count": 1,
+                "options": [
+                  "Восприятие"
+                ]
+              }
+            },
+            {
+              "id": "spell-list",
+              "type": "rule.list",
+              "params": {
+                "kind": "spell_list",
+                "mode": "known",
+                "ability": "int",
+                "spells": []
+              }
+            },
+            {
+              "id": "feature",
+              "type": "rule.list",
+              "params": {
+                "kind": "feature",
+                "name": "Умение",
+                "text": ""
+              }
+            },
+            {
+              "id": "class-features",
+              "type": "rule.list",
+              "params": {
+                "kind": "class_features",
+                "table": {
+                  "levels": {
+                    "1": [
+                      {
+                        "name": "Умение",
+                        "text": ""
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "equipment",
+              "type": "rule.list",
+              "params": {
+                "kind": "equipment",
+                "items": [
+                  {
+                    "name": "Дорожная одежда",
+                    "qty": 1
+                  }
+                ]
+              }
+            },
+            {
+              "id": "equipment-choice",
+              "type": "rule.list",
+              "params": {
+                "kind": "equipment_choice",
+                "id": "gear",
+                "title": "Выберите снаряжение",
+                "options": [
+                  {
+                    "name": "Вариант А",
+                    "items": [
+                      {
+                        "name": "Дорожная одежда",
+                        "qty": 1
+                      }
+                    ],
+                    "gold": 0
+                  }
+                ]
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "rule-list-unknown-kind",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "unknown",
+              "type": "rule.list",
+              "params": {
+                "kind": "unknown"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
       "name": "socket-type-mismatch",
       "valid": true,
       "mechanics": {

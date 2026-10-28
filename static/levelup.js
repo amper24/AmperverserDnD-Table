@@ -141,7 +141,7 @@ window.LevelUp = (() => {
     }
     return { slots, pact, combined, casterLevel };
   }
-  /// Таблица умений класса: { "1": [{name, text}], … } — из узла rule.class_features, иначе сырые поля data.features.
+  /// Таблица умений класса: { "1": [{name, text}], … } — из узла rule.list (kind: class_features), иначе сырые поля data.features.
   function classFeatureTable(entry) {
     const cf = window.Mechanics?.classFeatures?.(entry?.data?.mechanics, entry?.data?.edition);
     if (cf?.levels) return cf.levels;
@@ -275,7 +275,7 @@ window.LevelUp = (() => {
     const feats = classFeaturesAt(entry, to).filter(f => !hidden.has(f.name)).map(f => ({ ...f, source: entry.name, tag: groups.some(g => g.feature === f.name) ? 'pick' : featureTagOf(f.name, edition) }));
     const expertise = expertiseGain(edition, slug, to);
     const expertiseExtra = classRulesOf(slug, edition)?.expertise_extra || [];
-    // Список навыков класса — правило графа (узел rule.skills), запас — поле data.skills старого формата.
+    // Список навыков класса — правило графа (узел rule.list, kind: skills), запас — поле data.skills старого формата.
     const classSkills = window.ClassRules?.skillsOf?.(entry, edition) || { count: 0, options: Array.isArray(d.skills?.from) ? d.skills.from : [] };
     // Пустой список навыков класса — «любой навык»: тогда экспертиза не ограничена списком класса.
     const expertiseFrom = (classRulesOf(slug, edition)?.expertise_from_class || []).includes(to) && classSkills.options.length

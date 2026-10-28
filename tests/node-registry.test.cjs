@@ -30,6 +30,12 @@ test('search matches labels and categories case-insensitively and returns nothin
   assert.deepEqual(plain(R.catalog('zzz-no-such-node-zzz')), []);
 });
 
+test('настраиваемые правила показывают выбранный вид в заголовке', () => {
+  assert.equal(R.nodeTitle('rule.value', { kind: 'speed' }), 'Правило · Скорость');
+  assert.equal(R.nodeTitle('rule.list', { kind: 'spell_list' }), 'Список · Список заклинаний');
+  assert.equal(R.nodeTitle('rule.list', {}), 'Список · Языки');
+});
+
 test('sockets are compatible only with identical types', () => {
   assert.equal(R.sameType('number', 'number'), true);
   assert.equal(R.sameType('number', 'text'), false);

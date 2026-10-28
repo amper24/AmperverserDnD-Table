@@ -53,7 +53,7 @@ window.ClassRules = (() => {
     isPicker: (entry, edition) => Boolean(casterOf(entry, edition).picker),
     // 'book' | 'prepared' | '' — режим заклинаний на 1 уровне в данной редакции.
     startMode: (entry, edition) => byEdition(casterOf(entry, edition).start, edition),
-    // Навыки класса: узел rule.skills в графе записи (id «classSkills»), запас — поле data.skills
+    // Навыки класса: узел rule.list (kind: skills) в графе записи (id «classSkills»), запас — поле data.skills
     // старого формата. { count, options }: пустой список значит «игрок выбирает любой навык».
     skillsOf(entry, edition) {
       // Без явной редакции берётся редакция записи — узел может быть привязан к редакции.

@@ -28,7 +28,7 @@
   const BUTTON_STYLE_OPTIONS = Object.entries(BUTTON_STYLES).map(([value, s]) => ({ value, label: s.label }));
   // Поля, которые задают узел-тип (переопределяют общие ENUMS для конкретного типа узла).
   const TYPE_ENUMS = {
-    'rule.spell_list': { mode: SPELL_MODES },
+    'rule.list': { kind: [{ value: 'languages', label: 'Языки' }, { value: 'proficiencies', label: 'Владения' }, { value: 'skill_proficiency', label: 'Владение навыком' }, { value: 'skills', label: 'Выбор навыков' }, { value: 'spell_list', label: 'Список заклинаний' }, { value: 'feature', label: 'Умение' }, { value: 'class_features', label: 'Умения класса' }, { value: 'equipment', label: 'Снаряжение' }, { value: 'equipment_choice', label: 'Выбор снаряжения' }], mode: SPELL_MODES },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
     'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
     'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
@@ -75,7 +75,7 @@
     // Параметры узлов правил и таблиц (чтобы не показывать сырые английские ключи).
     items: 'Предметы', title: 'Название', gold: 'Золото', qty: 'Количество', type: 'Тип',
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
-    caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита',
+    caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита', label: 'Метка вида',
   };
   const labelOf = key => LABELS[key] || key;
 

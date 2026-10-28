@@ -8,15 +8,15 @@
 Что делает:
 
 1. Навыки на графах. У рас `action.passive {field: 'skills'}` превращается в узел
-   `rule.skill_proficiency`, у предысторий `data.skills` — в такой же узел, у классов
-   `data.skills {choose, from}` — в узел `rule.skills` (id `classSkills`). Выбор навыка
-   у рас из набора race_rules (`choices` вида `skills`) становится узлом `rule.skills`
+   `rule.list` (kind: skill_proficiency), у предысторий `data.skills` — в такой же узел, у классов
+   `data.skills {choose, from}` — в узел `rule.list` (kind: skills, id `classSkills`). Выбор навыка
+   у рас из набора race_rules (`choices` вида `skills`) становится узлом `rule.list` (kind: skills)
    с тем же ключом выбора (`raceSkills`), чтобы мастер создания продолжал спрашивать.
 2. Заклинания и владения рас из набора race_rules переезжают в запись: `cantrips` →
    `data.cantrips`, `choices` вида `spell` → `data.spell_choices`, выбор характеристики
    (`raceSpellAbility`) → `data.spell_ability_choice`, `weapons` → узел
-   `rule.proficiencies` («Оружие»), `hp_bonus` → `rule.value` (kind: hp), `always_prepared` →
-   `rule.spell_list` с режимом `prepared`. Эти ключи убираются из набора правил.
+   `rule.list` (kind: proficiencies, label «Оружие»), `hp_bonus` → `rule.value` (kind: hp), `always_prepared` →
+   `rule.list` (kind: spell_list) с режимом `prepared`. Эти ключи убираются из набора правил.
 3. Лишние узлы. `action.passive` с полем, которое уже закрыто узлом rule.*, удаляется
    вместе с опустевшей программой-обёрткой «Параметры при создании»: у рас это скорость,
    языки, бонусы характеристик и навыки, у классов — кость хитов, спасброски,
@@ -167,6 +167,11 @@ def value_nodes(graph: dict, kind: str) -> list:
     return [n for n in nodes_of(graph, "rule.value") if (n.get("params") or {}).get("kind") == kind]
 
 
+def list_nodes(graph: dict, kind: str) -> list:
+    """Узлы универсального правила-списка выбранного вида (rule.list + params.kind)."""
+    return [n for n in nodes_of(graph, "rule.list") if (n.get("params") or {}).get("kind") == kind]
+
+
 def add_node(graph: dict, node: dict) -> None:
     node.setdefault("position", {"x": 40, "y": 40 + (len(graph["nodes"]) % 12) * 60})
     graph["nodes"].append(node)
@@ -256,34 +261,34 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
     overlay, overlay_fields = [], {}
 
     # 1. Навыки расы: пассивный блок → узел владения навыком.
-    if not nodes_of(graph, "rule.skill_proficiency"):
+    if not list_nodes(graph, "skill_proficiency"):
         fixed = []
         for node in nodes_of(graph, "action.passive"):
             if node.get("params", {}).get("field") == "skills":
                 fixed += skill_names(node["params"].get("value"))
         if fixed:
             fixed = list(dict.fromkeys(fixed))
-            add_node(graph, {"id": "race_skills_fixed", "type": "rule.skill_proficiency", "params": {"value": fixed}})
-            overlay.append({"id": "race_skills_fixed", "params": {"value": en_names(fixed, names)}})
+            add_node(graph, {"id": "race_skills_fixed", "type": "rule.list", "params": {"kind": "skill_proficiency", "value": fixed}})
+            overlay.append({"id": "race_skills_fixed", "params": {"kind": "skill_proficiency", "value": en_names(fixed, names)}})
 
-    # 2. Языки: узел rule.languages (у рас 2024 языков нет — выбора стандартных языков в данных тоже нет).
-    if not nodes_of(graph, "rule.languages"):
+    # 2. Языки: узел rule.list (kind: languages) (у рас 2024 языков нет — выбора стандартных языков в данных тоже нет).
+    if not list_nodes(graph, "languages"):
         langs = [x.strip() for x in (d.get("languages") or []) if isinstance(x, str) and x.strip() and len(x.strip()) <= 40]
         if langs:
-            add_node(graph, {"id": "race_languages", "type": "rule.languages", "params": {"value": langs}})
-            overlay.append({"id": "race_languages", "params": {"value": en_names(langs, names)}})
+            add_node(graph, {"id": "race_languages", "type": "rule.list", "params": {"kind": "languages", "value": langs}})
+            overlay.append({"id": "race_languages", "params": {"kind": "languages", "value": en_names(langs, names)}})
 
     choices = [c for c in ((table or {}).get("choices") or []) if isinstance(c, dict)]
 
-    # 3. Выбор навыка игроком: набор правил → узел rule.skills с тем же ключом выбора.
+    # 3. Выбор навыка игроком: набор правил → узел rule.list (kind: skills) с тем же ключом выбора.
     skill_choices = [c for c in choices if c.get("kind") == "skills" and c.get("key")] if table else []
-    if is_root and skill_choices and not nodes_of(graph, "rule.skills"):
+    if is_root and skill_choices and not list_nodes(graph, "skills"):
         choice = skill_choices[0]
         title = str(choice.get("title") or "Навыки расы")
-        add_node(graph, {"id": "race_skills_choice", "type": "rule.skills",
-                         "params": {"id": str(choice["key"]), "count": int(choice.get("count") or 0),
+        add_node(graph, {"id": "race_skills_choice", "type": "rule.list",
+                         "params": {"kind": "skills", "id": str(choice["key"]), "count": int(choice.get("count") or 0),
                                     "options": [], "title": title}})
-        overlay.append({"id": "race_skills_choice", "params": {"title": HINTS_EN.get(title, title)}})
+        overlay.append({"id": "race_skills_choice", "params": {"kind": "skills", "title": HINTS_EN.get(title, title)}})
 
     # 4. Заклинания расы: набор правил → поля записи (их мастер создания читает первыми).
     cantrips = []
@@ -332,20 +337,20 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
 
     # 5. Владения оружием, бонус хитов и всегда подготовленные заклинания → узлы.
     weapons = [str(x).strip() for x in (table or {}).get("weapons") or [] if str(x).strip()]
-    if weapons and not any(n["params"].get("kind") == "Оружие" for n in nodes_of(graph, "rule.proficiencies")):
-        add_node(graph, {"id": "race_weapons", "type": "rule.proficiencies", "params": {"kind": "Оружие", "value": weapons}})
-        overlay.append({"id": "race_weapons", "params": {"kind": "Weapons", "value": en_names(weapons, names)}})
+    if weapons and not any((n.get("params") or {}).get("label") == "Оружие" for n in list_nodes(graph, "proficiencies")):
+        add_node(graph, {"id": "race_weapons", "type": "rule.list", "params": {"kind": "proficiencies", "label": "Оружие", "value": weapons}})
+        overlay.append({"id": "race_weapons", "params": {"kind": "proficiencies", "label": "Weapons", "value": en_names(weapons, names)}})
     if (table or {}).get("hp_bonus") and not value_nodes(graph, "hp"):
         add_node(graph, {"id": "race_hp_bonus", "type": "rule.value", "params": {"kind": "hp", "amount": int(table["hp_bonus"])}})
     prepared = [str(x).strip() for x in (table or {}).get("always_prepared") or [] if str(x).strip()]
-    if prepared and not nodes_of(graph, "rule.spell_list"):
-        add_node(graph, {"id": "race_prepared", "type": "rule.spell_list", "params": {"mode": "prepared", "spells": prepared}})
-        overlay.append({"id": "race_prepared", "params": {"spells": en_names(prepared, names)}})
+    if prepared and not list_nodes(graph, "spell_list"):
+        add_node(graph, {"id": "race_prepared", "type": "rule.list", "params": {"kind": "spell_list", "mode": "prepared", "spells": prepared}})
+        overlay.append({"id": "race_prepared", "params": {"kind": "spell_list", "spells": en_names(prepared, names)}})
 
     # 6. Чистка лишних пассивных блоков: их поля закрыты узлами rule.*.
     covered = set(RACE_COVERED_FIELDS)
     covered.update(f"asi.{n['params'].get('ability')}" for n in value_nodes(graph, "ability"))
-    if nodes_of(graph, "rule.skill_proficiency"):
+    if list_nodes(graph, "skill_proficiency"):
         covered.add("skills")
     for node in list(nodes_of(graph, "action.passive")):
         if str(node.get("params", {}).get("field")) in covered:
@@ -360,15 +365,15 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
 def merge_class(entry: dict, names: dict) -> None:
     d = entry["data"]
     graph = graph_of(d)
-    # Выбор навыков класса: поле data.skills → узел rule.skills (поле остаётся источником для мастера создания).
-    if not nodes_of(graph, "rule.skills") and isinstance(d.get("skills"), dict):
+    # Выбор навыков класса: поле data.skills → узел rule.list (kind: skills) (поле остаётся источником для мастера создания).
+    if not list_nodes(graph, "skills") and isinstance(d.get("skills"), dict):
         from_names = [str(x).strip() for x in d["skills"].get("from") or [] if str(x).strip()]
         count = int(d["skills"].get("choose") or 0)
         if from_names or count:
-            add_node(graph, {"id": "class_skills", "type": "rule.skills",
-                             "params": {"id": "classSkills", "count": count, "options": from_names,
+            add_node(graph, {"id": "class_skills", "type": "rule.list",
+                             "params": {"kind": "skills", "id": "classSkills", "count": count, "options": from_names,
                                         "title": "Навыки класса"}})
-            add_en_nodes(entry, [{"id": "class_skills", "params": {"options": en_names(from_names, names), "title": "Class skill"}}])
+            add_en_nodes(entry, [{"id": "class_skills", "params": {"kind": "skills", "options": en_names(from_names, names), "title": "Class skill"}}])
     for node in list(nodes_of(graph, "action.passive")):
         if str(node.get("params", {}).get("field")) in CLASS_COVERED_FIELDS:
             drop_node(graph, node["id"])
@@ -382,12 +387,12 @@ def merge_class(entry: dict, names: dict) -> None:
 def merge_background(entry: dict, table: dict) -> None:
     d = entry["data"]
     graph = graph_of(d)
-    if not nodes_of(graph, "rule.skill_proficiency"):
+    if not list_nodes(graph, "skill_proficiency"):
         fixed = skill_names(d.get("skills"))
         if fixed:
-            add_node(graph, {"id": "bg_skills", "type": "rule.skill_proficiency", "params": {"value": fixed}})
-            add_en_nodes(entry, [{"id": "bg_skills", "params": {"value": en_names(fixed, table)}}])
-    has_skill_node = bool(nodes_of(graph, "rule.skill_proficiency"))
+            add_node(graph, {"id": "bg_skills", "type": "rule.list", "params": {"kind": "skill_proficiency", "value": fixed}})
+            add_en_nodes(entry, [{"id": "bg_skills", "params": {"kind": "skill_proficiency", "value": en_names(fixed, table)}}])
+    has_skill_node = bool(list_nodes(graph, "skill_proficiency"))
     for node in list(nodes_of(graph, "action.passive")):
         if has_skill_node and str(node.get("params", {}).get("field")) == "skills":
             drop_node(graph, node["id"])
