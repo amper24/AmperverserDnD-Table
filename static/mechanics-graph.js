@@ -23,7 +23,7 @@
   // Вид блока плана для узла действия: настраиваемый «Бросок» берёт вид из параметра roll_kind.
   const blockKind = (type, p) => (type === 'action.roll' && ROLL_KINDS.includes(p?.roll_kind) ? p.roll_kind : type.slice(7));
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op', 'data.math', 'data.boolean']);
   const STAT_MODES = ['bonus', 'score'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);

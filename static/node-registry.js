@@ -27,6 +27,7 @@
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
   const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
   const STAT_MODES = ['bonus', 'score'];
+  const MATH_OPS = ['add', 'sub', 'mul', 'div', 'min', 'max'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
   function statDice(p) {
@@ -130,7 +131,7 @@
   window.Nodes = { GraphNode, register, actionDefaults, clone };
   window.NodeRegistry = {
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
-    COMPUTED, STAT_MODES, COMPARE_OPS, isStatId, statDice, diceTerm,
+    COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
   };

@@ -110,3 +110,15 @@ test('logic nodes never take the hit condition; only the if node does', () => {
   const graph = mech([hit, and], [link('h', 'value', 'and', 'a')]);
   assert.ok(M.problems(graph).length > 0);
 });
+
+test('math computes numbers and the boolean node is a constant', () => {
+  const math = R.nodeDef('data.math'), bool = R.nodeDef('data.boolean');
+  const get = values => socket => values[socket];
+  assert.equal(math.compute({ op: 'add' }, get({ a: 2, b: 3 })), 5);
+  assert.equal(math.compute({ op: 'div' }, get({ a: 1, b: 0 })), undefined, 'деление на ноль неизвестно');
+  assert.equal(math.compute({ op: 'max' }, get({ a: 2, b: 9 })), 9);
+  assert.notEqual(math.validate({ op: 'pow' }), '');
+  assert.equal(bool.compute({ value: false }), false);
+  const graph = mech([node('x', 'data.math', { op: 'mul' })], []);
+  assert.equal(M.validate(graph), '');
+});

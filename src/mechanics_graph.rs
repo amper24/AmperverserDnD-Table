@@ -31,6 +31,8 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.number" => { outputs.insert("value".into(), "number".into()); }
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
+        "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
+        "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
@@ -124,6 +126,8 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
     let p = &n["params"];
     let kind = n["type"].as_str().unwrap_or("");
     match kind {
+        "data.boolean" if !p["value"].is_boolean() => return Err(bad("Логическая константа: значение true или false.")),
+        "data.math" if !["add", "sub", "mul", "div", "min", "max"].contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Вычисление: неизвестная операция.")),
         "data.number" if !p["value"].as_f64().map(|number| number.is_finite()).unwrap_or(false) => return Err(bad("Числовой узел должен содержать конечное число.")),
         "data.dice" => {
             let value = &p["value"];
@@ -132,6 +136,7 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             let stat = match value.get("stat") { None | Some(Value::Null) => "", Some(value) => value.as_str().unwrap_or("\0") };
             if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(bad("Узел кости должен содержать количество и грани.")); }
         }
+
         "condition.edition" => {
             let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
             if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(bad("Условие редакции: один или несколько допустимых SRD.")); }
@@ -284,7 +289,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.stat", "dice.combine",
+    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
     "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
@@ -471,6 +476,16 @@ fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), E
 fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value) -> Option<Value> {
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
+        "data.boolean" => params.get("value").and_then(Value::as_bool).map(|value| json!(value)),
+        "data.math" => {
+            let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
+            let value = match params["op"].as_str()? {
+                "add" => a + b, "sub" => a - b, "mul" => a * b, "div" if b != 0.0 => a / b,
+                "min" => a.min(b), "max" => a.max(b), _ => return None,
+            };
+            Some(json!(value))
+        }
         "data.stat" => Some(stat_dice(params)),
         "dice.combine" => {
             let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None)?)?;
@@ -498,6 +513,7 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             },
         },
         kind if kind.starts_with("data.") => params.get("value").cloned(),
+
         "condition.edition" => {
             let edition = context.get("edition")?.as_str()?;
             Some(json!(params["editions"].as_array().into_iter().flatten().any(|item| item.as_str() == Some(edition))))

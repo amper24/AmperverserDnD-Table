@@ -1207,6 +1207,28 @@
           "groups": []
         }
       }
+    },
+    {
+      "name": "math-and-boolean",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            { "id": "a", "type": "data.number", "params": { "value": 7 } },
+            { "id": "b", "type": "data.number", "params": { "value": 2 } },
+            { "id": "m", "type": "data.math", "params": { "op": "mul" } },
+            { "id": "t", "type": "data.boolean", "params": { "value": true } }
+          ],
+          "links": [
+            { "from": { "node": "a", "socket": "value" }, "to": { "node": "m", "socket": "a" } },
+            { "from": { "node": "b", "socket": "value" }, "to": { "node": "m", "socket": "b" } }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
     }
   ]
 }
