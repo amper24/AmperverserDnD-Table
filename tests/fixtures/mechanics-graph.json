@@ -61,32 +61,11 @@
         "version": 2,
         "graph": {
           "nodes": [
-            {
-              "id": "t",
-              "type": "data.text",
-              "params": {
-                "value": "35"
-              }
-            },
-            {
-              "id": "s",
-              "type": "rule.speed",
-              "params": {
-                "value": 30
-              }
-            }
+            { "id": "n", "type": "data.number", "params": { "value": 35 } },
+            { "id": "c", "type": "flow.if", "params": {} }
           ],
           "links": [
-            {
-              "from": {
-                "node": "t",
-                "socket": "value"
-              },
-              "to": {
-                "node": "s",
-                "socket": "value"
-              }
-            }
+            { "from": { "node": "n", "socket": "value" }, "to": { "node": "c", "socket": "condition" } }
           ],
           "frames": [],
           "groups": []

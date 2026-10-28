@@ -5,7 +5,7 @@
     static type = 'rule.armor_formula';
     static label = 'Защита без доспехов';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', formula: 'text' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { formula: '10 + @dex + @con', name: 'Защита без доспехов', no_shield: false };
     static isRule = true;

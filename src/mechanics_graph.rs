@@ -30,26 +30,24 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
     match kind {
         "data.number" => { outputs.insert("value".into(), "number".into()); }
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
-        "data.table" => { outputs.insert("value".into(), "table".into()); }
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
-        "data.text" => { outputs.insert("value".into(), "text".into()); }
         "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.ability_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.speed" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.languages" | "rule.proficiencies" | "rule.saving_throws" | "rule.skill_proficiency" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.hit_die" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("value".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.hit_die" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.feature" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.skills" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("count".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spell_list" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("table".into(), "table".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.spell_slots" | "rule.asi" | "rule.class_progression" | "rule.class_rules" | "rule.class_features" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.spellcasting" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("formula".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.armor_formula" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.hp_bonus" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
-        "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("text".into(), "text".into()); outputs.insert("effect".into(), "effect".into()); }
+        "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.equipment" | "rule.equipment_choice" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
@@ -134,8 +132,6 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             let stat = match value.get("stat") { None | Some(Value::Null) => "", Some(value) => value.as_str().unwrap_or("\0") };
             if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(bad("Узел кости должен содержать количество и грани.")); }
         }
-        "data.table" if !p["value"].is_object() => return Err(bad("Табличный узел должен содержать JSON-объект.")),
-        "data.text" if p["value"].as_str().is_none() || utf16_len(p["value"].as_str().unwrap_or("")) > 4000 => return Err(bad("Текстовый узел: до 4000 символов.")),
         "condition.edition" => {
             let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
             if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(bad("Условие редакции: один или несколько допустимых SRD.")); }
@@ -288,7 +284,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.table", "data.text", "data.stat", "dice.combine",
+    "data.number", "data.dice", "data.stat", "dice.combine",
     "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
     "rule.ability_bonus", "rule.speed", "rule.languages", "rule.proficiencies", "rule.hit_die", "rule.saving_throws", "rule.feature", "rule.skills", "rule.skill_proficiency", "rule.spell_list", "rule.spell_slots", "rule.asi", "rule.class_progression", "rule.class_rules", "rule.armor_formula", "rule.hp_bonus", "rule.manual", "rule.equipment", "rule.equipment_choice", "rule.class_features", "rule.spellcasting",
     "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",

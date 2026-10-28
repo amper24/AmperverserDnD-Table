@@ -6,7 +6,7 @@
     static type = 'rule.class_progression';
     static label = 'Прогрессия класса';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', table: 'table' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { table: { columns: [], levels: { '1': { pb: 2 } } } };
     static isRule = true;

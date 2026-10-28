@@ -41,8 +41,8 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
 
     // Add a node, then exercise local undo/redo without saving an intermediate state.
     const originalCount = await page.locator('.graph-node').count();
-    await page.getByLabel('Поиск узла', { exact: true }).fill('data.text');
-    await page.locator('button.node-add[title="data.text"]').click();
+    await page.getByLabel('Поиск узла', { exact: true }).fill('data.number');
+    await page.locator('button.node-add[title="data.number"]').click();
     assert.equal(await page.locator('.graph-node').count(), originalCount + 1);
     await page.getByRole('button', { name: '↶ Отменить' }).click();
     assert.equal(await page.locator('.graph-node').count(), originalCount);

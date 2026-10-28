@@ -5,7 +5,7 @@
     static type = 'rule.manual';
     static label = 'Ручное правило';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', text: 'text' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { text: 'Опишите правило, которое применяется вручную.' };
     static isRule = true;

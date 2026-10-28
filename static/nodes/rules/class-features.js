@@ -6,7 +6,7 @@
     static type = 'rule.class_features';
     static label = 'Умения класса';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', table: 'table' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { table: { levels: { '1': [{ name: 'Новое умение', text: '' }] } } };
     static isRule = true;

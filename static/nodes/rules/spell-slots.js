@@ -6,7 +6,7 @@
     static type = 'rule.spell_slots';
     static label = 'Ячейки заклинаний';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', table: 'table' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { table: { levels: { '1': { slots: [2, 0, 0, 0, 0, 0, 0, 0, 0] } } } };
     static isRule = true;

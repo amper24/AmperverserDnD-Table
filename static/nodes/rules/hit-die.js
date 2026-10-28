@@ -5,7 +5,7 @@
     static type = 'rule.hit_die';
     static label = 'Кость хитов';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', value: 'text' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { value: 'd8' };
     static isRule = true;

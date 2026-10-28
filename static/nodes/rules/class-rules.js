@@ -6,7 +6,7 @@
     static type = 'rule.class_rules';
     static label = 'Правила класса';
     static group = 'Правила персонажа';
-    static inputs = { enabled: 'bool', table: 'table' };
+    static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };
     static defaults = { table: { caster: { level: '' }, multiclass: { requirements: [] } } };
     static isRule = true;
