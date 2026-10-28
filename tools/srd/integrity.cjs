@@ -659,9 +659,8 @@ function checkRuntime(opts = {}) {
     if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/mechanics_graph.rs NODE_TYPES)`);
   }
   // Внутренние узлы (group.input/group.output) намеренно вне палитры, но обязаны быть в реестре и на сервере.
-  // Сервер дополнительно принимает устаревшие типы-псевдонимы (ALIASES): клиент читает их как абстрактные узлы.
   for (const type of rust.NODE_TYPES) {
-    if (!defs.includes(type) && !(Registry.ALIASES && Registry.ALIASES[type])) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
+    if (!defs.includes(type)) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
   }
   for (const type of Registry.INTERNAL) {
     if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);

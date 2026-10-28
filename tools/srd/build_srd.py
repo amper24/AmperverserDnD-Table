@@ -331,12 +331,15 @@ if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     for ed in ('2014', '2024'):
         data = build(ed)
+        # Клиент и сервер принимают только граф v2. Конвертер блоков v1 → граф удалён вместе с
+        # совместимостью в приложении, поэтому генератор обязан сразу выдавать version 2.
+        legacy = [e['slug'] for e in data if ((e.get('data') or {}).get('mechanics') or {}).get('version') != 2
+                  and (e.get('data') or {}).get('mechanics')]
+        if legacy:
+            raise SystemExit(f'{ed}: механики собраны не в граф v2 ({len(legacy)} записей, например {legacy[:3]}). '
+                             'Обновите tools/srd/mechanics.py.')
         p = os.path.join(OUT, f'srd_{ed}.json')
         json.dump(data, open(p, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
-        # Механики переводятся из блоков v1 в граф v2 тем же конвертером, что использует редактор (Mechanics.migrate).
-        import subprocess
-        subprocess.run(['node', os.path.join(os.path.dirname(__file__), 'graph_convert.cjs'), p, p], check=True)
-        data = json.load(open(p, encoding='utf-8'))
         from collections import Counter
         c = Counter(e['category'] for e in data)
         untr = sum(1 for e in data if e['name'] == e['data']['name_en'])

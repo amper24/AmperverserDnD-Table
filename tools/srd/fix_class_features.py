@@ -104,10 +104,12 @@ def main():
             MC.convert([tmp], '2014')
             e['data']['mechanics'] = tmp['data']['mechanics']
             print(e['slug'], 'ok', len(new))
+    # MC.convert собирает блоки v1; приложение принимает только граф v2, а конвертер удалён.
+    # Пока генератор не переведён на v2, скрипт не должен записывать несовместимые данные.
+    legacy = [e['slug'] for e in data if ((e.get('data') or {}).get('mechanics') or {}).get('version') != 2 and (e.get('data') or {}).get('mechanics')]
+    if legacy:
+        raise SystemExit(f'MC.convert выдаёт схему v1 ({len(legacy)} записей): переведите tools/srd/mechanics.py на граф v2.')
     open(a.file, 'w', encoding='utf-8').write(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
-    # MC.convert даёт блоки v1; переводим в граф v2 тем же конвертером, что и build_srd.py.
-    import subprocess
-    subprocess.run(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'graph_convert.cjs'), a.file, a.file], check=True)
 
 
 if __name__ == '__main__':
