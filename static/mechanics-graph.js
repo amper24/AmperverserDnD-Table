@@ -1020,6 +1020,8 @@
       const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => socket('inputs', name, type))),
         el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => socket('outputs', name, type))));
       const card = el('article', { class: `graph-node cat-${category}` + (selected.has(node.id) ? ' selected' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id, 'data-category': category,
+        // Наведение подсвечивает всю цепочку (входы и выходы), как «flow» в Blender.
+        onpointerenter: () => highlightFlow(node.id), onpointerleave: () => highlightFlow(''),
         // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
@@ -1050,6 +1052,41 @@
       const socketEl = root.querySelector?.(`.node-socket[data-node="${nodeId}"][data-dir="${direction}"][data-socket="${socketName}"]`);
       return (socketEl && socketDotAnchor(socketEl, rect || canvasRect())) || fallback;
     }
+    const anchorKey = (nodeId, direction, socketName) => `${nodeId}:${direction}:${socketName}`;
+    const fallbackAnchor = (nodeId, direction) => { const pos = nodeById(nodeId)?.position || { x: 0, y: 0 }; return { x: pos.x + (direction === 'outputs' ? 224 : 0), y: pos.y + 56 }; };
+    // Точки всех сокетов на одну перерисовку: DOM-запрос и геометрия читаются по разу на сокет,
+    // а не на каждый провод. Иначе каждый провод вызывает layout-чтение и перерисовка «дёргается».
+    function socketAnchorCache(rect) {
+      const cache = new Map();
+      for (const socketEl of root.querySelectorAll?.('.node-socket') || []) {
+        const point = socketDotAnchor(socketEl, rect);
+        if (point) cache.set(anchorKey(socketEl.dataset.node, socketEl.dataset.dir, socketEl.dataset.socket), point);
+      }
+      return cache;
+    }
+    // Подсветка цепочки: от узла вверх и вниз по проводам (как «flow» в Blender).
+    function highlightFlow(nodeId) {
+      const nodes = new Set(), wires = new Set();
+      if (nodeId) {
+        const walk = (start, forward) => {
+          const queue = [start], seen = new Set([start]);
+          while (queue.length) {
+            for (const link of graph.links) {
+              const id = queue[0];
+              const near = forward ? link.from.node : link.to.node, far = forward ? link.to.node : link.from.node;
+              if (near !== id || seen.has(far)) continue;
+              seen.add(far); nodes.add(far); queue.push(far);
+              wires.add(`${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`);
+            }
+            nodes.add(queue.shift());
+          }
+        };
+        walk(nodeId, true); walk(nodeId, false);
+      }
+      canvasEl()?.classList.toggle('flow', Boolean(nodeId));
+      for (const card of root.querySelectorAll?.('.graph-node') || []) card.classList.toggle('flow-node', nodes.has(card.dataset.nodeId));
+      for (const path of root.querySelectorAll?.('.node-wire') || []) path.classList.toggle('flow-wire', wires.has(path.dataset.link));
+    }
     function drawWires(canvas) {
       if (!document.createElementNS) return;
       const NS = 'http://www.w3.org/2000/svg';
@@ -1057,10 +1094,12 @@
       svg.setAttribute('class', 'node-wires'); svg.setAttribute('aria-hidden', 'true');
       // Прямоугольник холста читается один раз на перерисовку, а не для каждой точки провода.
       const rect = canvasRect();
+      const anchors = socketAnchorCache(rect);
+      const point = (nodeId, direction, socketName) => anchors.get(anchorKey(nodeId, direction, socketName)) || fallbackAnchor(nodeId, direction);
       for (const link of graph.links.filter(l => shownIds.has(l.from.node) && shownIds.has(l.to.node))) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
         const type = portType(a, 'outputs', link.from.socket) || 'flow';
-        const from = socketAnchor(a.id, 'outputs', link.from.socket, rect), to = socketAnchor(b.id, 'inputs', link.to.socket, rect);
+        const from = point(a.id, 'outputs', link.from.socket), to = point(b.id, 'inputs', link.to.socket);
         const d = wireCurve(from.x, from.y, to.x, to.y), name = `${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`;
         // Невидимая широкая зона попадания (клик удаляет провод) и тонкая видимая линия поверх неё.
         const hit = document.createElementNS(NS, 'path');

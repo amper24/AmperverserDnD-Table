@@ -1780,3 +1780,10 @@ body.lu-open { overflow: hidden; }
 /* Подзаголовок внутри раздела редактора (редактор рас: «Владение навыками», «Выбор игрока»). */
 .ced-sub { margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
 .ced-sub:first-child { margin-top: 0; }
+
+/* Подсветка цепочки при наведении на узел: остальные узлы и провода приглушаются. */
+.node-canvas.flow .graph-node:not(.flow-node){opacity:.45}
+.node-canvas.flow .node-wire:not(.flow-wire){opacity:.22}
+.graph-node.flow-node{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 12px 26px rgba(0,0,0,.38)}
+.node-world .node-wire.flow-wire{stroke-width:4;filter:drop-shadow(0 0 5px currentColor)}
+.graph-node.flow-node .graph-node-head{filter:brightness(1.15)}
