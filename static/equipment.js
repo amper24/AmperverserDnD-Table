@@ -65,11 +65,10 @@ window.Equipment = (() => {
     it.qty ??= 1;
     if (it.type === 'ammo' && !it.ammo_tag && textRuleValue('container_type', it.name || '')) it.type = textRuleValue('container_type', it.name || '');
     const text = [it.name, it.desc, ...(it.properties || [])].join(' ').toLowerCase();
-    // предметы старой схемы: «без рук» могло означать «не задано» — хват и место ношения выводим заново
-    if (it.slots_v !== SLOTS_V && it.handedness === 'none') delete it.handedness;
+    // Хват и место ношения выводятся один раз и дальше хранятся в предмете (slots_v).
     it.handedness = handednessOf(it); it.wear = wearKind(it); it.slots_v = SLOTS_V; it.favorite = it.favorite === true;
-    // Настройка (attunement) есть только у предметов, которые её требуют: иначе флажок — мусор из старых данных.
-    if (it.attuned && (it.attunement !== true || it.qty !== 1)) it.attuned = false;
+    // Настроить можно только одну штуку, а не стопку.
+    if (it.attuned && it.qty !== 1) it.attuned = false;
     if (it.type === 'ammo' && !it.ammo_tag) it.ammo_tag = textRuleValue('ammo_tag', text, '');
     if (it.consume === undefined) {
       if (it.type === 'consumable') it.consume = { enabled: true, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
@@ -77,7 +76,7 @@ window.Equipment = (() => {
         it.consume = { enabled: true, resource: 'quantity', target_uid: '', ammo_tag: textRuleValue('consume_ammo_tag', text, 'arrow'), amount: 1, trigger: 'attack' };
       } else it.consume = { enabled: false, resource: 'quantity', target_uid: 'self', amount: 1, trigger: 'use' };
     }
-    // Legacy versatile actions used two independent damage buttons; now they are exclusive variants.
+    // Варианты урона универсального оружия взаимоисключающие: хват задаёт один из них.
     if (it.handedness === 'versatile' && (it.actions || []).some(a => /двумя руками|two.hand/i.test(a.name || ''))) {
       it.actions.forEach(a => { if (a.kind === 'damage' && !a.grip) a.grip = /двумя руками|two.hand/i.test(a.name || '') ? 'two' : 'one'; });
     }
@@ -128,7 +127,7 @@ window.Equipment = (() => {
     let attuned = 0;
     for (const it of inventory) {
       if (!it.attuned) continue;
-      if (it.attunement === true && attuned < 3) attuned++;
+      if (attuned < 3) attuned++;
       else it.attuned = false;
     }
     return inventory;

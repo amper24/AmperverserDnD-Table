@@ -166,11 +166,9 @@ window.RaceEditor = (() => {
   }
 
   // ---------- Чтение и запись записи ----------
-  /// Граф записи: существующий (v2), переведённый из старого формата (v1) или новый пустой.
+  /// Граф записи: существующий (v2) или новый пустой; другие версии не читаются.
   function graphOf(d) {
-    let mech = d.mechanics;
-    if (mech && mech.version !== 2) mech = window.Mechanics?.toGraph?.(mech) || null;
-    if (!(mech && mech.version === 2)) mech = null;
+    let mech = d.mechanics?.version === 2 ? d.mechanics : null;
     const graph = mech?.graph || { nodes: [], links: [], frames: [], groups: [] };
     if (!mech) { d.mechanics = { origin: 'race-editor-v2', version: 2, graph }; mech = d.mechanics; }
     if (!Array.isArray(graph.frames)) graph.frames = [];

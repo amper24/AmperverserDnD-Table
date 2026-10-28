@@ -1,5 +1,5 @@
-// Учёт ячеек заклинаний и сборка действия «Сотворить»: чистые правила листа и пересборка
-// старых записей справочника (те же функции вызывают лист персонажа и tools/srd).
+// Учёт ячеек заклинаний и сборка действия «Сотворить»: чистые правила листа и сборка
+// действия из плана исполнения (те же функции вызывают лист персонажа и tools/srd).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -210,25 +210,11 @@ test('правило спасброска: игрок не кидает брос
   assert.equal(M.isSaveRule(M.saveRule('ЛОВ')), true);
 });
 
-test('пересборка на листе: старая копия заклинания получает одно действие без расхода ячейки', () => {
-  // Копия 0.7.0 на листе: расход ячейки в действии и отдельные кнопки бросков.
-  const copy = M.migrate({ mechanics: { version: 1, origin: 'spell-v1', programs: legacySpellPrograms() } }, 'spell');
-  const rebuilt = R.legacySpellMechanics(plain(copy), spellMeta);
-  assert.ok(rebuilt, 'старая копия пересобирается при открытии листа');
-  assert.equal(rebuilt.version, 2);
-  const programs = rebuilt.graph.nodes.filter(node => node.type === 'action.program');
-  assert.equal(programs.length, 2, 'действие «Сотворить» и отдельный «Урон» (отложенный, не сворачивается)');
-  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.consume'), false, 'расхода ячейки в графе больше нет');
-  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && node.params.roll_kind === 'attack'), true);
-  assert.equal(rebuilt.graph.nodes.some(node => node.type === 'action.roll' && node.params.dice && node.params.dice.sides === 20 && !node.params.dice.stat), false, 'броска спасброска у игрока нет');
-  const rule = rebuilt.graph.nodes.find(node => node.type === 'action.manual' && /бросает цель или ДМ/.test(node.params.text || ''));
-  assert.ok(rule, 'спасбросок цели остался правилом для мастера');
-  assert.match(rule.params.text, /\(МДР\)/);
-  assert.equal(M.validate(rebuilt), '');
-  assert.deepEqual(plain(M.problems(rebuilt)), []);
-  // Повторный проход: собранная запись не меняется (иначе лист переписывал бы себя при каждом открытии).
-  assert.equal(R.legacySpellMechanics(rebuilt, spellMeta), undefined);
-  assert.equal(R.spellPrograms(M.toLegacy(rebuilt, { level: 2 }).programs, spellMeta).changed, false);
+test('пересборки копий заклинаний больше нет: v1-механики не принимаются', () => {
+  assert.equal(R.legacySpellMechanics, undefined, 'лист больше не пересобирает старые копии');
+  assert.equal(M.migrate, undefined);
+  assert.match(M.validate({ version: 1, origin: 'spell-v1', programs: legacySpellPrograms() }), /Неподдерживаемая схема механик/);
+  assert.deepEqual(plain(M.problems({ version: 1, origin: 'spell-v1', programs: legacySpellPrograms() })), ['Неподдерживаемая схема механик.']);
 });
 
 test('все заклинания справочника уже собраны: одно действие, расход на листе, чужого броска нет', () => {

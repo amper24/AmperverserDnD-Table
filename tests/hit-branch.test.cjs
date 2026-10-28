@@ -18,19 +18,24 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const attackBlock = { id: 'atk', kind: 'attack', dice: { count: 0, sides: 20, bonus: 5, stat: '' }, dc: 3 };
 const hitDamage = { id: 'dmg', kind: 'damage', when: 'hit', dice: { count: 1, sides: 6, bonus: 0, stat: '' } };
 const missHeal = { id: 'heal', kind: 'heal', when: 'miss', target: 'self', apply: true, dice: { count: 0, sides: 6, bonus: 1, stat: '' } };
+const node = (id, type, params = {}) => ({ id, type, params, position: { x: 0, y: 0 } });
+const program = (id = 'p', name = 'Удар') => node(id, 'action.program', { program_id: id, name, trigger: 'use' });
+const roll = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, enabled: true, when: 'always', ...params });
+const wire = (from, fromSocket, to, toSocket) => ({ from: { node: from, socket: fromSocket }, to: { node: to, socket: toSocket } });
+const vault = (nodes, links) => ({ version: 2, graph: { nodes, links, frames: [], groups: [] } });
+// Атака → «Попадание атаки» → «Если» → урон по ветке «да».
+const hitChain = () => vault([program(), roll('a', 'attack', { block_id: 'atk', dice: attackBlock.dice, dc: 3 }), node('h', 'condition.hit', {}), node('f', 'flow.if', {}), roll('d', 'damage', { block_id: 'dmg', dice: hitDamage.dice })],
+  [wire('p', 'exec', 'a', 'exec'), wire('a', 'exec', 'f', 'exec'), wire('h', 'value', 'f', 'condition'), wire('f', 'then', 'd', 'exec')]);
 
-test('a v1 gated block becomes a condition node and compiles back to the same when', () => {
+test('v1 не принимается: ветка попадания задаётся узлами, а не старым полем when', () => {
   const v1 = { version: 1, origin: 'legacy', programs: [{ id: 'p', name: 'Удар', trigger: 'use', blocks: [attackBlock, hitDamage] }] };
-  const graph = M.toGraph(v1);
-  const types = graph.graph.nodes.map(n => n.type);
-  assert.ok(types.includes('condition.hit'), 'condition.hit node is created');
-  assert.ok(types.includes('flow.if'), 'flow.if node is created');
-  const damageNode = graph.graph.nodes.find(n => n.type === 'action.roll' && n.params.roll_kind === 'damage');
-  assert.equal(damageNode.params.when, 'always', 'the gate lives in the branch, not in the block');
-  assert.equal(M.validate(graph), '', 'the converted graph saves');
-  assert.equal(M.problems(graph).length, 0, 'and executes');
-  const back = M.toLegacy(graph).programs[0].blocks;
-  assert.deepEqual(plain(back).map(b => [b.kind, b.when || 'always']), [['attack', 'always'], ['damage', 'hit']]);
+  assert.match(M.validate(v1), /Неподдерживаемая схема механик/);
+  assert.equal(M.toGraph, undefined);
+  const graph = hitChain();
+  assert.equal(M.validate(graph), '');
+  assert.equal(M.problems(graph).length, 0);
+  const back = plain(M.toLegacy(graph).programs[0].blocks);
+  assert.deepEqual(back.map(b => [b.kind, b.when || 'always']), [['attack', 'always'], ['damage', 'hit']]);
 });
 
 test('the then and else outputs gate hit and miss blocks separately', () => {
@@ -55,8 +60,10 @@ test('the then and else outputs gate hit and miss blocks separately', () => {
 });
 
 test('a branch continues with ungated nodes: only the node wired to the output is gated', () => {
-  const v1 = { version: 1, programs: [{ id: 'p', name: 'Цепочка', trigger: 'use', blocks: [attackBlock, hitDamage, { id: 'tail', kind: 'heal', target: 'self', apply: true, dice: { count: 0, sides: 6, bonus: 1, stat: '' } }] }] };
-  const back = M.toLegacy(M.toGraph(v1)).programs[0].blocks;
+  const chain = hitChain();
+  const graph = vault([...chain.graph.nodes, roll('tail', 'heal', { dice: missHeal.dice })],
+    [...chain.graph.links, wire('d', 'exec', 'tail', 'exec')]);
+  const back = M.toLegacy(graph).programs[0].blocks;
   assert.deepEqual(plain(back).map(b => [b.id, b.when || 'always']), [['atk', 'always'], ['dmg', 'hit'], ['tail', 'always']], 'the chain after the gated block is not gated');
 });
 
@@ -75,19 +82,20 @@ test('a hit condition wired to anything but a branch is saved but not executed',
 });
 
 test('nested hit branches are reported as a problem', () => {
-  const chain = M.toGraph({ version: 1, programs: [{ id: 'p', name: 'Удар', trigger: 'use', blocks: [attackBlock, hitDamage] }] });
+  const chain = hitChain();
   const nodes = chain.graph.nodes, links = chain.graph.links;
   const branch = nodes.find(n => n.type === 'flow.if');
-  const hit2 = { id: 'h2', type: 'condition.hit', params: {} }, if2 = { id: 'f2', type: 'flow.if', params: {} };
-  nodes.push(hit2, if2);
-  links.push({ from: { node: 'h2', socket: 'value' }, to: { node: 'f2', socket: 'condition' } });
-  links.push({ from: { node: branch.id, socket: 'then' }, to: { node: 'f2', socket: 'exec' } });
+  nodes.push(node('h2', 'condition.hit', {}), node('f2', 'flow.if', {}));
+  links.push(wire('h2', 'value', 'f2', 'condition'));
+  links.push(wire(branch.id, 'then', 'f2', 'exec'));
   assert.ok(M.problems(chain).some(text => text.includes('вкладывать')));
 });
 
 test('sequential hit branches (after a gated block) are allowed', () => {
-  const chain = M.toGraph({ version: 1, programs: [{ id: 'p', name: 'Удар', trigger: 'use', blocks: [attackBlock, hitDamage, { id: 'h', kind: 'heal', when: 'hit', target: 'self', apply: true, dice: { count: 0, sides: 6, bonus: 1, stat: '' } }] }] });
-  assert.equal(M.problems(chain).length, 0, 'each block has its own branch after the attack');
+  const chain = hitChain();
+  const graph = vault([...chain.graph.nodes, node('h2', 'condition.hit', {}), node('f2', 'flow.if', {}), roll('he', 'heal', { dice: missHeal.dice })],
+    [...chain.graph.links, wire('d', 'exec', 'f2', 'exec'), wire('h2', 'value', 'f2', 'condition'), wire('f2', 'then', 'he', 'exec')]);
+  assert.deepEqual(plain(M.problems(graph)), [], 'each block has its own branch after the attack');
 });
 
 test('starter presets are data: every starter saves, the attached ones execute', () => {

@@ -12,7 +12,7 @@
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
-  // Виды блоков v1: их по-прежнему понимает компиляция графа в линейные программы (toLegacy).
+  // Виды блоков плана: их понимает компиляция графа в линейные программы (toLegacy).
   const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
   // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];

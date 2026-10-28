@@ -19,11 +19,18 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.goto('https://mechanics-graph.test/');
     await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
-      window.legacy = { version: 1, origin: 'test', programs: [{ id: 'potion', name: 'Выпить зелье', trigger: 'use', blocks: [
-        { id: 'consume', kind: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always' },
-        { id: 'heal', kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, target: 'self', when: 'always' },
-      ] }] };
-      window.editing = Modules.editItem(Modules.newItem({ name: 'Эликсир', type: 'consumable', qty: 3, mechanics: legacy }));
+      window.mechanics = { version: 2, origin: 'test', graph: {
+        nodes: [
+          { id: 'potion', type: 'action.program', params: { program_id: 'potion', name: 'Выпить зелье', trigger: 'use' }, position: { x: 60, y: 70 } },
+          { id: 'consume', type: 'action.consume', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always', enabled: true }, position: { x: 330, y: 70 } },
+          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
+        ],
+        links: [
+          { from: { node: 'potion', socket: 'exec' }, to: { node: 'consume', socket: 'exec' } },
+          { from: { node: 'consume', socket: 'exec' }, to: { node: 'heal', socket: 'exec' } },
+        ], frames: [], groups: [],
+      } };
+      window.editing = Modules.editItem(Modules.newItem({ name: 'Эликсир', type: 'consumable', qty: 3, mechanics: window.mechanics }));
     });
     await page.locator('.node-editor').waitFor();
 

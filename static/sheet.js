@@ -43,9 +43,9 @@
   }
   const h3n = (text, key) => el('h3', { class: 'h3n' }, el('span', { class: 'grow' }, text), noteBtn(key, text));
 
-  // ---- миграция старых данных в модули ----
-  /// Приводит лист к ожидаемым типам: старые записи и импорт могут содержать null вместо чисел, строк и списков.
-  // ---------- Данные листа: нормализация, миграция, автосохранение ----------
+  // ---- нормализация данных листа в модули ----
+  /// Приводит лист к ожидаемым типам: импорт может содержать null вместо чисел, строк и списков.
+  // ---------- Данные листа: нормализация, автосохранение ----------
   function normalizeSheet() {
     const num = (v, d) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d;
     const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
@@ -82,14 +82,7 @@
     s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.notes_by ||= {}; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
     s.inventory = Equipment.migrate(s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' })));
     s.features=s.features.map(f=>f.uid?f:M.newFeature(f));
-    // Копии заклинаний, снятые со справочника до 0.7.1, пересобираются в одно действие: атака и урон
-    // идут цепочкой «Сотворить», а спасбросок цели остаётся правилом мастера, а не броском игрока.
-    s.spells.known = s.spells.known.map(sp => {
-      const base = sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] });
-      const rebuilt = base.mechanics && window.SpellRules?.legacySpellMechanics
-        ? SpellRules.legacySpellMechanics(base.mechanics, { level: base.level, desc: base.desc, actions: base.actions, edition: s.edition || '2014' }) : undefined;
-      return rebuilt ? { ...base, mechanics: rebuilt } : base;
-    });
+    s.spells.known = s.spells.known.map(sp => sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] }));
   }
   migrate();
 

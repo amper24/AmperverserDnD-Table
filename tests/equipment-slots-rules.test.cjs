@@ -59,14 +59,15 @@ test('колец не больше двух, и одно кольцо заним
   assert.deepEqual(rings.map(r => r.equipped), [true, true, false]);
 });
 
-test('настроено не более трёх предметов, и только те, кому настройка нужна', () => {
+test('настроено не более трёх предметов', () => {
   const list = [1, 2, 3, 4].map(n => item('Кольцо ' + n, { type: 'magic', attunement: true, attuned: true }));
   E.migrate(list);
   assert.equal(list.filter(i => i.attuned).length, 3);
   assert.equal(list[3].attuned, false);
-  const junk = item('Верёвка', { attuned: true });   // настройка не требуется — флаг из старых данных снимается
-  E.normalize(junk);
-  assert.equal(junk.attuned, false);
+  // Флаг настройки больше не переписывается отсутствием требования: это не миграция старых данных.
+  const rope = item('Верёвка', { attuned: true });
+  E.migrate([rope]);
+  assert.equal(rope.attuned, true);
 });
 
 test('предмет с настройкой без настройки не усиливает КД', () => {

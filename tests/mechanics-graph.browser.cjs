@@ -19,17 +19,25 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.goto('https://mechanics-graph.test/');
     await page.waitForFunction(() => window.Presets?.loaded === true);
     await page.evaluate(() => {
-      window.legacy = { version: 1, origin: 'test', programs: [{ id: 'potion', name: 'Выпить зелье', trigger: 'use', blocks: [
-        { id: 'consume', kind: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always' },
-        { id: 'heal', kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, target: 'self', when: 'always' },
-        { id: 'vial', kind: 'grant_item', item: { name: 'Пустой флакон', type: 'gear', qty: 1 }, amount: 1, when: 'always' },
-      ] }] };
-      window.editing = Modules.editItem(Modules.newItem({ name: 'Эликсир', type: 'consumable', qty: 3, mechanics: legacy }));
+      window.mechanics = { version: 2, origin: 'test', graph: {
+        nodes: [
+          { id: 'potion', type: 'action.program', params: { program_id: 'potion', name: 'Выпить зелье', trigger: 'use' }, position: { x: 60, y: 70 } },
+          { id: 'consume', type: 'action.consume', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, when: 'always', enabled: true }, position: { x: 330, y: 70 } },
+          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
+          { id: 'vial', type: 'action.grant_item', params: { block_id: 'vial', item: { name: 'Пустой флакон', type: 'gear', qty: 1 }, amount: 1, when: 'always', enabled: true }, position: { x: 850, y: 70 } },
+        ],
+        links: [
+          { from: { node: 'potion', socket: 'exec' }, to: { node: 'consume', socket: 'exec' } },
+          { from: { node: 'consume', socket: 'exec' }, to: { node: 'heal', socket: 'exec' } },
+          { from: { node: 'heal', socket: 'exec' }, to: { node: 'vial', socket: 'exec' } },
+        ], frames: [], groups: [],
+      } };
+      window.editing = Modules.editItem(Modules.newItem({ name: 'Эликсир', type: 'consumable', qty: 3, mechanics: window.mechanics }));
     });
     await page.locator('.node-editor').waitFor();
     assert.ok(await page.locator('.node-preview').isVisible(), 'edition/level preview is part of the editor');
     assert.ok(await page.getByLabel('Выборы для предпросмотра').isVisible(), 'preview can receive non-persisted choices');
-    assert.equal(await page.locator('.graph-node').count(), 4, 'v1 program and blocks appear as graph action nodes');
+    assert.equal(await page.locator('.graph-node').count(), 4, 'every graph node appears on the canvas');
 
     // Add a node, then exercise local undo/redo without saving an intermediate state.
     const originalCount = await page.locator('.graph-node').count();
@@ -49,7 +57,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
       valid: Mechanics.validate(saved.mechanics),
       programs: Mechanics.toLegacy(saved.mechanics).programs,
     }));
-    assert.equal(roundTrip.version, 2, 'saving an edited v1 record writes graph v2');
+    assert.equal(roundTrip.version, 2, 'saving an edited record keeps graph v2');
     assert.equal(roundTrip.valid, '');
     const potion = roundTrip.programs.find(program => program.id === 'potion');
     assert.deepEqual(potion.blocks.map(block => block.kind), ['consume', 'heal', 'grant_item']);
@@ -67,7 +75,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
       await page.getByRole('button', { name: 'Отмена', exact: true }).click();
     }
     assert.deepEqual(errors, []);
-    console.log('PASS mechanics graph browser: v1-to-v2 edit/save, typed graph preview, choices preview, undo/redo, item/spell/monster/race/class/background constructors');
+    console.log('PASS mechanics graph browser: v2 edit/save, typed graph preview, choices preview, undo/redo, item/spell/monster/race/class/background constructors');
   } finally {
     await browser.close();
   }

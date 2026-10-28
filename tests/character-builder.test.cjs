@@ -332,7 +332,7 @@ test('first-level subclass is projected as its own compendium module and stored 
 });
 test('2024 background feat resolves to the compendium module instead of a placeholder', () => {
   const background = entry('background', 'Преступник', { feat: 'Бдительный' });
-  const feat = entry('feat', 'Бдительный', { desc: 'Бонус к инициативе.', mechanics: { version: 1, programs: [] } });
+  const feat = entry('feat', 'Бдительный', { desc: 'Бонус к инициативе.', mechanics: { version: 2, graph: { nodes: [], links: [], frames: [], groups: [] } } });
   const module = B.backgroundFeatModule(background, [feat]);
   assert.equal(module.category, 'feat');
   assert.equal(module.data.parent_background, 'Преступник');

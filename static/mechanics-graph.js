@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // mechanics-graph.js — схема механик v2: типизированный ациклический граф,
-// адаптер block-v1, декларативное исполнение правил и визуальный редактор.
+// компилятор в план исполнения, декларативное исполнение правил и визуальный редактор.
 // Загружается сразу после mechanics.js. Произвольный код не исполняется.
 // ---------------------------------------------------------------------------
 (() => {
@@ -15,13 +15,12 @@
   const NodeRegistry = window.NodeRegistry;
   if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
   const { ACTION_KINDS, ROLL_KINDS, LOGIC_OPS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
-  // Определение узла: тип — закрытое имя реестра, псевдонимов нет.
+  // Определение узла: тип — закрытое имя реестра.
   const defOf = type => NodeRegistry.nodeDef(type);
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
-  const stableHash = value => { let hash = 2166136261; for (const char of String(value)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
-  // Вид блока v1 для узла действия: настраиваемый «Бросок» берёт вид из параметра roll_kind.
+  // Вид блока плана для узла действия: настраиваемый «Бросок» берёт вид из параметра roll_kind.
   const blockKind = (type, p) => (type === 'action.roll' && ROLL_KINDS.includes(p?.roll_kind) ? p.roll_kind : type.slice(7));
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
   const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
@@ -48,44 +47,7 @@
       frames: Array.isArray(graph?.frames) ? graph.frames : [], groups: Array.isArray(graph?.groups) ? graph.groups : [],
     } };
   }
-  function v1ToV2(mechanics) {
-    if (!mechanics) return graphEnvelope({});
-    if (mechanics.version === GRAPH_VERSION) return clone(mechanics);
-    if (mechanics.version !== 1) return clone(mechanics);
-    const v1 = Base.normalize(clone(mechanics));
-    const nodes = [], links = [];
-    let y = 70;
-    for (const [programIndex, p] of (v1.programs || []).entries()) {
-      const programKey = String(p.id || programIndex + 1);
-      const programNodeId = `program-${stableHash(programKey)}`;
-      nodes.push({ id: programNodeId, type: 'action.program', params: {
-        program_id: p.id || mkId('p'), name: p.name || 'Действие', trigger: p.trigger || 'use', ...(p.style && p.style !== 'default' ? { style: p.style } : {}),
-        ...(p.feature_name ? { feature_name: p.feature_name } : {}), ...(p.group ? { group: p.group } : {}), ...(p.roll_only ? { roll_only: true } : {}),
-      }, position: { x: 60, y } });
-      let previous = programNodeId, x = 330, blockIndex = 0;
-      for (const b of p.blocks || []) {
-        // Спасбросок цели уже превращён normalize в правило для мастера: узлов «бросок спасброска» нет.
-        const kind = b.kind;
-        if (!ACTION_KINDS.includes(kind)) continue;
-        const id = `action-${stableHash(programKey)}-${++blockIndex}`;
-        const params = { ...clone(b), block_id: b.id || mkId('b') };
-        delete params.id; delete params.kind;
-        // Все броски v1 становятся одним настраиваемым узлом «Бросок» с параметром roll_kind.
-        const type = ROLL_KINDS.includes(kind) ? 'action.roll' : `action.${kind}`;
-        if (type === 'action.roll') params.roll_kind = kind;
-        nodes.push({ id, type, params, position: { x, y } });
-        links.push({ from: { node: previous, socket: 'exec' }, to: { node: id, socket: 'exec' } });
-        previous = id; x += 260;
-      }
-      y += 170;
-    }
-    const metadata = {};
-    for (const key of ['origin', 'item_defaults']) if (mechanics[key] !== undefined) metadata[key] = clone(mechanics[key]);
-    const converted = { nodes, links, frames: [], groups: [] };
-    liftWhenGates(converted);
-    return graphEnvelope(converted, metadata);
-  }
-  // Старое поле when у действия (hit/miss) переносится в узлы: condition.hit → flow.if → выход «да»/«нет».
+  // Поле when у действия (hit/miss) переносится в узлы: condition.hit → flow.if → выход «да»/«нет».
   // Меняет граф на месте; семантика та же (гейт только на сам узел). Без входа в цепочку поле не переносится.
   function liftWhenGates(graph) {
     let changed = false;
@@ -232,7 +194,7 @@
       const p = { id: programId, name: String(params.name || 'Действие'), trigger: params.trigger === 'passive' ? 'passive' : 'use', ...(params.style && params.style !== 'default' ? { style: String(params.style) } : {}), blocks: [] };
       for (const key of ['feature_name', 'group', 'roll_only']) if (params[key] !== undefined) p[key] = clone(params[key]);
       // Очередь хранит [узел, гейт]. Гейт «hit»/«miss» ставит ветка «Если» по условию «Попадание атаки»
-      // и действует только на узел, подключённый к выходу ветки (его when в v1). Продолжение цепочки — без гейта.
+      // и действует только на узел, подключённый к выходу ветки. Продолжение цепочки — без гейта.
       const pending = [...(outgoing.get(`${n.id}:exec`) || [])].reverse().map(id => [id, null]), visited = new Set();
       while (pending.length) {
         const [nodeId, gate] = pending.pop(); if (visited.has(nodeId)) continue; visited.add(nodeId);
@@ -264,7 +226,7 @@
     }
     const out = { version: 1, programs };
     for (const key of ['origin', 'item_defaults']) if (mechanics[key] !== undefined) out[key] = clone(mechanics[key]);
-    return Base.normalize(out);
+    return out;
   }
 
   function interfaceSockets(group) {
@@ -402,20 +364,18 @@
     }
     return '';
   }
-  function toGraph(mechanics) { return v1ToV2(mechanics); }
   // Сохранение: блокируют только структурные ошибки (размер, ID, типы узлов, параметры, интерфейс групп).
   // Смысловые проблемы связей сохраняются и показываются списком; исполнение их пропускает (см. problems).
   function validate(mechanics) {
-    if (!mechanics || ![1, GRAPH_VERSION].includes(mechanics.version)) return 'Неподдерживаемая схема механик.';
-    if (mechanics.version === 1) return Base.validate(mechanics);
+    if (!mechanics || mechanics.version !== GRAPH_VERSION) return 'Неподдерживаемая схема механик.';
     if (!mechanics.graph || !Array.isArray(mechanics.graph.groups)) return 'Не более 50 групп повторного использования.';
     if (JSON.stringify(mechanics).length > 1_000_000) return 'Неподдерживаемая или слишком большая схема механик.';
     const list = [];
     const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list);
     if (error) return error;
     if (list.length) return '';
-    const legacyError = Base.validate(v2ToV1(mechanics));
-    if (legacyError) return legacyError;
+    const planError = Base.validate(v2ToV1(mechanics));
+    if (planError) return planError;
     const allNodes = [...(mechanics.graph.nodes || []), ...(mechanics.graph.groups || []).flatMap(g => g.nodes || [])];
     for (const n of allNodes) {
       const e = validateNodeParams(n);
@@ -432,11 +392,10 @@
   function problems(mechanics) {
     const structural = validate(mechanics);
     if (structural) return [structural];
-    if (mechanics.version === 1) return [];
     const list = graphProblems(mechanics.graph, mechanics.graph.groups);
     if (list.length) return list;
-    const legacyError = Base.validate(v2ToV1(mechanics));
-    return legacyError ? [legacyError] : [];
+    const planError = Base.validate(v2ToV1(mechanics));
+    return planError ? [planError] : [];
   }
 
   function valueForInput(node, socket, values) {
@@ -484,14 +443,13 @@
     if (text) sheet.proficiencies += `${label}: ${text}\n`;
   }
   function evaluateGraph(mechanics, options = {}) {
-    const graphMechanics = toGraph(mechanics);
-    const blocking = problems(graphMechanics);
+    const blocking = problems(mechanics);
     if (blocking.length) return { error: `Граф не исполняется: ${blocking[0]}`, sheet: null };
     const edition = String(options.edition || '2014');
     const level = Math.max(1, Math.min(20, Math.trunc(Number(options.level) || 1)));
     const sheet = { edition, level, abilities: Object.fromEntries(ABILITIES.map(k => [k, 10])), race: '', class: '', subclass: '', speed: 30, hp: { max: 0, current: 0, temp: 0 },
       features: [], saving_throws: [], skills: [], skill_choices: [], languages: [], proficiencies: '', spells: { ability: '', slots: {}, known: [] }, spell_rules: [], spell_progression: { slots: {} }, asi_rules: [], class_progression: null, class_rules: null, armor_formula: '', manual_rules: [] };
-    const { ordered, linksByTarget } = orderedNodes(graphOf(graphMechanics), new Map((graphMechanics.graph.groups || []).map(g => [g.id, g])));
+    const { ordered, linksByTarget } = orderedNodes(graphOf(mechanics), new Map((mechanics.graph.groups || []).map(g => [g.id, g])));
     const values = { linksByTarget, outputs: new Map() };
     const context = { edition, level, subclass: options.subclass || '', choices: options.choices || {}, source: options.source || '', nodeId: '', effects: [] };
     const get = (node, socket) => valueForInput(node, socket, values);
@@ -507,7 +465,7 @@
       else if (type.startsWith('rule.')) applyRuleNode(type, p, socket => get(node, socket), sheet, context, values.outputs);
     }
     sheet.skills = [...new Set(sheet.skills)];
-    return { error: '', sheet, manual_rules: sheet.manual_rules, effects: context.effects, actions: v2ToV1(graphMechanics, { edition, level, subclass: options.subclass || '', choices: options.choices || {} }).programs || [] };
+    return { error: '', sheet, manual_rules: sheet.manual_rules, effects: context.effects, actions: v2ToV1(mechanics, { edition, level, subclass: options.subclass || '', choices: options.choices || {} }).programs || [] };
   }
   function applyGraphRules(mechanics, target, options = {}) {
     // Запись без механик ничего не накладывает: сборка листа зовёт правило для каждой записи.
@@ -557,8 +515,6 @@
       class_features: result.sheet.class_features || null, spellcasting: result.sheet.spellcasting || null,
       actions: result.actions.map(p => ({ name: p.name, trigger: p.trigger, blocks: p.blocks.map(b => b.kind) })) };
   }
-  function adaptForRead(mechanics) { return mechanics?.version === 1 ? v1ToV2(mechanics) : clone(mechanics); }
-
   // Чистая проверка связи: петля, цикл и общий validateGraph. Возвращает текст ошибки или ''.
   function wouldCycle(links, fromNode, toNode) {
     const next = new Map();
@@ -596,8 +552,8 @@
   // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
   const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.roll', 'action.consume', 'condition.hit', 'logic.op'];
   // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).
-  // Узел принадлежит действию по полю action (его ставит редактор). У старых графов поля нет:
-  // узел относится к действию, с которым связан проводами; если связей нет — к первому действию.
+  // Узел принадлежит действию по полю action (его ставит редактор). Без поля узел относится
+  // к действию, с которым связан проводами; если связей нет — к первому действию.
   function actionOwners(graph) {
     const nodes = graph.nodes || [], programs = nodes.filter(n => n.type === 'action.program');
     const programIds = new Set(programs.map(p => p.id)), owner = new Map();
@@ -623,11 +579,24 @@
     for (const n of nodes) if (!owner.has(n.id)) owner.set(n.id, first);
     return owner;
   }
-  function graphEditor(doc, options = {}) {
-    const category = options.category || 'feature';
-    const seed = doc.mechanics || Base.migrate(doc, category);
-    let mechanics = adaptForRead(seed);
-    if (mechanics.version !== GRAPH_VERSION) mechanics = v1ToV2(seed);
+  // Механики одного именованного действия: программа с этим feature_name и все её узлы.
+  function mechanicsForFeature(mechanics, name) {
+    const graph = graphOf(mechanics);
+    const programs = graph.nodes.filter(node => node.type === 'action.program' && node.params?.trigger === 'use' && node.params?.feature_name === name);
+    if (!programs.length) return undefined;
+    const owners = actionOwners(graph), programIds = new Set(programs.map(node => node.id));
+    const keep = new Set(graph.nodes.filter(node => programIds.has(owners.get(node.id))).map(node => node.id));
+    const metadata = Object.fromEntries(Object.entries(mechanics).filter(([key]) => key !== 'version' && key !== 'graph'));
+    return { ...metadata, version: GRAPH_VERSION, graph: {
+      nodes: clone(graph.nodes.filter(node => keep.has(node.id))),
+      links: clone(graph.links.filter(link => keep.has(link.from.node) && keep.has(link.to.node))),
+      frames: [], groups: clone(graph.groups || []),
+    } };
+  }
+  function graphEditor(doc) {
+    const seed = doc.mechanics || graphEnvelope({});
+    if (seed.version !== GRAPH_VERSION) throw new Error('Неподдерживаемая схема механик.');
+    let mechanics = clone(seed);
     // Записи, сохранённые с полем «Когда», переводятся в узлы при открытии (см. liftWhenGates).
     const liftedWhen = liftWhenGates(mechanics.graph);
     // Форма вызывается с копией записи; исходник не отправляется на сервер до внешнего «Сохранить».
@@ -1162,7 +1131,7 @@
     return root;
   }
 
-  const oldButtons = Base.buttons, oldPreview = Base.preview, oldProgramsOf = Base.programsOf, oldForFeature = Base.forFeature, oldPassiveData = Base.passiveData, oldMigrate = Base.migrate;
+  const oldButtons = Base.buttons, oldPreview = Base.preview, oldProgramsOf = Base.programsOf, oldPassiveData = Base.passiveData;
   function runtimeContext(context = {}) {
     const sheet = window.SHEET_CTX || {};
     return { edition: context.edition ?? window.SHEET_EDITION ?? sheet.edition ?? '2014', level: context.level ?? sheet.level ?? 1,
@@ -1174,7 +1143,6 @@
     GRAPH_VERSION,
     NODE_DEFS,
     nodeLabel,
-    toGraph,
     toLegacy: v2ToV1,
     validateGraph,
     problems,
@@ -1227,19 +1195,17 @@
       return result.error ? null : (result.sheet?.spellcasting || null);
     },
     applyGraphRules,
-    normalize(mechanics) { return mechanics?.version === GRAPH_VERSION ? clone(mechanics) : Base.normalize(mechanics); },
     validate,
     programsOf(mechanics, context) { return mechanics?.version === GRAPH_VERSION ? Base.programsOf(v2ToV1(mechanics, runtimeContext(context))) : oldProgramsOf(mechanics); },
-    migrate(doc, category) { const m = oldMigrate(doc, category); return v1ToV2(m); },
     // Запись без механик: особенности черт читаются у каждой записи, отсутствие механик — это «ничего нет».
-    forFeature(mechanics, name, context) {
-      if (!mechanics) return undefined;
-      const m = v2ToV1(mechanics, runtimeContext(context)); const out = oldForFeature(m, name); return out ? v1ToV2(out) : undefined;
+    forFeature(mechanics, name) {
+      if (mechanics?.version !== GRAPH_VERSION) return undefined;
+      return mechanicsForFeature(mechanics, name);
     },
     passiveData(entry, context) {
       const e = clone(entry), original = e.data?.mechanics;
       if (original?.version === GRAPH_VERSION) {
-        const legacy = v2ToV1(original, runtimeContext(context)); const projected = oldPassiveData({ ...e, data: { ...e.data, mechanics: legacy } });
+        const plan = v2ToV1(original, runtimeContext(context)); const projected = oldPassiveData({ ...e, data: { ...e.data, mechanics: plan } });
         projected.data.mechanics = original; return projected;
       }
       return oldPassiveData(e);

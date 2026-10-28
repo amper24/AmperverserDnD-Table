@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // spell-rules.js — учёт ячеек заклинаний и сборка действия сотворения: стоимость
 // чтения, пулы ячеек (обычные и ячейки Договора), восстановление после отдыха,
-// план расхода ячейки и сворачивание старых записей в одно действие.
+// план расхода ячейки и сборка действия «Сотворить» из плана исполнения.
 // Даёт: window.SpellRules.
 // Зависимости: нет (обращается к window.Mechanics, если он загружен).
 // Загружается только в sheet.html; покрыт юнит-тестами.
@@ -121,11 +121,9 @@ window.SpellRules = (() => {
     return { cost, spend: 'client', level: 0, options: spendOptions(spells, spell) };
   }
 
-  // ---------- старые записи: «отдельные броски» сворачиваются в одно действие ----------
+  // ---------- сборка действия: «отдельные броски» сворачиваются в одно действие ----------
   // Заклинание бросает кубики само: атака и урон идут цепочкой «Сотворить», а спасбросок цели
-  // кидает не игрок — он остаётся правилом для мастера. Записи 0.7.0 держали это отдельными
-  // кнопками (а кнопка спасброска заставляла игрока бросать чужой бросок), поэтому старые копии
-  // на листах пересобираются здесь же — тем же кодом, что и справочник в tools/srd.
+  // кидает не игрок — он остаётся правилом для мастера. Тот же код собирает справочник в tools/srd.
   const GENERATED_ROLL = /^\s*(Отдельный бросок|Separate roll)/;
   const CAST_NAMES = /^\s*(Сотворить|Cast)\b/;
   const HEAL_NAME = /Лечение|Healing/i;
@@ -163,7 +161,7 @@ window.SpellRules = (() => {
   const plainD20 = d => !!d && !d.advanced && Number(d.sides) === 20 && Number(d.count || 1) === 1 && !d.stat && !Number(d.bonus);
   const CANONICAL = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
-  /// Свернуть программы заклинания в одно действие «Сотворить». Чистая функция над блоками v1:
+  /// Свернуть программы заклинания в одно действие «Сотворить». Чистая функция над блоками плана:
   /// атака, урон и лечение встают в цепочку действия, спасбросок становится правилом для мастера
   /// («бросает цель или ДМ, а не игрок»), расход ячейки уезжает на лист, а кнопки «Отдельный бросок»
   /// исчезают. Записи, у которых менять нечего, возвращаются как есть (changed: false).
@@ -181,7 +179,7 @@ window.SpellRules = (() => {
     const primary = abilityCode(meta.saveAbility, lang);
     // Эффекты со своим кодом в имени («Спасбросок: Страх») не повторяются и не переезжают в чужую
     // характеристику: сначала читаются действия записи (там есть подсказка с характеристикой),
-    // затем — имена старых программ.
+    // затем — имена программ плана.
     const SAVE_ONLY_NAME = /^(Спасбросок|Saving throw|Бросок|Roll)$/i;
     const addSave = (ability, effect) => {
       const code = abilityCode(ability, lang) || primary;
@@ -204,10 +202,9 @@ window.SpellRules = (() => {
     const spellAttackD20 = d => !!d && !d.advanced && Number(d.sides) === 20 && ['spell', 'atk', 'atk_str', 'atk_dex', 'best', 'prof'].includes(String(d.stat || ''));
     const readBlock = (b, program) => {
       if (!b || typeof b !== 'object') return;
-      // «Расход: ячейка» старых записей убирается: ячейку списывает лист — круг, ячейки Договора и
+      // «Расход: ячейка» убирается из плана: ячейку списывает лист — круг, ячейки Договора и
       // ритуал выбирает игрок. Прочие расходы (заряды, предмет) остаются у записи.
       if (b.kind === 'consume') { if (b.resource === 'slot') return; consume.push({ ...b, when: 'always' }); return; }
-      if (b.kind === 'save') { addSave(b.ability, ''); return; }
       if (b.kind === 'attack') { addAttack({ dice: b.dice, name: b.name }); return; }
       if (b.kind === 'damage') { addDamage({ dice: b.dice, dtype: b.damage_type || '', name: b.name || labels.damage }); return; }
       if (b.kind === 'heal') { addRoll({ dice: b.dice, name: b.name || labels.heal }); return; }
@@ -259,22 +256,7 @@ window.SpellRules = (() => {
     const out = [merged, ...extras];
     return { programs: out, changed: CANONICAL(out) !== CANONICAL(list) };
   }
-  /// Пересборка механик старой копии заклинания (v2 → v2). undefined — запись уже собрана.
-  function legacySpellMechanics(mechanics, meta = {}) {
-    const M = window.Mechanics;
-    if (!M || !mechanics || typeof M.toLegacy !== 'function' || typeof M.migrate !== 'function') return undefined;
-    let v1;
-    try { v1 = M.toLegacy(mechanics, { edition: meta.edition, level: meta.level, subclass: meta.subclass, choices: meta.choices }); } catch { return undefined; }
-    if (!v1 || !Array.isArray(v1.programs)) return undefined;
-    const merged = spellPrograms(v1.programs, meta);
-    if (!merged.changed) return undefined;
-    try {
-      const origin = v1.origin || mechanics.origin || 'spell-v1';
-      const next = M.migrate({ mechanics: { version: 1, origin, programs: merged.programs } }, 'spell');
-      return next && next.graph ? next : undefined;
-    } catch { return undefined; }
-  }
   return { castCost, slotPool, spend, restore, spendHitDice, recoverHitDice,
            programSlotLevel, programConsumes, programRollOnly, spendOptions, castPlan,
-           serviceManual, spellPrograms, legacySpellMechanics, expression, dice };
+           serviceManual, spellPrograms, expression, dice };
 })();

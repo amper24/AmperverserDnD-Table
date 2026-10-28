@@ -1,5 +1,5 @@
 // Один настраиваемый узел «Бросок» (action.roll + roll_kind) и один узел «Логика» (logic.op + op):
-// реестр отдаёт только абстрактные узлы, старые типы читаются как псевдонимы и переводятся при открытии.
+// реестр отдаёт только абстрактные узлы, механики принимаются только графом v2.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -26,14 +26,14 @@ test('реестр палитры отдаёт только абстрактны
   assert.ok(!('action.attack' in R.NODE_DEFS) && !('logic.and' in R.NODE_DEFS));
 });
 
-test('v1 → v2: все виды бросков становятся одним узлом action.roll с параметром roll_kind', () => {
+test('v1 не принимается, а v2-броски компилируются в те же виды плана', () => {
+  assert.equal(M.validate({ version: 1, programs: [] }), 'Неподдерживаемая схема механик.');
   const kinds = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
-  const v1 = { version: 1, programs: [{ id: 'p', name: 'Броски', trigger: 'use', blocks: kinds.map((kind, i) => ({ id: `b${i}`, kind, dice: { count: 1, sides: 6, bonus: 0, stat: '' } })) }] };
-  const graph = M.toGraph(v1);
-  const rolls = graph.graph.nodes.filter(n => n.type !== 'action.program');
-  assert.deepEqual(plain(rolls.map(n => n.type)), kinds.map(() => 'action.roll'));
-  assert.deepEqual(plain(rolls.map(n => n.params.roll_kind)), kinds);
-  // Обратная компиляция восстанавливает виды блоков v1, без следов roll_kind.
+  const nodes = [program];
+  kinds.forEach((kind, i) => nodes.push({ id: `r${i}`, type: 'action.roll', params: { block_id: `b${i}`, roll_kind: kind, dice: { count: 1, sides: 6, bonus: 0, stat: '' } }, position: { x: i, y: 0 } }));
+  const links = kinds.map((_, i) => link(i ? `r${i - 1}` : 'start', 'exec', `r${i}`, 'exec'));
+  const graph = mech(nodes.slice(1), links);
+  assert.equal(M.validate(graph), '');
   const blocks = plain(M.toLegacy(graph).programs[0].blocks);
   assert.deepEqual(blocks.map(b => b.kind), kinds);
   assert.ok(blocks.every(b => b.roll_kind === undefined));

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 function el(tag, attrs = {}, ...children) {
   return { tag, attrs, children: children.flat().filter(value => value !== null && value !== undefined), style: {}, classList: { add() {}, remove() {}, contains() { return false; } }, append(...more) { this.children.push(...more.flat()); }, appendChild(value) { this.children.push(value); }, replaceChildren(...values) { this.children = values.flat().filter(value => value !== null && value !== undefined); }, addEventListener() {}, querySelector() { return null; }, closest() { return null; } };
 }
-const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' }, SKILLS: [] };
+const ctx = { window: { addEventListener() {}, removeEventListener() {}, requestAnimationFrame() {} }, requestAnimationFrame() {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' }, SKILLS: [] };
 vm.createContext(ctx);
 for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
@@ -20,14 +20,28 @@ test('client graph validation matches the shared Rust fixture contract (saves an
   }
 });
 
-test('v1 reads through stable v2 IDs and v2 saves compile back without mutating stored copies', () => {
-  const old = { version: 1, origin: 'legacy', programs: [{ id: 'p1', name: 'Old action', trigger: 'use', blocks: [{ id: 'b1', kind: 'manual', text: 'Do this manually', when: 'always' }] }] };
-  const first = M.toGraph(old), second = M.toGraph(old);
-  assert.deepEqual(plain(first), plain(second));
-  assert.equal(first.version, 2);
-  assert.equal(M.validate(first), '');
-  assert.deepEqual(plain(M.toLegacy(first)), plain(old));
-  assert.deepEqual(plain(old.programs[0].blocks), [{ id: 'b1', kind: 'manual', text: 'Do this manually', when: 'always' }]);
+test('v1 не принимается, а v2 компилируется в план без изменения сохранённой копии', () => {
+  assert.equal(M.validate({ version: 1, origin: 'legacy', programs: [] }), 'Неподдерживаемая схема механик.');
+  assert.equal(M.toGraph, undefined);
+  const mechanics = { version: 2, origin: 'legacy', graph: { nodes: [
+    { id: 'p1', type: 'action.program', params: { program_id: 'p1', name: 'Old action', trigger: 'use' } },
+    { id: 'b1', type: 'action.manual', params: { block_id: 'b1', text: 'Do this manually', when: 'always', enabled: true } },
+  ], links: [{ from: { node: 'p1', socket: 'exec' }, to: { node: 'b1', socket: 'exec' } }], frames: [], groups: [] } };
+  const before = plain(mechanics);
+  assert.equal(M.validate(mechanics), '');
+  const legacy = M.toLegacy(mechanics);
+  assert.deepEqual(plain(legacy), { version: 1, origin: 'legacy', programs: [{ id: 'p1', name: 'Old action', trigger: 'use', blocks: [
+    { text: 'Do this manually', when: 'always', enabled: true, id: 'b1', kind: 'manual' },
+  ] }] });
+  assert.deepEqual(plain(mechanics), before, 'хранимая копия не меняется');
+});
+
+test('editor opens a record without mechanics as an empty v2 graph and rejects other versions', () => {
+  const doc = {};
+  const root = M.editor(doc);
+  assert.equal(doc.mechanics.version, 2);
+  assert.deepEqual(plain(root.getGraph()), { nodes: [], links: [], frames: [], groups: [] });
+  assert.throws(() => M.editor({ mechanics: { version: 1, programs: [] } }), /Неподдерживаемая схема механик/);
 });
 
 test('group ports flatten across nested reusable groups without duplicate action links', () => {

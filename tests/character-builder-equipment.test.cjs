@@ -396,11 +396,15 @@ test('compendium import keeps 2024 weapon mastery and action mechanics', () => {
   assert.deepEqual(plain(it.actions.map(a => a.kind)), ['attack', 'damage']);
   const magic = ctx.Modules.itemFromCompendium({ name: 'Ring of Protection', category: 'item', data: {
     type: 'magic', attunement: true, charges: 3,
-    mechanics: { version: 1, programs: [{ id: 'use', name: 'Use', trigger: 'use', blocks: [{ id: 'm', kind: 'manual', text: 'Rule' }] }] },
+    mechanics: { version: 2, graph: { nodes: [
+      { id: 'use', type: 'action.program', params: { program_id: 'use', name: 'Use', trigger: 'use' }, position: { x: 0, y: 0 } },
+      { id: 'm', type: 'action.manual', params: { block_id: 'm', text: 'Rule' }, position: { x: 0, y: 0 } },
+    ], links: [{ from: { node: 'use', socket: 'exec' }, to: { node: 'm', socket: 'exec' } }], frames: [], groups: [] } },
   } });
   assert.equal(magic.attunement, true);
   assert.deepEqual(plain(magic.charges), { cur: 3, max: 3, recharge: '' });
-  assert.equal(magic.mechanics.programs[0].blocks[0].kind, 'manual');
+  assert.equal(magic.mechanics.version, 2);
+  assert.equal(magic.mechanics.graph.nodes.find(node => node.type === 'action.manual').params.text, 'Rule');
 });
 
 test('real SRD records resolve for every class and background of both editions', () => {

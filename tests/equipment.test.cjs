@@ -59,9 +59,10 @@ test('только носимые и держимые предметы можн�
   const kinds = ['Cloak of Protection', 'Boots of Elvenkind', 'Amulet of Health', 'Belt of Giant Strength', 'Gauntlets of Ogre Power', 'Шлем ужаса', 'Сапоги скорохода', 'Пояс силы'].map(name => E.normalize({ name, type: 'magic' }).wear);
   assert.deepEqual(kinds, ['cloak', 'feet', 'neck', 'belt', 'gloves', 'head', 'feet', 'belt']);
 });
-test('предметы старой схемы: «без рук» выводится заново, экипированное неносимое снимается, ничего не удаляется', () => {
+test('предмет без slots_v не переклассифицируется: явный хват остаётся, неносимое снимается, ничего не удаляется', () => {
   const list = E.migrate([{ uid: 'a', name: 'Верёвка', type: 'gear', handedness: 'none', equipped: true, qty: 1 }, { uid: 'b', name: 'Жезл', type: 'magic', tags: ['Жезлы'], handedness: 'none', qty: 1 }, { uid: 'c', name: 'Плащ', type: 'magic', handedness: 'none', equipped: true, qty: 1 }]);
-  assert.equal(list.length, 3); assert.equal(list[0].equipped, false); assert.equal(list[1].handedness, 'one');
+  assert.equal(list.length, 3); assert.equal(list[0].equipped, false); assert.equal(list[1].handedness, 'none');
+  assert.ok(!list[1].equipped, 'жезл не получил хват из названия');
   assert.equal(list[2].equipped, true); assert.equal(list[2].worn_slot, 'cloak');
 });
 test('в слоте один предмет: лишний снимается, кольца занимают два слота', () => {
@@ -125,7 +126,7 @@ test('настройка по правилам: только предметы с
   E.migrate(inv);
   assert.equal(inv.filter(i => i.attuned).length, 3, 'лишняя настройка снимается');
   assert.equal(inv[3].attuned, false, 'четвёртый предмет с настройкой отпущен');
-  assert.equal(inv[4].attuned, false, 'предмет без требования настройки не может быть настроен');
+  assert.equal(inv[4].attuned, false, 'пятый предмет с настройкой отпущен: настроено не больше трёх');
 });
 
 test('аудит слотов называет нарушения правил и не мешает корректной экипировке', () => {
