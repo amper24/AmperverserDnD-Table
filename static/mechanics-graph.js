@@ -610,6 +610,8 @@
     root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null,
       status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
+    // Превью-провод при перетаскивании от сокета: путь обновляется на pointermove, остальной DOM не трогается.
+    let wirePreview = null;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
     // Активное действие и id узлов, которые сейчас показаны на холсте (пересчитываются в render).
     let activeAction = '', shownIds = new Set();
@@ -726,10 +728,26 @@
       return list?.find(item => item.id === socket)?.name || socket;
     }
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    // Привязка (snap) к ближайшему совместимому сокету в экранных пикселях: как в Blender, магнит ~24 px.
+    const SNAP_DISTANCE = 24;
+    // Гладкая Безье с горизонтальными касательными: провод входит в сокет ровно слева/справа.
+    const wireCurve = (x1, y1, x2, y2) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`; };
     const canvasEl = () => root.querySelector?.('.node-canvas');
     const canvasRect = () => canvasEl()?.getBoundingClientRect?.() || { left: 0, top: 0 };
-    const worldPoint = (clientX, clientY) => { const rect = canvasRect(); return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k }; };
-    function applyView() { const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; canvasEl()?.setAttribute('data-zoom', view.k.toFixed(2)); }
+    const worldPointIn = (rect, clientX, clientY) => ({ x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k });
+    const worldPoint = (clientX, clientY) => worldPointIn(canvasRect(), clientX, clientY);
+    // Сетка холста — фоновые градиенты (две шкалы), поэтому панорама и зум двигают её без canvas.
+    function applyView() {
+      const world = root.querySelector?.('.node-world'); if (world) world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+      const canvas = canvasEl();
+      if (!canvas) return;
+      canvas.setAttribute('data-zoom', view.k.toFixed(2));
+      const minor = 20 * view.k, major = 100 * view.k, px = value => `${value.toFixed(2)}px`;
+      // На сильном отдалении мелкая шкала сливается в кашу — прячем её, крупная остаётся ориентиром.
+      const small = minor >= 10 ? `${px(minor)} ${px(minor)}` : '0 0';
+      canvas.style.backgroundSize = `${px(major)} ${px(major)}, ${px(major)} ${px(major)}, ${small}, ${small}`;
+      canvas.style.backgroundPosition = `${px(view.x)} ${px(view.y)}, ${px(view.x)} ${px(view.y)}, ${px(view.x)} ${px(view.y)}, ${px(view.x)} ${px(view.y)}`;
+    }
     // Слушатели на document на время жеста (перетаскивание, панорама, рамка, провод); снимаются сами.
     function track(onMove, onUp) {
       const move = e => onMove(e);
@@ -745,7 +763,10 @@
       const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
       track(m => { view.x = start.vx + m.clientX - start.x; view.y = start.vy + m.clientY - start.y; applyView(); }, () => {});
     }
-    function refreshWires() { const world = root.querySelector?.('.node-world'); if (!world) return; world.querySelector('.node-wires')?.remove(); drawWires(world); }
+    function refreshWires() {
+      const world = root.querySelector?.('.node-world'); if (!world) return;
+      world.querySelector('.node-wires')?.remove(); wirePreview = null; drawWires(world);
+    }
     function startDrag(e, node) {
       if (e.button !== 0) return;
       e.preventDefault?.();
@@ -783,12 +804,58 @@
         selected = new Set([...base, ...hit]); activeNode = hit.at(-1) || activeNode; render();
       });
     }
-    // Провод от выхода или входа. Совместимые сокеты подсвечиваются; при ошибке связь откатывается.
+    // Центр кружка сокета в мировых координатах. Читает getBoundingClientRect только на момент вызова
+    // (перерисовка провода или начало жеста), а не на каждом pointermove.
+    function socketDotAnchor(socketEl, rect) {
+      const dot = socketEl?.querySelector?.('i') || socketEl;
+      const box = dot?.getBoundingClientRect?.();
+      if (!box || !box.width) return null;
+      return worldPointIn(rect, box.left + box.width / 2, box.top + box.height / 2);
+    }
+    // Жест провода: совместимые сокеты, их точки и прямоугольник холста считаются один раз.
+    // Узлы во время жеста не двигаются, поэтому кэш не устаревает; превью обновляется одной строкой path.
+    function beginWireDrag(node, direction, socket, type) {
+      const rect = canvasRect();
+      const sockets = Array.from(root.querySelectorAll?.('.node-socket') || []);
+      const candidates = [];
+      for (const item of sockets) {
+        const compatible = item.dataset.dir !== direction && item.dataset.node !== node.id && NodeRegistry.sameType(item.dataset.type, type);
+        item.classList.toggle('compatible', compatible);
+        if (!compatible) continue;
+        const anchor = socketDotAnchor(item, rect);
+        if (anchor) candidates.push({ node: item.dataset.node, socket: item.dataset.socket, dir: item.dataset.dir, el: item, anchor });
+      }
+      const originEl = sockets.find(item => item.dataset.node === node.id && item.dataset.dir === direction && item.dataset.socket === socket) || null;
+      originEl?.classList.add('wire-origin');
+      canvasEl()?.classList.add('wiring');
+      return { rect, candidates, originAnchor: (originEl && socketDotAnchor(originEl, rect)) || socketAnchor(node.id, direction, socket, rect), snap: null };
+    }
+    // На pointermove двигаем только превью-путь: DOM карточек и остальные провода не перерисовываются.
+    function updateWireDrag(drag, event) {
+      const pointer = worldPointIn(drag.rect, event.clientX, event.clientY);
+      let best = null, bestDistance = SNAP_DISTANCE;
+      for (const candidate of drag.candidates) {
+        const distance = Math.hypot(candidate.anchor.x - pointer.x, candidate.anchor.y - pointer.y) * view.k;
+        if (distance < bestDistance) { bestDistance = distance; best = candidate; }
+      }
+      if (best !== drag.snap) { drag.snap?.el.classList.remove('snap'); best?.el.classList.add('snap'); drag.snap = best; }
+      const end = best ? best.anchor : pointer, origin = drag.originAnchor;
+      wire = { ...wire, x: end.x, y: end.y, snap: best };
+      wirePreview?.setAttribute('d', wire.direction === 'outputs' ? wireCurve(origin.x, origin.y, end.x, end.y) : wireCurve(end.x, end.y, origin.x, origin.y));
+    }
+    // Куда бросили провод: сокет под курсором важнее магнита, чтобы явный бросок на несовместимый порт отменялся.
+    function wireDropTarget(event, w) {
+      const hit = document.elementFromPoint?.(event.clientX, event.clientY)?.closest?.('.node-socket');
+      if (hit) return { node: hit.dataset.node, socket: hit.dataset.socket, dir: hit.dataset.dir };
+      return w?.snap ? { node: w.snap.node, socket: w.snap.socket, dir: w.snap.dir } : null;
+    }
+    // Провод от выхода или входа: совместимые сокеты подсвечиваются, несовместимые приглушаются,
+    // при отпускании над несовместимым портом связь отменяется с сообщением.
     function startWire(e, node, socket, direction) {
       if (e.button !== 0) return;
       e.stopPropagation();
       const type = portType(node, direction, socket), start = { x: e.clientX, y: e.clientY };
-      let moved = false, detached = null;
+      let moved = false, detached = null, drag = null;
       const origin = { node: node.id, socket, direction, type };
       track(m => {
         if (!moved) {
@@ -796,33 +863,37 @@
           moved = true;
           // Тянем уже подключённый вход: связь снимается на время жеста, при неудаче возвращается.
           if (direction === 'inputs' && node.type !== 'flow.end') { detached = graph.links.find(l => l.to.node === node.id && l.to.socket === socket) || null; if (detached) graph.links = graph.links.filter(l => l !== detached); }
-          wire = origin;
+          drag = beginWireDrag(node, direction, socket, type);
+          wire = { ...origin, x: drag.originAnchor.x, y: drag.originAnchor.y, snap: null };
+          // Единственная полная перерисовка проводов за жест: здесь создаётся preview-path.
+          refreshWires();
         }
-        const p = worldPoint(m.clientX, m.clientY); wire = { ...origin, x: p.x, y: p.y };
-        root.querySelectorAll?.('.node-socket').forEach(s => s.classList.toggle('compatible', s.dataset.dir !== direction && NodeRegistry.sameType(s.dataset.type, type) && s.dataset.node !== node.id));
-        refreshWires();
+        if (!wire) return;
+        updateWireDrag(drag, m);
       }, up => {
-        const w = wire; wire = null;
-        if (!moved) return;
-        const hit = document.elementFromPoint?.(up.clientX, up.clientY)?.closest?.('.node-socket');
+        const w = wire;
+        if (!moved || !w) return;
+        wire = null;
+        const target = wireDropTarget(up, w);
         const restore = () => { if (detached) graph.links.push(detached); };
-        if (hit && hit.dataset.dir !== w.direction) {
-          const other = { node: hit.dataset.node, socket: hit.dataset.socket }, mine = { node: w.node, socket: w.socket };
+        if (target) {
+          if (target.dir === w.direction) {
+            // Бросили на сокет того же направления: связь возвращается, это не удаление.
+            restore(); const message = 'Соединять можно только входы с выходами.'; status = message; window.toast?.(message); render(); return;
+          }
+          const other = { node: target.node, socket: target.socket }, mine = { node: w.node, socket: w.socket };
           const out = w.direction === 'outputs' ? mine : other, inp = w.direction === 'outputs' ? other : mine;
           applyLink({ from: { node: out.node, socket: out.socket }, to: { node: inp.node, socket: inp.socket } }, 'Провод соединён.', restore);
-        } else if (hit) {
-          // Бросили на сокет того же направления: связь возвращается, это не удаление.
-          restore(); status = 'Соединять можно только входы с выходами.'; render();
-        } else {
-          // Подключённый вход перетащили на пустое место: связь удаляется (без отката).
-          status = detached ? 'Провод удалён.' : ''; render();
+          return;
         }
+        // Подключённый вход перетащили на пустое место: связь удаляется (без отката).
+        status = detached ? 'Провод удалён.' : ''; render();
       });
     }
     // Связь через клик: сначала выход, затем вход. Проверка и откат — в applyLink.
     function applyLink(link, ok, rollback = null) {
       const error = connectionError(graph, link);
-      if (error) { rollback?.(); status = error; render(); return false; }
+      if (error) { rollback?.(); status = error; window.toast?.(error); render(); return false; }
       if (graph.nodes.find(n => n.id === link.to.node)?.type !== 'flow.end') graph.links = graph.links.filter(l => !(l.to.node === link.to.node && l.to.socket === link.to.socket));
       graph.links.push(clone(link));
       checkpoint(); pendingPort = null; status = ok; render(); return true;
@@ -940,13 +1011,15 @@
       const pos = node.position || { x: 0, y: 0 }, group = node.type === 'group.instance' ? graph.groups.find(g => g.id === node.params?.group_id) : null;
       const groups = new Map(graph.groups.map(g => [g.id, g]));
       const inputs = socketMap(node, groups).inputs, outputs = socketMap(node, groups).outputs;
+      // Категория реестра задаёт цвет полоски и шапки карточки (классы cat-* в style.css).
+      const category = NodeRegistry.categoryOf(node.type)?.id || 'other', label = group?.name || nodeLabel(node.type, node.params);
       const socket = (direction, name, type) => el('button', { class: `node-socket ${direction === 'inputs' ? 'in' : 'out'} socket-${type}`, title: `${portLabel(node, direction, name)} · ${type}`,
         'data-dir': direction, 'data-node': node.id, 'data-socket': name, 'data-type': type,
         onpointerdown: e => startWire(e, node, name, direction), onclick: e => { e.stopPropagation(); choosePort(node, direction, name); } },
-        direction === 'inputs' ? [el('i'), portLabel(node, direction, name)] : [portLabel(node, direction, name), el('i')]);
+        direction === 'inputs' ? [el('i'), el('span', { class: 'node-socket-label' }, portLabel(node, direction, name))] : [el('span', { class: 'node-socket-label' }, portLabel(node, direction, name)), el('i')]);
       const sockets = el('div', { class: 'node-sockets' }, el('div', { class: 'node-inputs' }, ...Object.entries(inputs).map(([name, type]) => socket('inputs', name, type))),
         el('div', { class: 'node-outputs' }, ...Object.entries(outputs).map(([name, type]) => socket('outputs', name, type))));
-      const card = el('article', { class: 'graph-node' + (selected.has(node.id) ? ' selected' : '') + (node.type.startsWith('action.') ? ' action-node' : node.type.startsWith('rule.') ? ' rule-node' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id,
+      const card = el('article', { class: `graph-node cat-${category}` + (selected.has(node.id) ? ' selected' : ''), style: `left:${pos.x}px;top:${pos.y}px`, 'data-node-id': node.id, 'data-category': category,
         // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
@@ -960,33 +1033,35 @@
           { title: 'Добавить рядом', items: window.NodeMenu.catalogCategories().map(cat => ({ label: cat.label, children: cat.children.map(c => ({ ...c, run: () => ({ action: 'add', type: c.hint, at: { x: node.position.x + 280, y: node.position.y } }) })) })) },
         ],
           onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
+        // Шапка как в Blender: цвет категории, имя узла и компактный id; ниже — список портов, затем поля.
         el('header', { class: 'graph-node-head' },
-          el('span', { class: 'node-dot' }), el('b', {}, group?.name || nodeLabel(node.type, node.params)), el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
-        el('div', { class: 'node-id muted' }, node.id.slice(0, 18)), inlineParams(node), groupExtras(node), nodeRaw(node), sockets);
+          el('span', { class: 'node-dot' }), el('b', { title: node.type }, label),
+          el('span', { class: 'node-id', title: node.id }, node.id.slice(0, 14)),
+          el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
+        sockets,
+        el('div', { class: 'node-body' }, inlineParams(node), groupExtras(node), nodeRaw(node)));
       return card;
     }
-    // Точка провода в мировых координатах: центр точки сокета из DOM (зум и панорама учитываются),
+    // Точка провода в мировых координатах: центр кружка сокета из DOM (зум и панорама учитываются),
     // а если узел ещё не на экране (до первого показа) — оценка по позиции карточки.
-    function socketAnchor(nodeId, direction, socketName) {
+    function socketAnchor(nodeId, direction, socketName, rect = null) {
       const node = nodeById(nodeId), pos = node?.position || { x: 0, y: 0 };
       const fallback = { x: pos.x + (direction === 'outputs' ? 224 : 0), y: pos.y + 56 };
-      const dot = root.querySelector?.(`.node-socket[data-node="${nodeId}"][data-dir="${direction}"][data-socket="${socketName}"] i`);
-      const rect = dot?.getBoundingClientRect?.();
-      if (!rect || !rect.width) return fallback;
-      return worldPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const socketEl = root.querySelector?.(`.node-socket[data-node="${nodeId}"][data-dir="${direction}"][data-socket="${socketName}"]`);
+      return (socketEl && socketDotAnchor(socketEl, rect || canvasRect())) || fallback;
     }
     function drawWires(canvas) {
       if (!document.createElementNS) return;
       const NS = 'http://www.w3.org/2000/svg';
       const svg = document.createElementNS(NS, 'svg');
       svg.setAttribute('class', 'node-wires'); svg.setAttribute('aria-hidden', 'true');
-      // Кривая Безье: отступ пропорционален расстоянию, поэтому провод не «петляет» у близких узлов.
-      const curve = (x1, y1, x2, y2) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`; };
+      // Прямоугольник холста читается один раз на перерисовку, а не для каждой точки провода.
+      const rect = canvasRect();
       for (const link of graph.links.filter(l => shownIds.has(l.from.node) && shownIds.has(l.to.node))) {
         const a = nodeById(link.from.node), b = nodeById(link.to.node); if (!a || !b) continue;
-        const type = portType(a, 'outputs', link.from.socket) || 'any';
-        const from = socketAnchor(a.id, 'outputs', link.from.socket), to = socketAnchor(b.id, 'inputs', link.to.socket);
-        const d = curve(from.x, from.y, to.x, to.y), name = `${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`;
+        const type = portType(a, 'outputs', link.from.socket) || 'flow';
+        const from = socketAnchor(a.id, 'outputs', link.from.socket, rect), to = socketAnchor(b.id, 'inputs', link.to.socket, rect);
+        const d = wireCurve(from.x, from.y, to.x, to.y), name = `${link.from.node}.${link.from.socket}>${link.to.node}.${link.to.socket}`;
         // Невидимая широкая зона попадания (клик удаляет провод) и тонкая видимая линия поверх неё.
         const hit = document.createElementNS(NS, 'path');
         hit.setAttribute('d', d); hit.setAttribute('class', 'node-wire-hit'); hit.setAttribute('data-link-hit', name);
@@ -997,16 +1072,19 @@
         path.setAttribute('class', `node-wire socket-${type}`);
         svg.append(hit, path);
       }
+      // Превью-путь создаётся один раз за жест; дальше updateWireDrag меняет только его атрибут d.
+      let preview = null;
       if (wire) {
         const a = nodeById(wire.node); if (a) {
-          const origin = socketAnchor(a.id, wire.direction, wire.socket), sx = origin.x, sy = origin.y;
-          const path = document.createElementNS(NS, 'path');
-          path.setAttribute('d', wire.direction === 'outputs' ? curve(sx, sy, wire.x, wire.y) : curve(wire.x, wire.y, sx, sy));
-          path.setAttribute('class', `node-wire node-wire-preview socket-${wire.type}`);
-          svg.appendChild(path);
+          const origin = socketAnchor(a.id, wire.direction, wire.socket, rect);
+          preview = document.createElementNS(NS, 'path');
+          preview.setAttribute('d', wire.direction === 'outputs' ? wireCurve(origin.x, origin.y, wire.x, wire.y) : wireCurve(wire.x, wire.y, origin.x, origin.y));
+          preview.setAttribute('class', `node-wire node-wire-preview socket-${wire.type}`);
+          svg.appendChild(preview);
         }
       }
       canvas.appendChild(svg);
+      wirePreview = preview;
     }
     // Группа на карточке: имя и список входов/выходов (остальные параметры — в полях карточки).
     function groupExtras(node) {
@@ -1110,6 +1188,8 @@
       root.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), templateBar, statusLine, renderPreview()].filter(Boolean));
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
+      // Сетка холста выравнивается по текущему виду (applyView только двигает фон и transform).
+      applyView();
       // Keep status reference in a closure-safe property for JSON validation errors.
       root._statusNode = statusLine;
       // Сокеты измеряются по DOM. При первом показе редактор ещё не в документе: провода пересчитываются в следующем кадре.

@@ -121,7 +121,8 @@
 
     function paint() {
       const rows = isPlainObject(current) ? Object.entries(current).filter(([key, value]) => shownField(key, value, !!options.inline)).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
-      root.replaceChildren(...rows, isPlainObject(current) && options.map ? addKeyRow([]) : null);
+      // Строка «новый ключ» только для таблиц; null в replaceChildren стал бы текстом «null» на карточке.
+      root.replaceChildren(...rows, ...(isPlainObject(current) && options.map ? [addKeyRow([])] : []));
     }
 
     function addKeyRow(path) {

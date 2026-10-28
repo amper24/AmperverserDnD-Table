@@ -1553,16 +1553,67 @@ body.lu-open { overflow: hidden; }
 @media print { .dice-visual-root { display: none !important; } }
 
 /* Node-based mechanics v2 editor. */
-.node-editor{border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:18px;background:var(--panel,var(--bg));text-align:left;overflow:hidden}
+.node-editor{border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:18px;background:var(--panel,var(--bg));text-align:left;overflow:hidden;
+  /* Палитра редактора: цвета категорий узлов, типов значений и сетки холста (см. cat-* / socket-* ниже). */
+  --cat-data:#5b9bd5;--cat-conditions:#b47ad6;--cat-logic:#8f7de8;--cat-flow:#7f8da3;--cat-combat:#d4794f;
+  --cat-effects:#5aa98a;--cat-resources:#c8a24a;--cat-character:#4f9fae;--cat-groups:#9585c8;--cat-other:#7f8a99;
+  --socket-flow:#cfd8e3;--socket-bool:#e0736c;--socket-number:#7fc98e;--socket-dice:#6cc5ea;--socket-ability:#9aa8ff;
+  --socket-text:#d8c27a;--socket-list:#86ccb9;--socket-table:#bfa4f2;--socket-choice:#e79ac6;--socket-effect:#b9ad97;
+  --node-grid-minor:color-mix(in srgb,var(--border) 62%,transparent);--node-grid-major:color-mix(in srgb,var(--muted) 42%,transparent)}
 .node-toolbar{display:flex;align-items:end;gap:7px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border)}
 .node-toolbar .node-field{min-width:210px;flex:1}.node-add{white-space:nowrap}
 .node-group-shelf{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0}.node-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:8px 0}.node-action-tab.active{font-weight:700;text-decoration:underline}.node-workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
-.node-canvas{position:relative;min-height:520px;height:min(68vh,760px);overflow:hidden;cursor:default;user-select:none;touch-action:none;border:1px solid var(--border);border-radius:10px;background-color:color-mix(in srgb,var(--bg) 92%,var(--accent) 8%);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:18px 18px;isolation:isolate}
-.graph-node{position:absolute;z-index:2;width:260px;min-height:94px;border:1px solid var(--border);border-radius:10px;background:var(--panel,#fff);box-shadow:0 4px 14px #0002;user-select:none;touch-action:none}
-.graph-node.selected{outline:2px solid var(--accent);outline-offset:1px}.graph-node.action-node{border-top:3px solid #df9b44}.graph-node.rule-node{border-top:3px solid #53a987}
-.graph-node-head{display:flex;align-items:center;gap:7px;min-height:36px;padding:5px 7px;border-bottom:1px solid var(--border);cursor:grab}.graph-node-head b{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}.node-delete{border:0;background:transparent;color:var(--muted);padding:0 4px;font-size:18px;line-height:1}.node-id{padding:5px 9px 0;font-size:9px;overflow:hidden;text-overflow:ellipsis}
-.node-sockets{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:5px 7px 7px;font-size:10px}.node-inputs,.node-outputs{display:flex;flex-direction:column;gap:4px}.node-outputs{align-items:flex-end}.node-socket{display:flex;align-items:center;gap:5px;max-width:100%;border:0;background:transparent;padding:2px 0;color:inherit;font-size:10px;cursor:pointer}.node-socket i{display:inline-block;width:9px;height:9px;border:2px solid currentColor;border-radius:50%;background:var(--panel,#fff);flex:none}.node-outputs .node-socket{flex-direction:row}.node-socket.in{flex-direction:row-reverse;align-self:flex-start}.socket-flow{color:#e0a24b}.socket-bool{color:#b981dc}.socket-number{color:#54b7d0}.socket-dice{color:#d86f78}.socket-ability{color:#60a6e5}.socket-text,.socket-list{color:#83bd78}.socket-table,.socket-choice{color:#da8ab2}.socket-effect{color:#8a98a8}
-.node-wires{position:absolute;inset:0;z-index:1;overflow:visible;pointer-events:none}.node-wire{fill:none;stroke:color-mix(in srgb,var(--accent) 65%,var(--muted));stroke-width:2;opacity:.7}.node-frame{position:absolute;z-index:0;border:1px dashed color-mix(in srgb,var(--accent) 55%,var(--border));border-radius:12px;padding:8px;background:color-mix(in srgb,var(--accent) 7%,transparent);pointer-events:none;color:var(--muted);font-size:11px}
+/* Холст: тёмная сетка двумя шкалами (20 и 100 px) на CSS-градиентах; масштаб и сдвиг ставит applyView. */
+.node-canvas{position:relative;min-height:520px;height:min(68vh,760px);overflow:hidden;cursor:default;user-select:none;touch-action:none;border:1px solid var(--border);border-radius:10px;isolation:isolate;
+  background-color:var(--canvas-bg,var(--bg));
+  background-image:
+    linear-gradient(to right,var(--node-grid-major) 1px,transparent 1px),
+    linear-gradient(to bottom,var(--node-grid-major) 1px,transparent 1px),
+    linear-gradient(to right,var(--node-grid-minor) 1px,transparent 1px),
+    linear-gradient(to bottom,var(--node-grid-minor) 1px,transparent 1px);
+  background-size:100px 100px,100px 100px,20px 20px,20px 20px;background-position:0 0,0 0,0 0,0 0}
+/* Карточка в духе Blender: цветная полоска категории, шапка-градиент, скругления и тень. */
+.graph-node{position:absolute;z-index:2;width:260px;min-height:94px;--node-cat:var(--accent);border:1px solid color-mix(in srgb,var(--node-cat) 30%,var(--border));border-radius:10px;background:var(--panel,#fff);box-shadow:0 8px 18px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.3);user-select:none;touch-action:none}
+.graph-node.cat-data{--node-cat:var(--cat-data)}.graph-node.cat-conditions{--node-cat:var(--cat-conditions)}.graph-node.cat-logic{--node-cat:var(--cat-logic)}
+.graph-node.cat-flow{--node-cat:var(--cat-flow)}.graph-node.cat-combat{--node-cat:var(--cat-combat)}.graph-node.cat-effects{--node-cat:var(--cat-effects)}
+.graph-node.cat-resources{--node-cat:var(--cat-resources)}.graph-node.cat-character{--node-cat:var(--cat-character)}.graph-node.cat-groups{--node-cat:var(--cat-groups)}
+.graph-node.cat-other{--node-cat:var(--cat-other)}
+.graph-node.selected{outline:2px solid var(--accent);outline-offset:1px;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent),0 12px 26px rgba(0,0,0,.5)}
+.graph-node-head{display:flex;align-items:center;gap:7px;min-height:33px;padding:6px 8px 5px;border-bottom:1px solid color-mix(in srgb,var(--node-cat) 26%,var(--border));border-radius:9px 9px 0 0;cursor:grab;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--node-cat) 42%,var(--panel)),color-mix(in srgb,var(--node-cat) 16%,var(--panel)));
+  box-shadow:inset 0 3px 0 color-mix(in srgb,var(--node-cat) 88%,var(--panel))}
+.graph-node-head b{flex:1;min-width:0;font-size:12px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node-dot{width:8px;height:8px;border-radius:50%;background:var(--node-cat,var(--accent));box-shadow:0 0 7px color-mix(in srgb,var(--node-cat,var(--accent)) 65%,transparent);flex:none}
+.node-delete{border:0;background:transparent;color:var(--muted);padding:0 3px;font-size:16px;line-height:1;cursor:pointer}.node-delete:hover{color:var(--danger)}
+.node-id{flex:0 1 auto;min-width:0;max-width:44%;font:9px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Порты: кружки 13 px ровно на рамке карточки (входы слева, выходы справа), подписи — внутри узла. */
+.node-body{padding:2px 8px 6px}
+.node-sockets{display:grid;grid-template-columns:1fr 1fr;column-gap:10px;row-gap:1px;padding:5px 0 7px;font-size:11px}
+.node-inputs,.node-outputs{display:flex;flex-direction:column;gap:1px;min-width:0}.node-outputs{align-items:flex-end}
+.node-socket{--socket:var(--socket-flow);position:relative;display:flex;align-items:center;gap:7px;max-width:100%;min-height:19px;border:0;border-radius:6px;background:transparent;padding:2px 0;color:var(--text);font:inherit;font-size:11px;line-height:1.25;text-align:left;cursor:crosshair}
+.node-socket.in{padding-left:13px;padding-right:4px;justify-content:flex-start}.node-socket.out{padding-right:13px;padding-left:4px;justify-content:flex-end;text-align:right}
+.node-socket-label{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node-socket i{position:absolute;top:50%;width:13px;height:13px;margin-top:-6.5px;border:2px solid var(--socket);border-radius:50%;background:color-mix(in srgb,var(--socket) 45%,var(--panel,#fff));box-shadow:0 0 0 1px color-mix(in srgb,var(--bg) 70%,transparent),0 0 5px color-mix(in srgb,var(--socket) 30%,transparent);flex:none;transition:transform .12s ease,box-shadow .12s ease}
+.node-socket.in i{left:-7px}.node-socket.out i{right:-7px}
+.node-socket:hover i,.node-socket:focus-visible i{transform:scale(1.24);box-shadow:0 0 0 4px color-mix(in srgb,var(--socket) 26%,transparent),0 0 12px var(--socket)}
+.node-socket:focus-visible{outline:none}
+/* Цвет по типу значения: общий для кружка сокета и провода. */
+.node-socket.socket-flow,.node-wire.socket-flow{--socket:var(--socket-flow)}
+.node-socket.socket-bool,.node-wire.socket-bool{--socket:var(--socket-bool)}
+.node-socket.socket-number,.node-wire.socket-number{--socket:var(--socket-number)}
+.node-socket.socket-dice,.node-wire.socket-dice{--socket:var(--socket-dice)}
+.node-socket.socket-ability,.node-wire.socket-ability{--socket:var(--socket-ability)}
+.node-socket.socket-text,.node-wire.socket-text{--socket:var(--socket-text)}
+.node-socket.socket-list,.node-wire.socket-list{--socket:var(--socket-list)}
+.node-socket.socket-table,.node-wire.socket-table{--socket:var(--socket-table)}
+.node-socket.socket-choice,.node-wire.socket-choice{--socket:var(--socket-choice)}
+.node-socket.socket-effect,.node-wire.socket-effect{--socket:var(--socket-effect)}
+/* Жест провода: совместимые сокеты светятся, несовместимые приглушены, ближайший (snap) — крупнее. */
+.node-canvas.wiring .node-socket:not(.compatible):not(.wire-origin){opacity:.3;filter:saturate(.35)}
+.node-socket.compatible{opacity:1}.node-socket.compatible .node-socket-label{color:var(--text)}
+.node-socket.compatible i{transform:scale(1.26);box-shadow:0 0 0 4px color-mix(in srgb,var(--socket) 30%,transparent),0 0 13px var(--socket)}
+.node-socket.snap i{transform:scale(1.42);box-shadow:0 0 0 6px color-mix(in srgb,var(--socket) 32%,transparent),0 0 18px var(--socket)}
+.node-wires{position:absolute;inset:0;z-index:1;overflow:visible;pointer-events:none}.node-frame{position:absolute;z-index:0;border:1px dashed color-mix(in srgb,var(--accent) 55%,var(--border));border-radius:12px;padding:8px;background:color-mix(in srgb,var(--accent) 7%,transparent);pointer-events:none;color:var(--muted);font-size:11px}
 .node-properties{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg);min-width:0}.node-properties h3{margin:0 0 8px;font-size:15px}.node-properties .node-field{display:flex;flex-direction:column;gap:5px}.node-properties textarea{width:100%;min-height:250px;resize:vertical;font:12px/1.45 ui-monospace,SFMono-Regular,monospace;white-space:pre}.node-status{min-height:22px;padding-top:7px;color:var(--muted);font-size:12px}.node-status:not(:empty){color:var(--accent)}.node-preview{margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:10px}.node-preview summary{font-weight:600;cursor:pointer}.node-preview .row{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.node-preview .node-field{display:flex;flex-direction:column;gap:4px;min-width:120px}.node-preview textarea{width:100%;min-height:75px;resize:vertical;font:11px/1.4 ui-monospace,SFMono-Regular,monospace}.node-preview-output{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
 @media(max-width:850px){.node-workspace{grid-template-columns:1fr}.node-properties{min-height:180px}.node-properties textarea{min-height:180px}}
 @media(max-width:600px){.node-editor{padding:9px}.node-canvas{height:60vh;min-height:440px}.node-toolbar .node-field{min-width:100%;flex-basis:100%}.node-add{font-size:11px}}
@@ -1582,18 +1633,18 @@ body.lu-open { overflow: hidden; }
 .param-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .param-add-key{display:flex;gap:6px;align-items:center}
 .param-add-key input{flex:1;min-width:0}
-.node-raw{margin-top:10px;font-size:12px}
+.node-raw{margin-top:6px;font-size:12px}
 .node-raw summary{cursor:pointer;color:var(--muted)}
 
 /* Холст редактора механик: бесконечное полотно (transform у .node-world), рамка, провода, меню ПКМ. */
 .node-world{position:absolute;left:0;top:0;transform-origin:0 0;width:0;height:0}
 .node-world .node-wires{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
-.node-world .node-wire{pointer-events:none;stroke-width:2.5}
-.node-world .node-wire-hit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
-.node-world .node-wire-hit:hover + .node-wire{stroke-width:4;opacity:1}
-.node-world .node-wire-preview{pointer-events:none;stroke-dasharray:6 4;opacity:.9}
+/* Провода: Безье с горизонтальными касательными, цвет по типу значения, лёгкая тень и подсветка при наведении. */
+.node-world .node-wire{fill:none;stroke:var(--socket,var(--socket-flow));stroke-width:2.5;stroke-linecap:round;opacity:.92;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45))}
+.node-world .node-wire-hit{fill:none;stroke:transparent;stroke-width:16;pointer-events:stroke;cursor:pointer}
+.node-world .node-wire-hit:hover + .node-wire{stroke-width:3.5;opacity:1;filter:drop-shadow(0 0 5px var(--socket,var(--socket-flow)))}
+.node-world .node-wire-preview{pointer-events:none;stroke-width:2.5;stroke-dasharray:7 5;opacity:.95;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--socket,var(--socket-flow)) 45%,transparent))}
 .node-marquee{position:absolute;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);pointer-events:none;z-index:3}
-.node-socket.compatible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
 .node-menu{position:absolute;z-index:10;min-width:240px;max-width:300px;max-height:360px;display:flex;flex-direction:column;background:var(--bg);color:inherit;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:6px}
 .node-menu-search{margin:0 0 6px;width:100%}
 .node-menu-list{overflow:auto;display:flex;flex-direction:column}
@@ -1613,8 +1664,13 @@ body.lu-open { overflow: hidden; }
 /* Холст получает всю ширину, а панель параметров уходит под него, когда редактор узкий (модальное окно). */
 .node-editor{container-type:inline-size}
 @container (max-width: 980px){.node-workspace{grid-template-columns:minmax(0,1fr)}}
-/* Точки сокетов прижаты к своему краю карточки (входы слева, выходы справа). */
-.node-socket.in{justify-content:flex-start;text-align:left}.node-socket.out{justify-content:flex-end;text-align:right}
+/* Светлая тема: сокеты, провода и сетка темнее, тени карточек мягче. */
+[data-theme="light"] .node-editor{--socket-flow:#4b5563;--socket-bool:#b23a34;--socket-number:#2f7d4a;--socket-dice:#1f7396;--socket-ability:#3b5bcc;
+  --socket-text:#8a6b17;--socket-list:#2c7f6e;--socket-table:#6b4bb0;--socket-choice:#a33a7c;--socket-effect:#6b6355;
+  --node-grid-minor:color-mix(in srgb,var(--border) 55%,transparent);--node-grid-major:color-mix(in srgb,var(--muted) 32%,transparent)}
+[data-theme="light"] .graph-node{box-shadow:0 6px 16px rgba(20,24,32,.18),0 1px 2px rgba(20,24,32,.1)}
+[data-theme="light"] .graph-node.selected{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 24%,transparent),0 10px 24px rgba(20,24,32,.24)}
+[data-theme="light"] .node-world .node-wire{filter:drop-shadow(0 1px 1px rgba(20,24,32,.22))}
 
 /* Формы создания записей: разделы и выбор основы */
 .form-section { border: 1px solid var(--line, #3a3a3a); border-radius: 8px; padding: 0 10px; margin: 8px 0; }
@@ -1630,7 +1686,7 @@ body.lu-open { overflow: hidden; }
 .node-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; margin: 6px 0; border: 1px dashed var(--line, #3a3a3a); border-radius: 8px; }
 .node-starters > b { width: 100%; }
 /* Параметры узла прямо на карточке холста: поля не двигают узел и не мешают проводам (см. inlineParams в mechanics-graph.js). */
-.node-inline{padding:4px 8px 6px;font-size:11px;cursor:default;user-select:text}
+.node-inline{padding:3px 2px 2px;font-size:11px;cursor:default;user-select:text}
 .node-inline .param-form{display:flex;flex-direction:column;gap:4px}
 .node-inline .param-form:empty,.node-inline:has(.param-form:empty){display:none}
 .node-inline .param-row,.node-inline .node-field{display:flex;flex-direction:column;gap:2px;min-width:0}
