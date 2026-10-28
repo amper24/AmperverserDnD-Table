@@ -31,6 +31,8 @@
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
   // Виды правила класса: таблица развития, правила кастера, ячейки заклинаний и заклинательная характеристика.
   const RULE_CLASS_KINDS = { class_progression: 'Прогрессия класса', class_rules: 'Правила класса', spell_slots: 'Ячейки заклинаний', spellcasting: 'Заклинательная характеристика' };
+  // Виды условия контекста: редакция, уровень, подкласс и выбранный вариант.
+  const CONTEXT_KINDS = { edition: 'Редакция', level: 'Уровень', subclass: 'Подкласс', choice: 'Выбранный вариант' };
   const MATH_OPS = ['add', 'sub', 'mul', 'div', 'min', 'max'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
@@ -105,6 +107,7 @@
     if (type === 'rule.value') return `${def.label} · ${RULE_VALUE_KINDS[p.kind] || RULE_VALUE_KINDS.speed}`;
     if (type === 'rule.list') return `${def.label} · ${RULE_LIST_KINDS[p.kind] || RULE_LIST_KINDS.languages}`;
     if (type === 'rule.class') return `${def.label} · ${RULE_CLASS_KINDS[p.kind] || RULE_CLASS_KINDS.class_progression}`;
+    if (type === 'condition.context') return `${def.label} · ${CONTEXT_KINDS[p.kind] || CONTEXT_KINDS.level}`;
     if (type === 'logic.op') return `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
     return def.label;
   }
@@ -138,7 +141,7 @@
   window.Nodes = { GraphNode, register, actionDefaults, clone };
   window.NodeRegistry = {
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
-    COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, isStatId, statDice, diceTerm,
+    COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
   };

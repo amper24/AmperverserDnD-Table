@@ -57,8 +57,8 @@ test('dice input without a wire keeps the block dice field', () => {
 });
 
 test('flow condition built from logic AND follows the edition and level context', () => {
-  const level = node('lv', 'condition.level', { min: 3, max: 10 });
-  const edition = node('ed', 'condition.edition', { editions: ['2014'] });
+  const level = node('lv', 'condition.context', { kind: 'level', min: 3, max: 10 });
+  const edition = node('ed', 'condition.context', { kind: 'edition', editions: ['2014'] });
   const and = node('and', 'logic.op', { op: 'and' });
   const branch = node('if', 'flow.if');
   const yes = actionNode('yes', 'damage'), no = actionNode('no', 'heal');
@@ -73,8 +73,30 @@ test('flow condition built from logic AND follows the edition and level context'
   assert.deepEqual(blocksOf(graph).map(b => b.id).sort(), ['no', 'yes'], 'without context both branches stay');
 });
 
-test('comparison of numbers negated with NOT chooses the else branch', () => {
-  const five = node('n5', 'data.number', { value: 5 }), three = node('n3', 'data.number', { value: 3 });
+test('condition.context covers edition, level, subclass and choice and keeps both branches without context', () => {
+  const branchGraph = params => mech([node('c', 'condition.context', params), node('if', 'flow.if'), actionNode('yes', 'damage'), actionNode('no', 'heal')], [
+    link('c', 'value', 'if', 'condition'), link('start', 'exec', 'if', 'exec'), link('if', 'then', 'yes', 'exec'), link('if', 'else', 'no', 'exec'),
+  ]);
+  const chosen = (params, context) => plain(M.toLegacy(branchGraph(params), context).programs[0].blocks.map(block => block.id));
+  const base = { edition: '2014', level: 1, subclass: '', choices: {} };
+  assert.deepEqual(chosen({ kind: 'edition', editions: ['2014'] }, base), ['yes']);
+  assert.deepEqual(chosen({ kind: 'edition', editions: ['2024'] }, base), ['no']);
+  assert.deepEqual(chosen({ kind: 'level', min: 1, max: 5 }, { ...base, level: 5 }), ['yes']);
+  assert.deepEqual(chosen({ kind: 'level', min: 1, max: 5 }, { ...base, level: 6 }), ['no']);
+  assert.deepEqual(chosen({ kind: 'subclass', id: 'champion' }, { ...base, subclass: 'champion' }), ['yes']);
+  assert.deepEqual(chosen({ kind: 'subclass', id: 'champion' }, { ...base, subclass: 'battlemaster' }), ['no']);
+  assert.deepEqual(chosen({ kind: 'choice', id: 'style', value: 'duelist' }, { ...base, choices: { style: 'duelist' } }), ['yes']);
+  assert.deepEqual(chosen({ kind: 'choice', id: 'style', value: 'duelist' }, { ...base, choices: { style: 'archery' } }), ['no']);
+  // Без контекста значение неизвестно — обе ветви «Если» сохраняются.
+  assert.deepEqual(chosen({ kind: 'edition', editions: ['2014'] }, {}).sort(), ['no', 'yes']);
+  assert.deepEqual(chosen({ kind: 'subclass', id: 'champion' }, {}).sort(), ['no', 'yes']);
+  assert.deepEqual(chosen({ kind: 'choice', id: 'style', value: 'duelist' }, {}).sort(), ['no', 'yes']);
+  // Исполнение через evaluateGraph видит те же значения контекста.
+  assert.deepEqual(plain(M.evaluateGraph(branchGraph({ kind: 'choice', id: 'style', value: 'duelist' }), { ...base, choices: { style: 'duelist' } }).actions[0].blocks.map(block => block.id)), ['yes']);
+  assert.equal(M.validate(mech([node('c', 'condition.context', { kind: 'unknown' })], [])), 'Условие: неизвестный вид.');
+});
+
+test('comparison of numbers negated with NOT chooses the else branch', () => {  const five = node('n5', 'data.number', { value: 5 }), three = node('n3', 'data.number', { value: 3 });
   const cmp = node('cmp', 'condition.compare', { op: '>' });
   const not = node('not', 'logic.op', { op: 'not' });
   const branch = node('if', 'flow.if');
@@ -140,7 +162,7 @@ test('поток действия обязан доходить до «Конц�
   assert.deepEqual(plain(M.problems(open)), ['Действие «Тест» не завершается узлом «Конец»']);
   assert.match(M.evaluateGraph(open).error, /Граф не исполняется/);
   // Ветвь «Если» без продолжения — проблема ветви; «Конец» без входа — тоже проблема.
-  const branch = { version: 2, graph: { nodes: [start, node('lv', 'condition.level', { min: 1, max: 20 }), node('if', 'flow.if'), actionNode('yes', 'damage')],
+  const branch = { version: 2, graph: { nodes: [start, node('lv', 'condition.context', { kind: 'level', min: 1, max: 20 }), node('if', 'flow.if'), actionNode('yes', 'damage')],
     links: [link('lv', 'value', 'if', 'condition'), link('start', 'exec', 'if', 'exec'), link('if', 'then', 'yes', 'exec')], frames: [], groups: [] } };
   assert.equal(M.validate(branch), '');
   assert.deepEqual(plain(M.problems(branch)), ['Ветка не завершается узлом «Конец»']);

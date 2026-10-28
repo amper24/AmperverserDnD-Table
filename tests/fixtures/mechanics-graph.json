@@ -526,11 +526,178 @@
           "nodes": [
             {
               "id": "e",
-              "type": "condition.edition",
+              "type": "condition.context",
               "params": {
+                "kind": "edition",
                 "editions": [
                   2014
                 ]
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "condition-context-kinds",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "edition",
+              "type": "condition.context",
+              "params": {
+                "kind": "edition",
+                "editions": [
+                  "2014",
+                  "2024"
+                ]
+              }
+            },
+            {
+              "id": "level",
+              "type": "condition.context",
+              "params": {
+                "kind": "level",
+                "min": 1,
+                "max": 20
+              }
+            },
+            {
+              "id": "subclass",
+              "type": "condition.context",
+              "params": {
+                "kind": "subclass",
+                "id": "champion"
+              }
+            },
+            {
+              "id": "choice",
+              "type": "condition.context",
+              "params": {
+                "kind": "choice",
+                "id": "style",
+                "value": "duelist"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "condition-context-unknown-kind",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "unknown",
+              "type": "condition.context",
+              "params": {
+                "kind": "unknown"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "condition-context-edition-empty",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "edition",
+              "type": "condition.context",
+              "params": {
+                "kind": "edition",
+                "editions": []
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "condition-context-level-range",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "level",
+              "type": "condition.context",
+              "params": {
+                "kind": "level",
+                "min": 0,
+                "max": 21
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "condition-context-subclass-id",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "subclass",
+              "type": "condition.context",
+              "params": {
+                "kind": "subclass"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "condition-context-choice-value",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "choice",
+              "type": "condition.context",
+              "params": {
+                "kind": "choice",
+                "id": "style"
               }
             }
           ],
@@ -1434,16 +1601,18 @@
             },
             {
               "id": "lv",
-              "type": "condition.level",
+              "type": "condition.context",
               "params": {
+                "kind": "level",
                 "min": 1,
                 "max": 20
               }
             },
             {
               "id": "ed",
-              "type": "condition.edition",
+              "type": "condition.context",
               "params": {
+                "kind": "edition",
                 "editions": [
                   "2014"
                 ]
@@ -1573,8 +1742,9 @@
             },
             {
               "id": "lv",
-              "type": "condition.level",
+              "type": "condition.context",
               "params": {
+                "kind": "level",
                 "min": 1,
                 "max": 20
               }

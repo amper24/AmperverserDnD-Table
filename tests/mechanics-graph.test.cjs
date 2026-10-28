@@ -80,7 +80,7 @@ test('flow branches select by edition and level at runtime but remain structural
     graph: {
       nodes: [
         { id: 'program', type: 'action.program', params: { program_id: 'branch', name: 'Branch', trigger: 'use' } },
-        { id: 'level', type: 'condition.level', params: { min: 5, max: 20 } },
+        { id: 'level', type: 'condition.context', params: { kind: 'level', min: 5, max: 20 } },
         { id: 'branch-node', type: 'flow.if', params: {} },
         { id: 'low', type: 'action.manual', params: { block_id: 'low', text: 'Below 5', when: 'always' } },
         { id: 'high', type: 'action.roll', params: { block_id: 'high', dice: { count: 1, sides: 8, bonus: 0 }, when: 'always' } },
@@ -105,7 +105,7 @@ test('graph effects preview and project through typed values without accumulatin
     version: 2,
     graph: {
       nodes: [
-        { id: 'edition', type: 'condition.edition', params: { editions: ['2024'] } },
+        { id: 'edition', type: 'condition.context', params: { kind: 'edition', editions: ['2024'] } },
         { id: 'speed-value', type: 'data.number', params: { value: 35 } },
         { id: 'speed', type: 'rule.value', params: { kind: 'speed', amount: 30 } },
         { id: 'bonus-value', type: 'data.number', params: { value: 2 } },

@@ -12,7 +12,7 @@ const M = ctx.window.Mechanics;
 const defaults = type => JSON.parse(JSON.stringify(ctx.window.NodeRegistry.NODE_DEFS[type].defaults));
 const graph = () => ({
   nodes: [
-    { id: 'lvl', type: 'condition.level', params: defaults('condition.level'), position: { x: 0, y: 0 } },
+    { id: 'lvl', type: 'condition.context', params: defaults('condition.context'), position: { x: 0, y: 0 } },
     { id: 'num', type: 'data.number', params: defaults('data.number'), position: { x: 0, y: 100 } },
     { id: 'if1', type: 'flow.if', params: defaults('flow.if'), position: { x: 300, y: 0 } },
     { id: 'if2', type: 'flow.if', params: defaults('flow.if'), position: { x: 600, y: 0 } },

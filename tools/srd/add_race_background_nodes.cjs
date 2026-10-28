@@ -18,7 +18,7 @@ function raceNodes(rec) {
   if (langs.length) nodes.push({ id: 'race_languages', type: 'rule.list', params: { kind: 'languages', value: langs } });
   const asi = Object.entries(d.asi || {}).filter(([, v]) => Number(v));
   if (asi.length) {
-    nodes.push({ id: 'race_edition', type: 'condition.edition', params: { editions: ['2014'] } });
+    nodes.push({ id: 'race_edition', type: 'condition.context', params: { kind: 'edition', editions: ['2014'] } });
     for (const [ability, amount] of asi) {
       const id = `race_asi_${ability}`;
       nodes.push({ id, type: 'rule.value', params: { kind: 'ability', ability, amount: Number(amount) } });

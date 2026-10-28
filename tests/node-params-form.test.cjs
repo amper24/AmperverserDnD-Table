@@ -62,15 +62,19 @@ test('ability and spell-mode nodes use dropdowns with Russian labels', () => {
   assert.ok(findAll(spells, n => n.tag === 'select').length >= 3, 'kind, mode and ability are dropdowns');
 });
 
-test('editions are multi-select checkboxes', () => {
+test('condition.context shows a kind dropdown and editions as multi-select checkboxes', () => {
   let committed = null;
-  const form = NF.nodeParams({ id: 'c', type: 'condition.edition', params: { editions: ['2014'] } }, { onChange: next => { committed = next; } });
+  const form = NF.nodeParams({ id: 'c', type: 'condition.context', params: { kind: 'edition', editions: ['2014'] } }, { onChange: next => { committed = next; } });
+  const select = findAll(form, n => n.tag === 'select')[0];
+  assert.ok(select, 'kind is a dropdown');
+  eq(select.children.map(o => o.attrs.value), ['edition', 'level', 'subclass', 'choice']);
+  assert.equal(select.children.find(o => o.attrs.value === 'edition').attrs.selected, '');
   const boxes = inputsOf(form).filter(i => i.attrs.type === 'checkbox');
   assert.equal(boxes.length, 2);
   assert.equal(boxes[0].attrs.checked, '');
   assert.equal(boxes[1].attrs.checked, null);
   boxes[1].attrs.onchange({ target: { checked: true } });
-  eq(committed, { editions: ['2014', '2024'] });
+  eq(committed, { kind: 'edition', editions: ['2014', '2024'] });
 });
 
 test('spell slot table can add and remove rows without touching JSON', () => {

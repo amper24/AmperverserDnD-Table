@@ -10,7 +10,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
 const MY_SET = {
   kind: 'graph_starter', id: 'user.my-sets', name: 'Мои варианты', items: [
     { id: 'my-level-speed', name: 'Моя скорость с 3 уровня', hint: 'Свой набор: скорость 40 фт', nodes: [
-      { key: 'lvl', type: 'condition.level', params: { min: 3, max: 20 }, x: 0, y: 0 },
+      { key: 'lvl', type: 'condition.context', params: { kind: 'level', min: 3, max: 20 }, x: 0, y: 0 },
       { key: 'spd', type: 'rule.value', params: { kind: 'speed', amount: 40 }, x: 260, y: 0 }], links: [['lvl', 'value', 'spd', 'enabled']] },
   ],
 };

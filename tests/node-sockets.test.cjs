@@ -24,8 +24,6 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const listed = () => clone(R.catalog('').flatMap(section => section.items.map(item => item.type)));
 // Параметры, которые мастер заполняет сам: пустой узел из меню сразу показывает, чего не хватает.
 const REQUIRED = {
-  'condition.choice': { id: 'styleChoice', value: 'duelist' },
-  'condition.subclass': { id: 'champion' },
   'action.program': { program_id: 'p1', name: 'Действие', trigger: 'use' },
   'group.input': { socket_id: 'in' },
   'group.output': { socket_id: 'out' },
@@ -131,6 +129,35 @@ test('неизвестный вид правила отклоняется, сп�
   assert.equal(R.NODE_DEFS['rule.class'].validate({ kind: 'unknown' }), 'Класс: неизвестный вид.');
   assert.equal(R.NODE_DEFS['rule.list'].validate({ kind: 'saving_throws', value: ['str', 'luck'] }), 'Спасброски должны быть списком характеристик.');
   assert.equal(R.NODE_DEFS['rule.list'].validate({ kind: 'saving_throws', value: ['str', 'con'] }), '');
+});
+
+test('условие контекста: четыре вида проверяются и считаются по контексту листа', () => {
+  const def = R.NODE_DEFS['condition.context'];
+  const params = {
+    edition: { kind: 'edition', editions: ['2014'] },
+    level: { kind: 'level', min: 1, max: 20 },
+    subclass: { kind: 'subclass', id: 'champion' },
+    choice: { kind: 'choice', id: 'style', value: 'duelist' },
+  };
+  assert.deepEqual(Object.keys(params).sort(), Object.keys(R.CONTEXT_KINDS).sort(), 'проверены все виды condition.context');
+  for (const item of Object.values(params)) assert.equal(def.validate(item), '', `параметры вида ${item.kind} допустимы`);
+  assert.equal(def.validate({ kind: 'unknown' }), 'Условие: неизвестный вид.');
+  assert.equal(def.validate({ kind: 'edition', editions: [] }), 'Условие редакции: один или несколько допустимых SRD.');
+  assert.equal(def.validate({ kind: 'level', min: 0, max: 21 }), 'Условие уровня: диапазон 1–20.');
+  assert.equal(def.validate({ kind: 'subclass' }), 'Укажите ID подкласса в условии.');
+  assert.equal(def.validate({ kind: 'choice', id: 'style' }), 'Укажите ID группы и сравниваемый выбор.');
+  const context = { edition: '2014', level: 5, subclass: 'champion', choices: { style: 'duelist' } };
+  assert.equal(def.evaluate(params.edition, context), true);
+  assert.equal(def.evaluate(params.edition, { ...context, edition: '2024' }), false);
+  assert.equal(def.evaluate(params.level, context), true);
+  assert.equal(def.evaluate(params.level, { ...context, level: 21 }), false);
+  assert.equal(def.evaluate(params.subclass, context), true);
+  assert.equal(def.evaluate(params.subclass, { ...context, subclass: 'battlemaster' }), false);
+  assert.equal(def.evaluate(params.choice, context), true);
+  assert.equal(def.evaluate(params.choice, { ...context, choices: { style: 'archery' } }), false);
+  assert.equal(def.evaluate(params.edition, {}), undefined, 'без редакции значение неизвестно');
+  assert.equal(def.evaluate(params.subclass, {}), undefined, 'без подкласса значение неизвестно');
+  assert.equal(def.evaluate(params.choice, {}), undefined, 'без выборов значение неизвестно');
 });
 
 test('форма параметров строится для каждого узла меню', () => {

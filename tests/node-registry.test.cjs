@@ -36,6 +36,9 @@ test('настраиваемые правила показывают выбра�
   assert.equal(R.nodeTitle('rule.list', {}), 'Список · Языки');
   assert.equal(R.nodeTitle('rule.class', { kind: 'spellcasting' }), 'Класс · Заклинательная характеристика');
   assert.equal(R.nodeTitle('rule.class', {}), 'Класс · Прогрессия класса');
+  assert.equal(R.nodeTitle('condition.context', { kind: 'edition' }), 'Условие · Редакция');
+  assert.equal(R.nodeTitle('condition.context', { kind: 'choice' }), 'Условие · Выбранный вариант');
+  assert.equal(R.nodeTitle('condition.context', {}), 'Условие · Уровень');
 });
 
 test('sockets are compatible only with identical types', () => {

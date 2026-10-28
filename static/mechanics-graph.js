@@ -39,6 +39,11 @@
     if (def && typeof def.compute === 'function') return def.compute(p, get);
     return undefined;
   }
+  // Условие контекста (редакция/уровень/подкласс/выбор) считается по снимку листа, а не по входам.
+  function contextConditionValue(p, context) {
+    const def = NodeRegistry.nodeDef('condition.context');
+    return def && typeof def.evaluate === 'function' ? def.evaluate(p, context) : undefined;
+  }
 
   function graphOf(mechanics) { return mechanics?.graph || { nodes: [], links: [], frames: [], groups: [] }; }
   function graphEnvelope(graph, metadata = {}) {
@@ -168,20 +173,12 @@
       outgoing.get(key).push(link.to.node);
       incoming.set(`${link.to.node}:${link.to.socket}`, link.from);
     }
-    const edition = context.edition === undefined ? undefined : String(context.edition);
-    const level = context.level === undefined ? undefined : Number(context.level);
     function outputValue(endpoint) {
       const node = byId.get(endpoint?.node); if (!node) return undefined;
       const p = node.params || {};
       if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined));
       if (node.type.startsWith('data.')) return clone(p.value);
-      if (node.type === 'condition.edition') return edition === undefined ? undefined : (p.editions || []).map(String).includes(edition);
-      if (node.type === 'condition.level') return !Number.isFinite(level) ? undefined : level >= p.min && level <= p.max;
-      if (node.type === 'condition.subclass') return context.subclass === undefined ? undefined : String(context.subclass) === String(p.id);
-      if (node.type === 'condition.choice') {
-        if (!context.choices) return undefined;
-        return JSON.stringify(context.choices[p.id]) === JSON.stringify(p.value);
-      }
+      if (node.type === 'condition.context') return contextConditionValue(p, context);
       return undefined;
     }
     function inputValue(node, socket, fallback) {
@@ -571,10 +568,7 @@
       context.nodeId = node.id;
       const p = node.params || {}, type = node.type;
       if (type === 'data.number' || type === 'data.dice') values.outputs.set(`${node.id}:value`, clone(p.value));
-      else if (type === 'condition.edition') values.outputs.set(`${node.id}:value`, (p.editions || []).map(String).includes(edition));
-      else if (type === 'condition.level') values.outputs.set(`${node.id}:value`, level >= p.min && level <= p.max);
-      else if (type === 'condition.subclass') values.outputs.set(`${node.id}:value`, String(context.subclass) === String(p.id));
-      else if (type === 'condition.choice') values.outputs.set(`${node.id}:value`, JSON.stringify(context.choices?.[p.id]) === JSON.stringify(p.value));
+      else if (type === 'condition.context') values.outputs.set(`${node.id}:value`, contextConditionValue(p, context));
       else if (COMPUTED.has(type)) values.outputs.set(`${node.id}:value`, computedValue(type, p, socket => get(node, socket)));
       else if (type.startsWith('rule.')) applyRuleNode(type, p, socket => get(node, socket), sheet, context, values.outputs);
     }

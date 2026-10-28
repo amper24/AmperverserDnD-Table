@@ -25,7 +25,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
         nodes: [
           { id: 'a', type: 'data.number', params: { value: 5 }, position: { x: 80, y: 80 } },
           { id: 'b', type: 'rule.value', params: { kind: 'speed', amount: 30 }, position: { x: 420, y: 80 } },
-          { id: 'c', type: 'condition.level', params: { min: 1, max: 20 }, position: { x: 80, y: 320 } },
+          { id: 'c', type: 'condition.context', params: { kind: 'level', min: 1, max: 20 }, position: { x: 80, y: 320 } },
           { id: 'd', type: 'flow.if', params: {}, position: { x: 420, y: 320 } },
           { id: 'e', type: 'data.number', params: { value: 7 }, position: { x: 80, y: 540 } },
         ], links: [], frames: [], groups: [] } } }); Modules.editItem(window.doc);
@@ -67,13 +67,13 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
     for (const title of ['Данные', 'Условия', 'Логика', 'Поток управления', 'Броски', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), `категория «${title}»`);
-    await page.locator('.node-menu-search').fill('уровень');
+    await page.locator('.node-menu-search').fill('условие');
     const filtered = await page.locator('.node-menu-title').allTextContents();
     assert.deepEqual(filtered, ['Условия'], 'поиск оставляет подходящую категорию');
-    await page.locator('.node-menu-item', { hasText: 'Если уровень' }).click();
+    await page.locator('.node-menu-item', { hasText: 'Условие' }).click();
     await page.locator('.node-menu').waitFor({ state: 'detached' });
     const added = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.at(-1));
-    assert.equal(added.type, 'condition.level', 'узел из меню добавлен');
+    assert.equal(added.type, 'condition.context', 'узел из меню добавлен');
     assert.ok(added.position.x > 0 && added.position.y > 0, 'позиция узла задана');
     await page.keyboard.press('Escape').catch(() => {});
 
@@ -196,9 +196,9 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
     await page.locator('.node-menu-cat', { hasText: 'Добавить рядом' }).hover();
     await page.locator('.node-menu-cat', { hasText: 'Условия' }).hover();
-    await page.locator('.node-menu-item', { hasText: 'Если уровень' }).click();
+    await page.locator('.node-menu-item', { hasText: 'Условие' }).click();
     const lastType = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.at(-1).type);
-    assert.equal(lastType, 'condition.level', 'узел добавлен через вложенное меню');
+    assert.equal(lastType, 'condition.context', 'узел добавлен через вложенное меню');
 
     // 11. Неполный граф не блокирует связи; статус показывает незавершённость.
     await page.locator('.node-editor').focus();

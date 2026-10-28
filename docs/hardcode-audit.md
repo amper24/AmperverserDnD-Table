@@ -22,7 +22,7 @@
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
-| `builder-dialog.js:118–126` | полуэльф 2014 — два навыка; эльф 2024 — один навык; человек 2024 — навык + черта | `rule.list` (kind `skills`) с `count` и `options` на записи расы; `condition.edition` |
+| `builder-dialog.js:118–126` | полуэльф 2014 — два навыка; эльф 2024 — один навык; человек 2024 — навык + черта | `rule.list` (kind `skills`) с `count` и `options` на записи расы; `condition.context` (kind `edition`) |
 | `builder-dialog.js:119, 533` и `character-builder.js:668` | дварф 2014 — обязательный инструмент | `rule.list` (kind `proficiencies`) с выбором `count: 1` на записи расы |
 | `character-builder.js:28–29` | списки языков по редакции | `rule.list` (kind `languages`) на записи расы/предыстории; общий список языков — в данных |
 | `character-builder.js:787` | дополнительная хит-кость дварфа 2024 (regex по имени расы) | `rule.value` (kind `hp`) на записи расы, без совпадения по имени |
@@ -32,7 +32,7 @@
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
-| `builder-dialog.js:134–145`, `430–470` | боевой стиль воина 2014 и 2024; избранный враг/местность следопыта 2014; орден жреца и друида 2024; барды (инструменты, навыки) | `rule.list` (kind `feature`)/`rule.list` (kind `skills`) и выбор на записи (`data.choices`) с `condition.edition` и `condition.level` |
+| `builder-dialog.js:134–145`, `430–470` | боевой стиль воина 2014 и 2024; избранный враг/местность следопыта 2014; орден жреца и друида 2024; барды (инструменты, навыки) | `rule.list` (kind `feature`)/`rule.list` (kind `skills`) и выбор на записи (`data.choices`) с `condition.context` (kind `edition`/`level`) |
 | `builder-dialog.js:188, 593, 657` | плут 2024: «плут — 1 стандартный» и язык класса | `rule.list` (kind `languages`), выбор навыка/инструмента на записи класса |
 | `builder-dialog.js:266–299` | слуги заговоров/заклинаний (жрец, друид, волшебник) и список «Жрец/Друид/Волшебник» | выбор на записи (`data.choices`) с `options` по записи класса; slug-и не нужны в UI |
 | `character-builder.js:53` | «Боевой стиль» для воина 2014 пропускается в умениях | `rule.list` (kind `feature`) с признаком «выбор»; фильтр не по имени класса |
@@ -48,8 +48,8 @@
 | `levelup.js:15–16` | `SLUG_RU` — карта русских имён классов | поле `slug`/`name_ru` в записи класса |
 | `levelup.js:19–20` | `PICKERS`, `FULL_CASTERS`, `HALF_CASTERS` — типы заклинателей | `rule.list` (kind `spell_list`) (`mode`, `caster_type`) на записи класса |
 | `levelup.js:91–92` | подготовленные заклинания по классам | формула `prepared` в `rule.list` (kind `spell_list`) |
-| `levelup.js:146, 151` | подклассы, дающие заклинания или умения на определённом уровне (круг земли, коллегия знаний) | `condition.subclass` + `condition.level` на записи подкласса |
-| `levelup.js:172–197` | боевой стиль (воин/паладин/рейнджер), метамагия (чародей 2014), пакт (колдун 2014), рейнджер 2014 | выбор на записи (`data.choices`) + `condition.level` на записи класса |
+| `levelup.js:146, 151` | подклассы, дающие заклинания или умения на определённом уровне (круг земли, коллегия знаний) | `condition.context` (kind `subclass` + `level`) на записи подкласса |
+| `levelup.js:172–197` | боевой стиль (воин/паладин/рейнджер), метамагия (чародей 2014), пакт (колдун 2014), рейнджер 2014 | выбор на записи (`data.choices`) + `condition.context` (kind `level`) на записи класса |
 | `levelup.js:219, 234–247` | expertise волшебника 2024, спеллы и навыки бард/рейнджер/плут | `rule.list` (kind `skills`) / `rule.list` (kind `spell_list`) с условием уровня |
 | `levelup.js:601` | «четыре» классов (бард/жрец/друид/волшебник) для выбора | выбор на записи класса, не список имён |
 | `levelup.js:626, 817` | expertise плута 2014 | `rule.list` (kind `skills`) (`expertise: true`) на записи класса |
@@ -84,7 +84,7 @@
 
 - **Лимиты размеров картинок.** `src/config.rs`: `KIND_SIZE_CLASS` — тип ассета → класс лимита (карта или токен). `max_side(kind)` больше не сравнивает строку `"map"`; тест сверяет таблицу со списком `ASSET_KINDS`. Значения в `config.yml` и переменные окружения прежние. Примечание: Rust в этой среде не собирается (нет cargo), тесты Rust нужно прогнать в CI.
 - **Переменные модулей.** `static/modules.js`: производные переменные (`@best`, `@atk`, `@atk_str`, `@atk_dex`, `@spell`, `@dc`, `@spell_dc`, `@init`) — строки таблицы `DERIVED_VARS` с формулами. `Formulas.evaluate` принимает набор допустимых имён (`allowed`), по умолчанию переменные листа. Снимок значений до и после переноса совпадает.
-- **Прогрессия класса из узла.** `Mechanics.classProgression(mechanics, edition)` читает таблицу из узла `rule.class` (kind `class_progression`) в записи класса; условие редакции (`condition.edition`) выбирает таблицу. Порядок чтения: данные записи → граф → набор `class_progression` (запасной вариант для SRD). Используется в `levelup.js` и `character-builder.js` (лимиты заклинаний 1 уровня).
+- **Прогрессия класса из узла.** `Mechanics.classProgression(mechanics, edition)` читает таблицу из узла `rule.class` (kind `class_progression`) в записи класса; условие редакции (`condition.context`, kind `edition`) выбирает таблицу. Порядок чтения: данные записи → граф → набор `class_progression` (запасной вариант для SRD). Используется в `levelup.js` и `character-builder.js` (лимиты заклинаний 1 уровня).
 
 - **Правила классов — узлы и наборы.** Кастеры, требования и владения мультикласса, мастерства оружия, цвет класса и русские имена берутся из узла `rule.class` (kind `class_rules`) записи класса (`Mechanics.classRules(mechanics, edition)`), запас — набор `class_rules` по slug и редакции. Таблицы `SRD_CASTER`, `MC_REQ`, `MC_PROF`, `CLASS_COLOR`, `LEGACY_UNARMORED` и словарь мастерств удалены из кода. Миграция: `node tools/srd/add_class_progression_nodes.cjs` (второй узел). Тест: `tests/class-rules-node.test.cjs`.
 - Старые записи (блок `data.caster`) по-прежнему читаются первыми — для совместимости.

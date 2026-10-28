@@ -16,7 +16,7 @@ async function fresh() {
   const P = await loadPresets(ctx);
   return P;
 }
-const starter = (id, extra = {}) => ({ id, name: 'Тест ' + id, hint: 'подсказка', nodes: [{ key: 'lvl', type: 'condition.level', params: { min: 2, max: 20 }, x: 0, y: 0 }], links: [], ...extra });
+const starter = (id, extra = {}) => ({ id, name: 'Тест ' + id, hint: 'подсказка', nodes: [{ key: 'lvl', type: 'condition.context', params: { kind: 'level', min: 2, max: 20 }, x: 0, y: 0 }], links: [], ...extra });
 const set = (items, extra = {}) => ({ kind: 'graph_starter', id: 'user.' + Math.random().toString(36).slice(2), name: 'Мой набор', items, ...extra });
 
 test('встроенные наборы загружаются с диска по index.json', async () => {

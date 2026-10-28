@@ -57,8 +57,8 @@ test('roll_kind настраивается: один и тот же узел к�
 
 test('logic.op исполняет И, ИЛИ и НЕ; неизвестная операция отклоняется', () => {
   const boolGraph = (op, aTrue, bTrue) => mech([
-    { id: 'a', type: 'condition.level', params: { min: aTrue ? 1 : 10, max: 20 } },
-    { id: 'b', type: 'condition.level', params: { min: bTrue ? 1 : 10, max: 20 } },
+    { id: 'a', type: 'condition.context', params: { kind: 'level', min: aTrue ? 1 : 10, max: 20 } },
+    { id: 'b', type: 'condition.context', params: { kind: 'level', min: bTrue ? 1 : 10, max: 20 } },
     { id: 'op', type: 'logic.op', params: { op } },
     { id: 'if', type: 'flow.if', params: {} },
     { id: 'yes', type: 'action.manual', params: { block_id: 'yes', text: 'да', when: 'always' } },

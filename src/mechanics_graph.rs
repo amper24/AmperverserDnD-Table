@@ -36,7 +36,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
-        "condition.edition" | "condition.level" | "condition.subclass" | "condition.choice" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
+        "condition.context" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.class" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.value" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -128,16 +128,21 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(bad("Узел кости должен содержать количество и грани.")); }
         }
 
-        "condition.edition" => {
-            let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
-            if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(bad("Условие редакции: один или несколько допустимых SRD.")); }
+        "condition.context" => {
+            match p["kind"].as_str().unwrap_or("") {
+                "edition" => {
+                    let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
+                    if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(bad("Условие редакции: один или несколько допустимых SRD.")); }
+                }
+                "level" => {
+                    let min = json_integer(&p["min"]).unwrap_or(0); let max = json_integer(&p["max"]).unwrap_or(0);
+                    if min < 1 || max > 20 || min > max { return Err(bad("Условие уровня: диапазон 1–20.")); }
+                }
+                "subclass" => { if !valid_id(&p["id"], 100) { return Err(bad("Укажите ID подкласса в условии.")); } }
+                "choice" => { if !valid_id(&p["id"], 100) || p.get("value").is_none() { return Err(bad("Укажите ID группы и сравниваемый выбор.")); } }
+                _ => return Err(bad("Условие: неизвестный вид.")),
+            }
         }
-        "condition.level" => {
-            let min = json_integer(&p["min"]).unwrap_or(0); let max = json_integer(&p["max"]).unwrap_or(0);
-            if min < 1 || max > 20 || min > max { return Err(bad("Условие уровня: диапазон 1–20.")); }
-        }
-        "condition.subclass" if !valid_id(&p["id"], 100) => return Err(bad("Укажите ID подкласса в условии.")),
-        "condition.choice" if !valid_id(&p["id"], 100) || p.get("value").is_none() => return Err(bad("Укажите ID группы и сравниваемый выбор.")),
         "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
         "condition.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
         "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
@@ -374,7 +379,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "dice.combine",
-    "condition.edition", "condition.level", "condition.subclass", "condition.choice", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
+    "condition.context", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
     "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
 ];
@@ -607,20 +612,23 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         },
         kind if kind.starts_with("data.") => params.get("value").cloned(),
 
-        "condition.edition" => {
-            let edition = context.get("edition")?.as_str()?;
-            Some(json!(params["editions"].as_array().into_iter().flatten().any(|item| item.as_str() == Some(edition))))
-        }
-        "condition.level" => {
-            let level = context.get("level")?.as_i64()?;
-            Some(json!(level >= params["min"].as_i64()? && level <= params["max"].as_i64()?))
-        }
-        "condition.subclass" => Some(json!(context.get("subclass")? == &params["id"])),
-        "condition.choice" => {
-            let choices = context.get("choices")?.as_object()?;
-            let id = params["id"].as_str()?;
-            Some(json!(choices.get(id).map(|value| value == &params["value"]).unwrap_or(false)))
-        }
+        "condition.context" => match params["kind"].as_str()? {
+            "edition" => {
+                let edition = context.get("edition")?.as_str()?;
+                Some(json!(params["editions"].as_array().into_iter().flatten().any(|item| item.as_str() == Some(edition))))
+            }
+            "level" => {
+                let level = context.get("level")?.as_i64()?;
+                Some(json!(level >= params["min"].as_i64()? && level <= params["max"].as_i64()?))
+            }
+            "subclass" => Some(json!(context.get("subclass")? == &params["id"])),
+            "choice" => {
+                let choices = context.get("choices")?.as_object()?;
+                let id = params["id"].as_str()?;
+                Some(json!(choices.get(id).map(|value| value == &params["value"]).unwrap_or(false)))
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -778,8 +786,8 @@ mod hit_gate_tests {
     fn configurable_logic_node_validates_and_evaluates_ops() {
         let make = |op: &str| json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
-            {"id": "lv", "type": "condition.level", "params": {"min": 1, "max": 10}},
-            {"id": "ed", "type": "condition.edition", "params": {"editions": ["2014"]}},
+            {"id": "lv", "type": "condition.context", "params": {"kind": "level", "min": 1, "max": 10}},
+            {"id": "ed", "type": "condition.context", "params": {"kind": "edition", "editions": ["2014"]}},
             {"id": "op", "type": "logic.op", "params": {"op": op}},
             {"id": "f", "type": "flow.if", "params": {}},
             {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "then", "when": "always"}},
@@ -801,6 +809,41 @@ mod hit_gate_tests {
         let missed = to_v1_with_context(&make("not"), &json!({"edition": "2014", "level": 5}));
         assert_eq!(missed["programs"][0]["blocks"].as_array().unwrap().len(), 0, "НЕ по истинному входу отсекает ветвь «да»");
         assert!(validate(&make("xor")).is_err());
+    }
+
+    /// Один узел «Условие» с видом: редакция, уровень, подкласс и выбор читают контекст листа.
+    #[test]
+    fn context_condition_uses_edition_level_subclass_and_choices() {
+        let branch = |params: Value, context: &Value| -> usize {
+            let graph = json!({"version": 2, "origin": "test", "graph": {"nodes": [
+                {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+                {"id": "c", "type": "condition.context", "params": params},
+                {"id": "f", "type": "flow.if", "params": {}},
+                {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "then", "when": "always"}},
+                {"id": "e", "type": "flow.end", "params": {}}
+            ], "links": [
+                {"from": {"node": "c", "socket": "value"}, "to": {"node": "f", "socket": "condition"}},
+                {"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+                {"from": {"node": "f", "socket": "then"}, "to": {"node": "m", "socket": "exec"}},
+                {"from": {"node": "m", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}},
+                {"from": {"node": "f", "socket": "else"}, "to": {"node": "e", "socket": "exec"}}
+            ], "frames": [], "groups": []}});
+            assert!(problems(&graph).unwrap().is_empty());
+            let v1 = to_v1_with_context(&graph, context);
+            v1["programs"][0]["blocks"].as_array().unwrap().len()
+        };
+        let base = json!({"edition": "2014", "level": 5, "subclass": "champion", "choices": {"style": "duelist"}});
+        assert_eq!(branch(json!({"kind": "edition", "editions": ["2014"]}), &base), 1);
+        assert_eq!(branch(json!({"kind": "edition", "editions": ["2024"]}), &base), 0);
+        assert_eq!(branch(json!({"kind": "level", "min": 1, "max": 20}), &base), 1);
+        assert_eq!(branch(json!({"kind": "level", "min": 6, "max": 20}), &base), 0);
+        assert_eq!(branch(json!({"kind": "subclass", "id": "champion"}), &base), 1);
+        assert_eq!(branch(json!({"kind": "subclass", "id": "battlemaster"}), &base), 0);
+        assert_eq!(branch(json!({"kind": "choice", "id": "style", "value": "duelist"}), &base), 1);
+        assert_eq!(branch(json!({"kind": "choice", "id": "style", "value": "archery"}), &base), 0);
+        assert!(validate(&json!({"version": 2, "graph": {"nodes": [
+            {"id": "c", "type": "condition.context", "params": {"kind": "unknown"}}
+        ], "links": [], "frames": [], "groups": []}})).is_err());
     }
 
     #[test]

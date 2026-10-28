@@ -556,7 +556,7 @@ function checkSeed(edition, opts = {}) {
         const rollKind = (node.params || {}).roll_kind;
         if (rollKind !== undefined && !rust.ROLL_KINDS.includes(rollKind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.roll_kind`, `неизвестный тип броска «${rollKind}»`);
       }
-      if (node.type === 'condition.edition') {
+      if (node.type === 'condition.context' && (node.params || {}).kind === 'edition') {
         const editions = (node.params || {}).editions;
         if (!isArr(editions) || !editions.length) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, 'не указаны редакции условия');
         else {
@@ -573,7 +573,7 @@ function checkSeed(edition, opts = {}) {
         const value = isObj(s) ? s.name : s;
         if (isStr(value) && value && !spellNames.has(value)) report.warn('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.spells`, `заклинание «${value}» не найдено в редакции ${edition}`);
       }
-      if (node.type === 'condition.subclass') {
+      if (node.type === 'condition.context' && (node.params || {}).kind === 'subclass') {
         const id = (node.params || {}).id;
         if (isStr(id) && subclassIds.size && !subclassIds.has(id)) report.error('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.id`, `подкласс «${id}» не найден среди data.subclasses.name_en редакции ${edition}`);
       }

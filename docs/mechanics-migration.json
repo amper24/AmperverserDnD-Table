@@ -27,7 +27,7 @@
       "action.passive": 3,
       "action.program": 3625,
       "action.roll": 1377,
-      "condition.edition": 13,
+      "condition.context": 13,
       "condition.hit": 13,
       "flow.end": 3625,
       "flow.if": 13,
