@@ -22,6 +22,7 @@
       if (kind === 'languages' && p.value !== undefined && !stringList(p.value)) return 'Языки должны быть списком текстовых значений.';
       if (kind === 'proficiencies' && ((p.value !== undefined && !stringList(p.value)) || (p.label !== undefined && (typeof p.label !== 'string' || p.label.length > 120)))) return 'Владения должны быть списком и иметь короткую метку.';
       if (kind === 'skill_proficiency' && p.value !== undefined && (!stringList(p.value) || p.value.length > 18)) return 'Владение навыком: список названий (до 18).';
+      if (kind === 'saving_throws' && p.value !== undefined && (!Array.isArray(p.value) || p.value.length > 6 || p.value.some(v => !ABILITIES.includes(v)))) return 'Спасброски должны быть списком характеристик.';
       if (kind === 'skills' && (!(typeof p.id === 'string' && p.id.length > 0 && p.id.length <= 100) || !Number.isInteger(p.count) || p.count < 0 || p.count > 18 || !stringList(p.options) || p.options.length > 18)) return 'Выбор навыков: ID, список до 18 и количество от 0 до 18.';
       if (kind === 'spell_list' && (!['known', 'prepared', 'book'].includes(p.mode) || (p.ability !== undefined && !ABILITIES.includes(p.ability)) || !stringList(p.spells))) return 'Список заклинаний: режим, список и характеристика должны быть допустимы.';
       if (kind === 'feature' && (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120 || (p.text !== undefined && (typeof p.text !== 'string' || p.text.length > 4000)))) return 'Умение: название до 120 и текст до 4000 символов.';
@@ -46,6 +47,11 @@
           // Значения — названия из справочника (категория «Навыки») или ключи; в лист попадают ключи.
           const skills = env.valuesOf(env.value('value')).map(String).filter(Boolean).map(skillKey);
           env.sheet.skills.push(...skills); env.emit('skill_proficiency', { values: skills });
+          break;
+        }
+        case 'saving_throws': {
+          const saves = env.valuesOf(env.value('value')).filter(x => ABILITIES.includes(x));
+          env.sheet.saving_throws = [...new Set([...env.sheet.saving_throws, ...saves])]; env.emit('saving_throws', { values: saves });
           break;
         }
         case 'skills': {

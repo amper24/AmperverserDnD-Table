@@ -82,7 +82,7 @@ async function scenarioClass(browser) {
   assert.equal(patch.body.category, 'class');
   assert.equal(patch.body.name, 'Варвар Севера');
   assert.equal(patch.body.data.hit_die, 'd12', 'данные записи целиком');
-  assert.ok(patch.body.data.mechanics.graph.nodes.some(n => n.type === 'rule.class_progression'), 'таблица развития — в узле графа');
+  assert.ok(patch.body.data.mechanics.graph.nodes.some(n => n.type === 'rule.class' && n.params?.kind === 'class_progression'), 'таблица развития — в узле графа');
 
   // 4. «+ Своя запись» для класса открывает тот же конструктор.
   calls.length = 0;

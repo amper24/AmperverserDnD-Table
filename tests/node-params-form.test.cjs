@@ -75,18 +75,18 @@ test('editions are multi-select checkboxes', () => {
 
 test('spell slot table can add and remove rows without touching JSON', () => {
   let committed = null;
-  const node = { id: 't', type: 'rule.spell_slots', params: { table: { 1: { slots: 2 }, 3: { slots: 4 } } } };
+  const node = { id: 't', type: 'rule.class', params: { kind: 'spell_slots', table: { 1: { slots: 2 }, 3: { slots: 4 } } } };
   const form = NF.nodeParams(node, { onChange: next => { committed = next; } });
   const removeButtons = findAll(form, n => n.tag === 'button' && n.attrs.title === 'Удалить строку');
   assert.equal(removeButtons.length, 2, 'every table row can be removed');
   removeButtons[0].attrs.onclick();
-  eq(committed, { table: { 3: { slots: 4 } } });
+  eq(committed, { kind: 'spell_slots', table: { 3: { slots: 4 } } });
 
   const keyInput = byLabel(form, 'Новый ключ: Таблица');
   assert.ok(keyInput, 'new-key input exists for maps');
   keyInput.value = '5';
   findAll(form, n => n.tag === 'button' && n.children[0] === 'Добавить')[0].attrs.onclick();
-  eq(committed, { table: { 3: { slots: 4 }, 5: { slots: 0 } } }, 'new row copies the shape of its siblings, after the removed row is gone');
+  eq(committed, { kind: 'spell_slots', table: { 3: { slots: 4 }, 5: { slots: 0 } } }, 'new row copies the shape of its siblings, after the removed row is gone');
 });
 
 test('list parameters are comma-separated and keep numbers numeric', () => {

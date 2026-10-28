@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-// SRD: таблица развития каждого класса приходит из узла rule.class_progression записи в data_seed,
+// SRD: таблица развития каждого класса приходит из узла rule.class (kind: class_progression) записи в data_seed,
 // и совпадает с набором static/presets/class-progression-<редакция>.json (запасной вариант для старых снимков).
 const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto, document: {} };
 vm.createContext(ctx);
@@ -17,13 +17,13 @@ const plain = v => JSON.parse(JSON.stringify(v));
 
 for (const edition of ['2014', '2024']) {
   const classes = loadSrd(`data_seed/srd_${edition}.json`).filter(e => e.category === 'class');
-  test(`SRD ${edition}: each class has a rule.class_progression node equal to the preset table`, async () => {
+  test(`SRD ${edition}: each class has a rule.class (kind: class_progression) node equal to the preset table`, async () => {
     await presetsReady;
     assert.equal(classes.length, 12);
     for (const c of classes) {
       const key = c.data.name_en.toLowerCase();
       assert.equal(M.validate(c.data.mechanics), '', c.slug);
-      const node = c.data.mechanics.graph.nodes.find(n => n.type === 'rule.class_progression');
+      const node = c.data.mechanics.graph.nodes.find(n => n.type === 'rule.class' && n.params?.kind === 'class_progression');
       assert.ok(node, `${c.slug}: узел есть`);
       assert.deepEqual(plain(M.classProgression(c.data.mechanics, edition)), plain(ctx.window.Presets.classProgression(edition, key)), `${c.slug}: таблица совпала`);
     }
@@ -32,7 +32,7 @@ for (const edition of ['2014', '2024']) {
     await presetsReady;
     const c = classes[0];
     const stripped = plain(c.data.mechanics);
-    stripped.graph.nodes = stripped.graph.nodes.filter(n => n.type !== 'rule.class_progression');
+    stripped.graph.nodes = stripped.graph.nodes.filter(n => !(n.type === 'rule.class' && n.params?.kind === 'class_progression'));
     assert.equal(M.classProgression(stripped, edition), null);
     assert.ok(ctx.window.Presets.classProgression(edition, c.data.name_en.toLowerCase()), 'запасная таблица есть');
   });

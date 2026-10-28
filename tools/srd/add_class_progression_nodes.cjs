@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Переносит механику SRD-классов из наборов static/presets/ в узлы графа записи класса в data_seed/srd_*.json:
-//   rule.class_progression — таблица развития (class-progression-<редакция>.json);
-//   rule.class_rules — кастеры, мультикласс и мастерства оружия (class-rules-<редакция>.json, без ru, color, legacy_unarmored).
+//   rule.class (kind: class_progression) — таблица развития (class-progression-<редакция>.json);
+//   rule.class (kind: class_rules) — кастеры, мультикласс и мастерства оружия (class-rules-<редакция>.json, без ru, color, legacy_unarmored).
 // Идемпотентно: существующий узел получает актуальную таблицу, английский оверлей обновляется.
 //   node tools/srd/add_class_progression_nodes.cjs
 // Ключ таблицы — как у ClassRules.slugOf: английское название в нижнем регистре. Редакция — data.edition.
@@ -26,12 +26,12 @@ const EN_PROFICIENCIES = {
 // Какие части набора уходят в узел и какие поля попадают в английский оверлей.
 const NODES = [
   {
-    id: 'class_progression', type: 'rule.class_progression', set: 'class_progression',
+    id: 'class_progression', type: 'rule.class', kind: 'class_progression', set: 'class_progression',
     table: t => t,
     overlay: (t, slug) => ({ columns: t.columns.map(c => ({ key: c.key, en: c.en })) }),
   },
   {
-    id: 'class_rules', type: 'rule.class_rules', set: 'class_rules',
+    id: 'class_rules', type: 'rule.class', kind: 'class_rules', set: 'class_rules',
     table: t => ({ ...(t.caster ? { caster: t.caster } : {}), multiclass: { requirements: t.multiclass?.requirements || [] }, ...(t.weapon_mastery !== undefined ? { weapon_mastery: t.weapon_mastery } : {}) }),
     overlay: (t, slug) => ({ multiclass: { proficiencies: EN_PROFICIENCIES[slug] ?? '' } }),
   },
@@ -68,9 +68,9 @@ async function main() {
         const existing = graph.nodes.find(n => n.id === node.id);
         if (existing) {
           if (existing.type !== node.type) { console.error(`занят id узла: ${rec.slug} ${node.id}`); problems++; continue; }
-          existing.params = { ...existing.params, table };
+          existing.params = { ...existing.params, kind: node.kind, table };
         } else {
-          graph.nodes.push({ id: node.id, type: node.type, params: { table }, position: { x: 40, y: 40 } });
+          graph.nodes.push({ id: node.id, type: node.type, params: { kind: node.kind, table }, position: { x: 40, y: 40 } });
         }
         // Английский вид: оверлей узла (массивы заменяются целиком, поэтому без ru).
         if (rec.data.i18n?.en) {

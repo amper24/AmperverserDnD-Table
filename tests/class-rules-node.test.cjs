@@ -1,4 +1,4 @@
-// Правила класса из узла rule.class_rules графа записи: узел перекрывает набор, без узла работает набор.
+// Правила класса из узла rule.class (kind: class_rules) графа записи: узел перекрывает набор, без узла работает набор.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,9 +16,9 @@ before(async () => { await presetsReady; R.refresh(); });
 
 const wizard = () => loadSrd('data_seed/srd_2014.json').find(r => r.category === 'class' && r.data?.name_en === 'Wizard');
 
-test('SRD-запись класса несёт узел rule.class_rules с кастерами и мультиклассом', () => {
+test('SRD-запись класса несёт узел rule.class (kind: class_rules) с кастерами и мультиклассом', () => {
   const rec = wizard();
-  const node = rec.data.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules');
+  const node = rec.data.mechanics.graph.nodes.find(n => n.type === 'rule.class' && n.params?.kind === 'class_rules');
   assert.ok(node, 'узел есть');
   assert.equal(node.params.table.caster.level, 'full');
   assert.equal(node.params.table.multiclass.requirements[0][0], 'int');
@@ -29,7 +29,7 @@ test('SRD-запись класса несёт узел rule.class_rules с ка
 test('узел перекрывает набор: кастер из графа записи, а не из набора', () => {
   const rec = wizard();
   const copy = JSON.parse(JSON.stringify(rec));
-  copy.data.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules').params.table.caster = { level: 'half', picker: true };
+  copy.data.mechanics.graph.nodes.find(n => n.type === 'rule.class' && n.params?.kind === 'class_rules').params.table.caster = { level: 'half', picker: true };
   assert.equal(R.casterLevel(copy, '2014'), 'half');
   assert.equal(R.isPicker(copy, '2014'), true);
   assert.equal(R.casterLevel(rec, '2014'), 'full', 'исходная запись не изменилась');
@@ -49,7 +49,7 @@ test('правила по редакции: паладин 2014 считает �
   assert.equal(R.startMode(paladin, '2024'), 'prepared');
 });
 
-test('граф с узлом rule.class_rules проходит валидацию и отдаёт таблицу', () => {
+test('граф с узлом rule.class (kind: class_rules) проходит валидацию и отдаёт таблицу', () => {
   const rec = wizard();
   assert.ok(!M.validate(rec.data.mechanics), M.validate(rec.data.mechanics));
   const table = M.classRules(rec.data.mechanics, '2014');

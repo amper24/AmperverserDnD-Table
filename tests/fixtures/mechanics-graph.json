@@ -206,6 +206,180 @@
       "executable": false
     },
     {
+      "name": "rule-class-class-progression",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "progression",
+              "type": "rule.class",
+              "params": {
+                "kind": "class_progression",
+                "table": {
+                  "columns": [],
+                  "levels": {
+                    "1": {
+                      "pb": 2
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "rule-class-class-rules",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "rules",
+              "type": "rule.class",
+              "params": {
+                "kind": "class_rules",
+                "table": {
+                  "caster": {
+                    "level": "full"
+                  },
+                  "multiclass": {
+                    "requirements": [
+                      [
+                        "int"
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "rule-class-spell-slots",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "slots",
+              "type": "rule.class",
+              "params": {
+                "kind": "spell_slots",
+                "table": {
+                  "levels": {
+                    "1": {
+                      "slots": [
+                        2,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "rule-class-spellcasting",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "casting",
+              "type": "rule.class",
+              "params": {
+                "kind": "spellcasting",
+                "ability": "int"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "rule-class-unknown-kind",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "unknown",
+              "type": "rule.class",
+              "params": {
+                "kind": "unknown"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "rule-list-saving-throws",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "saves",
+              "type": "rule.list",
+              "params": {
+                "kind": "saving_throws",
+                "value": [
+                  "str",
+                  "con"
+                ]
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
       "name": "socket-type-mismatch",
       "valid": true,
       "mechanics": {

@@ -2,10 +2,10 @@
 // Переносит базовые правила SRD-классов из полей data.* в узлы rule.* графа записи класса
 // (data_seed/srd_*.json), чтобы мастер создания и повышения уровня читали их из графа:
 //   rule.value (kind: hit_die) — кость хитов (data.hit_die);
-//   rule.saving_throws  — спасброски (data.saves);
+//   rule.list (kind: saving_throws) — спасброски (data.saves);
 //   rule.list (kind: proficiencies) — доспехи/оружие/инструменты (data.armor / weapons / tools; метка вида — label);
 //   rule.list (kind: class_features) — умения по уровням (data.features + data.feature_texts) таблицей;
-//   rule.spellcasting   — заклинательная характеристика (data.spellcasting).
+//   rule.class (kind: spellcasting) — заклинательная характеристика (data.spellcasting).
 // Идемпотентно: узлы с фиксированными id удаляются и добавляются заново. Поля data.* не трогаются.
 //   node tools/srd/add_class_rule_nodes.cjs
 const fs = require('node:fs'), vm = require('node:vm');
@@ -18,7 +18,7 @@ const build = (rec) => {
   const d = rec.data || {};
   const out = [];
   if (typeof d.hit_die === 'string' && d.hit_die) out.push({ id: 'rule_hit_die', type: 'rule.value', params: { kind: 'hit_die', value: d.hit_die } });
-  if (Array.isArray(d.saves) && d.saves.length) out.push({ id: 'rule_saving_throws', type: 'rule.saving_throws', params: { value: d.saves } });
+  if (Array.isArray(d.saves) && d.saves.length) out.push({ id: 'rule_saving_throws', type: 'rule.list', params: { kind: 'saving_throws', value: d.saves } });
   const prof = (id, kind, raw) => {
     const list = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.trim() ? [raw] : [];
     // «—» — маркер «нет владения», не настоящее владение.
@@ -34,7 +34,7 @@ const build = (rec) => {
     if (items.length) levels[level] = items;
   }
   out.push({ id: 'rule_class_features', type: 'rule.list', params: { kind: 'class_features', table: { levels } } });
-  if (typeof d.spellcasting === 'string' && d.spellcasting) out.push({ id: 'rule_spellcasting', type: 'rule.spellcasting', params: { ability: d.spellcasting } });
+  if (typeof d.spellcasting === 'string' && d.spellcasting) out.push({ id: 'rule_spellcasting', type: 'rule.class', params: { kind: 'spellcasting', ability: d.spellcasting } });
   return out;
 };
 

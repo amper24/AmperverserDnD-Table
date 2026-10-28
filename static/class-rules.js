@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // class-rules.js — правила классов, которые мастера читают по данным, а не по имени класса.
-// Источники по порядку: блок data.caster записи (старый формат) → узел rule.class_rules в графе записи
-// → набор class_rules (static/presets/, реестр Presets; запасной путь для старых снимков и баз).
+// Источники по порядку: блок data.caster записи (старый формат) → узел rule.class (kind: class_rules)
+// в графе записи → набор class_rules (static/presets/, реестр Presets; запасной путь для старых снимков и баз).
 // Русские названия берутся из наборов (поле ru): RU_NAMES заполняется, когда наборы загружены.
 // Даёт: window.ClassRules.
 // ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ window.ClassRules = (() => {
     return String(entry?.data?.name_en || entry?.name_en || '').toLowerCase() || RU_NAMES[entry?.name] || '';
   }
   // Правила записи класса в редакции edition (по умолчанию — редакция записи): блок caster (старый формат),
-  // узел rule.class_rules в графе записи, запас — набор по slug и редакции.
+  // узел rule.class (kind: class_rules) в графе записи, запас — набор по slug и редакции.
   function rulesOf(entry, edition) {
     const ed = String(edition || entry?.data?.edition || '2014');
     const legacy = entry?.data?.caster;

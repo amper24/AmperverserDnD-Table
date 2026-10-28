@@ -64,8 +64,8 @@
 
 | Место | Что зашито | Целевой узел |
 |---|---|---|
-| `static/presets/class-progression-*.json`, `multiclass-slots-*.json` (12 классов × 2 редакции) | таблицы уровней, ключ — slug класса; мультикласс-ячейки | `rule.class_progression` в записи класса (узел) и набор `class_progression` (запасной путь) |
-| `static/presets/class-rules-*.json` (12 классов × 2 редакции) | русское имя, цвет, кастер, требования и владения мультикласса, мастерства оружия (2024), защита без доспехов (старые листы) | `rule.class_rules` в записи класса (узел) и набор `class_rules` (запасной путь) |
+| `static/presets/class-progression-*.json`, `multiclass-slots-*.json` (12 классов × 2 редакции) | таблицы уровней, ключ — slug класса; мультикласс-ячейки | `rule.class` (kind `class_progression`) в записи класса (узел) и набор `class_progression` (запасной путь) |
+| `static/presets/class-rules-*.json` (12 классов × 2 редакции) | русское имя, цвет, кастер, требования и владения мультикласса, мастерства оружия (2024), защита без доспехов (старые листы) | `rule.class` (kind `class_rules`) в записи класса (узел) и набор `class_rules` (запасной путь) |
 
 ## Что уже сделано в этом шаге
 
@@ -84,22 +84,22 @@
 
 - **Лимиты размеров картинок.** `src/config.rs`: `KIND_SIZE_CLASS` — тип ассета → класс лимита (карта или токен). `max_side(kind)` больше не сравнивает строку `"map"`; тест сверяет таблицу со списком `ASSET_KINDS`. Значения в `config.yml` и переменные окружения прежние. Примечание: Rust в этой среде не собирается (нет cargo), тесты Rust нужно прогнать в CI.
 - **Переменные модулей.** `static/modules.js`: производные переменные (`@best`, `@atk`, `@atk_str`, `@atk_dex`, `@spell`, `@dc`, `@spell_dc`, `@init`) — строки таблицы `DERIVED_VARS` с формулами. `Formulas.evaluate` принимает набор допустимых имён (`allowed`), по умолчанию переменные листа. Снимок значений до и после переноса совпадает.
-- **Прогрессия класса из узла.** `Mechanics.classProgression(mechanics, edition)` читает таблицу из узла `rule.class_progression` в записи класса; условие редакции (`condition.edition`) выбирает таблицу. Порядок чтения: данные записи → граф → набор `class_progression` (запасной вариант для SRD). Используется в `levelup.js` и `character-builder.js` (лимиты заклинаний 1 уровня).
+- **Прогрессия класса из узла.** `Mechanics.classProgression(mechanics, edition)` читает таблицу из узла `rule.class` (kind `class_progression`) в записи класса; условие редакции (`condition.edition`) выбирает таблицу. Порядок чтения: данные записи → граф → набор `class_progression` (запасной вариант для SRD). Используется в `levelup.js` и `character-builder.js` (лимиты заклинаний 1 уровня).
 
-- **Правила классов — узлы и наборы.** Кастеры, требования и владения мультикласса, мастерства оружия, цвет класса и русские имена берутся из узла `rule.class_rules` записи класса (`Mechanics.classRules(mechanics, edition)`), запас — набор `class_rules` по slug и редакции. Таблицы `SRD_CASTER`, `MC_REQ`, `MC_PROF`, `CLASS_COLOR`, `LEGACY_UNARMORED` и словарь мастерств удалены из кода. Миграция: `node tools/srd/add_class_progression_nodes.cjs` (второй узел). Тест: `tests/class-rules-node.test.cjs`.
+- **Правила классов — узлы и наборы.** Кастеры, требования и владения мультикласса, мастерства оружия, цвет класса и русские имена берутся из узла `rule.class` (kind `class_rules`) записи класса (`Mechanics.classRules(mechanics, edition)`), запас — набор `class_rules` по slug и редакции. Таблицы `SRD_CASTER`, `MC_REQ`, `MC_PROF`, `CLASS_COLOR`, `LEGACY_UNARMORED` и словарь мастерств удалены из кода. Миграция: `node tools/srd/add_class_progression_nodes.cjs` (второй узел). Тест: `tests/class-rules-node.test.cjs`.
 - Старые записи (блок `data.caster`) по-прежнему читаются первыми — для совместимости.
 - **Шаблоны и стартовые программы механик.** `TEMPLATES`, `QUICK` и `STARTERS` из `static/mechanics.js` удалены. Шаблоны — набор `mechanic_templates` (31 шаблон: 20 для предметов, заклинаний, умений и монстров, 11 для создания персонажа), порядок быстрых шаблонов задаёт число `quick` по категории (нет категории — `default`). Стартовые программы рас, классов и предысторий — набор `mechanic_starters`. Тест: `tests/mechanics.test.cjs` загружает наборы. Состояния в шаблонах и стартовых программах берутся из набора `conditions`.
 
 ## Что остаётся (пункт «атаки, урон, состояния, прогрессия» ещё не закрыт полностью)
 
-- `static/class-rules.js` (`window.ClassRules`) — единый слой правил классов-заклинателей: читает правила из записи (блок `data.caster`, узел `rule.class_rules`) и из набора `class_rules`. Конструкторы `slugOf`, `casterLevel`, `isPicker`, `startMode`, `preparedFormula` принимают редакцию.
+- `static/class-rules.js` (`window.ClassRules`) — единый слой правил классов-заклинателей: читает правила из записи (блок `data.caster`, узел `rule.class` с kind `class_rules`) и из набора `class_rules`. Конструкторы `slugOf`, `casterLevel`, `isPicker`, `startMode`, `preparedFormula` принимают редакцию.
 - Остаток в мастерах (не переведено, ~85 строк в `levelup.js`, `character-builder.js`, `builder-dialog.js`):
   - расы — **перенесено**: сборка листа, выборы, проверки обязательных выборов и панели мастера читаются из набора `race_rules` (`static/presets/race-rules-2014.json`, `race-rules-2024.json`). Кастомная раса создаётся импортом своего набора `race_rules`; код не меняется.
   - особенности классов: боевой стиль, метамагия, пакт, expertise, подклассы (круг земли, коллегия знаний, жизнь), орден жреца/друида 2024, alwaysPrepared (`levelup.js` ~141–242, `character-builder.js` ~60, ~680–750, `builder-dialog.js` ~134–461);
   - списки заклинаний-алиасов в `builder-dialog.js` ~266–299 (`'жрец'`, `'cleric'` и т. д.).
 - Монах: фильтр оружия (`character-builder.js` ~545) и тексты предысторий-классов остаются литералами.
 - `static/mechanics.js`: шаблоны цепочек, быстрые шаблоны по категории и стартовые программы рас, классов и предысторий перенесены в наборы `mechanic_templates` и `mechanic_starters` (`static/presets/`). Состояния читаются из набора `conditions`. Умолчания блоков (схема вида блока и формула `1d20+@atk`) пока остаются в конструкторе блоков `block()`.
-- **Таблицы развития SRD — узлами.** Каждый класс SRD 2014/2024 в `data_seed` несёт узел `rule.class_progression` с таблицей (перенос: `node tools/srd/add_class_progression_nodes.cjs`, идемпотентно; тест `tests/class-progression-seed.test.cjs`). Английский вид — оверлей узла с подписями колонок.
+- **Таблицы развития SRD — узлами.** Каждый класс SRD 2014/2024 в `data_seed` несёт узел `rule.class` (kind `class_progression`) с таблицей (перенос: `node tools/srd/add_class_progression_nodes.cjs`, идемпотентно; тест `tests/class-progression-seed.test.cjs`). Английский вид — оверлей узла с подписями колонок.
 - **Таблицы развития и пресеты — наборы данных.** Таблицы классов, ячейки мультикласса, стартовые графы, основы предметов и заклинаний лежат в `static/presets/*.json` и читаются реестром `static/presets.js`. Пользователь добавляет свой набор через диалог «Наборы данных…» или файлом в репозиторий (`docs/presets.md`). `class-progression.js` и `presets-data.js` удалены.
 - Браузерные тесты запускаются в CI (job `browser`): dice, forms-create, mechanics-graph, mechanics, node-card, node-editor, presets-manager. `equipment.browser.cjs` не включён — падает и на main.
 

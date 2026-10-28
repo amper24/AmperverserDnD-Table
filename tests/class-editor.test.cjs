@@ -28,6 +28,7 @@ const B = ctx.window.CharacterBuilder;
 const M = ctx.window.Mechanics;
 const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
 const nodesOfKind = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === kind);
+const nodesOfClass = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.class' && n.params?.kind === kind);
 
 const entry = (data, name = 'Свой класс') => ({ id: 'c1', category: 'class', name, data });
 
@@ -76,10 +77,10 @@ test('таблица развития пишется только когда е�
   assert.equal(st.levels['7'].pb, 3, 'бонус мастерства пустого уровня — по кривой SRD');
   const clean = CE.writeData(st, entry({ skills: {} }));
   assert.equal(clean.progression, undefined, 'нетронутая таблица не пишется');
-  assert.equal(nodesOfType(clean, 'rule.class_progression').length, 0, 'и узел не создаётся');
+  assert.equal(nodesOfClass(clean, 'class_progression').length, 0, 'и узел не создаётся');
   st.levels['4'].slots[1] = 3;
   const out = CE.writeData(st, entry({ skills: {} }));
-  const table = nodesOfType(out, 'rule.class_progression')[0].params.table;
+  const table = nodesOfClass(out, 'class_progression')[0].params.table;
   assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'в таблице узла все уровни');
   assert.equal(table.levels['4'].slots[1], 3, 'правленый уровень в узле');
   assert.equal(table.levels['5'].pb, 3, 'нетронутый уровень — по кривой SRD');
@@ -93,7 +94,7 @@ test('таблица развития: своя колонка не теряет
   assert.equal(plain(st.levels['2']['x:ki_points']), 2, 'своя колонка уровня прочитана');
   st.levels['3'].slots[0] = 3;             // правим только третий уровень
   const out = CE.writeData(st, { data: d });
-  const table = nodesOfType(out, 'rule.class_progression')[0].params.table;
+  const table = nodesOfClass(out, 'class_progression')[0].params.table;
   assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'в таблице узла все уровни');
   assert.equal(table.levels['2']['x:ki_points'], 2, 'своя колонка не потеряна');
   assert.equal(table.levels['5'].pb, 3, 'бонус мастерства нетронутого уровня — по кривой SRD');
@@ -189,12 +190,12 @@ test('правила читаются из узлов: кость хитов, с
   assert.deepEqual(plain(st.skills.from), ['Уход за животными', 'Атлетика', 'Запугивание', 'Природа', 'Восприятие', 'Выживание']);
   assert.deepEqual(plain(st.features['1'].map(f => f.name)), ['Ярость', 'Защита без доспехов'], 'умения из узла rule.list (kind: class_features)');
   assert.ok(st.features['1'][0].text.length > 20, 'текст умения из узла');
-  assert.equal(st.levels['1'].pb, 2, 'таблица развития из узла rule.class_progression');
+  assert.equal(st.levels['1'].pb, 2, 'таблица развития из узла rule.class (kind: class_progression)');
   assert.equal(st.levels['20'].pb, 6);
 
   const wizard = CE.readState(record('srd14-wizard', 'Волшебник'));
-  assert.equal(wizard.spellcasting, 'int', 'характеристика из узла rule.spellcasting');
-  assert.equal(wizard.caster.level, 'full', 'правила заклинателя из таблицы rule.class_rules');
+  assert.equal(wizard.spellcasting, 'int', 'характеристика из узла rule.class (kind: spellcasting)');
+  assert.equal(wizard.caster.level, 'full', 'правила заклинателя из таблицы rule.class (kind: class_rules)');
   assert.equal(wizard.caster.book_start, 6);
 });
 
@@ -211,7 +212,7 @@ test('правки редактора доходят до мастера соз�
   const out = CE.writeData(st, source);
 
   assert.equal(nodesOfType(out, 'rule.value').filter(n => n.params.kind === 'hit_die')[0].params.value, 'd10');
-  assert.deepEqual(plain(nodesOfType(out, 'rule.saving_throws')[0].params.value), ['str', 'dex']);
+  assert.deepEqual(plain(nodesOfKind(out, 'saving_throws')[0].params.value), ['str', 'dex']);
   const profs = Object.fromEntries(nodesOfKind(out, 'proficiencies').map(n => [n.params.label, plain(n.params.value)]));
   assert.deepEqual(profs['Доспехи'], ['Лёгкие доспехи']);
   assert.deepEqual(profs['Оружие'], ['Простое оружие'], 'лишние виды владений удалены');
@@ -241,7 +242,7 @@ test('сохранение без правок не переписывает у�
     assert.equal(M.validate(out.mechanics) || '', '', `${slug}: граф валиден`);
 
     // Ключи правил, которых редактор не знает, сохраняются: у барда в table.caster есть picker.
-    const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules');
+    const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class' && n.params.kind === 'class_rules');
     if (slug === 'srd14-bard') assert.equal(rules.params.table.caster.picker, true, 'picker сохранён');
     if (slug === 'srd24-wizard') assert.equal(rules.params.table.caster.start_prepared, 4, 'число осталось числом');
     // «—» в поле владений значит «нет владений»: лишний узел владений не создаётся.
@@ -259,7 +260,7 @@ test('правила заклинателя: правка уходит и в д�
   const out = CE.writeData(st, source);
   assert.equal(out.caster.start, 'book');
   assert.deepEqual(plain(out.caster.book), { start: 4, per_level: 1 });
-  const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class_rules');
+  const rules = out.mechanics.graph.nodes.find(n => n.type === 'rule.class' && n.params.kind === 'class_rules');
   assert.equal(rules.params.table.caster.start, 'book');
   assert.equal(rules.params.table.caster.picker, true, 'незнакомый редактору ключ сохранён');
   assert.deepEqual(plain(rules.params.table.multiclass), { requirements: [['cha']] }, 'мультикласс не тронут');
@@ -276,7 +277,7 @@ test('новая запись класса собирает узлы прави�
   const out = CE.writeData(st, entry({ name_en: 'Новый', edition: '2014' }, 'Свой класс'));
   assert.equal(out.mechanics.version, 2);
   assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.list' && n.params?.kind === 'class_features').length, 1, 'узел умений создан');
-  assert.equal(out.mechanics.graph.nodes.filter(n => n.type === 'rule.class_progression').length, 0, 'таблицу не трогали — узла таблицы нет');
+  assert.equal(nodesOfClass(out, 'class_progression').length, 0, 'таблицу не трогали — узла таблицы нет');
   assert.equal(M.validate(out.mechanics) || '', '', 'граф новой записи валиден');
 });
 
@@ -418,7 +419,7 @@ test('редактор класса открывается: все раздел�
   assert.equal(saved.data.subclasses[0].name, 'Алхимик');
   assert.equal(saved.data.caster.level, 'full');
   assert.equal(saved.data.caster.book.start, 6);
-  const table = nodesOfType(saved.data, 'rule.class_progression')[0].params.table;
+  const table = nodesOfClass(saved.data, 'class_progression')[0].params.table;
   assert.equal(Object.keys(table.levels).length, CE.MAX_LEVEL, 'таблица уровней записана целиком');
   assert.equal(table.levels['5'].slots[0], 4);
   assert.equal(table.levels['5'].pb, 3);

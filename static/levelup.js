@@ -96,7 +96,7 @@ window.LevelUp = (() => {
     return { ok: !missing.length, missing };
   }
 
-  // Порядок: данные записи → узел rule.class_progression в графе записи → встроенная таблица SRD (запасной вариант).
+  // Порядок: данные записи → узел rule.class (kind: class_progression) в графе записи → встроенная таблица SRD (запасной вариант).
   function progression(entry, edition) {
     return entry?.data?.progression || (typeof window !== 'undefined' ? window.Mechanics?.classProgression?.(entry?.data?.mechanics, edition) : null)
       || (typeof window !== 'undefined' ? window.Presets?.classProgression(edition, slugOf(entry)) : null) || null;

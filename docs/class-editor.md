@@ -39,7 +39,7 @@
 Неизвестные редактору поля прежней записи (`mechanics`, `i18n`, `folder`, изображения)
 сохраняются как есть: редактор дописывает поверх копии `data`. Таблица развития старого
 формата (`data.progression`) при первой правке уровней переносится в узел
-`rule.class_progression` и из данных удаляется — источников правды остаётся один.
+`rule.class` (kind `class_progression`) и из данных удаляется — источников правды остаётся один.
 
 ## Умения — записи справочника
 
@@ -68,14 +68,14 @@
 
 | Раздел | Узлы |
 |---|---|
-| Общее | `rule.value` (kind `hit_die`), `rule.saving_throws`, `rule.spellcasting` |
+| Общее | `rule.value` (kind `hit_die`), `rule.list` (kind `saving_throws`), `rule.class` (kind `spellcasting`) |
 | Владения | `rule.list` (kind `proficiencies`, метка вида — `label`) по видам «Доспехи», «Оружие», «Инструменты» |
 | Навыки | `rule.list` (kind `skills`, id `classSkills`; пустой список — «любой навык») — это правило читают мастер создания (`CharacterBuilder.skillsState` через `ClassRules.skillsOf`), карточка класса и мастер повышения уровня (ограничение экспертизы) |
 | Языки | `rule.list` (kind `languages`) |
-| Уровни | `rule.list` (kind `class_features`, умения по уровням), `rule.class_progression` (таблица 1–20) |
-| Заклинания | `table.caster` в `rule.class_rules` (мультикласс не трогается) |
+| Уровни | `rule.list` (kind `class_features`, умения по уровням), `rule.class` (kind `class_progression`, таблица 1–20) |
+| Заклинания | `table.caster` в `rule.class` (kind `class_rules`; мультикласс не трогается) |
 
-Узел ищется по типу, а не по id: у записей SRD свои id (`class_features`,
+Узел ищется по типу и виду (`params.kind`), а не по id: у записей SRD свои id (`class_features`,
 `class_progression`), и второй узел того же правила не создаётся. Таблица развития
 пишется по уровням: правленые строки обновляются, строки узла со своими колонками
 («Ярости», «Урон ярости») остаются как были, а если таблицы в записи не было — она

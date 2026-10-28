@@ -1270,13 +1270,13 @@
     wouldCycle,
     graphPreview: previewGraph,
     evaluateGraph,
-    // Таблица развития класса из узла rule.class_progression (с учётом редакции); null, если узла нет.
+    // Таблица развития класса из узла rule.class (kind: class_progression) с учётом редакции; null, если узла нет.
     classProgression(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
       return result.error ? null : (result.sheet?.class_progression || null);
     },
-    // Правила класса из узла rule.class_rules (кастеры, мультикласс, мастерства оружия); null, если узла нет.
+    // Правила класса из узла rule.class (kind: class_rules; кастеры, мультикласс, мастерства оружия); null, если узла нет.
     classRules(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });
@@ -1307,7 +1307,7 @@
       const node = rules.find(r => r.id === 'classSkills') || rules[0];
       return node ? { id: node.id, count: Math.max(0, Number(node.count) || 0), options: (node.options || []).map(String) } : null;
     },
-    // Заклинательная характеристика из узла rule.spellcasting; null, если узла нет.
+    // Заклинательная характеристика из узла rule.class (kind: spellcasting); null, если узла нет.
     classSpellcasting(mechanics, edition = '2014') {
       if (mechanics?.version !== GRAPH_VERSION) return null;
       const result = evaluateGraph(mechanics, { edition: String(edition), level: 1 });

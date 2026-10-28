@@ -82,11 +82,12 @@ test('умолчания узлов проходят проверку, прав�
     armor_formula: { kind: 'armor_formula', formula: '10+@dex' },
   };
   assert.deepEqual(Object.keys(valueParams).sort(), Object.keys(R.RULE_VALUE_KINDS).sort(), 'проверены все виды rule.value');
-  // У одного узла rule.list девять видов: каждый вид обязан пройти проверку и дать эффект на лист.
+  // У одного узла rule.list десять видов: каждый вид обязан пройти проверку и дать эффект на лист.
   const listParams = {
     languages: { kind: 'languages', value: ['Общий'] },
     proficiencies: { kind: 'proficiencies', label: 'Доспехи', value: ['Лёгкие доспехи'] },
     skill_proficiency: { kind: 'skill_proficiency', value: ['Восприятие'] },
+    saving_throws: { kind: 'saving_throws', value: ['str', 'con'] },
     skills: { kind: 'skills', id: 'classSkills', count: 2, options: ['stealth', 'acrobatics'] },
     spell_list: { kind: 'spell_list', mode: 'known', ability: 'int', spells: [] },
     feature: { kind: 'feature', name: 'Умение', text: '' },
@@ -95,12 +96,21 @@ test('умолчания узлов проходят проверку, прав�
     equipment_choice: { kind: 'equipment_choice', id: 'gear', title: 'Выберите снаряжение', options: [{ name: 'Вариант А', items: [{ name: 'Дорожная одежда', qty: 1 }], gold: 0 }] },
   };
   assert.deepEqual(Object.keys(listParams).sort(), Object.keys(R.RULE_LIST_KINDS).sort(), 'проверены все виды rule.list');
+  // У одного узла rule.class четыре вида: таблица развития, правила класса, ячейки и характеристика заклинаний.
+  const classParams = {
+    class_progression: { kind: 'class_progression', table: { columns: [], levels: { '1': { pb: 2 } } } },
+    class_rules: { kind: 'class_rules', table: { caster: { level: 'full' }, multiclass: { requirements: [] } } },
+    spell_slots: { kind: 'spell_slots', table: { levels: { '1': { slots: [2] } } } },
+    spellcasting: { kind: 'spellcasting', ability: 'int' },
+  };
+  assert.deepEqual(Object.keys(classParams).sort(), Object.keys(R.RULE_CLASS_KINDS).sort(), 'проверены все виды rule.class');
   for (const [type, def] of Object.entries(R.NODE_DEFS)) {
     if (typeof def.compute === 'function') {
       assert.doesNotThrow(() => def.compute(paramsOf(type), () => undefined), `${type}: вычисление не падает`);
     }
     if (!type.startsWith('rule.')) continue;
-    const variants = type === 'rule.value' ? Object.values(valueParams) : type === 'rule.list' ? Object.values(listParams) : [paramsOf(type)];
+    const variants = type === 'rule.value' ? Object.values(valueParams) : type === 'rule.list' ? Object.values(listParams)
+      : type === 'rule.class' ? Object.values(classParams) : [paramsOf(type)];
     for (const params of variants) {
       const error = typeof def.validate === 'function' ? def.validate(params) : '';
       assert.equal(error, '', `${type} ${params.kind || ''}: параметры правила допустимы`);
@@ -115,6 +125,12 @@ test('умолчания узлов проходят проверку, прав�
   }
   assert.deepEqual([...emitted].sort(), Object.keys(R.NODE_DEFS).filter(type => type.startsWith('rule.')).sort(),
     'каждый узел правил персонажа проверен');
+});
+
+test('неизвестный вид правила отклоняется, спасброски проверяются по характеристикам', () => {
+  assert.equal(R.NODE_DEFS['rule.class'].validate({ kind: 'unknown' }), 'Класс: неизвестный вид.');
+  assert.equal(R.NODE_DEFS['rule.list'].validate({ kind: 'saving_throws', value: ['str', 'luck'] }), 'Спасброски должны быть списком характеристик.');
+  assert.equal(R.NODE_DEFS['rule.list'].validate({ kind: 'saving_throws', value: ['str', 'con'] }), '');
 });
 
 test('форма параметров строится для каждого узла меню', () => {

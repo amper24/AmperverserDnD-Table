@@ -34,6 +34,8 @@ test('настраиваемые правила показывают выбра�
   assert.equal(R.nodeTitle('rule.value', { kind: 'speed' }), 'Правило · Скорость');
   assert.equal(R.nodeTitle('rule.list', { kind: 'spell_list' }), 'Список · Список заклинаний');
   assert.equal(R.nodeTitle('rule.list', {}), 'Список · Языки');
+  assert.equal(R.nodeTitle('rule.class', { kind: 'spellcasting' }), 'Класс · Заклинательная характеристика');
+  assert.equal(R.nodeTitle('rule.class', {}), 'Класс · Прогрессия класса');
 });
 
 test('sockets are compatible only with identical types', () => {

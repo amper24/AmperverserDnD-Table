@@ -59,9 +59,9 @@
 
 ## Связь с узлом прогрессии
 
-У записей классов SRD таблица также записана в узел `rule.class_progression` (`tools/srd/add_class_progression_nodes.cjs`).
+У записей классов SRD таблица также записана в узел `rule.class` (kind `class_progression`) (`tools/srd/add_class_progression_nodes.cjs`).
 Мастер уровней берёт таблицу в порядке: данные записи → узел графа → набор `class_progression`.
-Правила класса (`class_rules`) тоже записаны в узел `rule.class_rules` той же записи (без полей `ru`, `color`, `legacy_unarmored`). Порядок чтения: блок `data.caster` (старые записи) → узел графа → набор `class_rules`.
+Правила класса (`class_rules`) тоже записаны в узел `rule.class` (kind `class_rules`) той же записи (без полей `ru`, `color`, `legacy_unarmored`). Порядок чтения: блок `data.caster` (старые записи) → узел графа → набор `class_rules`.
 Набор нужен записям без узла: старым снимкам и базам, где правка сохранена (`seed.rs` не перезаписывает изменённые строки).
 
 ## Выборы класса (`class_rules` → `choices`)

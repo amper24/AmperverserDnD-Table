@@ -68,7 +68,7 @@ window.CharacterBuilder = (() => {
     const skipFeature = name => (window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name));
     // Правила классов перенесены в узлы rule.*: базовые владения, спасброски, кость хитов и
     // заклинательная характеристика придут из applyGraphRules ниже; здесь только умения 1-го уровня.
-    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => (n.type === 'rule.list' && n.params?.kind === 'class_features') || n.type === 'rule.saving_throws');
+    const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => n.type === 'rule.list' && (n.params?.kind === 'class_features' || n.params?.kind === 'saving_throws'));
     if (hasRules) {
       const cf = window.Mechanics?.classFeatures?.(e.data?.mechanics, s.edition);
       for (const item of cf?.levels?.['1'] || []) {

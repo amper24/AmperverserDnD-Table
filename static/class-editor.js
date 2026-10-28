@@ -100,6 +100,8 @@ window.ClassEditor = (() => {
   const valueRuleOf = (d, kind) => ruleNodesOf(d, 'rule.value').find(n => str(n.params?.kind) === kind) || null;
   /// Узлы универсального правила-списка выбранного вида (rule.list + params.kind).
   const listNodesOf = (d, kind) => ruleNodesOf(d, 'rule.list').filter(n => str(n.params?.kind) === kind);
+  /// Узлы универсального правила-класса выбранного вида (rule.class + params.kind).
+  const classNodesOf = (d, kind) => ruleNodesOf(d, 'rule.class').filter(n => str(n.params?.kind) === kind);
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let seq = 0;
   const nodeId = prefix => `${prefix}-${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -117,15 +119,15 @@ window.ClassEditor = (() => {
     return d.mechanics.graph;
   }
   const newNode = (graph, id, type, params) => ({ id, type, position: { x: 40, y: 40 + (nodesOf(graph).length % 12) * 60 }, params: clone(params) });
-  /// Узлы одного типа под список значений: лишние удаляются, совпавшие обновляются (совпадение — match).
-  /// item.same(node) — «в узле уже ровно это значение»: запись остаётся байт в байт как в наборе SRD.
-  function syncNodes(graph, type, wanted, match) {
-    const existing = nodesOf(graph).filter(n => n.type === type);
+  /// Узлы rule.class одного вида (params.kind) под список значений: лишние удаляются,
+  /// совпавшие обновляются (совпадение — match, item.same — «значение уже ровно это»).
+  function syncClassNodes(graph, kind, wanted, match) {
+    const existing = nodesOf(graph).filter(n => n.type === 'rule.class' && str(n.params?.kind) === kind);
     const used = new Set();
     for (const item of wanted) {
       const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
-      if (found) { used.add(found.id); if (!(item.same && item.same(found))) found.params = { ...found.params, ...item.params }; continue; }
-      const node = newNode(graph, nodeId(type.split('.').pop() || 'rule'), type, item.params);
+      if (found) { used.add(found.id); if (!(item.same && item.same(found))) found.params = { ...found.params, kind, ...item.params }; continue; }
+      const node = newNode(graph, nodeId(kind), 'rule.class', { kind, ...item.params });
       nodesOf(graph).push(node); used.add(node.id);
     }
     for (const node of existing) if (!used.has(node.id)) removeNode(graph, node.id);
@@ -169,10 +171,10 @@ window.ClassEditor = (() => {
     if (!equal) node.params = { ...node.params, kind, table: { ...clone(current), levels: wanted || {} } };
   }
 
-  /// Таблица развития: данные записи в приоритете, затем узел rule.class_progression (порядок чтения
-  /// тот же, что у мастера повышения уровня).
+  /// Таблица развития: данные записи в приоритете, затем узел rule.class (kind: class_progression)
+  /// (порядок чтения тот же, что у мастера повышения уровня).
   function levelsOf(d) {
-    const rows = d?.progression?.levels || ruleNodesOf(d, 'rule.class_progression')[0]?.params?.table?.levels || {};
+    const rows = d?.progression?.levels || classNodesOf(d, 'class_progression')[0]?.params?.table?.levels || {};
     const out = {};
     for (let lv = 1; lv <= MAX_LEVEL; lv++) out[String(lv)] = levelRow(lv, rows[String(lv)] || rows[lv]);
     return out;
@@ -371,17 +373,16 @@ window.ClassEditor = (() => {
     const d = entry?.data || {};
     // Все 20 уровней всегда в состоянии: править можно любой, а пишется таблица только если её трогали.
     const levels = levelsOf(d);
-    const ruleValue = type => { const node = ruleNodesOf(d, type)[0]; if (!node) return null;
-      const value = node.params?.value; return Array.isArray(value) ? value.map(str) : str(value); };
     const profText = label => { const node = listNodesOf(d, 'proficiencies').find(n => str(n.params?.label) === label);
       if (!node) return ''; const value = node.params?.value; return Array.isArray(value) ? value.map(str).join(', ') : str(value); };
     const skillNode = listNodesOf(d, 'skills')[0];
     const hitRule = valueRuleOf(d, 'hit_die');
     const hitDie = hitRule ? str(hitRule.params?.value) : null;
-    const saves = ruleValue('rule.saving_throws');
-    const casting = ruleValue('rule.spellcasting');
+    const savesNode = listNodesOf(d, 'saving_throws')[0];
+    const saves = savesNode ? (Array.isArray(savesNode.params?.value) ? savesNode.params.value.map(str) : str(savesNode.params?.value)) : null;
+    const casting = classNodesOf(d, 'spellcasting')[0]?.params?.ability;
     const languages = listNodesOf(d, 'languages')[0]?.params?.value;
-    const casterTable = ruleNodesOf(d, 'rule.class_rules')[0]?.params?.table?.caster;
+    const casterTable = classNodesOf(d, 'class_rules')[0]?.params?.table?.caster;
     const caster = (d.caster && typeof d.caster === 'object' ? d.caster : (casterTable && typeof casterTable === 'object' ? casterTable : {}));
     return {
       name: str(entry?.name),
@@ -480,8 +481,8 @@ window.ClassEditor = (() => {
     // не переписываются, поэтому тексты и таблицы SRD остаются прежними.
     const graph = graphOf(d);
     syncValueNodes(graph, 'hit_die', [{ params: { value: str(st.hit_die) || 'd8' } }]);
-    syncNodes(graph, 'rule.saving_throws', [{ params: { value: d.saves.filter(k => KEYS.includes(k)) } }]);
-    syncNodes(graph, 'rule.spellcasting', str(d.spellcasting).trim() ? [{ params: { ability: str(d.spellcasting) } }] : []);
+    syncListNodes(graph, 'saving_throws', [{ params: { value: d.saves.filter(k => KEYS.includes(k)) } }]);
+    syncClassNodes(graph, 'spellcasting', str(d.spellcasting).trim() ? [{ params: { ability: str(d.spellcasting) } }] : []);
     // «—» в поле владений значит «нет владений»: узел для такого вида не создаётся (как в наборе SRD).
     syncListNodes(graph, 'proficiencies', [['Доспехи', d.armor], ['Оружие', d.weapons], ['Инструменты', d.tools]]
       .map(([label, text]) => ({ label, text: str(text).trim() })).filter(item => item.text.replace(/[\s—–-]+/g, ''))
@@ -501,7 +502,7 @@ window.ClassEditor = (() => {
     // (data.progression) переносится в узел и удаляется: мастер повышения уровня читает её первой.
     const was = levelsOf(entry?.data);
     if (!same(st.levels, was)) {
-      const baseNode = ruleNodesOf(entry?.data, 'rule.class_progression')[0];
+      const baseNode = classNodesOf(entry?.data, 'class_progression')[0];
       const nodeTable = baseNode?.params?.table && typeof baseNode.params.table === 'object' ? clone(baseNode.params.table) : {};
       const legacy = entry?.data?.progression && typeof entry.data.progression === 'object' ? entry.data.progression : {};
       const rows = clone(nodeTable.levels && typeof nodeTable.levels === 'object' ? nodeTable.levels : {});
@@ -517,14 +518,14 @@ window.ClassEditor = (() => {
       }
       const table = { ...nodeTable, columns, levels: rows };
       if (!columns.length) delete table.columns;
-      const node = baseNode || nodesOf(graph).find(n => n.type === 'rule.class_progression');
+      const node = baseNode || nodesOf(graph).find(n => n.type === 'rule.class' && str(n.params?.kind) === 'class_progression');
       if (node) node.params = { ...node.params, table };
-      else nodesOf(graph).push(newNode(graph, 'class_progression', 'rule.class_progression', { table }));
+      else nodesOf(graph).push(newNode(graph, 'class_progression', 'rule.class', { kind: 'class_progression', table }));
       delete d.progression; // старая таблица перенесена в узел
     }
-    // Правила заклинателя — в таблицу узла rule.class_rules (блок caster; мультикласс не трогаем):
+    // Правила заклинателя — в таблицу узла rule.class (kind: class_rules; блок caster; мультикласс не трогаем):
     // поле data.caster читается первым, но копия в графе держит запись цельной.
-    const rulesNode = nodesOf(graph).find(n => n.type === 'rule.class_rules');
+    const rulesNode = nodesOf(graph).find(n => n.type === 'rule.class' && str(n.params?.kind) === 'class_rules');
     if (rulesNode) {
       const table = rulesNode.params?.table && typeof rulesNode.params.table === 'object' ? rulesNode.params.table : {};
       const oldCaster = table.caster && typeof table.caster === 'object' ? table.caster : null;

@@ -396,34 +396,35 @@ function checkSeed(edition, opts = {}) {
       if (levels.length && Math.min(...levels) !== 1) report.error('missing-feature-text', where, 'data.features', 'нет умений 1-го уровня');
       for (const s of d.subclasses || []) if (!isObj(s) || !isStr(s.name) || !isStr(s.name_en) || !s.name.trim()) report.error('field-type', where, 'data.subclasses', 'подкласс должен быть {name, name_en, …}');
       if (isStr(d.spellcasting) && !['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(d.spellcasting)) report.error('enum-values', where, 'data.spellcasting', `характеристика заклинаний «${d.spellcasting}»`);
-      // Таблица развития класса живёт в узле rule.class_progression (её и читает лист), а встроенный
+      // Таблица развития класса живёт в узле rule.class (kind: class_progression) — её и читает лист, а встроенный
       // пресет static/presets/class-progression-<edition>.json — запасной вариант того же правила
       // (static/levelup.js::progression). Проверяем, что копии не разошлись.
-      const node = ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === 'rule.class_progression');
+      const classNode = (type, kind) => ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === type && n.params?.kind === kind);
+      const node = classNode('rule.class', 'class_progression');
       const presetRow = (presetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
       const nodeLevels = node?.params?.table?.levels;
       const presetLevels = presetRow?.table?.levels;
       if (nodeLevels && presetLevels) {
         const diff = progressionDiff(nodeLevels, presetLevels);
-        if (diff) report.error('class-progression-mismatch', where, 'data.mechanics.graph.nodes[rule.class_progression].params.table.levels', diff);
+        if (diff) report.error('class-progression-mismatch', where, 'data.mechanics.graph.nodes[rule.class:class_progression].params.table.levels', diff);
       } else if (nodeLevels && !presetRow) {
         report.warn('class-progression-missing', where, 'static/presets/class-progression-' + edition + '.json', 'у класса есть таблица развития в узле, но нет записи в пресете (листу нечего взять в запасном варианте)');
       } else if (!nodeLevels && presetRow) {
-        report.warn('class-progression-missing', where, 'data.mechanics.graph.nodes[rule.class_progression].params.table.levels', 'таблицы развития в узле нет: уровень берётся из пресета, а не из записи класса');
+        report.warn('class-progression-missing', where, 'data.mechanics.graph.nodes[rule.class:class_progression].params.table.levels', 'таблицы развития в узле нет: уровень берётся из пресета, а не из записи класса');
       }
-      // Те же правила класса лежат в узле rule.class_rules — он первичен для листа (static/class-rules.js::rulesOf),
+      // Те же правила класса лежат в узле rule.class (kind: class_rules) — он первичен для листа (static/class-rules.js::rulesOf),
       // а набор class-rules-<редакция>.json — запасной вариант. Узел собирается из набора полями caster,
       // multiclass.requirements и weapon_mastery (tools/srd/add_class_progression_nodes.cjs): сверяем, что копии равны.
       const rulesRow = (rulesPresetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
-      const rulesNode = ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === 'rule.class_rules');
+      const rulesNode = classNode('rule.class', 'class_rules');
       const wantRules = rulesRow && rulesNodeTable(rulesRow.table);
       const gotRules = rulesNode && rulesNodeTable(rulesNode.params?.table);
       if (wantRules && gotRules) {
         const diff = JSON.stringify(wantRules) === JSON.stringify(gotRules) ? null
           : `в узле ${JSON.stringify(gotRules)}, в наборе ${JSON.stringify(wantRules)}`;
-        if (diff) report.error('class-rules-mismatch', where, 'data.mechanics.graph.nodes[rule.class_rules].params.table', diff);
+        if (diff) report.error('class-rules-mismatch', where, 'data.mechanics.graph.nodes[rule.class:class_rules].params.table', diff);
       } else if (wantRules && !rulesNode) {
-        report.warn('class-rules-missing', where, 'data.mechanics.graph.nodes[rule.class_rules]', 'правил класса нет в узле: лист возьмёт их из набора');
+        report.warn('class-rules-missing', where, 'data.mechanics.graph.nodes[rule.class:class_rules]', 'правил класса нет в узле: лист возьмёт их из набора');
       }
     }
     if (row.category === 'race') {
