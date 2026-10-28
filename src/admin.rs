@@ -88,7 +88,7 @@ async fn stats(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Val
 /// Пересоздать базовый справочник из вшитого seed (удаляет базовые записи и заливает заново).
 async fn reseed(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
     user.require_root()?;
-    sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(&st.db).await?;
+    crate::seed::reset(&st.db).await.map_err(|e| AppError::internal(e.to_string()))?;
     crate::seed::seed(&st.db, &st.cfg.images).await.map_err(|e| AppError::internal(e.to_string()))?;
     let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").fetch_one(&st.db).await?.get("n");
     Ok(Json(json!({ "ok": true, "entries": n })))
@@ -879,7 +879,7 @@ async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &crat
     }
     let base = "SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL";
     let before: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
-    sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(db).await?;
+    crate::seed::reset(db).await?;
     crate::seed::seed(db, img_cfg).await?;
     let after: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
     println!("Базовый справочник пересоздан: было {before} записей, стало {after}");

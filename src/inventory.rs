@@ -80,8 +80,6 @@ pub fn wear_kind(it: &Value) -> String {
     infer_wear(it).to_string()
 }
 
-pub fn equippable(it: &Value) -> bool { handedness(it) != "none" || !wear_kind(it).is_empty() }
-
 /// Двуручное оружие, которое держат одной рукой: броски атаки с помехой.
 pub fn one_hand_penalty(it: &Value) -> bool {
     handedness(it) == "two" && it["equipped"] == true && matches!(it["hand_slot"].as_str(), Some("main") | Some("off"))

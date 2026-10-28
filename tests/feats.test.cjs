@@ -60,7 +60,7 @@ test('черты справочника собраны генератором и
 });
 
 test('названия черт локализованы: латиница только в обозначениях из SRD', () => {
-  // Та же проверка, что в Rust-тесте src/seed.rs (embedded_reference_is_fully_localized_and_covered_by_legacy_hashes):
+  // Та же проверка, что в Rust-тесте src/seed.rs (entries_are_localized_and_well_formed):
   // в русском названии черты латиница допустима только внутри скобок — это обозначения из SRD, а не перевод.
   const withoutNotations = name => name.replace(/\((?:[^()]*)\)/g, ' ');
   const latin = [];

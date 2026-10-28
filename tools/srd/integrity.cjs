@@ -24,8 +24,6 @@ const RUNTIME_NODE_FILES = require('../nodes/node-loader.cjs').nodeFiles().map(f
 const RUNTIME_FILES = ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...RUNTIME_NODE_FILES, 'static/mechanics-graph.js'];
 const CJK_CYR = /[\u0400-\u04FF]/;
 const LATIN = /[A-Za-z]/;
-// Записи, которых не было до локализации: у них нет хеша старой версии (см. src/seed.rs, mod tests).
-const NEW_AFTER_LOCALIZATION = ['item/srd24-shield-magic'];
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(path.join(REPO, file), 'utf8'));
@@ -646,29 +644,6 @@ function checkSeed(edition, opts = {}) {
   report.stats.i18n = { dangling_keys: dangling, cyrillic_in_en: cyrInEn };
   for (const e of examples) report.warn('i18n-layer', e.entity, e.field, e.message);
 
-  // ---- 5. хеши прежних версий (миграция в развёрнутых БД) ----
-  const legacy = readJson('data_seed/legacy_hashes.json');
-  const shipped = readJson('data_seed/previous_shipped.json');
-  for (const [label, table] of [['legacy_hashes', legacy], ['previous_shipped', shipped]]) {
-    if (!isObj(table[edition])) { report.error('shipped-hashes', `data_seed/${label}.json`, edition, `нет раздела редакции ${edition}`); continue; }
-  }
-  const legacyTable = legacy[edition] || {};
-  for (const row of rows) {
-    const key = `${row.category}/${row.slug}`;
-    if (!legacyTable[key] && !NEW_AFTER_LOCALIZATION.includes(key)) report.error('shipped-hashes', `#${key}`, `legacy_hashes.${edition}.${key}`, 'нет хеша старой версии — запись не обновится в развёрнутых базах');
-    const entry = legacyTable[key];
-    if (Array.isArray(entry)) {
-      for (const h of entry) if (!isStr(h) || !/^[0-9a-f]{16}$/.test(h)) report.error('shipped-hashes', `#${key}`, `legacy_hashes.${edition}.${key}`, `хеш «${h}» не вида 16 hex-символов`);
-    }
-  }
-  for (const [key, snaps] of Object.entries(shipped[edition] || {})) {
-    const [category, slug] = key.split('/');
-    if (!byCategory.get(category)?.some(r => r.slug === slug)) report.warn('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимок для записи, которой нет в наборе');
-    if (!isArr(snaps)) { report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, 'снимки должны быть массивом пар'); continue; }
-    // Второй хеш — механика: пустая строка означает запись прежней сборки без узлов механики (см. src/seed.rs).
-    const hex = (h, allowEmpty) => isStr(h) && (allowEmpty ? /^(?:[0-9a-f]{16})?$/.test(h) : /^[0-9a-f]{16}$/.test(h));
-    for (const pair of snaps) if (!isArr(pair) || pair.length !== 2 || !hex(pair[0], false) || !hex(pair[1], true)) report.error('shipped-hashes', `data_seed/previous_shipped.json`, `${edition}.${key}`, `пара хешей «${JSON.stringify(pair)}» неверна`);
-  }
   return report;
 }
 
