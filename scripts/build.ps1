@@ -159,16 +159,23 @@ try {
         if ((Get-Date) -ge $deadline) { Die 'CI-сборка не уложилась в таймаут.' }
 
         Step 'скачиваю артефакты Linux/macOS'
-        $ciDir = Join-Path $dist '.ci'
-        & gh run download $runId -D $ciDir 2>&1 | ForEach-Object { Write-Host $_ }
-        if ($LASTEXITCODE -ne 0) { Die 'Не удалось скачать артефакты CI.' }
-
-        foreach ($asset in @('dnd-table-linux-x86_64', 'dnd-table-macos-aarch64')) {
-            $file = Get-ChildItem $ciDir -Recurse -File -Filter $asset | Select-Object -First 1
-            if (-not $file) { Die "В артефактах CI нет $asset." }
-            Copy-Item $file.FullName (Join-Path $dist $asset)
+        # Качаем по имени артефакта в отдельную временную папку: gh run download без -n
+        # тянет и Windows-артефакт (он уже собран локально) и на Windows спотыкается о
+        # совпадение имени файла и папки артефакта.
+        $ciDir = Join-Path $env:TEMP ("dnd-ci-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path $ciDir | Out-Null
+        try {
+            foreach ($asset in @('dnd-table-linux-x86_64', 'dnd-table-macos-aarch64')) {
+                Invoke-Gh 'run', 'download', $runId, '-n', $asset, '-D', $ciDir
+                if ($LASTEXITCODE -ne 0) { Die "Не удалось скачать артефакт $asset." }
+                $file = Get-ChildItem $ciDir -Recurse -File -Filter $asset | Select-Object -First 1
+                if (-not $file) { Die "В артефактах CI нет $asset." }
+                Copy-Item $file.FullName (Join-Path $dist $asset)
+            }
         }
-        Remove-Item $ciDir -Recurse -Force
+        finally {
+            Remove-Item $ciDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # --- сопроводительные файлы и контрольные суммы ---

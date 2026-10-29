@@ -342,6 +342,8 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 ```
 
+Или двойным кликом: **`build-all.bat`** (все три платформы) и **`build-windows.bat`** (только Windows, без GitHub CLI). Оба запускают этот же скрипт и оставляют окно открытым после сборки.
+
 `dist/` каждый запуск пересоздаётся с нуля. Windows собирается локально (`cargo` + gcc из w64devkit); Linux и macOS — через GitHub Actions: скрипт запускает `build-all.yml` через `gh`, дожидается сборки и складывает бинарники в `dist/` вместе с `run.bat`/`install.bat`, README, CHANGELOG и `SHA256SUMS.txt`. Для этого один раз нужны [GitHub CLI](https://cli.github.com/) (`winget install --id GitHub.cli`) и `gh auth login` с правом запускать Actions.
 
 Ключи: `-Platforms windows` (только локальный Windows, без gh), `-NoTests` (быстрая сборка), `-CiTimeoutMinutes N` (таймаут CI). macOS-бинарь на Windows не собрать без SDK Apple, поэтому он всегда идёт из CI. `dist/` в `.gitignore`.
