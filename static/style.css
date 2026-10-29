@@ -1651,6 +1651,8 @@ body.lu-open { overflow: hidden; }
 .node-menu-item{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:none;border:0;padding:6px 8px;border-radius:6px;cursor:pointer;color:inherit}
 .node-menu-item:hover,.node-menu-item:focus{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .node-menu-item small{opacity:.55;font-size:10px}
+.node-menu-connect{font-weight:600}
+.node-menu-connect small{font-weight:400;white-space:nowrap}
 .node-menu-empty{opacity:.6;padding:8px}
 .node-menu-sub{position:absolute;z-index:11;min-width:220px;max-width:300px;max-height:340px;overflow:auto;display:flex;flex-direction:column;background:var(--bg);color:inherit;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:6px}
 .node-menu-sub[hidden]{display:none}

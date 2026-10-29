@@ -76,6 +76,7 @@ window.NodeMenu = (() => {
         button.type = 'button';
         button.className = 'node-menu-item';
         button.setAttribute('role', 'menuitem');
+        if (item.className) button.classList.add(...String(item.className).split(/\s+/).filter(Boolean));
         button.textContent = item.label;
         if (item.title) button.title = item.title;
         if (item.hint) { const hint = document.createElement('small'); hint.textContent = item.hint; button.append(hint); }

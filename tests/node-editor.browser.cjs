@@ -173,7 +173,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     // Меню узла: категории видны сразу, варианты — только при наведении на категорию.
     await page.locator('.node-menu').waitFor();
     const nodeCats = await page.locator('.node-menu > .node-menu-list > .node-menu-cat').allTextContents();
-    assert.deepEqual(nodeCats, ['Узел', 'Группа', 'Добавить рядом'], 'категории меню узла');
+    assert.deepEqual(nodeCats, ['Подключить к этой ноде', 'Подключить от этой ноды', 'Узел', 'Группа', 'Добавить рядом'], 'категории меню узла');
     assert.equal(await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).isVisible(), false, 'вариант скрыт, пока не наведён курсор на категорию');
     await page.locator('.node-menu-cat', { hasText: 'Группа' }).hover();
     await page.locator('.node-menu-item', { hasText: 'Сгруппировать выделенное' }).click();
@@ -196,7 +196,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.graph-node').first().click({ button: 'right', position: { x: 20, y: 70 } });
     await page.locator('.node-menu-cat', { hasText: 'Добавить рядом' }).hover();
     await page.locator('.node-menu-cat', { hasText: 'Условия' }).hover();
-    await page.locator('.node-menu-item', { hasText: 'Условие' }).click();
+    await page.locator('.node-menu-item:visible', { hasText: 'Условие' }).click();
     const lastType = await page.evaluate(() => document.querySelector('.node-editor').getGraph().nodes.at(-1).type);
     assert.equal(lastType, 'condition.context', 'узел добавлен через вложенное меню');
 

@@ -683,6 +683,89 @@
     return after.find(problem => !before.includes(problem)) || '';
   }
 
+  // ---------------------------------------------------------------------------
+  // Контекстное меню узла: какие узлы можно подключить к нему и от него.
+  // Совместимость — только по типам сокетов реестра: у текущего узла порты читаются
+  // по его параметрам (socketMap учитывает def.ports, например logic.op), у кандидата —
+  // по умолчаниям класса, потому что новый узел создаётся именно с ними.
+  // ---------------------------------------------------------------------------
+  const CONNECT_LIMIT = 9;
+  // 'to' — кандидат.выход → текущий.вход («Подключить к этой ноде»);
+  // 'from' — текущий.выход → кандидат.вход («Подключить от этой ноды»).
+  const CONNECT_TO = 'to', CONNECT_FROM = 'from';
+  // Служебные узлы: «Начало» и «Конец» создаются своими командами (createAction/addEndNode),
+  // границы групп существуют только внутри группы. В меню подключения их не предлагаем.
+  const CONNECT_SKIP = new Set(['action.program', 'flow.end']);
+  function connectionPorts(type, params = null) {
+    const def = defOf(type);
+    if (!def) return { inputs: {}, outputs: {} };
+    if (typeof def.ports === 'function') {
+      try { return def.ports(params || clone(def.defaults || {})); } catch { return { inputs: {}, outputs: {} }; }
+    }
+    return { inputs: def.inputs || {}, outputs: def.outputs || {} };
+  }
+  function inputOccupied(graph, nodeId, socket) {
+    return (graph?.links || []).some(link => link?.to?.node === nodeId && link?.to?.socket === socket);
+  }
+  // Приоритет пары: свободный вход важнее занятого, затем exec→exec, затем flow/effect,
+  // затем bool ко входу condition (частый случай — проверка перед блоком), затем по типу.
+  function socketPairRank(outName, outType, inName, inType, free) {
+    if (!outType || outType !== inType) return -Infinity;
+    let rank = free ? 1000 : 0;
+    if (outName === 'exec' && inName === 'exec') rank += 300;
+    else if (outType === 'flow') rank += 250;
+    else if (outType === 'effect') rank += 200;
+    else if (outType === 'bool' && inName === 'condition') rank += 150;
+    return rank;
+  }
+  function bestSocketPair(outputs, inputs, freeInput = () => true) {
+    let best = null;
+    for (const [outName, outType] of Object.entries(outputs || {})) {
+      for (const [inName, inType] of Object.entries(inputs || {})) {
+        const free = Boolean(freeInput(inName));
+        const rank = socketPairRank(outName, outType, inName, inType, free);
+        if (rank !== -Infinity && (!best || rank > best.rank)) best = { out: outName, in: inName, outType, inType, free, rank };
+      }
+    }
+    return best;
+  }
+  // Кандидаты для секции меню. Возвращает уникальные типы без самого узла, групп и служебных
+  // узлов; порядок — категории палитры, а у блока действия условия идут первыми.
+  function connectionCandidates(graph, nodeId, mode = CONNECT_TO, options = {}) {
+    const nodes = graph?.nodes || [], node = nodes.find(item => item.id === nodeId);
+    if (!node || (mode !== CONNECT_TO && mode !== CONNECT_FROM)) return [];
+    const groups = new Map((graph.groups || []).map(group => [group.id, group]));
+    const mine = socketMap(node, groups);
+    const limit = Math.max(1, Math.min(10, Number(options.limit) || CONNECT_LIMIT));
+    // У блока действия есть динамический вход condition: условия — самый частый кандидат.
+    const conditionFirst = mode === CONNECT_TO && Object.hasOwn(mine.inputs || {}, 'condition');
+    const items = [];
+    for (const [type, def] of Object.entries(NODE_DEFS)) {
+      if (!def || type === node.type || type.startsWith('group.') || CONNECT_SKIP.has(type)) continue;
+      const ports = connectionPorts(type);
+      const pair = mode === CONNECT_TO
+        ? bestSocketPair(ports.outputs, mine.inputs, socket => !inputOccupied(graph, node.id, socket))
+        : bestSocketPair(mine.outputs, ports.inputs);
+      if (!pair) continue;
+      const category = NodeRegistry.categoryOf(type);
+      items.push({
+        type, title: NodeRegistry.nodeTitle(type, clone(def.defaults || {})), description: def.description || '',
+        category: category.id, categoryTitle: category.title, socketLabel: `${pair.out} → ${pair.in}`,
+        pair: { out: pair.out, in: pair.in, outType: pair.outType, inType: pair.inType }, free: pair.free,
+      });
+    }
+    const order = NodeRegistry.CATEGORIES.map(category => category.id);
+    const categoryIndex = item => Math.max(0, order.indexOf(item.category));
+    items.sort((a, b) => {
+      if (conditionFirst) {
+        const shift = Number(!a.type.startsWith('condition.')) - Number(!b.type.startsWith('condition.'));
+        if (shift) return shift;
+      }
+      return (categoryIndex(a) - categoryIndex(b)) || a.title.localeCompare(b.title, 'ru');
+    });
+    return items.slice(0, limit);
+  }
+
   // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
   const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
@@ -814,6 +897,51 @@
       });
       graph.nodes.push(...copies);
       checkpoint(); selected = new Set(copies.map(n => n.id)); activeNode = copies[0].id; render();
+    }
+    // Место для узла, подключённого к текущему: сначала +40/+40 (рядом), а если там уже стоит
+    // карточка — следующие позиции сеткой, чтобы новый узел не лёг поверх соседа.
+    function spotNear(node) {
+      const base = node.position || { x: 0, y: 0 };
+      const taken = spot => graph.nodes.some(item => item.id !== node.id && Math.abs((item.position?.x || 0) - spot.x) < 60 && Math.abs((item.position?.y || 0) - spot.y) < 40);
+      const offsets = [[40, 40], [300, 40], [40, 180], [300, 180], [560, 40], [560, 180], [40, 320], [300, 320]];
+      for (const [dx, dy] of offsets) { const spot = { x: base.x + dx, y: base.y + dy }; if (!taken(spot)) return spot; }
+      return { x: base.x + 40, y: base.y + 40 };
+    }
+    // Пункт подменю: жирный заголовок типа (nodeTitle) и мелкая подсказка «выход → вход».
+    function connectionItem(item, mode) {
+      return { label: item.title, hint: item.socketLabel, title: item.description, className: 'node-menu-connect',
+        run: () => ({ action: 'connect', type: item.type, mode, pair: item.pair }) };
+    }
+    // Непустые секции меню узла. Если совместимых нет — секции нет вовсе.
+    function connectionSections(node) {
+      return [
+        { mode: CONNECT_TO, title: 'Подключить к этой ноде', candidates: connectionCandidates(graph, node.id, CONNECT_TO) },
+        { mode: CONNECT_FROM, title: 'Подключить от этой ноды', candidates: connectionCandidates(graph, node.id, CONNECT_FROM) },
+      ].filter(section => section.candidates.length)
+        .map(section => ({ title: section.title, items: section.candidates.map(item => connectionItem(item, section.mode)) }));
+    }
+    // Новый узел из секции «Подключить…»: создаём рядом, проводим провод по выбранной паре,
+    // а если connectionError против (тип, занятый вход, ограничения условий) — узел остаётся
+    // без провода, а статус объясняет причину. Узел и провод — один checkpoint для Undo.
+    function addConnectedNode(anchor, type, mode, pair) {
+      const def = NODE_DEFS[type];
+      if (!def || !pair || !nodeById(anchor.id)) return;
+      const id = mkId('node'), params = clone(def.defaults || {});
+      if (actionType(type)) params.block_id = mkId('b');
+      const title = NodeRegistry.nodeTitle(type, params);
+      graph.nodes.push({ id, type, params, position: spotNear(anchor), action: anchor.action || activeAction });
+      const node = nodeById(id), groups = new Map(graph.groups.map(group => [group.id, group]));
+      const fromNode = mode === CONNECT_TO ? node : anchor, toNode = mode === CONNECT_TO ? anchor : node;
+      const link = { from: { node: fromNode.id, socket: pair.out }, to: { node: toNode.id, socket: pair.in } };
+      const outType = socketMap(fromNode, groups).outputs?.[pair.out], inType = socketMap(toNode, groups).inputs?.[pair.in];
+      const busy = toNode.type !== 'flow.end' && inputOccupied(graph, toNode.id, pair.in);
+      const error = !outType || !inType ? 'сокет не найден' : busy ? `вход «${pair.in}» уже занят` : connectionError(graph, link);
+      if (error) status = `Узел «${title}» добавлен без провода: ${error}`;
+      else {
+        graph.links.push(clone(link));
+        status = `Узел «${title}» добавлен и подключён.`;
+      }
+      checkpoint(); selected = new Set([id]); activeNode = id; render();
     }
     // Пустое действие: только «Начало» и «Конец» (и выключенные блоки), тогда можно вставить готовый граф.
     function isBlankAction() {
@@ -1495,6 +1623,8 @@
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
         oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { categories: true, sections: [
+          // Сначала — типы, которые можно подключить к этому узлу или от него (см. connectionCandidates).
+          ...connectionSections(node),
           { title: 'Узел', items: [
             { label: 'Дублировать', run: () => ({ action: 'duplicate' }) },
             { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }] },
@@ -1503,7 +1633,7 @@
             { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] },
           { title: 'Добавить рядом', items: window.NodeMenu.catalogCategories().map(cat => ({ label: cat.label, children: cat.children.map(c => ({ ...c, run: () => ({ action: 'add', type: c.hint, at: { x: node.position.x + 280, y: node.position.y } }) })) })) },
         ],
-          onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
+          onPick: r => { if (r.action === 'connect') addConnectedNode(node, r.type, r.mode, r.pair); else if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         // Шапка как в Blender: цвет категории, имя узла и компактный id; ниже — список портов, затем поля.
         el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', { title: [node.type, NodeRegistry.nodeDef(node.type)?.description].filter(Boolean).join(' · ') }, label),
@@ -1734,6 +1864,12 @@
     addFlowEnds,
     connectionError,
     wouldCycle,
+    // Подбор узлов для контекстного меню редактора (чистые функции, без DOM).
+    connectionCandidates,
+    connectionPorts,
+    CONNECT_LIMIT,
+    CONNECT_TO,
+    CONNECT_FROM,
     graphPreview: previewGraph,
     evaluateGraph,
     // Таблица развития класса из узла rule.class (kind: class_progression) с учётом редакции; null, если узла нет.
