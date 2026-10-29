@@ -1,20 +1,36 @@
 #!/usr/bin/env python3
-"""Conservative, deterministic SRD -> blocks migration. Does not execute extracted prose dice.
+"""Conservative, deterministic SRD -> mechanics graph migration. Does not execute extracted prose dice.
 Re-running is idempotent. Existing non-generated mechanics are never overwritten.
 
 Схема ориентирована на владельца листа: урон, спасброски и лечение других персонажей —
-это бросок и правило, результат применяет ДМ (см. normalise()). После пересборки русской
-механики инструмент пересчитывает и английский слой data.i18n.en.mechanics — он хранится
-как разница по id программ и блоков.
+это бросок и правило, результат применяет ДМ (см. normalise()). Генератор сразу собирает
+граф v3 (version 2, узлы/связи) с типами action.roll/action.field/action.spend; старые
+блоки v1 не пишутся. После пересборки русской механики инструмент пересчитывает и
+английский слой data.i18n.en.mechanics — он хранится как разница по id узлов.
 """
 import json
 import re
 from pathlib import Path
 from collections import Counter
 
-VERSION = 1
+VERSION = 2
+GRAPH_ORIGIN = 'srd-graph-v2'
+# Входной маркер прежнего генератора: записи с этой механикой пересобираются, готовый граф — нет.
 ORIGIN = 'srd-blocks-v1'
 PASSIVE = ('speed', 'hit_die', 'spellcasting', 'saves', 'skills', 'languages', 'armor', 'weapons')
+# Блок v1 → узел v3. Вид блока броска задаёт roll_kind, вид изменения листа — параметр kind.
+ACTION_NODES = {
+    'consume': 'action.spend',
+    'attack': 'action.roll', 'damage': 'action.roll', 'heal': 'action.roll',
+    'temp_hp': 'action.roll', 'roll': 'action.roll',
+    'grant_item': 'action.grant_item',
+    'condition': 'action.field', 'adjust': 'action.field', 'passive': 'action.field',
+    'manual': 'action.manual',
+}
+ROLL_BLOCKS = ('attack', 'damage', 'heal', 'temp_hp', 'roll')
+FIELD_BLOCKS = {'condition': 'status', 'adjust': 'value', 'passive': 'formula'}
+# Какие записи этот запуск действительно пересобрал: английский слой пересчитывается только для них.
+CONVERTED = set()
 
 
 # Строки, которые генератор подставляет сам (не из текста записи). Язык выбирается через convert(..., lang=...).
@@ -214,13 +230,62 @@ def normalise(programs):
     return programs
 
 
+def node_for(block):
+    """Один блок плана → один узел v3 с тем же смыслом (лишние для вида поля отбрасываются)."""
+    kind = block.get('kind')
+    node_type = ACTION_NODES.get(kind)
+    if node_type is None:
+        raise ValueError(f'блок «{kind}» не имеет узла v3 — генератор пора обновить')
+    params = {k: v for k, v in block.items() if k != 'id'}
+    params['block_id'] = block.get('id')
+    if node_type == 'action.roll':
+        params['roll_kind'] = kind if kind in ROLL_BLOCKS else 'roll'
+    elif node_type == 'action.field':
+        field_kind = FIELD_BLOCKS[kind]
+        params['kind'] = field_kind
+        if field_kind == 'status':
+            params.pop('field', None); params.pop('amount', None); params.pop('value', None)
+        elif field_kind == 'value':
+            params.pop('condition', None); params.pop('operation', None); params.pop('value', None)
+        else:
+            params.pop('condition', None); params.pop('operation', None); params.pop('amount', None)
+    return node_type, params
+
+
+def graph_of(programs):
+    """Граф v3: «Начало действия» → блоки цепочкой → «Конец». Каждая программа завершена."""
+    nodes, links = [], []
+    for i, p in enumerate(programs, 1):
+        program_id = f'p{i}'
+        start = f'program-{program_id}'
+        params = {'program_id': program_id, 'name': p.get('name') or 'Правило', 'trigger': p.get('trigger', 'use')}
+        for key in ('feature_name', 'group', 'roll_only', 'style'):
+            if p.get(key) is not None:
+                params[key] = p[key]
+        nodes.append({'id': start, 'type': 'action.program', 'params': params,
+                      'position': {'x': 40, 'y': 60 + (i - 1) * 180}})
+        previous, y = start, 60 + (i - 1) * 180
+        for j, block in enumerate(p['blocks'], 1):
+            node_type, block_params = node_for(block)
+            node_id = f'action-{program_id}-{j}'
+            nodes.append({'id': node_id, 'type': node_type, 'params': block_params,
+                          'position': {'x': 40 + j * 260, 'y': y}})
+            links.append({'from': {'node': previous, 'socket': 'exec'}, 'to': {'node': node_id, 'socket': 'exec'}})
+            previous = node_id
+        end = f'end-{program_id}'
+        nodes.append({'id': end, 'type': 'flow.end', 'params': {},
+                      'position': {'x': 40 + (len(p['blocks']) + 1) * 260, 'y': y}})
+        links.append({'from': {'node': previous, 'socket': 'exec'}, 'to': {'node': end, 'socket': 'exec'}})
+    return {'nodes': nodes, 'links': links, 'frames': [], 'groups': []}
+
+
 def finalise(programs):
     programs = normalise(programs)
     for i, p in enumerate(programs):
         p['id'] = f'p{i+1}'
         for j, b in enumerate(p['blocks']):
             b['id'] = f'b{j+1}'
-    return {'version': VERSION, 'origin': ORIGIN, 'programs': programs}
+    return {'version': VERSION, 'origin': GRAPH_ORIGIN, 'graph': graph_of(programs)}
 
 
 def item_programs(e, edition):
@@ -287,10 +352,12 @@ def item_programs(e, edition):
     return [program(_('use'), blocks)]
 
 
-def convert_entry(e, edition):
+def convert_entry(e, edition, force=False):
     d = e['data']
-    if d.get('mechanics', {}).get('origin', ORIGIN) != ORIGIN:
+    if not force and d.get('mechanics', {}).get('origin', ORIGIN) != ORIGIN:
         return e
+    if not force:
+        CONVERTED.add(id(e))
     category = e['category']
     name = d.get('name_en', '')
     programs = []
@@ -380,11 +447,12 @@ def convert_entry(e, edition):
     return e
 
 
-def convert(entries, edition, lang='ru'):
+def convert(entries, edition, lang='ru', force=False):
     global LANG
+    CONVERTED.clear()
     LANG = lang
     try:
-        return [convert_entry(e, edition) for e in entries]
+        return [convert_entry(e, edition, force) for e in entries]
     finally:
         LANG = 'ru'
 
@@ -392,14 +460,18 @@ def convert(entries, edition, lang='ru'):
 def refresh_en(entries, edition):
     """Пересобирает английский слой механик (data.i18n.en.mechanics) после изменений генератора.
 
-    Слой хранится как разница по id программ и блоков, поэтому при изменении состава
-    блоков его надо пересчитать: собираем английский вид записи (слияние русских данных
-    с существующим слоем) и заново берём diff от русской механики. Остальной перевод
-    записи не трогается — он собран tools/srd/localize.py по параллельному корпусу.
+    Слой хранится как разница по id узлов, поэтому при изменении состава блоков его надо
+    пересчитать: собираем английский вид записи (слияние русских данных с существующим слоем)
+    и заново берём diff от русской механики. Пересчитываются только записи, которые этот
+    запуск действительно пересобрал: готовый граф без изменений не трогается. Остальной
+    перевод записи не трогается — он собран tools/srd/localize.py по параллельному корпусу.
     """
     import localize as LZ
+    converted = set(CONVERTED)
     pairs = []
     for e in entries:
+        if id(e) not in converted:
+            continue
         ov = e.get('data', {}).get('i18n', {}).get('en')
         if not isinstance(ov, dict):
             continue
@@ -407,7 +479,7 @@ def refresh_en(entries, edition):
         pairs.append((e, {'category': e['category'], 'slug': e['slug'], 'name': e['name'], 'data': LZ.merge(base, ov)}))
     if not pairs:
         return 0
-    convert([en for _, en in pairs], edition, lang='en')
+    convert([en for _, en in pairs], edition, lang='en', force=True)
     for e, en in pairs:
         ov = e['data']['i18n']['en']
         ru_mechanics = e['data'].get('mechanics')
@@ -429,8 +501,8 @@ if __name__=='__main__':
         refreshed=refresh_en(data,edition)
         path.write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
         print(edition,'английский слой механик пересчитан:',refreshed)
-        kinds=Counter(b['kind'] for e in data for p in e['data'].get('mechanics', {}).get('programs', []) for b in p['blocks'])
+        types=Counter(node['type'] for e in data
+                      for node in (e['data'].get('mechanics', {}).get('graph', {}).get('nodes') or []))
         report[edition]={'records':len(data),'categories':dict(Counter(e['category'] for e in data)),
-                         'mechanics_records':sum('mechanics' in e['data'] for e in data),'blocks':dict(kinds)}
-    (root/'docs'/'mechanics-migration.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+                         'mechanics_records':sum('mechanics' in e['data'] for e in data),'node_types':dict(types)}
     print(json.dumps(report,ensure_ascii=False,indent=2))

@@ -12,20 +12,38 @@
   const Base = window.Mechanics;
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
-  // Виды блоков плана: их понимает компиляция графа в линейные программы (toLegacy).
-  const ACTION_KINDS = ['consume', 'attack', 'damage', 'heal', 'temp_hp', 'roll', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
+  // Виды узлов действия (action.*, кроме action.program): один узел — один глагол.
+  const ACTION_KINDS = ['roll', 'field', 'spend', 'grant_item', 'manual'];
   // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
+  // Виды узла «Изменить поле»: состояние, показатель и параметр при создании (три бывших узла).
+  const FIELD_KINDS = ['status', 'value', 'formula'];
+  const FIELD_KIND_LABELS = { status: 'Состояние', value: 'Показатель', formula: 'Формула' };
+  // Вид блока плана (внутренний IR) для вида узла: план и исполнение остаются прежними.
+  const FIELD_BLOCKS = { status: 'condition', value: 'adjust', formula: 'passive' };
+  // Допустимые поля листа: те же списки, что проверяет сервер (src/mechanics.rs).
+  const FIELD_VALUE_FIELDS = {
+    speed: 'Скорость', initiative_bonus: 'Инициатива', 'currency.gp': 'Золото', 'currency.sp': 'Серебро',
+    'hp.max': 'Максимум хитов', 'abilities.str': 'Сила', 'abilities.dex': 'Ловкость', 'abilities.con': 'Телосложение',
+    'abilities.int': 'Интеллект', 'abilities.wis': 'Мудрость', 'abilities.cha': 'Харизма',
+  };
+  // Поля пассивных параметров при создании: скорость, кость хитов, заклинания, владения и защита без доспехов.
+  const FIELD_FORMULA_FIELDS = {
+    speed: 'Скорость', hit_die: 'Кость хитов', spellcasting: 'Заклинательная характеристика', saves: 'Спасброски',
+    skills: 'Навыки', languages: 'Языки', armor: 'Доспехи', weapons: 'Оружие', unarmored_defense: 'Защита без доспехов',
+    'asi.str': 'Повышение Силы', 'asi.dex': 'Повышение Ловкости', 'asi.con': 'Повышение Телосложения',
+    'asi.int': 'Повышение Интеллекта', 'asi.wis': 'Повышение Мудрости', 'asi.cha': 'Повышение Харизмы',
+  };
   // Логические операции одного узла «Логика»: НЕ использует только вход «a».
   const LOGIC_OPS = ['and', 'or', 'not'];
   const LOGIC_OP_LABELS = { and: 'И', or: 'ИЛИ', not: 'НЕ' };
   // Эффекты без броска: у каждого свой набор параметров, поэтому они остаются отдельными узлами.
-  const EFFECT_KINDS = ['consume', 'grant_item', 'condition', 'adjust', 'require', 'manual', 'passive'];
+  const EFFECT_KINDS = ['spend', 'grant_item', 'field', 'manual'];
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
@@ -75,6 +93,8 @@
     static validate(params) { return ''; }
     // Значение вычисляемого узла: get(socket) → значение входа или undefined. undefined — неизвестно.
     static compute(params, get) { return undefined; }
+    // Проекция параметров узла в блок плана (лишние для вида поля отбрасываются).
+    static blockParams(params) { return { ...(params || {}) }; }
     // Проекция правила на лист. env: { get, value, emit, sheet, context, clone, valuesOf, appendProficiency }.
     static project(params, env) {}
   }
@@ -84,18 +104,44 @@
   // Умолчания полей действия по виду (block_defaults из наборов + встроенные умолчания).
   function actionDefaults(kind) {
     // Условие «попал / не попал» не хранится в действии: его задаёт узел condition.hit через flow.if.
+    // Вход condition (динамическое условие) — отдельный сокет, в умолчаниях его нет.
     const base = { enabled: true };
     const defaultDice = window.Presets?.item('block_defaults', kind)?.table?.dice;
     if (defaultDice) base.dice = Base.dice(defaultDice);
     if (kind === 'roll' && !base.dice) base.dice = Base.dice('1d20');
-    if (kind === 'consume') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
+    if (kind === 'spend') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
-    if (kind === 'passive') Object.assign(base, { field: 'speed', value: 30 });
-    if (kind === 'condition') Object.assign(base, { condition: window.Presets?.item('conditions', 'poisoned')?.table?.ru || 'poisoned', operation: 'add' });
-    if (kind === 'adjust') Object.assign(base, { field: 'speed', amount: 5 });
-    if (kind === 'require') Object.assign(base, { field: 'hp.current', minimum: 1 });
+    // Один узел «Изменить поле»: умолчания всех трёх видов лежат рядом, поэтому переключение вида
+    // в форме сразу даёт допустимые параметры (лишние поля не попадают в блок плана).
+    if (kind === 'field') Object.assign(base, {
+      kind: 'value', field: 'speed', amount: 5,
+      condition: window.Presets?.item('conditions', 'poisoned')?.table?.ru || 'poisoned', operation: 'add', value: 30,
+    });
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
     return base;
+  }
+  // Вид блока плана для узла действия: «Бросок» берёт вид из roll_kind, «Изменить поле» — из kind,
+  // «Расход ресурса» компилируется в прежний блок consume. Пустая строка — вид неизвестен.
+  function blockKindOf(type, params) {
+    const p = params || {};
+    if (type === 'action.roll') return ROLL_KINDS.includes(p.roll_kind) ? p.roll_kind : 'roll';
+    if (type === 'action.field') return FIELD_BLOCKS[p.kind] || '';
+    if (type === 'action.spend') return 'consume';
+    return type.startsWith('action.') ? type.slice(7) : '';
+  }
+  // Все виды блоков плана, которые даёт узел: для паритета клиента и сервера (tools/srd/integrity.cjs).
+  function blockKindsOf(type) {
+    if (type === 'action.roll') return [...ROLL_KINDS];
+    if (type === 'action.field') return Object.values(FIELD_BLOCKS);
+    if (type === 'action.spend') return ['consume'];
+    if (type === 'action.grant_item') return ['grant_item'];
+    if (type === 'action.manual') return ['manual'];
+    return [];
+  }
+  // Параметры блока плана для узла действия: класс узла может отбросить лишние для вида поля.
+  function blockParamsOf(type, params) {
+    const def = NODE_DEFS[type];
+    return def && typeof def.blockParams === 'function' ? def.blockParams(params || {}) : { ...(params || {}) };
   }
   const nodeDef = type => NODE_DEFS[type];
   // Заголовок карточки: настраиваемые узлы показывают выбранный режим («Бросок · Атака», «Логика · И»).
@@ -104,6 +150,7 @@
     if (!def) return type;
     const p = params || {};
     if (type === 'action.roll') return `${def.label} · ${ROLL_KIND_LABELS[p.roll_kind] || ROLL_KIND_LABELS.roll}`;
+    if (type === 'action.field') return `${def.label} · ${FIELD_KIND_LABELS[p.kind] || FIELD_KIND_LABELS.value}`;
     if (type === 'rule.value') return `${def.label} · ${RULE_VALUE_KINDS[p.kind] || RULE_VALUE_KINDS.speed}`;
     if (type === 'rule.list') return `${def.label} · ${RULE_LIST_KINDS[p.kind] || RULE_LIST_KINDS.languages}`;
     if (type === 'rule.class') return `${def.label} · ${RULE_CLASS_KINDS[p.kind] || RULE_CLASS_KINDS.class_progression}`;
@@ -118,8 +165,8 @@
     { id: 'logic', title: 'Логика', match: type => type.startsWith('logic.') },
     { id: 'flow', title: 'Поток управления', match: type => type.startsWith('flow.') || type === 'action.program' },
     { id: 'combat', title: 'Броски', match: type => type === 'action.roll' },
-    { id: 'effects', title: 'Эффекты', match: type => ['action.condition', 'action.adjust', 'action.grant_item', 'action.passive'].includes(type) },
-    { id: 'resources', title: 'Ресурсы', match: type => ['action.consume', 'action.require'].includes(type) },
+    { id: 'effects', title: 'Эффекты', match: type => ['action.field', 'action.grant_item'].includes(type) },
+    { id: 'resources', title: 'Ресурсы', match: type => type === 'action.spend' },
     { id: 'character', title: 'Персонаж', match: type => type.startsWith('rule.') },
     { id: 'groups', title: 'Группы', match: type => type.startsWith('group.') },
     { id: 'other', title: 'Прочее', match: type => type.startsWith('action.') },
@@ -141,6 +188,7 @@
   window.Nodes = { GraphNode, register, actionDefaults, clone };
   window.NodeRegistry = {
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
+    FIELD_KINDS, FIELD_KIND_LABELS, FIELD_BLOCKS, FIELD_VALUE_FIELDS, FIELD_FORMULA_FIELDS, blockKindOf, blockKindsOf, blockParamsOf,
     COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,

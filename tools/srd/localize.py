@@ -806,7 +806,7 @@ def process(root, src, ed, report):
         overlays.append(ov)
         view = merge(x['data'], ov)
         en_entries.append({'category': x['category'], 'slug': x['slug'], 'name': x['name'], 'data': view})
-    MC.convert(en_entries, ed, lang='en')
+    MC.convert(en_entries, ed, lang='en', force=True)
     final = []
     for x, rm, em, ov in zip(out, ru_entries, en_entries, overlays):
         data = x['data']

@@ -5,7 +5,7 @@
     static type = 'action.roll';
     static label = 'Бросок';
     static group = 'Действия';
-    static inputs = { exec: 'flow', enabled: 'bool', dice: 'dice' };
+    static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool', dice: 'dice' };
     static outputs = { exec: 'flow' };
     static defaults = { ...actionDefaults('roll'), roll_kind: 'roll' };
     static isAction = true;

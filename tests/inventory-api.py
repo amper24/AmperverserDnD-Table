@@ -98,14 +98,14 @@ try:
     def drink_graph(extra=None):
         nodes = [
             node('program', 'action.program', dict(program_id='drink', name='Drink', trigger='use')),
-            node('cost', 'action.consume', dict(block_id='cost', amount=1, source='self', resource='quantity', trigger='use')),
+            node('cost', 'action.spend', dict(block_id='cost', amount=1, source='self', resource='quantity', trigger='use')),
             node('heal', 'action.roll', dict(block_id='heal', roll_kind='heal', dice=dict(count=0, sides=6, bonus=7, stat=''))),
             node('vial', 'action.grant_item', dict(block_id='vial', amount=1, item=dict(name='Empty vial', type='gear'))),
             node('end', 'flow.end', {}),
         ]
         links = [link('program', 'cost'), link('cost', 'heal'), link('heal', 'vial'), link('vial', 'end')]
         if extra:
-            nodes.append(node('missing', 'action.consume', dict(block_id='missing', **extra)))
+            nodes.append(node('missing', 'action.spend', dict(block_id='missing', **extra)))
             links = [link('program', 'cost'), link('cost', 'heal'), link('heal', 'vial'), link('vial', 'missing'), link('missing', 'end')]
         return dict(version=2, origin='test', graph=dict(nodes=nodes, links=links, frames=[], groups=[]))
 

@@ -104,8 +104,7 @@ def main():
             MC.convert([tmp], '2014')
             e['data']['mechanics'] = tmp['data']['mechanics']
             print(e['slug'], 'ok', len(new))
-    # MC.convert собирает блоки v1; приложение принимает только граф v2, а конвертер удалён.
-    # Пока генератор не переведён на v2, скрипт не должен записывать несовместимые данные.
+    # MC.convert собирает граф v2 (узлы/связи); схема v1 приложением не принимается.
     legacy = [e['slug'] for e in data if ((e.get('data') or {}).get('mechanics') or {}).get('version') != 2 and (e.get('data') or {}).get('mechanics')]
     if legacy:
         raise SystemExit(f'MC.convert выдаёт схему v1 ({len(legacy)} записей): переведите tools/srd/mechanics.py на граф v2.')

@@ -33,7 +33,12 @@
     // Одно условие контекста: вид выбирается выпадающим списком, редакции — множественным выбором.
     'condition.context': { kind: [{ value: 'edition', label: 'Редакция' }, { value: 'level', label: 'Уровень' }, { value: 'subclass', label: 'Подкласс' }, { value: 'choice', label: 'Выбранный вариант' }], editions: EDITIONS },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
-    'condition.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    'data.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    // Один узел «Изменить поле»: вид задаёт, какие параметры показывать (см. FIELD_HIDDEN).
+    'action.field': {
+      kind: [{ value: 'status', label: 'Состояние — наложить или снять' }, { value: 'value', label: 'Показатель — изменить число' }, { value: 'formula', label: 'Формула — параметр при создании' }],
+      operation: [{ value: 'add', label: 'Наложить' }, { value: 'remove', label: 'Снять' }],
+    },
     'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
     'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
@@ -51,6 +56,20 @@
   const READ_ONLY = new Set(['block_id', 'program_id']);
   // Поле «Когда» у действий больше не редактируется: условие задаёт узел condition.hit через «Если».
   const HIDDEN = new Set(['when']);
+  // У «Изменить поле» лишние для выбранного вида параметры не показываются (в узле они сохраняются:
+  // переключение вида не теряет значения). Компиляция всё равно берёт только поля своего вида.
+  const FIELD_HIDDEN = {
+    status: new Set(['field', 'amount', 'value']),
+    value: new Set(['condition', 'operation', 'value']),
+    formula: new Set(['condition', 'operation', 'amount']),
+  };
+  const fieldKindHidden = params => FIELD_HIDDEN[params?.kind] || FIELD_HIDDEN.value;
+  // Варианты поля листа для вида узла «Изменить поле»: подписи — из реестра (FIELD_VALUE_FIELDS / FIELD_FORMULA_FIELDS).
+  function fieldOptions(params) {
+    const registry = window.NodeRegistry || {};
+    const source = params?.kind === 'formula' ? registry.FIELD_FORMULA_FIELDS : params?.kind === 'value' ? registry.FIELD_VALUE_FIELDS : null;
+    return source ? Object.entries(source).map(([value, label]) => ({ value, label: `${label} (${value})` })) : null;
+  }
   // Режим карточки на холсте: только короткие скалярные поля (число, флаг, строка, список чисел/строк, кость).
   // Таблицы, списки объектов, длинный текст и служебные ID остаются в боковой панели.
   function shownField(key, value, inline) {
@@ -124,7 +143,9 @@
     const removeValue = path => emit(removeAt(current, path));
 
     function paint() {
-      const rows = isPlainObject(current) ? Object.entries(current).filter(([key, value]) => shownField(key, value, !!options.inline)).map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
+      const rows = isPlainObject(current) ? Object.entries(current)
+        .filter(([key, value]) => !(options.hide && options.hide.has(key)) && shownField(key, value, !!options.inline))
+        .map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
       // Строка «новый ключ» только для таблиц; null в replaceChildren стал бы текстом «null» на карточке.
       root.replaceChildren(...rows, ...(isPlainObject(current) && options.map ? [addKeyRow([])] : []));
     }
@@ -226,7 +247,11 @@
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
       const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
-      return mount(node?.params || {}, { ...options, enums, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
+      // У «Изменить поле» список полей зависит от вида: value и formula принимают разные поля листа.
+      const fields = node?.type === 'action.field' ? fieldOptions(node?.params) : null;
+      if (fields) enums.field = fields;
+      const hide = node?.type === 'action.field' ? fieldKindHidden(node?.params) : null;
+      return mount(node?.params || {}, { ...options, enums, hide, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
     },
     // Редактор произвольного значения (например, выборы для предпросмотра).
     valueEditor(value, options = {}) {

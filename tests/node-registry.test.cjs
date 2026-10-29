@@ -59,3 +59,17 @@ test('context menu add sections come from the registry and return the chosen nod
   assert.deepEqual(plain(item.run()), { type: item.hint });
   assert.ok(R.NODE_DEFS[item.hint], item.hint);
 });
+
+test('v3 action nodes show their kind and live in the palette categories', () => {
+  assert.equal(R.nodeTitle('action.field', { kind: 'status' }), 'Изменить поле · Состояние');
+  assert.equal(R.nodeTitle('action.field', { kind: 'formula' }), 'Изменить поле · Формула');
+  assert.equal(R.nodeTitle('action.field', {}), 'Изменить поле · Показатель');
+  assert.equal(R.categoryOf('action.field').id, 'effects');
+  assert.equal(R.categoryOf('action.spend').id, 'resources');
+  assert.equal(R.categoryOf('data.compare').id, 'data');
+  assert.deepEqual(plain(R.blockKindsOf('action.field')), ['condition', 'adjust', 'passive']);
+  assert.deepEqual(plain(R.blockKindsOf('action.spend')), ['consume']);
+  assert.equal(R.blockKindOf('action.field', { kind: 'formula' }), 'passive');
+  assert.equal(R.blockKindOf('action.field', { kind: 'unknown' }), '');
+  assert.equal(R.blockKindOf('action.spend', {}), 'consume');
+});

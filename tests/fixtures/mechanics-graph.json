@@ -1452,7 +1452,7 @@
             },
             {
               "id": "c",
-              "type": "condition.compare",
+              "type": "data.compare",
               "params": {
                 "op": "~"
               }
@@ -2051,6 +2051,376 @@
           "groups": []
         }
       }
+    },
+    {
+      "name": "action-field-status",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "status",
+                "condition": "Отравленный",
+                "operation": "add",
+                "enabled": true,
+                "when": "always"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "action-field-value",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "value",
+                "field": "speed",
+                "amount": 5,
+                "enabled": true,
+                "when": "always"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "action-field-formula",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "passive"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "formula",
+                "field": "asi.str",
+                "value": 2,
+                "enabled": true,
+                "when": "always"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "action-field-unknown-kind",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "unknown",
+                "field": "speed",
+                "amount": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "action-spend",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "s",
+              "type": "action.spend",
+              "params": {
+                "block_id": "s",
+                "resource": "quantity",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use",
+                "enabled": true,
+                "when": "always"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "s",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "s",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "action-spend-unknown-resource",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "s",
+              "type": "action.spend",
+              "params": {
+                "block_id": "s",
+                "resource": "gold",
+                "source": "self",
+                "amount": 1,
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "s",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "s",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      },
+      "executable": false
     }
   ]
 }

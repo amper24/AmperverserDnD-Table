@@ -92,7 +92,7 @@ window.BackgroundEditor = (() => {
     const featureNode = listNodes(graph, 'feature')[0];
     const rawSkills = Array.isArray(d.skills) ? d.skills.map(str) : [];
     const rawChoice = d.skills_choice && typeof d.skills_choice === 'object' ? d.skills_choice : null;
-    const passiveSkills = ruleNodes(graph, 'action.passive').filter(n => str(n.params?.field) === 'skills')
+    const passiveSkills = ruleNodes(graph, 'action.field').filter(n => str(n.params?.kind) === 'formula' && str(n.params?.field) === 'skills')
       .flatMap(n => (Array.isArray(n.params?.value) ? n.params.value : [n.params?.value]).map(str).filter(Boolean));
     return {
       name: str(entry?.name),

@@ -97,7 +97,7 @@ test('condition.context covers edition, level, subclass and choice and keeps bot
 });
 
 test('comparison of numbers negated with NOT chooses the else branch', () => {  const five = node('n5', 'data.number', { value: 5 }), three = node('n3', 'data.number', { value: 3 });
-  const cmp = node('cmp', 'condition.compare', { op: '>' });
+  const cmp = node('cmp', 'data.compare', { op: '>' });
   const not = node('not', 'logic.op', { op: 'not' });
   const branch = node('if', 'flow.if');
   const graph = mech([five, three, cmp, not, branch, actionNode('yes', 'damage'), actionNode('no', 'heal')], [
@@ -126,7 +126,7 @@ test('the end node accepts several incoming wires, other inputs still take one',
 test('invalid stat, comparison and dice types are refused', () => {
   const badStat = mech([node('s', 'data.stat', { id: 'luck', mode: 'bonus' })], []);
   assert.notEqual(M.validate(badStat), '');
-  const badOp = mech([node('c', 'condition.compare', { op: '~' })], []);
+  const badOp = mech([node('c', 'data.compare', { op: '~' })], []);
   assert.notEqual(M.validate(badOp), '');
   const wrongType = mech([node('n', 'data.number', { value: 3 }), actionNode('x', 'damage')], [link('n', 'value', 'x', 'dice')]);
   assert.ok(M.problems(wrongType).some(p => p.includes('Типы сокетов')));

@@ -22,7 +22,7 @@ test('each use program is one button: attack and damage in one program are a sin
   const buttons=root=>{const all=[];const visit=n=>{if(!n||typeof n!=='object')return;if(n.tag==='button')all.push(n);(n.children||[]).forEach(visit);};visit(root);return all;};
   const pure=M.buttons({mechanics:graphOf([program('p','Удар'),attack,damage],[wire('p','exec','a','exec'),wire('a','exec','d','exec')])});
   assert.equal(buttons(pure).length,1);
-  const consume=v2node('c','action.consume',{block_id:'c'});
+  const consume=v2node('c','action.spend',{block_id:'c',resource:'quantity',source:'self',trigger:'use',amount:1});
   const extended=M.buttons({mechanics:graphOf([program('p2','Удар с расходом'),consume,attack,damage],[wire('p2','exec','c','exec'),wire('c','exec','a','exec'),wire('a','exec','d','exec')])});
   assert.equal(buttons(extended).length,1);
   const two=M.buttons({mechanics:graphOf([
@@ -45,15 +45,47 @@ test('v1 mechanics are rejected: no synthesis from old record fields',()=>{
   assert.equal(M.forFeature(v1,'Использовать'),undefined);
 });
 test('validation rejects fractional spending, ungated branches, duplicate IDs and active passive blocks',()=>{
-  const consume=v2node('c','action.consume',{block_id:'c',amount:1});
-  const valid=graphOf([program(),consume],[wire('p','exec','c','exec')]);
+  const spend=v2node('c','action.spend',{block_id:'c',resource:'quantity',source:'self',trigger:'use',amount:1});
+  const valid=graphOf([program(),spend],[wire('p','exec','c','exec')]);
   assert.equal(M.validate(valid),'');
-  consume.params.amount=1.5; assert.ok(M.validate(valid));
-  consume.params.amount=1; consume.params.when='hit'; assert.ok(M.validate(valid));
-  consume.params.when='always';
-  assert.ok(M.validate(graphOf([program(),consume,v2node('c','action.manual',{block_id:'m'})],[wire('p','exec','c','exec')])),'повторяющийся ID узла отклоняется');
-  const passive=v2node('x','action.passive',{block_id:'x',field:'speed',value:40});
+  spend.params.amount=1.5; assert.ok(M.validate(valid));
+  spend.params.amount=1; spend.params.resource='gold'; assert.ok(M.validate(valid),'неизвестный ресурс отклоняется');
+  spend.params.resource='quantity'; spend.params.when='hit'; assert.ok(M.validate(valid));
+  spend.params.when='always';
+  assert.ok(M.validate(graphOf([program(),spend,v2node('c','action.manual',{block_id:'m'})],[wire('p','exec','c','exec')])),'повторяющийся ID узла отклоняется');
+  const passive=v2node('x','action.field',{kind: 'formula',block_id:'x',field:'speed',value:40});
   assert.ok(M.validate(graphOf([program(),passive],[wire('p','exec','x','exec')])),'пассивный узел не живёт в действии');
+});
+test('every action node has enabled and condition inputs',()=>{
+  const types=Object.keys(ctx.window.NodeRegistry.NODE_DEFS).filter(type=>type.startsWith('action.')&&type!=='action.program');
+  assert.ok(types.length>=5,types.join(','));
+  for(const type of types){
+    assert.equal(ctx.window.NodeRegistry.NODE_DEFS[type].inputs.enabled,'bool',type);
+    assert.equal(ctx.window.NodeRegistry.NODE_DEFS[type].inputs.condition,'bool',type);
+  }
+});
+test('action.field projects status/value/formula into condition/adjust/passive blocks and rejects unknown kinds',()=>{
+  const field=(params,programParams={})=>graphOf([program('p','Тест',programParams),v2node('f','action.field',{block_id:'f',...params})],[wire('p','exec','f','exec')]);
+  assert.equal(M.validate(field({kind:'status',condition:'Отравленный',operation:'add'})),'');
+  const status=plain(M.toLegacy(field({kind:'status',condition:'Отравленный',operation:'add'})).programs[0].blocks[0]);
+  assert.equal(status.kind,'condition');assert.equal(status.condition,'Отравленный');assert.equal(status.operation,'add');assert.equal(status.field,undefined,'лишние поля вида в блок не попадают');
+  const value=plain(M.toLegacy(field({kind:'value',field:'speed',amount:5})).programs[0].blocks[0]);
+  assert.equal(value.kind,'adjust');assert.equal(value.field,'speed');assert.equal(value.amount,5);
+  const formula=plain(M.toLegacy(field({kind:'formula',field:'asi.str',value:2},{trigger:'passive'})).programs[0].blocks[0]);
+  assert.equal(formula.kind,'passive');assert.equal(formula.field,'asi.str');assert.equal(formula.value,2);
+  assert.match(M.validate(field({kind:'unknown',field:'speed'})),/вид status, value или formula/);
+});
+test('condition=false skips the block and the flow continues; true runs it',()=>{
+  const build=value=>{
+    const field=v2node('f','action.field',{block_id:'f',kind:'value',field:'speed',amount:5});
+    const bool=v2node('b','data.boolean',{value});
+    const manual=v2node('m','action.manual',{block_id:'m',text:'После условия'});
+    return graphOf([program(),field,manual,bool],[wire('p','exec','f','exec'),wire('f','exec','m','exec'),wire('b','value','f','condition')]);
+  };
+  const skipped=build(false);
+  assert.equal(M.validate(skipped),'');
+  assert.deepEqual(plain(M.toLegacy(skipped).programs[0].blocks.map(block=>block.kind)),['manual'],'выключенный блок пропущен, поток идёт дальше');
+  assert.deepEqual(plain(M.toLegacy(build(true)).programs[0].blocks.map(block=>block.kind)),['adjust','manual'],'включённый блок выполняется');
 });
 test('advanced dice formulas are validated at save time, including stat variables',()=>{
   const damage=v2node('d','action.roll',{block_id:'d',roll_kind:'damage',dice:{...M.dice('2d6'),advanced:'2d6+@str'}});
@@ -63,8 +95,8 @@ test('advanced dice formulas are validated at save time, including stat variable
 });
 test('passives project new values without mutating source or accumulating bonuses',()=>{
   const m=graphOf([program('p','Параметры',{trigger:'passive'}),
-    v2node('s','action.passive',{block_id:'s',field:'speed',value:40}),
-    v2node('d','action.passive',{block_id:'d',field:'asi.dex',value:1})],
+    v2node('s','action.field',{kind: 'formula',block_id:'s',field:'speed',value:40}),
+    v2node('d','action.field',{kind: 'formula',block_id:'d',field:'asi.dex',value:1})],
   [wire('p','exec','s','exec'),wire('p','exec','d','exec')]);
   const e={data:{speed:30,asi:{dex:2},mechanics:m}};
   const next=M.passiveData(e);assert.equal(next.data.speed,40);assert.equal(next.data.asi.dex,1);

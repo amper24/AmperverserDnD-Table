@@ -107,7 +107,7 @@
 - Набор `race_rules` по редакции: запись на расу или линию (`name_en`), линия переопределяет поля корня, остальное наследуется. Поля: `speed`, `weapons`, `tool_choice` (ключ выбора), `damage_choice` (ключ выбора и таблица урона), `origin_feat`, `cantrips` (`ability: 'choice'` — выбранная характеристика расы), `cantrip_choice`, `always_prepared`, `hp_bonus`.
 - Проверка: эталон сборки листа по всем 138 случаям (расы, линии, три набора выборов, обе редакции) до и после перевода совпадает. Тест `tests/race-rules.test.cjs`.
 - Мастер: `builder-dialog.js` берёт выборы и проверки рас из `B.raceChoices(draft)` / `B.raceChoiceProblem(draft)`; имён рас в нём не осталось.
-- `tests/equipment.browser.cjs` работает с узлом `action.consume` графа и включён в CI.
+- `tests/equipment.browser.cjs` работает с узлом `action.spend` графа и включён в CI.
 
 ## Что остаётся
 

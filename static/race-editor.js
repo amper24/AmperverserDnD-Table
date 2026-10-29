@@ -217,8 +217,8 @@ window.RaceEditor = (() => {
   /// Узлы универсального правила-списка выбранного вида (rule.list + params.kind).
   const listNodes = (graph, kind) => ruleNodes(graph, 'rule.list').filter(n => str(n.params?.kind) === kind);
   const listOf = node => (Array.isArray(node?.params?.value) ? node.params.value.map(str).filter(Boolean) : []);
-  /// Пассивные блоки старого формата (action.passive) ещё читает лист — правим их вместе с узлами.
-  const passiveNodes = (graph, field) => nodesOf(graph).filter(n => n.type === 'action.passive' && str(n.params?.field) === field);
+  /// Формула создания (action.field, kind: formula) — блок «Параметр при создании»; лист читает её из плана.
+  const passiveNodes = (graph, field) => nodesOf(graph).filter(n => n.type === 'action.field' && str(n.params?.kind) === 'formula' && str(n.params?.field) === field);
   function syncPassive(graph, values) {
     for (const [field, value] of Object.entries(values)) {
       const nodes = passiveNodes(graph, field);
@@ -398,7 +398,7 @@ window.RaceEditor = (() => {
     // Каждая программа черты — цепочка «Начало → Конец»: достраиваем «Конец» там, где его нет.
     syncFlowEnds(graph);
 
-    // Пассивные блоки старого формата — в ногу с узлами: иначе лист показал бы прежние значения.
+    // Блоки-формулы создания — в ногу с узлами: иначе лист показал бы прежние значения.
     syncPassive(graph, {
       speed: num(st.speed, 30),
       languages: langs.length || note ? [...langs, ...(note ? [note] : [])] : null,

@@ -7,7 +7,7 @@
 
 Что делает:
 
-1. Навыки на графах. У рас `action.passive {field: 'skills'}` превращается в узел
+1. Навыки на графах. У рас `action.field {kind: 'formula', field: 'skills'}` превращается в узел
    `rule.list` (kind: skill_proficiency), у предысторий `data.skills` — в такой же узел, у классов
    `data.skills {choose, from}` — в узел `rule.list` (kind: skills, id `classSkills`). Выбор навыка
    у рас из набора race_rules (`choices` вида `skills`) становится узлом `rule.list` (kind: skills)
@@ -17,7 +17,7 @@
    (`raceSpellAbility`) → `data.spell_ability_choice`, `weapons` → узел
    `rule.list` (kind: proficiencies, label «Оружие»), `hp_bonus` → `rule.value` (kind: hp), `always_prepared` →
    `rule.list` (kind: spell_list) с режимом `prepared`. Эти ключи убираются из набора правил.
-3. Лишние узлы. `action.passive` с полем, которое уже закрыто узлом rule.*, удаляется
+3. Лишние узлы. `action.field` (kind: formula) с полем, которое уже закрыто узлом rule.*, удаляется
    вместе с опустевшей программой-обёрткой «Параметры при создании»: у рас это скорость,
    языки, бонусы характеристик и навыки, у классов — кость хитов, спасброски,
    заклинательная характеристика, навыки, доспехи и оружие. Пассивные блоки без узла-
@@ -48,7 +48,7 @@ RACE_ICONS = {
 }
 CATEGORY_ICONS = {"class": "shield", "background": "book", "skill": "target"}
 
-# Поля action.passive, закрытые узлами rule.*: у рас и у классов.
+# Поля action.field (kind: formula), закрытые узлами rule.*: у рас и у классов.
 RACE_COVERED_FIELDS = ("speed", "languages")
 CLASS_COVERED_FIELDS = ("hit_die", "saves", "spellcasting", "skills", "armor", "weapons")
 
@@ -172,6 +172,11 @@ def list_nodes(graph: dict, kind: str) -> list:
     return [n for n in nodes_of(graph, "rule.list") if (n.get("params") or {}).get("kind") == kind]
 
 
+def formula_nodes(graph: dict) -> list:
+    """Блоки-формулы создания (action.field, kind: formula) — бывшие пассивные блоки."""
+    return [n for n in nodes_of(graph, "action.field") if (n.get("params") or {}).get("kind") == "formula"]
+
+
 def add_node(graph: dict, node: dict) -> None:
     node.setdefault("position", {"x": 40, "y": 40 + (len(graph["nodes"]) % 12) * 60})
     graph["nodes"].append(node)
@@ -191,7 +196,7 @@ def fix_passive_chain(graph: dict):
     теряет оставшиеся блоки (так у варвара и монаха пропадала «Защита без доспехов»). Здесь
     программа связывается напрямую с каждым оставшимся блоком.
     """
-    passives = nodes_of(graph, "action.passive")
+    passives = formula_nodes(graph)
     programs = [n for n in nodes_of(graph, "action.program") if n.get("params", {}).get("trigger") == "passive"]
     if not passives:
         for program in programs:
@@ -263,7 +268,7 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
     # 1. Навыки расы: пассивный блок → узел владения навыком.
     if not list_nodes(graph, "skill_proficiency"):
         fixed = []
-        for node in nodes_of(graph, "action.passive"):
+        for node in formula_nodes(graph):
             if node.get("params", {}).get("field") == "skills":
                 fixed += skill_names(node["params"].get("value"))
         if fixed:
@@ -352,7 +357,7 @@ def merge_race(entry: dict, table: dict | None, is_root: bool, names: dict) -> N
     covered.update(f"asi.{n['params'].get('ability')}" for n in value_nodes(graph, "ability"))
     if list_nodes(graph, "skill_proficiency"):
         covered.add("skills")
-    for node in list(nodes_of(graph, "action.passive")):
+    for node in list(formula_nodes(graph)):
         if str(node.get("params", {}).get("field")) in covered:
             drop_node(graph, node["id"])
     wrapper = fix_passive_chain(graph)
@@ -374,7 +379,7 @@ def merge_class(entry: dict, names: dict) -> None:
                              "params": {"kind": "skills", "id": "classSkills", "count": count, "options": from_names,
                                         "title": "Навыки класса"}})
             add_en_nodes(entry, [{"id": "class_skills", "params": {"kind": "skills", "options": en_names(from_names, names), "title": "Class skill"}}])
-    for node in list(nodes_of(graph, "action.passive")):
+    for node in list(formula_nodes(graph)):
         if str(node.get("params", {}).get("field")) in CLASS_COVERED_FIELDS:
             drop_node(graph, node["id"])
     wrapper = fix_passive_chain(graph)
@@ -393,7 +398,7 @@ def merge_background(entry: dict, table: dict) -> None:
             add_node(graph, {"id": "bg_skills", "type": "rule.list", "params": {"kind": "skill_proficiency", "value": fixed}})
             add_en_nodes(entry, [{"id": "bg_skills", "params": {"kind": "skill_proficiency", "value": en_names(fixed, table)}}])
     has_skill_node = bool(list_nodes(graph, "skill_proficiency"))
-    for node in list(nodes_of(graph, "action.passive")):
+    for node in list(formula_nodes(graph)):
         if has_skill_node and str(node.get("params", {}).get("field")) == "skills":
             drop_node(graph, node["id"])
     wrapper = fix_passive_chain(graph)

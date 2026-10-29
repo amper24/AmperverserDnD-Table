@@ -265,7 +265,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
             "uid": "p", "name": "Potion", "qty": 2, "type": "consumable",
             "mechanics": mech(vec![
                 node("p", "action.program", json!({"program_id": "use", "name": "Drink", "trigger": "use"})),
-                node("c", "action.consume", json!({"block_id": "c", "resource": "quantity", "source": "self", "amount": 1, "trigger": "use"})),
+                node("c", "action.spend", json!({"block_id": "c", "resource": "quantity", "source": "self", "amount": 1, "trigger": "use"})),
                 node("h", "action.roll", json!({"block_id": "h", "roll_kind": "heal", "target": "self", "dice": {"count": 0, "sides": 6, "bonus": 7, "stat": ""}})),
                 node("g", "action.grant_item", json!({"block_id": "g", "target": "self", "amount": 1, "item": {"name": "Vial", "type": "gear"}}))
             ], vec![link("p", "c"), link("c", "h"), link("h", "g")])
@@ -278,7 +278,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         // Новый узел встаёт перед «Концом»: поток остаётся завершённым, и падает именно выполнение.
         let graph = &mut s["inventory"][0]["mechanics"]["graph"];
         let end = graph["nodes"].as_array().unwrap().iter().find(|node| node["type"] == "flow.end").unwrap()["id"].as_str().unwrap().to_string();
-        graph["nodes"].as_array_mut().unwrap().push(node("x","action.adjust",json!({"block_id":"x","field":"currency.gp","amount":5})));
+        graph["nodes"].as_array_mut().unwrap().push(node("x","action.field",json!({"block_id":"x","kind":"value","field":"currency.gp","amount":5})));
         let links = graph["links"].as_array_mut().unwrap();
         links.retain(|link| !(link["from"]["node"] == "g" && link["to"]["node"] == end));
         links.push(link("g","x"));

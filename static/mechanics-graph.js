@@ -20,10 +20,12 @@
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
-  // Вид блока плана для узла действия: настраиваемый «Бросок» берёт вид из параметра roll_kind.
-  const blockKind = (type, p) => (type === 'action.roll' && ROLL_KINDS.includes(p?.roll_kind) ? p.roll_kind : type.slice(7));
+  // Вид блока плана для узла действия (реестр знает про roll_kind, field.kind и spend → consume).
+  const blockKind = (type, p) => NodeRegistry.blockKindOf(type, p);
+  // «Изменить поле» хранит параметры всех трёх видов; в блок плана попадают только поля своего вида.
+  const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'condition.compare', 'logic.op', 'data.math', 'data.boolean']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean']);
   const STAT_MODES = ['bonus', 'score'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
@@ -207,12 +209,17 @@
           continue;
         }
         if (!actionType(node.type)) continue;
-        const ap = clone(node.params || {}), kind = blockKind(node.type, ap), blockId = ap.block_id || node.id;
+        const params = clone(node.params || {}), kind = blockKind(node.type, params), blockId = params.block_id || node.id;
+        const ap = fieldBlockParams(node.type, params);
         if (gate && (ap.when === undefined || ap.when === 'always')) ap.when = gate;
         // Кость, поданная проводом на вход «Кость», заменяет поле dice блока.
         const diceIn = inputValue(node, 'dice', undefined); if (diceIn !== undefined) ap.dice = diceIn;
         const enabled = inputValue(node, 'enabled', ap.enabled);
-        if (enabled !== false) {
+        // Динамическое условие блока проверяется после enabled: false пропускает блок,
+        // а поток идёт дальше по exec — как у выключенного блока.
+        let skip = enabled === false;
+        if (!skip && inputValue(node, 'condition', undefined) === false) skip = true;
+        if (!skip) {
           if (enabled !== undefined) ap.enabled = enabled;
           delete ap.block_id; delete ap.enabled_input; delete ap.roll_kind;
           p.blocks.push({ ...ap, id: blockId, kind });
@@ -660,7 +667,7 @@
   // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
   const graphStarters = () => window.Presets?.items('graph_starter') || [];
   // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
-  const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.roll', 'action.consume', 'condition.hit', 'logic.op'];
+  const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.roll', 'action.spend', 'condition.hit', 'logic.op'];
   // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).
   // Узел принадлежит действию по полю action (его ставит редактор). Без поля узел относится
   // к действию, с которым связан проводами; если связей нет — к первому действию.
@@ -793,7 +800,7 @@
     function isBlankAction() {
       if (!activeAction) return false;
       const owners = actionOwners(graph);
-      return graph.nodes.every(n => owners.get(n.id) !== activeAction || n.type === 'action.program' || n.type === 'flow.end' || (n.type === 'action.consume' && n.params?.enabled === false));
+      return graph.nodes.every(n => owners.get(n.id) !== activeAction || n.type === 'action.program' || n.type === 'flow.end' || (n.type === 'action.spend' && n.params?.enabled === false));
     }
     // Вставка стартового графа в пустой редактор: новые ID, позиции от левого верхнего угла видимой области.
     function insertStarter(starter) {

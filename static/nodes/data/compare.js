@@ -1,11 +1,11 @@
-// static/nodes/conditions/compare.js — условие «Сравнить числа» (condition.compare).
+// static/nodes/data/compare.js — узел данных «Сравнить числа» (data.compare): выход bool.
 (() => {
   const { GraphNode, register } = window.Nodes;
   const { COMPARE_OPS } = window.NodeRegistry;
-  class ConditionCompare extends GraphNode {
-    static type = 'condition.compare';
+  class DataCompare extends GraphNode {
+    static type = 'data.compare';
     static label = 'Сравнить числа';
-    static group = 'Условия';
+    static group = 'Данные';
     static inputs = { a: 'number', b: 'number' };
     static outputs = { value: 'bool' };
     static defaults = { op: '>=' };
@@ -19,5 +19,5 @@
       return typeof a === 'number' && typeof b === 'number' && COMPARE_OPS[p.op] ? COMPARE_OPS[p.op](a, b) : undefined;
     }
   }
-  register(ConditionCompare);
+  register(DataCompare);
 })();

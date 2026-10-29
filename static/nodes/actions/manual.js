@@ -5,7 +5,7 @@
     static type = 'action.manual';
     static label = window.Mechanics.TYPES.manual?.[0] || 'manual';
     static group = 'Действия';
-    static inputs = { exec: 'flow', enabled: 'bool' };
+    static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };
     static defaults = actionDefaults('manual');
     static isAction = true;

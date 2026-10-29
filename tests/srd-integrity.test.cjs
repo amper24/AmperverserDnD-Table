@@ -159,7 +159,7 @@ test('заклинания: спасбросок цели — правило д�
       assert.equal(nodes.some(n => n.type === 'action.roll' && n.params.dice && n.params.dice.sides === 20
         && !n.params.dice.stat && !n.params.dice.bonus && (n.params.roll_kind || 'roll') === 'roll'),
         false, `${row.slug}: у игрока остался бросок d20 спасброска`);
-      assert.equal(nodes.some(n => n.type === 'action.consume' && n.params.resource === 'slot'),
+      assert.equal(nodes.some(n => n.type === 'action.spend' && n.params.resource === 'slot'),
         false, `${row.slug}: расход ячейки в графе спорит с учётом ячеек на листе`);
       const action = (data.actions || []).find(a => a.kind === 'save');
       if (!data.save_ability) {

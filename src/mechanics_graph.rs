@@ -12,8 +12,19 @@ fn json_integer(value: &Value) -> Option<i64> {
 const ABILITIES: &[&str] = &["str", "dex", "con", "int", "wis", "cha"];
 // Стили кнопок действия (параметр style узла «Начало действия»); совпадает с BUTTON_STYLES в node-params-form.js.
 const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage", "item", "defense"];
-const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "require", "manual", "passive"];
-// Виды настраиваемого узла «Бросок» (action.roll, параметр roll_kind) — как ROLL_KINDS в static/node-registry.js.
+// Виды блоков плана (внутренний IR): их исполняет src/mechanics.rs. Имена узлов v3 отличаются —
+// action.spend компилируется в consume, action.field — в condition/adjust/passive.
+// require остаётся только в старых сохранённых планах (src/mechanics.rs); граф v3 его не создаёт.
+const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive"];
+// Виды узлов действия (action.*, кроме action.program) — как ACTION_KINDS в static/node-registry.js.
+const ACTION_NODES: &[&str] = &["roll", "field", "spend", "grant_item", "manual"];
+// Виды узла «Изменить поле» и их блоки плана — как FIELD_KINDS / FIELD_BLOCKS в static/node-registry.js.
+const FIELD_KINDS: &[&str] = &["status", "value", "formula"];
+const FIELD_BLOCKS: &[(&str, &str)] = &[("status", "condition"), ("value", "adjust"), ("formula", "passive")];
+// Допустимые поля листа: те же списки, что в static/node-registry.js (FIELD_VALUE_FIELDS / FIELD_FORMULA_FIELDS).
+const VALUE_FIELDS: &[&str] = &["speed", "initiative_bonus", "currency.gp", "currency.sp", "hp.max", "abilities.str", "abilities.dex", "abilities.con", "abilities.int", "abilities.wis", "abilities.cha"];
+const FORMULA_FIELDS: &[&str] = &["speed", "hit_die", "spellcasting", "saves", "skills", "languages", "armor", "weapons", "unarmored_defense", "asi.str", "asi.dex", "asi.con", "asi.int", "asi.wis", "asi.cha"];
+// Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
 const ROLL_KINDS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Операции настраиваемого узла «Логика» (logic.op, параметр op) — как LOGIC_OPS в static/node-registry.js.
 const LOGIC_OPS: &[&str] = &["and", "or", "not"];
@@ -34,7 +45,7 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
-        "condition.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
+        "data.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
         "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
         "condition.context" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
@@ -44,8 +55,9 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "rule.manual" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "flow.end" => { inputs.insert("exec".into(), "flow".into()); }
         "action.program" => { outputs.insert("exec".into(), "flow".into()); }
-        x if x.starts_with("action.") && ACTIONS.contains(&&x[7..]) => {
-            inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); outputs.insert("exec".into(), "flow".into());
+        x if x.starts_with("action.") && ACTION_NODES.contains(&&x[7..]) => {
+            // Условие блока: enabled — статическое, condition — динамическое bool-значение.
+            inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("exec".into(), "flow".into());
             if DICE_ACTIONS.contains(&&x[7..]) { inputs.insert("dice".into(), "dice".into()); }
         }
         "group.instance" => {
@@ -144,9 +156,37 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
             }
         }
         "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
-        "condition.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
+        "data.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
         "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
         "action.roll" if p.get("roll_kind").is_some() && !ROLL_KINDS.contains(&p["roll_kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
+        "action.field" => {
+            let field_kind = p["kind"].as_str().unwrap_or("");
+            if !FIELD_KINDS.contains(&field_kind) { return Err(bad("Изменить поле: вид status, value или formula.")); }
+            if field_kind == "status" {
+                let name = p["condition"].as_str().unwrap_or("");
+                if name.trim().is_empty() || utf16_len(name) > 200 || !["add", "remove"].contains(&p["operation"].as_str().unwrap_or("")) { return Err(bad("Состояние: название до 200 символов и операция add или remove.")); }
+            }
+            if field_kind == "value" {
+                if !VALUE_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Недоступный показатель.")); }
+                if json_integer(&p["amount"]).map(|number| !(-10_000..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Показатель: целое от −10000 до 10000.")); }
+            }
+            if field_kind == "formula" {
+                if !FORMULA_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Параметр доступен только в пассивной программе.")); }
+                if p.get("value").is_none() || utf16_len(&p["value"].to_string()) > 100_000 { return Err(bad("Значение параметра: ограниченное JSON-значение.")); }
+            }
+        }
+        "action.spend" => {
+            // Тот же контракт, что у блока consume в src/mechanics.rs: вид ресурса, источник и количество.
+            let resource = p["resource"].as_str().unwrap_or("");
+            let source = p["source"].as_str().unwrap_or("");
+            if !["quantity", "charges", "slot", "uses"].contains(&resource) || !["self", "item", "tag"].contains(&source) || !["use", "attack"].contains(&p["trigger"].as_str().unwrap_or("")) {
+                return Err(bad("Неизвестный способ расхода."));
+            }
+            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество расхода: целое от 1 до 10000.")); }
+            if source == "item" && p["item_uid"].as_str().unwrap_or("").is_empty() { return Err(bad("Не задан источник расхода.")); }
+            if source == "tag" && p["tag"].as_str().unwrap_or("").trim().is_empty() { return Err(bad("Не задан источник расхода.")); }
+            if resource == "slot" && json_integer(&p["slot_level"]).map(|number| !(1..=9).contains(&number)).unwrap_or(true) { return Err(bad("Круг ячейки: целое от 1 до 9.")); }
+        }
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
@@ -378,10 +418,10 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "dice.combine",
-    "condition.context", "condition.hit", "condition.compare", "logic.op", "flow.if", "flow.end",
+    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine",
+    "condition.context", "condition.hit", "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
-    "action.program", "action.consume", "action.roll", "action.grant_item", "action.condition", "action.adjust", "action.require", "action.manual", "action.passive", "group.instance", "group.input", "group.output",
+    "action.program", "action.roll", "action.field", "action.spend", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
 ];
 
 fn group_boundaries_match(group: &Value) -> bool {
@@ -590,7 +630,7 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None)?)?;
             Some(json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": format!("{a}+{b}")}))
         }
-        "condition.compare" => {
+        "data.compare" => {
             let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
             let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
             let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
@@ -676,17 +716,28 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
                 }
                 continue;
             }
-            let mut kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("").to_string();
-            if !ACTIONS.contains(&kind.as_str()) { continue; }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
-            // Настраиваемый узел «Бросок»: вид блока v1 задаёт параметр roll_kind (как blockKind в клиенте).
+            let mut kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("").to_string();
+            // Вид блока плана: у «Броска» его задаёт roll_kind, у «Изменить поле» — kind,
+            // «Расход ресурса» компилируется в прежний блок consume (как blockKindOf в клиенте).
             if kind == "roll" {
-                if let Some(requested) = block.remove("roll_kind") {
-                    if let Some(requested) = requested.as_str() {
-                        if ROLL_KINDS.contains(&requested) { kind = requested.to_string(); }
-                    }
+                if let Some(requested) = block.remove("roll_kind").and_then(|requested| requested.as_str().map(str::to_string)) {
+                    if ROLL_KINDS.contains(&requested.as_str()) { kind = requested; }
+                }
+            } else if kind == "spend" {
+                kind = "consume".into();
+            } else if kind == "field" {
+                let field_kind = block.remove("kind").and_then(|requested| requested.as_str().map(str::to_string)).unwrap_or_default();
+                kind = FIELD_BLOCKS.iter().find(|(node_kind, _)| *node_kind == field_kind).map(|(_, block_kind)| (*block_kind).to_string()).unwrap_or_default();
+                // В блок плана попадают только поля выбранного вида; остальные остаются в узле.
+                match field_kind.as_str() {
+                    "status" => { block.remove("field"); block.remove("amount"); block.remove("value"); }
+                    "value" => { block.remove("condition"); block.remove("operation"); block.remove("value"); }
+                    "formula" => { block.remove("condition"); block.remove("operation"); block.remove("amount"); }
+                    _ => {}
                 }
             }
+            if !ACTIONS.contains(&kind.as_str()) { continue; }
             if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
             // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
             if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None) { block.insert("dice".into(), value); }
@@ -697,6 +748,13 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
                 continue;
             }
             if let Some(value) = enabled { block.insert("enabled".into(), value); }
+            // Динамическое условие блока (`condition: bool`) проверяется после enabled: false так же
+            // пропускает блок, а поток идёт дальше по exec. Значение true блок не меняет.
+            if graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) == Some(false) {
+                let key = (node_id.clone(), "exec".to_string());
+                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
+                continue;
+            }
             let block_id = block.remove("block_id").unwrap_or(json!(node_id));
             block.insert("id".into(), block_id); block.insert("kind".into(), json!(kind)); blocks.push(Value::Object(block));
             let key = (node_id, "exec".to_string());
@@ -922,5 +980,117 @@ mod hit_gate_tests {
         links.retain(|link| link["from"]["socket"] != "else");
         let list = problems(&branch).unwrap();
         assert!(list.contains(&"Ветка не завершается узлом «Конец»".to_string()), "{list:?}");
+    }
+}
+
+#[cfg(test)]
+mod action_node_tests {
+    use super::*;
+
+    /// Действие: «Начало» → блок → ручное правило → «Конец». К входу condition блока подключена
+    /// логическая константа; `None` — вход не подключён.
+    fn chain(params: Value, condition: Option<bool>) -> Value {
+        let mut nodes = vec![
+            json!({"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}}),
+            json!({"id": "f", "type": "action.field", "params": params}),
+            json!({"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "Правило", "when": "always"}}),
+            json!({"id": "e", "type": "flow.end", "params": {}}),
+        ];
+        let mut links = vec![
+            json!({"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}}),
+            json!({"from": {"node": "f", "socket": "exec"}, "to": {"node": "m", "socket": "exec"}}),
+            json!({"from": {"node": "m", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}),
+        ];
+        if let Some(value) = condition {
+            nodes.push(json!({"id": "c", "type": "data.boolean", "params": {"value": value}}));
+            links.push(json!({"from": {"node": "c", "socket": "value"}, "to": {"node": "f", "socket": "condition"}}));
+        }
+        json!({"version": 2, "origin": "test", "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}})
+    }
+    fn value_field() -> Value { json!({"block_id": "f", "kind": "value", "field": "speed", "amount": 5, "enabled": true, "when": "always"}) }
+
+    /// У каждого узла действия есть входы enabled и condition: условие пропускает блок, но не поток.
+    #[test]
+    fn every_action_node_has_enabled_and_condition_inputs() {
+        for kind in NODE_TYPES.iter().filter(|kind| kind.starts_with("action.") && **kind != "action.program") {
+            let (inputs, _) = ports_for(kind, &json!({}), &[], None);
+            assert_eq!(inputs.get("enabled").map(String::as_str), Some("bool"), "{kind}: enabled");
+            assert_eq!(inputs.get("condition").map(String::as_str), Some("bool"), "{kind}: condition");
+        }
+    }
+
+    /// condition = false пропускает блок, и поток идёт к следующему блоку; true — блок выполняется.
+    #[test]
+    fn condition_false_skips_the_block_and_the_flow_continues() {
+        let skipped = chain(value_field(), Some(false));
+        assert!(problems(&skipped).unwrap().is_empty());
+        let compiled = to_v1(&skipped);
+        let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks.iter().map(|block| block["kind"].as_str().unwrap()).collect::<Vec<_>>(), vec!["manual"], "выключенный блок пропущен, поток дошёл до ручного правила");
+        let kept = to_v1(&chain(value_field(), Some(true)));
+        assert_eq!(kept["programs"][0]["blocks"].as_array().unwrap().iter().map(|block| block["kind"].as_str().unwrap()).collect::<Vec<_>>(), vec!["adjust", "manual"]);
+        // Без провода на condition блок выполняется как раньше.
+        assert_eq!(to_v1(&chain(value_field(), None))["programs"][0]["blocks"].as_array().unwrap().len(), 2);
+    }
+
+    /// Виды «Изменить поле» компилируются в прежние блоки плана: status → condition, value → adjust,
+    /// formula → passive. «Расход ресурса» — в consume. Старых имён узлов в графе нет.
+    #[test]
+    fn field_kinds_and_spend_compile_into_legacy_block_kinds() {
+        let field = |kind: &str, params: Value| {
+            let trigger = if kind == "formula" { "passive" } else { "use" };
+            json!({"version": 2, "graph": {"nodes": [
+                {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": trigger}},
+                {"id": "f", "type": "action.field", "params": params},
+                {"id": "e", "type": "flow.end", "params": {}}
+            ], "links": [
+                {"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+                {"from": {"node": "f", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
+            ], "frames": [], "groups": []}})
+        };
+        let status = to_v1(&field("status", json!({"block_id": "f", "kind": "status", "condition": "Отравленный", "operation": "add"})));
+        let block = &status["programs"][0]["blocks"][0];
+        assert_eq!(block["kind"], "condition");
+        assert_eq!(block["condition"], "Отравленный");
+        assert_eq!(block["operation"], "add");
+        assert!(block.get("field").is_none());
+        let value = to_v1(&field("value", json!({"block_id": "f", "kind": "value", "field": "speed", "amount": 5})));
+        let block = &value["programs"][0]["blocks"][0];
+        assert_eq!(block["kind"], "adjust");
+        assert_eq!(block["field"], "speed");
+        assert_eq!(block["amount"], 5);
+        let formula = to_v1(&field("formula", json!({"block_id": "f", "kind": "formula", "field": "asi.str", "value": 2})));
+        let block = &formula["programs"][0]["blocks"][0];
+        assert_eq!(block["kind"], "passive");
+        assert_eq!(block["field"], "asi.str");
+        assert_eq!(block["value"], 2);
+        let spend_graph = json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "s", "type": "action.spend", "params": {"block_id": "s", "resource": "charges", "source": "self", "amount": 1, "trigger": "use"}},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "s", "socket": "exec"}},
+            {"from": {"node": "s", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        let compiled = to_v1(&spend_graph);
+        assert_eq!(compiled["programs"][0]["blocks"][0]["kind"], "consume");
+        assert_eq!(compiled["programs"][0]["blocks"][0]["resource"], "charges");
+    }
+
+    /// Неизвестный вид «Изменить поле» и неизвестный ресурс расхода отклоняются при сохранении.
+    #[test]
+    fn unknown_field_kind_and_spend_resource_are_rejected() {
+        assert!(validate(&chain(json!({"block_id": "f", "kind": "unknown", "field": "speed"}), None)).is_err());
+        let spend = |params: Value| json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "s", "type": "action.spend", "params": params},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "s", "socket": "exec"}},
+            {"from": {"node": "s", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        assert!(validate(&spend(json!({"block_id": "s", "resource": "gold", "source": "self", "amount": 1, "trigger": "use"}))).is_err());
+        assert!(validate(&spend(json!({"block_id": "s", "resource": "quantity", "source": "tag", "amount": 1, "trigger": "use"}))).is_err(), "метка обязательна");
+        assert!(validate(&spend(json!({"block_id": "s", "resource": "slot", "source": "self", "amount": 1, "trigger": "use", "slot_level": 1}))).is_ok());
     }
 }

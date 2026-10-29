@@ -63,6 +63,7 @@ function rustConstants() {
   return {
     NODE_TYPES: list('NODE_TYPES'), ABILITIES: list('ABILITIES'), ACTIONS: list('ACTIONS'),
     ROLL_KINDS: list('ROLL_KINDS'), LOGIC_OPS: list('LOGIC_OPS'),
+    FIELD_KINDS: list('FIELD_KINDS'), VALUE_FIELDS: list('VALUE_FIELDS'), FORMULA_FIELDS: list('FORMULA_FIELDS'),
     DICE_ACTIONS: list('DICE_ACTIONS'), SKILL_IDS: list('SKILL_IDS'), BUTTON_STYLES: list('BUTTON_STYLES'), SOCKET_TYPES: list('SOCKET_TYPES'),
   };
 }
@@ -547,7 +548,7 @@ function checkSeed(edition, opts = {}) {
       ids.add(node.id);
       nodesUsed.set(node.type, (nodesUsed.get(node.type) || 0) + 1);
       if (!rust.NODE_TYPES.includes(node.type)) report.error('unknown-node-type', where, `data.mechanics.graph.nodes[${node.id}]`, `тип узла «${node.type}» не поддерживается сервером (src/mechanics_graph.rs NODE_TYPES)`);
-      if (node.type === 'action.attack' || node.type === 'action.damage' || node.type === 'action.roll') {
+      if (node.type === 'action.roll') {
         const stat = node.params && node.params.dice && node.params.dice.stat;
         const STATS = ['', 'best', 'prof', 'atk', 'atk_str', 'atk_dex', 'spell', 'spell_mod', 'level', 'dc', 'str', 'dex', 'con', 'int', 'wis', 'cha'];
         if (stat !== undefined && !STATS.includes(stat)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.dice.stat`, `неизвестный модификатор «${stat}»`);
@@ -555,6 +556,17 @@ function checkSeed(edition, opts = {}) {
       if (node.type === 'action.roll') {
         const rollKind = (node.params || {}).roll_kind;
         if (rollKind !== undefined && !rust.ROLL_KINDS.includes(rollKind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.roll_kind`, `неизвестный тип броска «${rollKind}»`);
+      }
+      if (node.type === 'action.field') {
+        const params = node.params || {};
+        if (!rust.FIELD_KINDS.includes(params.kind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.kind`, `неизвестный вид «${params.kind}» (status, value или formula)`);
+        else if (params.kind === 'value' && !rust.VALUE_FIELDS.includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `показатель «${params.field}» недоступен`);
+        else if (params.kind === 'formula' && !rust.FORMULA_FIELDS.includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `параметр «${params.field}» недоступен для формулы`);
+      }
+      if (node.type === 'action.spend') {
+        const params = node.params || {};
+        if (!['quantity', 'charges', 'slot', 'uses'].includes(params.resource)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.resource`, `неизвестный ресурс «${params.resource}»`);
+        if (params.resource === 'slot' && !(Number.isInteger(params.slot_level) && params.slot_level >= 1 && params.slot_level <= 9)) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.slot_level`, 'у расхода ячейки нет круга 1…9');
       }
       if (node.type === 'condition.context' && (node.params || {}).kind === 'edition') {
         const editions = (node.params || {}).editions;
@@ -666,14 +678,24 @@ function checkRuntime(opts = {}) {
   for (const type of Registry.INTERNAL) {
     if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
   }
-  // Настраиваемый узел «Бросок» (action.roll) покрывает все виды бросков сервера через параметр roll_kind.
-  const expandRoll = t => (t === 'action.roll' ? (Registry.ROLL_KINDS || ['roll']) : [t.slice(7)]);
-  const actionKinds = [...new Set(defs.filter(t => t.startsWith('action.') && t !== 'action.program').flatMap(expandRoll))];
+  // Настраиваемые узлы покрывают несколько видов блоков плана: «Бросок» — через roll_kind,
+  // «Изменить поле» — через kind, «Расход ресурса» — один блок consume.
+  const expandKind = t => (Registry.blockKindsOf ? Registry.blockKindsOf(t) : (t === 'action.roll' ? (Registry.ROLL_KINDS || ['roll']) : [t.slice(7)]));
+  const actionKinds = [...new Set(defs.filter(t => t.startsWith('action.') && t !== 'action.program').flatMap(expandKind))];
   if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);
-  const diceKinds = [...new Set(defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).flatMap(expandRoll))];
+  const diceKinds = [...new Set(defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).flatMap(expandKind))];
   if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
   if ((Registry.ROLL_KINDS || []).slice().sort().join() !== rust.ROLL_KINDS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ROLL_KINDS', `виды настраиваемого броска клиента (${(Registry.ROLL_KINDS || []).join(',')}) и сервера (${rust.ROLL_KINDS.join(',')}) различаются`);
   if ((Registry.LOGIC_OPS || []).slice().sort().join() !== rust.LOGIC_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'LOGIC_OPS', `операции логики клиента (${(Registry.LOGIC_OPS || []).join(',')}) и сервера (${rust.LOGIC_OPS.join(',')}) различаются`);
+  // «Изменить поле»: виды и списки полей листа обязаны совпадать у клиента и сервера.
+  for (const [name, client, server] of [
+    ['FIELD_KINDS', Registry.FIELD_KINDS, rust.FIELD_KINDS],
+    ['FIELD_VALUE_FIELDS', Object.keys(Registry.FIELD_VALUE_FIELDS || {}), rust.VALUE_FIELDS],
+    ['FIELD_FORMULA_FIELDS', Object.keys(Registry.FIELD_FORMULA_FIELDS || {}), rust.FORMULA_FIELDS],
+  ]) {
+    const a = (client || []).slice().sort().join(), b = (server || []).slice().sort().join();
+    if (a !== b) report.error('client-server-parity', 'static/node-registry.js', name, `списки клиента (${a}) и сервера (${b}) различаются`);
+  }
   const skillIds = (runtime.SKILLS || []).map(([id]) => id);
   if (skillIds.slice().sort().join() !== rust.SKILL_IDS.slice().sort().join()) {
     const only = (a, b) => a.filter(x => !b.includes(x)).join(',');
