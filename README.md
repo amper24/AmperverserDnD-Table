@@ -336,13 +336,15 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 | `ci.yml` → `windows` | push, PR, тег | сборка под Windows, прогон `run.bat` (CLI и сервер) и `install.bat` (скачивание ассета + запуск). В **каждом pull request** публикуется артефакт **`dnd-table.exe`** — его можно скачать в Actions → нужный run → Artifacts |
 | `release.yml` → `binaries` + `publish` | push тега `v*` | бинарники Linux/Windows/macOS + `run.bat`/`install.bat`/`SHA256SUMS.txt` → GitHub Release |
 
-**Локальная сборка в `dist/`** (Windows, без CI):
+**Сборка в `dist/` — сразу под Windows, Linux и macOS:**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 ```
 
-Скрипт берёт версию из `Cargo.toml`, прогоняет `cargo test`, собирает release-бинарь и кладёт в `dist/` готовый комплект `DnD-Tablet-<версия>-win64/`, архив `DnD-Tablet-<версия>-win64.zip` и `SHA256SUMS.txt`. Ключи: `-NoTests` (быстрая сборка), `-NoZip` (только exe), `-Clean` (снести `dist`), `-Smoke` (прогнать `scripts/smoke.sh` на собранном бинаре). `dist/` в `.gitignore`.
+`dist/` каждый запуск пересоздаётся с нуля. Windows собирается локально (`cargo` + gcc из w64devkit); Linux и macOS — через GitHub Actions: скрипт запускает `build-all.yml` через `gh`, дожидается сборки и складывает бинарники в `dist/` вместе с `run.bat`/`install.bat`, README, CHANGELOG и `SHA256SUMS.txt`. Для этого один раз нужны [GitHub CLI](https://cli.github.com/) (`winget install --id GitHub.cli`) и `gh auth login` с правом запускать Actions.
+
+Ключи: `-Platforms windows` (только локальный Windows, без gh), `-NoTests` (быстрая сборка), `-CiTimeoutMinutes N` (таймаут CI). macOS-бинарь на Windows не собрать без SDK Apple, поэтому он всегда идёт из CI. `dist/` в `.gitignore`.
 
 **Выпустить релиз** (версия тега должна совпадать с `version` в `Cargo.toml`, иначе джоб печатает предупреждение):
 
