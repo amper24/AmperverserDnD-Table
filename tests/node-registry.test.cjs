@@ -122,6 +122,7 @@ test('v3 action nodes show their kind and live in the palette categories', () =>
 test('action.slot compiles to a consume block with the chosen or fixed circle', () => {
   assert.equal(R.nodeTitle('action.slot', {}), 'Действие · Расход ячейки');
   assert.match(R.nodeDef('action.slot').description, /выбранного или фиксированного круга/);
+  assert.doesNotMatch(R.nodeDef('action.spend').description, /ячейк/i, 'ячейка — отдельный узел action.slot, а не ресурс action.spend');
   assert.equal(R.nodeDef('action.slot').validate({ level: 0, amount: 1 }), '');
   assert.equal(R.nodeDef('action.slot').validate({ level: 9, amount: 2 }), '');
   assert.match(R.nodeDef('action.slot').validate({ level: 10, amount: 1 }), /0 до 9/);
@@ -147,4 +148,12 @@ test('action.roll validates upcast and data.cast exposes the cast circle', () =>
   assert.match(cast.validate({ field: 'slot' }), /level, base или extra/);
   assert.equal(cast.compute(), 0, 'без каста в редакторе — 0');
   assert.ok(R.COMPUTED.has('data.cast'), 'узел вычисляется в предпросмотре');
+});
+
+test('COMPUTED совпадает с классами, объявившими свой compute', () => {
+  // Реестр — единственный список вычисляемых узлов; движок предпросмотра читает его же.
+  const own = Object.entries(R.NODE_DEFS).filter(([, def]) => Object.hasOwn(def, 'compute')).map(([type]) => type).sort();
+  assert.deepEqual([...R.COMPUTED].sort(), own);
+  assert.ok(R.COMPUTED.has('data.math') && R.COMPUTED.has('data.boolean'), 'арифметика и константа тоже вычисляются');
+  assert.ok(!R.COMPUTED.has('condition.context'), 'условие контекста считается отдельно (evaluate), а не из входов');
 });

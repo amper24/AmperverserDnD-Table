@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// mechanics-graph.js — схема механик v2: типизированный ациклический граф,
-// компилятор в план исполнения, декларативное исполнение правил и визуальный редактор.
+// mechanics-graph.js — нодовая схема механик v3 (формат хранения version: 2): типизированный
+// ациклический граф, компилятор в план исполнения, декларативное исполнение правил и редактор.
 // Загружается сразу после mechanics.js. Произвольный код не исполняется.
 // ---------------------------------------------------------------------------
 (() => {
@@ -14,7 +14,7 @@
   const GRAPH_VERSION = 2;
   const NodeRegistry = window.NodeRegistry;
   if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
-  const { ACTION_KINDS, ROLL_KINDS, LOGIC_OPS, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
+  const { ACTION_KINDS, ROLL_KINDS, COMPUTED, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
   // Определение узла: тип — закрытое имя реестра.
   const defOf = type => NodeRegistry.nodeDef(type);
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
@@ -25,16 +25,6 @@
   // «Изменить поле» хранит параметры всех трёх видов; в блок плана попадают только поля своего вида.
   const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast']);
-  const STAT_MODES = ['bonus', 'score'];
-  const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
-  const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
-  // Характеристика: bonus — модификатор, score — показатель. Навык: bonus — его бонус с владением (считает лист), score — пассивное 10 + бонус.
-  function statDice(p) {
-    const id = String(p.id || '');
-    const term = ABILITIES.includes(id) ? (p.mode === 'score' ? `@${id}_score` : `@${id}`) : (p.mode === 'score' ? `10+@${id}` : `@${id}`);
-    return { count: 0, sides: 6, bonus: 0, stat: '', advanced: term };
-  }
   // Значение узла по значениям входов: get(socket) отдаёт значение входа или undefined. Неизвестное — undefined.
   function computedValue(type, p, get) {
     const def = NodeRegistry.nodeDef(type);

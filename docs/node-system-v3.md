@@ -29,19 +29,21 @@
 
 Порядок категорий в меню — рабочий процесс: **Начало → Действия → Данные → Условия → Правила → Группы**.
 У каждого типа есть короткое описание одной строкой (подсказка в меню и на карточке).
-Заголовки карточек единообразны: `Действие · …`, `Данные · …`, `Условие · …`, `Правило · …`;
-у настраиваемых узлов после названия идёт выбранный вид (`Действие · Бросок · Атака`).
+Заголовки карточек действий, данных, условий и правил единообразны: `Действие · …`, `Данные · …`,
+`Условие · …`, `Правило · …`; у настраиваемых узлов после названия идёт выбранный вид
+(`Действие · Бросок · Атака`). Короткие имена остаются у `action.program` («Начало действия»),
+`flow.if` («Если»), `flow.end` («Конец») и узлов групп.
 
 | Тип | Назначение | Входы → выходы | Параметры |
 |---|---|---|---|
 | `action.program` | Начало действия и его кнопка | — → `exec` (flow) | `program_id`, `name`, `trigger` = use/passive, `style`, `feature_name`, `group`, `roll_only` |
 | `flow.if` | Ветвление потока по bool | `exec` (flow), `condition` (bool) → `then`/`else` (flow) | нет |
 | `flow.end` | Конец действия | `exec` (flow) → — | нет |
-| `action.roll` | Бросок: атака, урон, лечение, временные хиты, свободный | `exec`, `enabled` (bool), `condition` (bool), `dice` (dice) → `exec` | `kind` = roll/attack/damage/heal/temp_hp, `dice`, `dc`, `name`, `target`/`apply` (лечение, временные хиты), `damage_type`, `upcast` = `{ count, sides }` |
+| `action.roll` | Бросок: атака, урон, лечение, временные хиты, свободный | `exec`, `enabled` (bool), `condition` (bool), `dice` (dice) → `exec` | `kind` = roll/attack/damage/heal/temp_hp, `dice`, `dc`, `name`, `damage_type`, `upcast` = `{ count, sides }` |
 | `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove/concentration; value: `field`, `amount`; formula: `field`, `value` |
 | `action.spend` | Расход ресурса предмета или умения | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `item_uid`, `tag` |
 | `action.slot` | Расход ячейки заклинания | `exec`, `enabled`, `condition` → `exec` | `level` = 0 (круг выбирается при касте) / 1–9, `amount` |
-| `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item`, `target` |
+| `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item` |
 | `action.manual` | Правило для мастера | `exec`, `enabled`, `condition` → `exec` | `text` |
 | `data.number` | Числовая константа | — → `value` (number) | `value` |
 | `data.dice` | Кость или формула | — → `value` (dice) | `value` = `{ count, sides, bonus, stat }` |
@@ -72,8 +74,10 @@
 ### action.roll
 
 Бросок с видом `kind` (roll / attack / damage / heal / temp_hp), кубиками, DC и
-режимом преимущества. Лечение и временные хиты применяются сразу; урон — это бросок,
-результат которого применяет ДМ (или `action.field` по его решению).
+режимом преимущества. Лечение и временные хиты применяются сразу и всегда к владельцу
+листа; урон — это бросок, результат которого применяет ДМ (или `action.field` по его
+решению). Поля `target`/`apply` из старых блоков палитра не создаёт, а `apply`
+исполнение не читает.
 
 `upcast` = `{ count, sides }` — сколько костей добавляется к урону или лечению за
 каждый круг ячейки выше базового. Сервер дописывает `+(extra*count)d<sides>` к формуле
@@ -115,7 +119,8 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 `data.cast` — выход `value: number`, входов нет. Параметр `field` = `level` (круг
 выбранной ячейки) | `base` (базовый круг заклинания) | `extra` (круги выше базового).
 Читается из контекста каста; без каста (редактор, предпросмотр) — `0`.
-Все три узла используются в условиях (`data.compare`) и формулах.
+Все три узла дают `number`: они подключаются к `data.compare`/`data.math` и к числовым
+входам правил (`amount`). К входу `dice` их подключить нельзя — там тип `dice`.
 
 ### Результаты выполнения
 
@@ -150,6 +155,12 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 статическим: `data.result`/`data.sheet` без состояния дают `0`, поэтому блок с таким
 условием в предпросмотре может быть скрыт.
 
+`flow.if` остаётся статическим: его `condition` вычисляется при компиляции без контекста
+выполнения. Поэтому `data.result`, `data.sheet` и `data.cast` в условии `flow.if` дают `0`,
+и ветка «да» отбрасывается ещё до исполнения. Для условий, зависящих от листа и результатов,
+используйте вход `condition` самого блока: он компилируется в `condition_src` и считается
+в рантайме.
+
 ## Заклинания
 
 Каст — программа `action.program` → `action.slot` → броски и правила. `action.slot.level = 0`
@@ -176,12 +187,16 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 
 ## Шаблоны
 
-Готовые шаблоны лежат в двух наборах и собираются только из узлов v3:
+Готовые шаблоны лежат в трёх наборах и собираются только из узлов v3:
 
-- `static/presets/mechanic-templates.json` — полные графы (`action.program` → блоки → `flow.end`)
+- `static/presets/mechanic-templates.json` — 40 полных графов (`action.program` → блоки → `flow.end`)
   для библиотеки `Mechanics.templates(category)`;
-- `static/presets/graph-starters.json` — тела цепочек с `attach: true` для диалога «Шаблоны действий»:
-  вставка в пустое действие ставит цепочку между существующими «Началом» и «Концом».
+- `static/presets/graph-starters.json` — 13 тел цепочек для диалога «Шаблоны действий»:
+  5 старых (три правила и два действия) и 8 новых; у 10 из них `attach: true` — вставка
+  в пустое действие ставит цепочку между существующими «Началом» и «Концом». Три старых
+  правила без `exec` вставляются в пассивную программу, а не в действие;
+- `static/presets/mechanic-starters.json` — 3 полных графа создания персонажа
+  (раса, класс, предыстория) для `Mechanics.starter(category)`.
 
 Новые шаблоны (появились вместе с унификацией палитры):
 
@@ -196,9 +211,10 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 | Аура: усиление по уровню | `condition.context` (level) → `action.field` (value: speed) с условием |
 | Скрытая атака | `condition.context` (level ≥ 3) → `action.roll` (damage 3d6) с условием |
 
-Все шаблоны проходят `Mechanics.validate`/`Mechanics.problems`, каждый граф содержит `flow.end`,
-а вставляемые варианты проверяются на отсутствие висячих exec-выходов после attach
-(`tests/template-presets.test.cjs`).
+Все шаблоны проходят `Mechanics.validate`/`Mechanics.problems`; каждый полный граф
+(`mechanic-templates`, `mechanic-starters`) содержит `flow.end`; тела `graph-starters`
+«Конца» не содержат — его подставляет действие, а после attach проверяется отсутствие
+висячих exec-выходов (`tests/template-presets.test.cjs`).
 
 ## Этапы
 
@@ -210,5 +226,7 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 3. Заклинания: отдельный узел `action.slot`, выбор круга, upcast, концентрация, ритуал,
    `data.cast`; SRD-заклинания пересобраны (295/312 с ячейкой, 126/132 с концентрацией,
    29/29 ритуальных, 32/37 с upcast) — сделано.
-4. Шаблоны: 40 автоматических механик (включая 8 новых), единая палитра с описаниями и
-   подсказками — сделано; редактор продолжает упрощаться (пустые состояния, примеры).
+4. Шаблоны: 40 автоматических механик (включая 8 новых), 13 стартовых графов
+   (5 старых + 8 новых; 10 вставляются в действие), 3 графа создания, единая палитра
+   с описаниями и подсказками — сделано; редактор продолжает упрощаться (пустые
+   состояния, примеры).

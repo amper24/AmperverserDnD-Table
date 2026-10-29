@@ -1,11 +1,12 @@
 // static/nodes/actions/spend.js — узел «Расход ресурса» (action.spend).
-// Количество, заряды, ячейка или использование; в плане — блок consume с теми же параметрами.
+// Количество, заряды или использование; в плане — блок consume с теми же параметрами.
+// Ячейка заклинания — отдельный узел action.slot, поэтому в описании её нет.
 (() => {
   const { GraphNode, register, actionDefaults } = window.Nodes;
   class ActionSpend extends GraphNode {
     static type = 'action.spend';
     static label = 'Расход ресурса';
-    static description = 'Расход ресурса: количество, заряды, ячейка или использование.';
+    static description = 'Расход ресурса: количество, заряды или использование.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };

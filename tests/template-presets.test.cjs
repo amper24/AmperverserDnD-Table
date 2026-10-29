@@ -57,7 +57,7 @@ function danglingFlowOutputs(graph) {
 
 test('mechanic templates are executable v3 graphs with a completed flow and no dangling exec', () => {
   const templates = read('static/presets/mechanic-templates.json');
-  assert.ok(templates.items.length >= 40, `шаблонов ${templates.items.length}`);
+  assert.equal(templates.items.length, 40, `шаблонов ${templates.items.length}`);
   for (const item of templates.items) {
     const graph = item.table.graph;
     const mechanics = { version: 2, origin: item.table.origin || 'template', graph };
@@ -84,6 +84,7 @@ test('eight new templates cover the requested mechanics', () => {
 
 test('creation starters are executable v3 graphs with a completed flow', () => {
   const starters = read('static/presets/mechanic-starters.json');
+  assert.equal(starters.items.length, 3, 'раса, класс и предыстория');
   for (const item of starters.items) {
     const mechanics = item.table;
     assert.equal(M.validate(mechanics), '', `${item.id}: сохранение`);
@@ -129,6 +130,21 @@ function attachStarter(item) {
   }
   return { version: 2, origin: 'test', graph };
 }
+
+test('13 стартовых графов: 5 старых и 8 новых, 10 вставляются в пустое действие', () => {
+  const starters = read('static/presets/graph-starters.json').items;
+  assert.equal(starters.length, 13);
+  const eight = ['attack-damage-result', 'heal-when-hurt', 'save-dc-damage', 'multiattack-two', 'staff-charges', 'smite-extra', 'aura-buff', 'sneak-attack'];
+  const old = ['speed-level', 'hp-bonus', 'hp-bonus-level', 'attack-only', 'damage-only'];
+  assert.deepEqual(starters.filter(item => eight.includes(item.id)).map(item => item.id), eight);
+  assert.deepEqual(starters.filter(item => old.includes(item.id)).map(item => item.id), old);
+  const attaching = starters.filter(item => item.attach);
+  assert.equal(attaching.length, 10, 'два старых действия и все восемь новых вставляются в действие');
+  // Три старых правила не имеют exec: они вставляются в пассивную программу, а не в действие.
+  for (const item of starters.filter(item => !item.attach)) {
+    assert.ok(item.nodes.every(node => !flowInputs(node.type).includes('exec')), `${item.id}: правило без exec`);
+  }
+});
 
 test('starter templates attach into a blank action without breaking «Начало → Конец»', () => {
   const starters = read('static/presets/graph-starters.json');

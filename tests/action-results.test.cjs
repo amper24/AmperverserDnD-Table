@@ -68,6 +68,29 @@ test('предпросмотр без результатов: оба узла д
   assert.deepEqual(plain(M.toLegacy(sheet).programs[0].blocks.map(block => block.kind)), ['adjust'], '0 = 0 — блок выполняется');
 });
 
+test('flow.if статичен: результат в его условии даёт 0 и ветка «да» отбрасывается', () => {
+  // Задокументированное ограничение: динамические условия работают у блоков (condition_src),
+  // а не у flow.if. Тест фиксирует поведение, чтобы его не приняли за ошибку компилятора.
+  const graph = graphOf([
+    program('p'),
+    node('src', 'data.result', { source: 'last', field: 'total' }),
+    node('five', 'data.number', { value: 5 }),
+    node('cmp', 'data.compare', { op: '>' }),
+    node('if', 'flow.if', {}),
+    node('then', 'action.manual', { block_id: 'then', text: 'попал' }),
+    node('else', 'action.manual', { block_id: 'else', text: 'промах' }),
+    node('end', 'flow.end', {}),
+  ], [
+    wire('p', 'exec', 'if', 'exec'), wire('src', 'value', 'cmp', 'a'), wire('five', 'value', 'cmp', 'b'),
+    wire('cmp', 'value', 'if', 'condition'), wire('if', 'then', 'then', 'exec'), wire('if', 'else', 'else', 'exec'),
+    wire('then', 'exec', 'end', 'exec'), wire('else', 'exec', 'end', 'exec'),
+  ]);
+  assert.equal(M.validate(graph), '');
+  assert.deepEqual(plain(M.problems(graph)), []);
+  const blocks = plain(M.toLegacy(graph).programs[0].blocks);
+  assert.deepEqual(blocks.map(block => block.id), ['else'], 'условие без рантайма — 0 > 5 ложно, остаётся ветка «нет»');
+});
+
 test('паритет типов и портов с сервером (integrity)', () => {
   const { checkRuntime, rustConstants } = require('../tools/srd/integrity.cjs');
   const report = checkRuntime();

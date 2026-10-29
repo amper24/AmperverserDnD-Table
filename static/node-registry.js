@@ -1,5 +1,6 @@
 // ---------------------------------------------------------------------------
-// node-registry.js — база объектно-ориентированной системы узлов механик v2.
+// node-registry.js — база объектно-ориентированной системы узлов механик v3.
+// Формат хранения остаётся version: 2 (граф узлов и связей), палитра — v3.
 // Каждый узел — отдельный класс в static/nodes/<категория>/<файл>.js: он наследует
 // GraphNode, объявляет метаданные (type/label/group/inputs/outputs/defaults) и своё
 // поведение (validate/compute/project) и регистрирует себя через Nodes.register.
@@ -38,12 +39,13 @@
   // Логические операции одного узла «Логика»: НЕ использует только вход «a».
   const LOGIC_OPS = ['and', 'or', 'not'];
   const LOGIC_OP_LABELS = { and: 'И', or: 'ИЛИ', not: 'НЕ' };
-  // Эффекты без броска: у каждого свой набор параметров, поэтому они остаются отдельными узлами.
-  const EFFECT_KINDS = ['spend', 'grant_item', 'field', 'manual'];
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.result', 'data.sheet', 'data.cast']);
+  // Узлы, которые сами вычисляют значение из входов (свой compute у класса): предпросмотр и
+  // condition-значения читают их через def.compute. condition.context считается отдельно (evaluate).
+  // Список обязан совпадать с классами, объявившими compute; это проверяет tests/node-registry.test.cjs.
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
