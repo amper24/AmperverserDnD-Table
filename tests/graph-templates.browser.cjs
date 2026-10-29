@@ -51,29 +51,48 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.node-toolbar button.node-add[title="flow.end"]').click();
     assert.equal(await page.locator('.graph-node', { hasText: 'Конец' }).count(), 1, 'конец добавлен снова');
 
-    // 3. Сохраняем цепочку действия как свой шаблон.
-    await page.getByLabel('Название шаблона', { exact: true }).fill('Моё лечение');
-    await page.getByRole('button', { name: 'Сохранить цепочку как шаблон', exact: true }).click();
+    // 3. Сохраняем цепочку действия как свой шаблон через диалог «Шаблоны действий».
+    await page.getByRole('button', { name: 'Сохранить как шаблон', exact: true }).click();
+    const saveDialog = page.getByRole('dialog', { name: 'Шаблоны действий' });
+    await saveDialog.waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Название шаблона', 'фокус сразу в поле названия');
+    await saveDialog.getByLabel('Название шаблона', { exact: true }).fill('Моё лечение');
+    await saveDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await saveDialog.waitFor({ state: 'detached' });
+    assert.match(await page.locator('.node-status').innerText(), /Шаблон «Моё лечение» сохранён/, 'статус после сохранения шаблона');
     const saved = await page.evaluate(() => (window.Presets.items('graph_starter').find(s => s.name === 'Моё лечение') || null));
     assert.ok(saved, 'шаблон сохранён в наборе graph_starter');
     assert.ok(saved.nodes.length > 0, 'в шаблоне есть узлы действия');
     assert.ok(saved.nodes.every(n => !['action.program', 'flow.end'].includes(n.type)), 'Начало и Конец в шаблон не входят');
 
-    // 4. Новое действие, вставка шаблона.
+    // 4. Новое действие, вставка шаблона из вкладки «Мои».
     await page.locator('.node-toolbar button.node-add[title="action.program"]').click();
-    await page.getByLabel('Шаблон графа', { exact: true }).selectOption({ label: 'Моё лечение · мой' });
+    await page.getByRole('button', { name: 'Шаблоны действий', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Шаблоны действий' });
+    await dialog.getByRole('tab', { name: /Мои/ }).click();
+    const card = dialog.locator('.templates-card', { hasText: 'Моё лечение' });
+    await card.waitFor();
     const before = await page.locator('.graph-node').count();
-    await page.getByRole('button', { name: 'Вставить в действие', exact: true }).click();
+    await card.getByRole('button', { name: 'Вставить', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.match(await page.locator('.node-status').innerText(), /Шаблон «Моё лечение» вставлен/, 'статус после вставки шаблона');
     const after = await page.locator('.graph-node').count();
     assert.equal(after - before, saved.nodes.length, 'вставлены все узлы шаблона');
     // Вставленная цепочка встаёт между «Началом» и «Концом», а не рядом с прямым проводом в «Конец».
     const problems = await page.evaluate(() => window.Mechanics.problems({ version: 2, graph: document.querySelector('.node-editor').getGraph() }));
     assert.deepEqual(problems, [], 'поток обоих действий завершается «Концом»');
 
-    // 5. Свой шаблон можно удалить.
-    await page.getByLabel('Шаблон графа', { exact: true }).selectOption({ label: 'Моё лечение · мой' });
-    await page.getByRole('button', { name: 'Удалить мой', exact: true }).click();
+    // 5. Свой шаблон удаляется из вкладки «Мои» с подтверждением вторым нажатием.
+    await page.getByRole('button', { name: 'Шаблоны действий', exact: true }).click();
+    await page.getByRole('tab', { name: /Мои/ }).click();
+    const ownCard = page.locator('.templates-card', { hasText: 'Моё лечение' });
+    await ownCard.getByRole('button', { name: 'Удалить', exact: true }).click();
+    assert.equal(await ownCard.getByRole('button', { name: 'Точно удалить?', exact: true }).count(), 1, 'первое нажатие просит подтверждение');
+    await ownCard.getByRole('button', { name: 'Точно удалить?', exact: true }).click();
     assert.equal(await page.evaluate(() => Boolean(window.Presets.items('graph_starter').find(s => s.name === 'Моё лечение'))), false, 'свой шаблон удалён');
+    assert.equal(await page.locator('.templates-card', { hasText: 'Моё лечение' }).count(), 0, 'карточка исчезла из диалога');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog', { name: 'Шаблоны действий' }).count(), 0, 'Esc закрывает диалог');
 
     assert.deepEqual(errors, [], 'страница без ошибок');
     console.log('PASS graph templates: end node on the quick panel, single end per action, save/insert/delete own template');

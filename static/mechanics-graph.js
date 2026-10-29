@@ -713,13 +713,30 @@
     doc.mechanics = mechanics;
     const graph = mechanics.graph;
     const root = el('section', { class: 'node-editor', tabindex: 0, 'aria-label': 'Редактор графа механик' });
+    // Внутренняя оболочка — контейнер для container-query; диалог шаблонов лежит рядом с ней,
+    // поэтому перерисовка редактора не выбивает фокус из открытого окна.
+    const shell = el('div', { class: 'node-editor-shell' });
+    root.append(shell);
     // Наборы стартов могли измениться (импорт или удаление набора): перерисовываем, пока редактор на странице.
-    const onPresets = () => { if (root.isConnected) render(); else window.removeEventListener('presets:changed', onPresets); };
+    // Открытый диалог шаблонов обновляется на месте: полная перерисовка потеряла бы фокус и введённое название.
+    const onPresets = () => {
+      if (!root.isConnected) { window.removeEventListener('presets:changed', onPresets); return; }
+      if (tpl.open) { refreshTemplatesDialog(); return; }
+      render();
+    };
     window.addEventListener('presets:changed', onPresets);
     // Читать текущий граф снаружи (тесты, отладка); сам граф редактор не отдаёт наружу иначе.
     root.getGraph = () => graph;
     const history = [JSON.stringify(graph)]; let historyIndex = 0, selected = new Set(), activeNode = '', pendingPort = null,
       status = liftedWhen ? 'Условия «Когда» перенесены в узлы «Если» и «Попадание атаки».' : '', search = '', currentEdition = '2014', currentLevel = 1, currentChoices = {}, currentSubclass = '', view = { x: 40, y: 40, k: 1 }, wire = null, suppressClick = false;
+    // Склонение числительных для подсказок шаблонов: 1 узел, 2 узла, 5 узлов.
+    const plural = (n, one, few, many) => {
+      const mod10 = n % 10, mod100 = n % 100;
+      if (mod100 >= 11 && mod100 <= 14) return many;
+      return mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many;
+    };
+    // Состояние диалога шаблонов (разметка и обработчики — в блоке «Диалог шаблонов»).
+    const tpl = { open: false, mode: 'browse', tab: 'ready', query: '', name: '', error: '', selected: '', confirmKey: '', confirmButton: null, confirmTimer: 0, overlay: null, refs: {}, opener: null, openerAction: '', lastFocused: null };
     // Превью-провод при перетаскивании от сокета: путь обновляется на pointermove, остальной DOM не трогается.
     let wirePreview = null;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
@@ -824,10 +841,11 @@
       const owners = actionOwners(graph);
       return graph.nodes.filter(n => owners.get(n.id) === activeAction && n.type !== 'action.program' && n.type !== 'flow.end' && !n.type.startsWith('group.'));
     }
-    function saveTemplate(name) {
-      const body = templateBody();
-      if (!name.trim()) { status = 'Укажите название шаблона.'; return render(); }
-      if (!body.length) { status = 'В действии нет узлов для шаблона.'; return render(); }
+    // Сборка шаблона из узлов действия. Возвращает { item } или { error } — диалог показывает ошибку на месте.
+    function makeTemplate(name) {
+      const body = templateBody(), trimmed = String(name || '').trim();
+      if (!trimmed) return { error: 'Укажите название шаблона.' };
+      if (!body.length) return { error: 'В действии нет узлов для шаблона.' };
       const ids = new Map(body.map((n, i) => [n.id, 'n' + i]));
       const minX = Math.min(...body.map(n => n.position?.x || 0)), minY = Math.min(...body.map(n => n.position?.y || 0));
       const nodes = body.map(n => {
@@ -836,13 +854,21 @@
       });
       const links = graph.links.filter(l => ids.has(l.from.node) && ids.has(l.to.node)).map(l => [ids.get(l.from.node), l.from.socket, ids.get(l.to.node), l.to.socket]);
       const head = body.find(n => defOf(n.type)?.inputs?.exec && !links.some(([, , to]) => to === ids.get(n.id)));
-      const item = { id: 'my-' + Date.now().toString(36), name: name.trim(), hint: `Свой шаблон: ${body.length} узл.`, attach: Boolean(head), nodes, links };
-      try { window.Presets.upsertUserItem('graph_starter', item); } catch (e) { status = e.message; return render(); }
-      status = `Шаблон «${item.name}» сохранён.`; render();
+      const item = { id: 'my-' + Date.now().toString(36), name: trimmed, hint: `Свой шаблон: ${body.length} ${plural(body.length, 'узел', 'узла', 'узлов')}`, attach: Boolean(head), nodes, links };
+      try { window.Presets.upsertUserItem('graph_starter', item); } catch (e) { return { error: e.message }; }
+      return { item };
     }
-    function removeTemplate(id) {
-      window.Presets.removeUserItem('graph_starter', id);
-      status = 'Свой шаблон удалён.'; render();
+    // Сохранение из старой полосы (совместимый вход): статус и перерисовка редактора.
+    function saveTemplate(name) {
+      const result = makeTemplate(name);
+      status = result.error || `Шаблон «${result.item.name}» сохранён.`;
+      render();
+      return result;
+    }
+    // Удаление своего шаблона/группы из пользовательского слоя. Перерисовку делает вызывающий диалог.
+    function removeTemplate(kind, id) {
+      window.Presets.removeUserItem(kind === 'group' ? 'graph_group' : 'graph_starter', id);
+      return kind === 'group' ? 'Шаблон группы удалён.' : 'Свой шаблон удалён.';
     }
     // Группа нод как пользовательский шаблон: набор graph_group в Presets (в этом браузере). Вставка копирует определение группы.
     const groupTemplates = () => window.Presets?.items('graph_group') || [];
@@ -861,6 +887,266 @@
       window.Presets.removeUserItem('graph_group', id);
       status = 'Шаблон группы удалён.'; render();
     }
+
+    // -----------------------------------------------------------------------
+    // Диалог шаблонов действий: готовые наборы, свои цепочки и группы.
+    // Окно вставляется в root редактора, а не в body; позиционируется fixed,
+    // чтобы внешняя модалка записи не обрезала его.
+    // -----------------------------------------------------------------------
+    const PREVIEW_NS = 'http://www.w3.org/2000/svg';
+    const TEMPLATE_TABS = [
+      { id: 'ready', label: 'Готовые' },
+      { id: 'mine', label: 'Мои' },
+      { id: 'groups', label: 'Группы' },
+    ];
+    const ownGroupTemplate = id => Boolean(window.Presets?.ownItemOf('graph_group', id));
+    const templateOwn = (kind, id) => (kind === 'group' ? ownGroupTemplate(id) : ownTemplate(id));
+    function templateCatalog() {
+      const starters = graphStarters();
+      return { ready: starters.filter(item => !ownTemplate(item.id)), mine: starters.filter(item => ownTemplate(item.id)), groups: groupTemplates() };
+    }
+    function templateNodesOf(item) { return Array.isArray(item?.nodes) ? item.nodes.filter(node => node && node.type) : []; }
+    function templateHaystack(kind, item) {
+      if (kind === 'group') return [item.name, ...(item.inputs || []).map(port => port.name), ...(item.outputs || []).map(port => port.name)].join(' ').toLocaleLowerCase();
+      return `${item.name || ''} ${item.hint || ''}`.toLocaleLowerCase();
+    }
+    function previewTag(tag, attrs = {}) {
+      const node = document.createElementNS(PREVIEW_NS, tag);
+      for (const [key, value] of Object.entries(attrs)) if (value !== null && value !== undefined) node.setAttribute(key, value);
+      return node;
+    }
+    // Мини-превью графа 180×100: рамки узлов цветом категории, связи линиями.
+    // Координаты нормализуются; шаблоны без позиций (или все в одной точке) раскладываются сеткой.
+    function templatePreview(kind, item) {
+      const svg = previewTag('svg', { class: 'templates-preview-svg', viewBox: '0 0 180 100', preserveAspectRatio: 'xMidYMid meet', 'aria-hidden': 'true', focusable: 'false' });
+      const nodes = templateNodesOf(item);
+      if (!nodes.length) { svg.append(previewTag('rect', { x: 55, y: 38, width: 70, height: 24, rx: 6, class: 'templates-preview-empty' })); return svg; }
+      const keyOf = node => (kind === 'group' ? node.id : node.key);
+      const coords = nodes.map((node, index) => {
+        const x = Number(node.x ?? node.position?.x), y = Number(node.y ?? node.position?.y);
+        return { node, index, x: Number.isFinite(x) ? x : null, y: Number.isFinite(y) ? y : null };
+      });
+      // Нет координат или все узлы в одной точке — раскладываем ровной сеткой.
+      const noPositions = coords.some(point => point.x === null || point.y === null);
+      const onePoint = !noPositions && coords.every(point => Math.abs(point.x - coords[0].x) < 1 && Math.abs(point.y - coords[0].y) < 1);
+      if (noPositions || onePoint) {
+        const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+        coords.forEach((point, index) => { point.x = index % cols; point.y = Math.floor(index / cols); });
+      }
+      const xs = coords.map(point => point.x), ys = coords.map(point => point.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const many = nodes.length > 6, boxW = many ? 34 : 46, boxH = many ? 16 : 22, margin = 8;
+      const left = margin + boxW / 2, right = 180 - margin - boxW / 2, top = margin + boxH / 2, bottom = 100 - margin - boxH / 2;
+      const pointOf = point => ({
+        x: maxX - minX < 1 ? 90 : left + ((point.x - minX) / (maxX - minX)) * (right - left),
+        y: maxY - minY < 1 ? 50 : top + ((point.y - minY) / (maxY - minY)) * (bottom - top),
+      });
+      const points = new Map(coords.map(point => [keyOf(point.node), pointOf(point)]));
+      for (const link of Array.isArray(item.links) ? item.links : []) {
+        const from = Array.isArray(link) ? link[0] : link?.from?.node, to = Array.isArray(link) ? link[2] : link?.to?.node;
+        const a = points.get(from), b = points.get(to);
+        if (!a || !b) continue;
+        svg.append(previewTag('line', { x1: a.x.toFixed(1), y1: a.y.toFixed(1), x2: b.x.toFixed(1), y2: b.y.toFixed(1), class: 'templates-preview-link' }));
+      }
+      for (const point of coords) {
+        const center = points.get(keyOf(point.node)), category = NodeRegistry.categoryOf(point.node.type)?.id || 'other';
+        svg.append(previewTag('rect', { x: (center.x - boxW / 2).toFixed(1), y: (center.y - boxH / 2).toFixed(1), width: boxW, height: boxH, rx: 4,
+          class: `templates-preview-node cat-${category}`, 'data-node-type': point.node.type }));
+      }
+      return svg;
+    }
+    function templateHint(kind, item) {
+      if (kind === 'group') {
+        const inputs = (item.inputs || []).length, outputs = (item.outputs || []).length;
+        return `Входы: ${inputs} · Выходы: ${outputs}`;
+      }
+      return item.hint || (item.attach ? 'Цепочка подключится между «Началом» и «Концом».' : 'Набор узлов для действия.');
+    }
+    function templateMeta(kind, item) {
+      const count = templateNodesOf(item).length;
+      const nodes = `${count} ${plural(count, 'узел', 'узла', 'узлов')}`;
+      return kind === 'group' ? `группа · ${nodes}` : `${nodes} · ${templateOwn(kind, item.id) ? 'мой' : 'готовый'}`;
+    }
+    function templateCard(kind, item) {
+      const key = `${kind}:${item.id}`, own = templateOwn(kind, item.id), hint = templateHint(kind, item);
+      const card = el('article', { class: 'templates-card' + (tpl.selected === key ? ' selected' : ''), tabindex: '0', 'data-template-kind': kind, 'data-template-id': item.id,
+        'aria-label': `${item.name || 'Без названия'}. ${templateMeta(kind, item)}`,
+        onclick: e => { if (e.target.closest?.('button')) return; selectTemplateCard(key); },
+        onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectTemplateCard(key); } } },
+        el('div', { class: 'templates-preview' }, templatePreview(kind, item)),
+        el('div', { class: 'templates-card-body' },
+          el('div', { class: 'templates-card-title' }, el('b', {}, item.name || 'Без названия'), el('span', { class: 'templates-badge ' + (own ? 'mine' : 'ready') }, own ? 'мой' : 'готовый')),
+          el('p', { class: 'templates-card-hint muted small' }, hint),
+          el('div', { class: 'templates-card-meta muted small' }, templateMeta(kind, item))),
+        el('div', { class: 'templates-card-actions' },
+          el('button', { class: 'small primary', 'data-template-insert': item.id, disabled: activeAction ? null : '', title: activeAction ? `Вставить «${item.name}»` : 'Сначала добавьте действие',
+            onclick: e => { e.stopPropagation(); insertTemplateFromDialog(kind, item); } }, kind === 'group' ? 'Вставить группу' : 'Вставить'),
+          own ? el('button', { class: 'small danger', 'data-template-delete': item.id, title: kind === 'group' ? 'Удалить свой шаблон группы' : 'Удалить свой шаблон',
+            onclick: e => { e.stopPropagation(); armTemplateDelete(e.currentTarget, kind, item); } }, 'Удалить') : null));
+      return card;
+    }
+    function selectTemplateCard(key) {
+      tpl.selected = tpl.selected === key ? '' : key;
+      for (const card of tpl.refs.grid?.querySelectorAll?.('.templates-card') || []) {
+        card.classList.toggle('selected', `${card.dataset.templateKind}:${card.dataset.templateId}` === tpl.selected);
+      }
+    }
+    function resetTemplateConfirm() {
+      if (tpl.confirmTimer) clearTimeout(tpl.confirmTimer);
+      tpl.confirmTimer = 0;
+      if (tpl.confirmButton?.isConnected) { tpl.confirmButton.textContent = 'Удалить'; tpl.confirmButton.classList.remove('confirm'); }
+      tpl.confirmKey = ''; tpl.confirmButton = null;
+    }
+    function armTemplateDelete(button, kind, item) {
+      const key = `${kind}:${item.id}`;
+      if (tpl.confirmKey === key) { resetTemplateConfirm(); deleteTemplateItem(kind, item); return; }
+      resetTemplateConfirm();
+      tpl.confirmKey = key; tpl.confirmButton = button;
+      button.textContent = 'Точно удалить?';
+      button.classList.add('confirm');
+      tpl.confirmTimer = setTimeout(() => { tpl.confirmTimer = 0; resetTemplateConfirm(); }, 3000);
+    }
+    function deleteTemplateItem(kind, item) {
+      status = removeTemplate(kind, item.id);
+      if (root._statusNode) root._statusNode.textContent = status;
+      resetTemplateConfirm();
+      refreshTemplatesDialog();
+      tpl.refs.tabs?.querySelector?.(`[data-templates-tab="${tpl.tab}"]`)?.focus?.();
+    }
+    function insertTemplateFromDialog(kind, item) {
+      if (!activeAction) { status = 'Сначала добавьте действие.'; return; }
+      const name = item.name || 'шаблон';
+      closeTemplatesDialog({ restoreFocus: false });
+      if (kind === 'group') insertGroupTemplate(item); else insertStarter(item);
+      status = kind === 'group' ? `Группа «${name}» вставлена.` : `Шаблон «${name}» вставлен.`;
+      window.toast?.(status);
+      render();
+      focusTemplatesOpener();
+    }
+    function templateSaveState() {
+      if (!tpl.refs.saveButton) return;
+      const count = activeAction ? templateBody().length : 0;
+      tpl.refs.saveButton.disabled = !activeAction || count === 0;
+      tpl.refs.saveHint.textContent = !activeAction ? 'Сначала добавьте действие — шаблон сохраняется из узлов текущего действия.'
+        : count === 0 ? 'В действии нет узлов, кроме «Начала» и «Конца», — сохранять нечего.'
+          : `В шаблон войдут узлы действия, кроме «Начала», «Конца» и групп: ${count} ${plural(count, 'узел', 'узла', 'узлов')}.`;
+      tpl.refs.saveError.textContent = tpl.error;
+      tpl.refs.saveError.hidden = !tpl.error;
+    }
+    function submitTemplateSave() {
+      if (!tpl.open || tpl.mode !== 'save' || tpl.refs.saveButton?.disabled) return;
+      const result = makeTemplate(tpl.name);
+      if (result.error) { tpl.error = result.error; templateSaveState(); tpl.refs.name?.focus?.(); return; }
+      tpl.error = '';
+      const message = `Шаблон «${result.item.name}» сохранён.`;
+      closeTemplatesDialog({ restoreFocus: false });
+      status = message;
+      window.toast?.(message);
+      render();
+      focusTemplatesOpener();
+    }
+    function templateTabs(counts) {
+      return TEMPLATE_TABS.map(({ id, label }) => el('button', { class: 'templates-tab', type: 'button', role: 'tab', 'data-templates-tab': id,
+        'aria-selected': tpl.tab === id ? 'true' : 'false', tabindex: tpl.tab === id ? '0' : '-1',
+        onclick: () => { if (tpl.tab === id) return; tpl.tab = id; refreshTemplatesDialog(); tpl.refs.tabs?.querySelector?.(`[data-templates-tab="${id}"]`)?.focus?.(); } },
+      label, el('span', { class: 'templates-count' }, String(counts[id] || 0))));
+    }
+    // Текст пустого состояния: подсказка отличается для «Моих», групп и поиска.
+    function templatesEmptyText(tab, query) {
+      if (query) return 'Ничего не найдено по запросу.';
+      if (tab === 'mine') return 'Своих шаблонов пока нет — соберите цепочку и нажмите «Сохранить как шаблон».';
+      if (tab === 'groups') return 'Своих групп пока нет. Соберите узлы, нажмите «Сгруппировать», затем «В шаблоны» в списке групп над холстом.';
+      return 'Готовых шаблонов пока нет.';
+    }
+    function refreshTemplatesDialog() {
+      if (!tpl.open || !tpl.refs.grid) return;
+      const catalog = templateCatalog(), query = tpl.query.trim().toLocaleLowerCase(), items = catalog[tpl.tab] || [];
+      const kind = tpl.tab === 'groups' ? 'group' : 'starter';
+      tpl.refs.tabs.replaceChildren(...templateTabs({ ready: catalog.ready.length, mine: catalog.mine.length, groups: catalog.groups.length }));
+      const shown = query ? items.filter(item => templateHaystack(kind, item).includes(query)) : items;
+      tpl.refs.grid.replaceChildren(...shown.map(item => templateCard(kind, item)));
+      tpl.refs.grid.hidden = shown.length === 0;
+      tpl.refs.empty.textContent = shown.length ? '' : templatesEmptyText(tpl.tab, query);
+      tpl.refs.empty.hidden = shown.length > 0;
+      templateSaveState();
+    }
+    function focusTemplatesOpener() {
+      const target = (tpl.opener?.isConnected ? tpl.opener : root.querySelector?.(`[data-action="${tpl.openerAction}"]`));
+      target?.focus?.();
+    }
+    function closeTemplatesDialog({ restoreFocus = true } = {}) {
+      if (!tpl.open) return;
+      tpl.open = false;
+      resetTemplateConfirm();
+      tpl.overlay?.remove();
+      tpl.overlay = null; tpl.refs = {}; tpl.lastFocused = null;
+      if (restoreFocus) focusTemplatesOpener();
+    }
+    // Простой focus-trap: Tab и Shift+Tab не выходят за пределы панели.
+    function trapTemplatesFocus(event) {
+      const panel = tpl.refs.panel;
+      if (!panel) return;
+      const focusables = [...panel.querySelectorAll('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])')]
+        .filter(node => !node.disabled && node.getClientRects().length);
+      if (!focusables.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1], active = document.activeElement;
+      if (!panel.contains(active)) { event.preventDefault(); first.focus(); return; }
+      if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+    }
+    function openTemplatesDialog(mode = 'browse') {
+      if (tpl.open) return;
+      resetTemplateConfirm();
+      tpl.open = true; tpl.mode = mode === 'save' ? 'save' : 'browse'; tpl.tab = 'ready';
+      tpl.query = ''; tpl.name = ''; tpl.error = ''; tpl.selected = ''; tpl.lastFocused = null;
+      tpl.openerAction = tpl.mode === 'save' ? 'save-template' : 'templates-dialog';
+      tpl.opener = root.querySelector?.(`[data-action="${tpl.openerAction}"]`);
+      const program = nodeById(activeAction), actionName = program?.params?.name || program?.params?.feature_name || '';
+      const overlay = el('div', { class: 'templates-overlay', 'data-templates-overlay': '',
+        onclick: e => { if (e.target === overlay) closeTemplatesDialog(); } });
+      const panel = el('div', { class: 'templates-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Шаблоны действий', 'data-templates-panel': '', tabindex: '-1' });
+      const head = el('div', { class: 'templates-head' },
+        el('div', { class: 'templates-head-text' },
+          el('h2', { class: 'templates-title' }, 'Шаблоны действий'),
+          el('p', { class: 'templates-subtitle muted small' }, actionName ? `Действие: «${actionName}»` : 'Действие не выбрано — сначала добавьте действие.')),
+        el('button', { class: 'templates-close', type: 'button', title: 'Закрыть', 'aria-label': 'Закрыть шаблоны', onclick: () => closeTemplatesDialog() }, '×'));
+      const nameInput = el('input', { class: 'templates-name', type: 'text', maxlength: '80', value: tpl.name, placeholder: 'Название шаблона', 'aria-label': 'Название шаблона',
+        oninput: e => { tpl.name = e.target.value; tpl.error = ''; templateSaveState(); },
+        onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); submitTemplateSave(); } } });
+      const saveButton = el('button', { class: 'primary', type: 'button', onclick: () => submitTemplateSave() }, 'Сохранить');
+      const saveHint = el('p', { class: 'templates-save-hint muted small', 'aria-live': 'polite' });
+      const saveError = el('p', { class: 'templates-save-error', role: 'alert', hidden: '' });
+      const saveBar = tpl.mode === 'save' ? el('div', { class: 'templates-save' },
+        el('div', { class: 'templates-save-row' },
+          el('label', { class: 'templates-name-field' }, el('span', {}, 'Название шаблона'), nameInput), saveButton),
+        saveHint, saveError) : null;
+      const searchInput = el('input', { class: 'templates-search-input', type: 'search', value: tpl.query, placeholder: 'Поиск по названию или подсказке…', 'aria-label': 'Поиск шаблонов',
+        oninput: e => { tpl.query = e.target.value; refreshTemplatesDialog(); } });
+      const tabs = el('div', { class: 'templates-tabs', role: 'tablist', 'aria-label': 'Виды шаблонов', onkeydown: e => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault(); e.stopPropagation();
+        const order = TEMPLATE_TABS.map(tab => tab.id), index = order.indexOf(tpl.tab), step = e.key === 'ArrowRight' ? 1 : order.length - 1;
+        tpl.tab = order[(index + step) % order.length];
+        refreshTemplatesDialog();
+        tpl.refs.tabs?.querySelector?.(`[data-templates-tab="${tpl.tab}"]`)?.focus?.();
+      } });
+      const grid = el('div', { class: 'templates-grid' });
+      const empty = el('p', { class: 'templates-empty muted', 'data-templates-empty': '', hidden: '' });
+      panel.append(...[head, saveBar, el('div', { class: 'templates-search' }, searchInput), tabs, el('div', { class: 'templates-body' }, grid, empty)].filter(Boolean));
+      overlay.append(panel);
+      overlay.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTemplatesDialog(); return; }
+        if (e.key === 'Tab') trapTemplatesFocus(e);
+        e.stopPropagation();
+      });
+      overlay.addEventListener('focusin', () => { tpl.lastFocused = document.activeElement; });
+      tpl.overlay = overlay;
+      tpl.refs = { overlay, panel, tabs, grid, empty, search: searchInput, name: nameInput, saveButton, saveHint, saveError };
+      root.append(overlay);
+      refreshTemplatesDialog();
+      (tpl.mode === 'save' ? nameInput : searchInput).focus();
+    }
+
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
       return socketMap(node, groups)[direction]?.[socket];
@@ -1305,7 +1591,7 @@
     function render() {
       // Редактор переназначает массивы графа (links, nodes); записываем актуальный граф в документ до каждого показа.
       doc.mechanics.graph = graph;
-      root.replaceChildren();
+      shell.replaceChildren();
       // Показываем одно действие: его узлы, его связи и кнопки переключения между действиями.
       const starts = graph.nodes.filter(n => n.type === 'action.program');
       if (!starts.some(n => n.id === activeAction)) activeAction = starts[0]?.id || '';
@@ -1333,17 +1619,11 @@
         el('b', {}, 'Начните с готового графа'),
         el('span', { class: 'muted small' }, 'Вариант можно поменять в любой момент. Или добавьте узел кнопкой выше или через ПКМ по холсту.'),
         ...graphStarters().map(s => el('button', { class: 'small', title: s.hint, 'data-starter': s.id, onclick: () => insertStarter(s) }, s.name)));
-      const tplItems = graphStarters();
-      const tplSelect = el('select', { 'aria-label': 'Шаблон графа' }, el('option', { value: '' }, tplItems.length ? '— выберите шаблон —' : 'Шаблонов пока нет'),
-        ...tplItems.map(s => el('option', { value: s.id }, s.name + (ownTemplate(s.id) ? ' · мой' : ''))));
-      const tplName = el('input', { placeholder: 'Название, чтобы сохранить цепочку действия', 'aria-label': 'Название шаблона' });
-      const chosenTemplate = () => tplItems.find(x => x.id === tplSelect.value);
-      const templateBar = el('div', { class: 'node-template-bar' }, el('b', {}, 'Шаблоны'),
-        tplSelect,
-        el('button', { class: 'small', onclick: () => { const t = chosenTemplate(); if (t) insertStarter(t); else { status = 'Выберите шаблон в списке.'; render(); } } }, 'Вставить в действие'),
-        el('button', { class: 'small', onclick: () => { const t = chosenTemplate(); if (t && ownTemplate(t.id)) removeTemplate(t.id); else { status = 'Удалить можно только свой шаблон.'; render(); } } }, 'Удалить мой'),
-        tplName,
-        el('button', { class: 'small primary', onclick: () => saveTemplate(tplName.value) }, 'Сохранить цепочку как шаблон'));
+      // Компактная панель шаблонов: всё остальное — в диалоге (готовые, свои и группы).
+      const templateBar = el('div', { class: 'node-template-bar' },
+        el('button', { class: 'primary', type: 'button', 'data-action': 'templates-dialog', onclick: () => openTemplatesDialog('browse') }, 'Шаблоны действий'),
+        el('button', { class: 'small', type: 'button', 'data-action': 'save-template', onclick: () => openTemplatesDialog('save') }, 'Сохранить как шаблон'),
+        el('span', { class: 'node-template-hint muted small' }, 'Готовые наборы, свои цепочки и группы'));
       const groupShelf = graph.groups.length || groupTemplates().length ? el('div', { class: 'node-group-shelf' },
         graph.groups.length ? el('b', {}, 'Группы') : null,
         ...graph.groups.map(g => el('span', { class: 'node-group-item' },
@@ -1373,7 +1653,9 @@
       const pending = graphProblems(graph, graph.groups || []);
       const statusLine = el('div', { class: 'node-status' + (pending.length && !status ? ' warn' : ''), role: 'status' }, status || (pending.length ? `Граф не исполняется, пока не исправлено: ${pending.join('; ')}` : ''));
       // Пустые части (нет групп) не добавляем: null в append превращается в текст «null».
-      root.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), templateBar, statusLine, renderPreview()].filter(Boolean));
+      shell.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), templateBar, statusLine, renderPreview()].filter(Boolean));
+      // Если редактор перерисовали при открытом диалоге, окно остаётся поверх оболочки.
+      if (tpl.open && tpl.overlay && !tpl.overlay.isConnected) root.append(tpl.overlay);
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
       // Сетка холста выравнивается по текущему виду (applyView только двигает фон и transform).
