@@ -918,7 +918,7 @@
     // Мини-превью графа 180×100: рамки узлов цветом категории, связи линиями.
     // Координаты нормализуются; шаблоны без позиций (или все в одной точке) раскладываются сеткой.
     function templatePreview(kind, item) {
-      const svg = previewTag('svg', { class: 'templates-preview-svg', viewBox: '0 0 180 100', preserveAspectRatio: 'xMidYMid meet', 'aria-hidden': 'true', focusable: 'false' });
+      const svg = previewTag('svg', { class: 'templates-preview-svg', viewBox: '0 0 180 100', width: '180', height: '100', preserveAspectRatio: 'xMidYMid meet', 'aria-hidden': 'true', focusable: 'false' });
       const nodes = templateNodesOf(item);
       if (!nodes.length) { svg.append(previewTag('rect', { x: 55, y: 38, width: 70, height: 24, rx: 6, class: 'templates-preview-empty' })); return svg; }
       const keyOf = node => (kind === 'group' ? node.id : node.key);
@@ -1008,9 +1008,11 @@
     }
     function deleteTemplateItem(kind, item) {
       status = removeTemplate(kind, item.id);
-      if (root._statusNode) root._statusNode.textContent = status;
       resetTemplateConfirm();
       refreshTemplatesDialog();
+      // Оболочка редактора перерисовывается, а окно остаётся на месте: полка групп и стартеры
+      // за диалогом больше не показывают удалённый шаблон.
+      render();
       tpl.refs.tabs?.querySelector?.(`[data-templates-tab="${tpl.tab}"]`)?.focus?.();
     }
     function insertTemplateFromDialog(kind, item) {

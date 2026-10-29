@@ -45,6 +45,12 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     };
     const focusedAction = () => page.evaluate(() => document.activeElement?.getAttribute('data-action') || '');
 
+    // 0. Компактная панель на месте: основная кнопка, сохранение и подсказка.
+    assert.equal(await page.locator('.node-template-bar button.primary').innerText(), 'Шаблоны действий', 'основная кнопка панели');
+    assert.equal(await page.locator('.node-template-bar').getByRole('button', { name: 'Сохранить как шаблон', exact: true }).count(), 1, 'кнопка сохранения в панели');
+    assert.equal(await page.locator('.node-template-bar .node-template-hint').innerText(), 'Готовые наборы, свои цепочки и группы', 'подсказка панели');
+    assert.equal(await page.locator('[data-templates-overlay]').count(), 0, 'до нажатия диалога нет');
+
     // 1. Открытие: окно внутри root редактора, role=dialog, фокус на поиске.
     await openBrowse();
     assert.equal(await page.locator('[data-templates-overlay]').count(), 1, 'оверлей один');
@@ -123,7 +129,11 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Название шаблона', 'фокус в поле названия');
     assert.equal(await dialog.locator('.templates-save-hint').innerText(), 'В шаблон войдут узлы действия, кроме «Начала», «Конца» и групп: 2 узла.', 'подсказка о содержимом шаблона');
     assert.equal(await dialog.getByRole('button', { name: 'Сохранить', exact: true }).isDisabled(), false, 'кнопка сохранения доступна');
+    await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    assert.equal(await dialog.locator('.templates-save-error').innerText(), 'Укажите название шаблона.', 'ошибка видна в форме');
+    assert.equal(await page.getByRole('dialog', { name: 'Шаблоны действий' }).count(), 1, 'ошибка не закрывает диалог');
     await dialog.getByLabel('Название шаблона', { exact: true }).fill('Мой шаблон');
+    assert.equal(await dialog.locator('.templates-save-error').isHidden(), true, 'ошибка сбрасывается при вводе');
     await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
     assert.match(await page.locator('.node-status').innerText(), /Шаблон «Мой шаблон» сохранён\./, 'статус сохранения');
