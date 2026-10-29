@@ -25,7 +25,8 @@ param(
     [string[]]$Platforms = @('windows', 'linux', 'macos'),
     [string]$Version = '',
     [switch]$NoTests,
-    [int]$CiTimeoutMinutes = 30
+    [int]$CiTimeoutMinutes = 30,
+    [string]$CiRef = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +45,16 @@ try {
         finally { $ErrorActionPreference = $previous }
     }
 
+    # gh, как и cargo, пишет ошибки в stderr; под Stop это TerminationError.
+    # Гасим строгий режим на время вызова и отдаём код возврата через $LASTEXITCODE.
+    function Invoke-Gh([string[]]$GhArgs, [switch]$Quiet) {
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            if ($Quiet) { & gh @GhArgs 2>&1 | Out-Null }
+            else { & gh @GhArgs 2>&1 | ForEach-Object { Write-Host $_ } }
+        } finally { $ErrorActionPreference = $previous }
+    }
     # --- версия ---
     $line = (Select-String -Path 'Cargo.toml' -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1)
     if (-not $line) { Die 'В Cargo.toml не найдено поле version.' }
@@ -61,8 +72,20 @@ try {
             Die ('Для Linux/macOS нужен GitHub CLI: winget install --id GitHub.cli, затем gh auth login. ' +
                  'Либо соберите только Windows: -Platforms windows.')
         }
-        & gh auth status 2>&1 | Out-Null
+        Invoke-Gh 'auth', 'status' -Quiet
         if ($LASTEXITCODE -ne 0) { Die 'gh не авторизован: выполните gh auth login (нужно право запускать Actions).' }
+
+        # workflow_dispatch запускается только для уже опубликованной ветки: без push файла
+        # .github/workflows/build-all.yml на GitHub будет 404, поэтому проверяем заранее.
+        if (-not $CiRef) { $CiRef = (& git rev-parse --abbrev-ref HEAD).Trim() }
+        $origin = (& git remote get-url origin).Trim()
+        if ($origin -match 'github\.com[:/](?<nwo>[^/]+/[^/.]+?)(?:\.git)?$') { $nwo = $Matches['nwo'] }
+        else { Die "Не удалось разобрать origin: $origin" }
+        Invoke-Gh 'api', "repos/$nwo/contents/.github/workflows/build-all.yml?ref=$CiRef" -Quiet
+        if ($LASTEXITCODE -ne 0) {
+            Die ("Workflow build-all.yml ещё не опубликован в GitHub ($nwo, ветка $CiRef). " +
+                 "Запушьте его: git push origin $CiRef — и повторите (или укажите -CiRef <ветка>).")
+        }
     }
 
     # --- dist всегда с нуля ---
@@ -106,7 +129,7 @@ try {
     if ($needCi) {
 
         Step 'запускаю CI-сборку build-all.yml'
-        & gh workflow run build-all.yml 2>&1 | ForEach-Object { Write-Host $_ }
+        Invoke-Gh 'workflow', 'run', 'build-all.yml', '--ref', $CiRef
         if ($LASTEXITCODE -ne 0) { Die 'Не удалось запустить build-all.yml.' }
 
         $runId = $null
