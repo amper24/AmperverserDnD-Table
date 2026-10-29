@@ -56,14 +56,15 @@ test('kind настраивается: один и тот же узел комп
 });
 
 test('logic.op исполняет И, ИЛИ и НЕ; неизвестная операция отклоняется', () => {
+  // У «НЕ» только вход «a»: провод к «b» у этой операции не проводится.
   const boolGraph = (op, aTrue, bTrue) => mech([
     { id: 'a', type: 'condition.context', params: { kind: 'level', min: aTrue ? 1 : 10, max: 20 } },
-    { id: 'b', type: 'condition.context', params: { kind: 'level', min: bTrue ? 1 : 10, max: 20 } },
+    ...(op === 'not' ? [] : [{ id: 'b', type: 'condition.context', params: { kind: 'level', min: bTrue ? 1 : 10, max: 20 } }]),
     { id: 'op', type: 'logic.op', params: { op } },
     { id: 'if', type: 'flow.if', params: {} },
     { id: 'yes', type: 'action.manual', params: { block_id: 'yes', text: 'да', when: 'always' } },
   ], [
-    link('a', 'value', 'op', 'a'), link('b', 'value', 'op', 'b'), link('op', 'value', 'if', 'condition'),
+    link('a', 'value', 'op', 'a'), ...(op === 'not' ? [] : [link('b', 'value', 'op', 'b')]), link('op', 'value', 'if', 'condition'),
     link('start', 'exec', 'if', 'exec'), link('if', 'then', 'yes', 'exec'),
   ]);
   const taken = (op, aTrue, bTrue) => plain(M.toLegacy(boolGraph(op, aTrue, bTrue), { level: 5 }).programs[0].blocks).length === 1;
@@ -73,7 +74,14 @@ test('logic.op исполняет И, ИЛИ и НЕ; неизвестная о�
   assert.equal(taken('or', false, false), false);
   assert.equal(taken('not', false, true), true, 'НЕ смотрит только на вход «a»');
   assert.equal(taken('not', true, false), false);
-  assert.notEqual(M.validate(boolGraph('xor', true, true)), '');
+  assert.notEqual(M.validate(boolGraph('nimp', true, true)), '');
+  // Новые операции: xor/nand/nor/xnor/implies считаются по таблице истинности.
+  assert.equal(taken('xor', true, false), true);
+  assert.equal(taken('xor', true, true), false);
+  assert.equal(taken('nand', true, true), false);
+  assert.equal(taken('nor', false, false), true);
+  assert.equal(taken('xnor', true, true), true);
+  assert.equal(taken('implies', true, false), false);
 });
 
 test('заголовок карточки показывает выбранный режим настраиваемого узла', () => {

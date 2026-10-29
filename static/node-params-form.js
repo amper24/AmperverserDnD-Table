@@ -32,6 +32,11 @@
     'rule.class': { kind: [{ value: 'class_progression', label: 'Прогрессия класса' }, { value: 'class_rules', label: 'Правила класса' }, { value: 'spell_slots', label: 'Ячейки заклинаний' }, { value: 'spellcasting', label: 'Заклинательная характеристика' }], ability: ABILS },
     // Одно условие контекста: вид выбирается выпадающим списком, редакции — множественным выбором.
     'condition.context': { kind: [{ value: 'edition', label: 'Редакция' }, { value: 'level', label: 'Уровень' }, { value: 'subclass', label: 'Подкласс' }, { value: 'choice', label: 'Выбранный вариант' }], editions: EDITIONS },
+    // Условия листа: закрытые списки режимов и операций сравнения.
+    'condition.status': { mode: [{ value: 'present', label: 'Наложено' }, { value: 'absent', label: 'Не наложено' }] },
+    'condition.item': { mode: [{ value: 'owned', label: 'Есть в снаряжении' }, { value: 'equipped', label: 'Надето или в руках' }] },
+    'condition.hp': { op: [{ value: 'lt', label: '< меньше' }, { value: 'le', label: '≤ меньше или равно' }, { value: 'gt', label: '> больше' }, { value: 'ge', label: '≥ больше или равно' }] },
+    'condition.slot': { op: [{ value: 'gte', label: '≥ не меньше' }, { value: 'lt', label: '< меньше' }] },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
     'data.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
     // Результат действия: поле — из закрытого списка, источник — программы текущего графа (динамически).
@@ -58,8 +63,14 @@
       { value: 'roll', label: 'Свободный бросок' }, { value: 'attack', label: 'Бросок атаки' }, { value: 'damage', label: 'Урон' },
       { value: 'heal', label: 'Лечение' }, { value: 'temp_hp', label: 'Временные хиты' },
     ] },
-    // Один логический узел: операция И / ИЛИ / НЕ («НЕ» использует только вход «a»).
-    'logic.op': { op: [{ value: 'and', label: 'И — оба условия' }, { value: 'or', label: 'ИЛИ — хотя бы одно' }, { value: 'not', label: 'НЕ — обратное значение' }] },
+    // Один логический узел: операция И / ИЛИ / НЕ / исключающее ИЛИ / И-НЕ / ИЛИ-НЕ / равнозначность /
+    // импликация («НЕ» использует только вход «a»).
+    'logic.op': { op: [
+      { value: 'and', label: 'И — оба условия' }, { value: 'or', label: 'ИЛИ — хотя бы одно' }, { value: 'not', label: 'НЕ — обратное значение' },
+      { value: 'xor', label: 'Исключающее ИЛИ — только одно из двух' }, { value: 'nand', label: 'И-НЕ — не оба сразу' },
+      { value: 'nor', label: 'ИЛИ-НЕ — ни одного' }, { value: 'xnor', label: 'Равнозначность — одинаковые' },
+      { value: 'implies', label: 'Импликация — из «a» следует «b»' },
+    ] },
   };
   // Список характеристик и навыков для узла «Характеристика / навык»: навыки берутся из набора SKILLS (common.js).
   const statIdOptions = () => [...ABILS, ...(window.SKILLS || []).map(([value, label]) => ({ value, label: `${label} (навык)` }))];
@@ -110,6 +121,7 @@
     items: 'Предметы', title: 'Название', gold: 'Золото', qty: 'Количество', type: 'Тип',
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
     caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита', label: 'Метка вида',
+    percent: 'Процент от максимума',
   };
   const labelOf = key => LABELS[key] || key;
 

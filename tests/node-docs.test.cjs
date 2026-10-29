@@ -26,12 +26,12 @@ function rowsOf(text) {
 }
 const backticked = text => [...String(text).matchAll(/`([a-z_.]+)`/g)].map(match => match[1]);
 
-test('таблица палитры перечисляет все 29 типов ровно один раз', () => {
+test('таблица палитры перечисляет все 33 типа ровно один раз', () => {
   const rows = rowsOf(fs.readFileSync(DOC, 'utf8'));
   const documented = rows.map(row => row.type);
   assert.equal(new Set(documented).size, documented.length, 'типы в таблице не повторяются');
   assert.deepEqual(documented.slice().sort(), Object.keys(R.NODE_DEFS).slice().sort(), 'таблица и реестр клиента совпадают');
-  assert.equal(documented.length, 29, 'в палитре 29 типов, включая два внутренних узла групп');
+  assert.equal(documented.length, 33, 'в палитре 33 типа, включая два внутренних узла групп');
   for (const row of rows) assert.ok(row.purpose.length > 0, `${row.type}: назначение не пустое`);
 });
 

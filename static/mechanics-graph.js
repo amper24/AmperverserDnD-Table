@@ -15,6 +15,10 @@
   const NodeRegistry = window.NodeRegistry;
   if (!NodeRegistry) throw new Error('node-registry.js должен быть загружен до mechanics-graph.js');
   const { ACTION_KINDS, ROLL_KINDS, COMPUTED, VALUE_TYPES, ABILITIES, NODE_DEFS } = NodeRegistry;
+  // Условия листа (condition.status/item/hp/slot): считаются только в рантайме, поэтому их
+  // провод допустим только ко входу condition блока действия (см. validateGraph).
+  const SHEET_CONDITION_TYPES = new Set(NodeRegistry.SHEET_CONDITIONS || []);
+  const SHEET_CONDITION_TARGET = 'Условие листа подключается только ко входу «condition» блока действия.';
   // Определение узла: тип — закрытое имя реестра.
   const defOf = type => NodeRegistry.nodeDef(type);
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
@@ -239,7 +243,10 @@
       return node.type === 'group.input' ? { inputs: {}, outputs: { value: item.type } } : { inputs: { value: item.type }, outputs: {} };
     }
     const def = defOf(node.type);
-    return def ? { inputs: def.inputs, outputs: def.outputs } : { inputs: {}, outputs: {} };
+    if (!def) return { inputs: {}, outputs: {} };
+    // Узел может сузить порты по своим параметрам (у logic.op операция «НЕ» не имеет входа «b»).
+    if (typeof def.ports === 'function') return def.ports(node.params || {});
+    return { inputs: def.inputs, outputs: def.outputs };
   }
   // Поток исполнения: сокеты типа flow (exec у действий, then/else у «Если», flow-порты групп).
   // Правило «начало → конец»: каждое действие идёт от «Начала» (action.program) до «Конца» (flow.end),
@@ -410,6 +417,9 @@
       if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
       if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
       if (fromNode.type === 'condition.hit' && !(toNode.type === 'flow.if' && target.socket === 'condition')) { const e = soft(problems, 'Условие попадания подключается только ко входу «Если».'); if (e) return e; continue; }
+      // Условия листа считаются только в рантайме и только на входе condition блока (condition_src):
+      // статические enabled и flow.if их не считают, поэтому такой провод отклоняется.
+      if (SHEET_CONDITION_TYPES.has(fromNode.type) && !(toNode.type.startsWith('action.') && target.socket === 'condition')) { const e = soft(problems, SHEET_CONDITION_TARGET); if (e) return e; continue; }
       const targetKey = `${target.node}:${target.socket}`, manyInputs = toNode.type === 'flow.end';
       if (!manyInputs && incoming.has(targetKey)) { const e = soft(problems, 'К каждому входному сокету подключается только один провод.'); if (e) return e; continue; }
       if (!manyInputs) incoming.add(targetKey);

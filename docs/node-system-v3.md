@@ -51,13 +51,17 @@
 | `data.math` | Арифметика | `a`, `b` (number) → `value` (number) | `op` = add/sub/mul/div/min/max |
 | `data.compare` | Сравнение чисел | `a`, `b` (number) → `value` (bool) | `op` = `>=`, `<=`, `>`, `<`, `=`, `!=` |
 | `dice.combine` | Сложение двух костей | `a`, `b` (dice) → `value` (dice) | нет |
-| `logic.op` | Логика И / ИЛИ / НЕ | `a`, `b` (bool) → `value` (bool) | `op` = and/or/not |
+| `logic.op` | Логика: И / ИЛИ / НЕ / исключающее ИЛИ / И-НЕ / ИЛИ-НЕ / равнозначность / импликация | `a`, `b` (bool) → `value` (bool) | `op` = and/or/not/xor/nand/nor/xnor/implies; у `not` вход «b» не используется |
 | `data.boolean` | Логическая константа | — → `value` (bool) | `value` = true/false |
 | `data.result` | Результат последнего действия или программы | — → `value` (number) | `source` = last/ID программы, `field` = total/hit/applied/spent |
 | `data.sheet` | Числовое поле листа | — → `value` (number) | `field` — путь вида `hp.current`, `level`, `abilities.str` |
 | `data.cast` | Круг текущего каста | — → `value` (number) | `field` = level/base/extra |
 | `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
 | `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
+| `condition.status` | Есть ли на листе состояние с таким названием | — → `value` (bool) | `name`, `mode` = present/absent |
+| `condition.item` | Есть ли предмет в снаряжении листа | — → `value` (bool) | `name`, `mode` = owned/equipped |
+| `condition.hp` | Хиты или процент от максимума против числа | — → `value` (bool) | `op` = lt/le/gt/ge, `value`, `percent` = true/false |
+| `condition.slot` | Остаток ячеек круга против числа | — → `value` (bool) | `level` = 1–9, `op` = gte/lt, `value` = 0–20 |
 | `rule.value` | Правило-значение | `enabled` (bool), `amount` (number) → `effect` | `kind` = ability/speed/hp/hit_die/asi/armor_formula + `ability`, `amount`, `value`, `formula`, `table` |
 | `rule.list` | Правило-список | `enabled`, `amount` (number) → `effect` | `kind` = languages/proficiencies/skill_proficiency/saving_throws/skills/spell_list/feature/class_features/equipment/equipment_choice + поля вида |
 | `rule.class` | Правило класса | `enabled` (bool) → `effect` | `kind` = class_progression/class_rules/spell_slots/spellcasting, `table`, `ability` |
@@ -121,6 +125,37 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 Читается из контекста каста; без каста (редактор, предпросмотр) — `0`.
 Все три узла дают `number`: они подключаются к `data.compare`/`data.math` и к числовым
 входам правил (`amount`). К входу `dice` их подключить нельзя — там тип `dice`.
+
+### Условия
+
+Условия — это маленькие узлы с одним выходом `value: bool` и без входов. Два из них
+считаются по снимку листа при компиляции (`condition.context` — редакция, уровень,
+подкласс, выбор; `condition.hit` — попадание предыдущей атаки), остальные четыре читают
+**лист исполнения** и поэтому работают только в рантайме — через вход `condition` блока
+(`condition_src`), а не через `flow.if`:
+
+| Узел | Что читает | Параметры |
+|---|---|---|
+| `condition.status` | `sheet.conditions` (список строк) | `name` — название состояния (до 120 символов, пустое — ошибка), `mode` = `present` / `absent` |
+| `condition.item` | `sheet.inventory` (список предметов) | `name` — название предмета (до 120 символов, пустое — ошибка), `mode` = `owned` (есть в снаряжении) / `equipped` (флаг `equipped`) |
+| `condition.hp` | `sheet.hp.current` и `sheet.hp.max` | `op` = `lt` / `le` / `gt` / `ge`, `value` (при `percent: true` — 0–100, иначе 0–1000000), `percent` = true/false |
+| `condition.slot` | `sheet.spells.slots[level]` (max − used) | `level` = 1–9, `op` = `gte` / `lt`, `value` = 0–20 |
+
+- Сравнение состояния и предмета — **по строке**: «Отравленный» и «отравленный» — разные
+  значения. `condition.status` смотрит в `sheet.conditions`, `condition.item` — в
+  `sheet.inventory` по полю `name`.
+- `condition.hp` при `percent: true` считает `current * 100 / max`; если максимум равен 0,
+  процент считается нулевым. Без листа (`hp` нет) результат — `false`.
+- `condition.slot` берёт остаток `max − used`. Если круг совпадает с кругом пула Договора
+  (`sheet.spells.pact_slots.level` и `pact_slots.max > 0`), остаток берётся из `pact_slots`;
+  отсутствующий круг — остаток 0.
+- Без контекста исполнения (редактор, предпросмотр) все четыре узла дают `false`: блок с
+  таким условием в предпросмотре скрыт (в рантайме его включает сервер). Это то же
+  ограничение, что у `data.result`/`data.sheet` (см. «Результаты выполнения»).
+- Поэтому провод от условия листа допустим **только ко входу `condition` блока действия**
+  (единственное место, где появляется `condition_src`); провод к `enabled` или к `flow.if`
+  отклоняется с подсказкой — эти входы считаются статически и молча выключили бы блок.
+  `condition.hit` по-прежнему подключается только ко входу `condition` узла «Если».
 
 ### Результаты выполнения
 
@@ -230,3 +265,7 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
    (5 старых + 8 новых; 10 вставляются в действие), 3 графа создания, единая палитра
    с описаниями и подсказками — сделано; редактор продолжает упрощаться (пустые
    состояния, примеры).
+5. Логика и условия: восемь операций `logic.op` (И, ИЛИ, НЕ, исключающее ИЛИ, И-НЕ,
+   ИЛИ-НЕ, равнозначность, импликация) и четыре условия листа (`condition.status`,
+   `condition.item`, `condition.hp`, `condition.slot`), которые читают лист исполнения
+   — сделано. Типов в палитре 33 (31 видимый + два внутренних узла групп).

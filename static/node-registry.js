@@ -36,16 +36,32 @@
     'asi.str': 'Повышение Силы', 'asi.dex': 'Повышение Ловкости', 'asi.con': 'Повышение Телосложения',
     'asi.int': 'Повышение Интеллекта', 'asi.wis': 'Повышение Мудрости', 'asi.cha': 'Повышение Харизмы',
   };
-  // Логические операции одного узла «Логика»: НЕ использует только вход «a».
-  const LOGIC_OPS = ['and', 'or', 'not'];
-  const LOGIC_OP_LABELS = { and: 'И', or: 'ИЛИ', not: 'НЕ' };
+  // Логические операции одного узла «Логика»: НЕ использует только вход «a», остальные — «a» и «b».
+  // Таблица истинности всех операций одна и та же в клиенте (static/nodes/logic/op.js) и на сервере
+  // (src/mechanics_graph.rs graph_output_value).
+  const LOGIC_OPS = ['and', 'or', 'not', 'xor', 'nand', 'nor', 'xnor', 'implies'];
+  const LOGIC_OP_LABELS = {
+    and: 'И', or: 'ИЛИ', not: 'НЕ', xor: 'Исключающее ИЛИ',
+    nand: 'И-НЕ', nor: 'ИЛИ-НЕ', xnor: 'Равнозначность', implies: 'Импликация',
+  };
+  // Закрытые списки параметров условий листа (condition.status/item/hp/slot).
+  // Сервер проверяет те же наборы: src/mechanics_graph.rs STATUS_MODES / ITEM_MODES / HP_OPS / SLOT_OPS.
+  const STATUS_MODES = ['present', 'absent'];
+  const ITEM_MODES = ['owned', 'equipped'];
+  const HP_OPS = ['lt', 'le', 'gt', 'ge'];
+  const SLOT_OPS = ['gte', 'lt'];
+  // Условия листа читаются только в рантайме, поэтому подключаются только ко входу «condition»
+  // блока действия (там появляется condition_src). Статические входы enabled и flow.if их не считают.
+  const SHEET_CONDITIONS = ['condition.status', 'condition.item', 'condition.hp', 'condition.slot'];
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
   // Узлы, которые сами вычисляют значение из входов (свой compute у класса): предпросмотр и
   // condition-значения читают их через def.compute. condition.context считается отдельно (evaluate).
   // Список обязан совпадать с классами, объявившими compute; это проверяет tests/node-registry.test.cjs.
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast']);
+  // Условия листа (condition.status/item/hp/slot) без листа дают false.
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast',
+    'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
@@ -201,6 +217,7 @@
   window.Nodes = { GraphNode, register, actionDefaults, clone };
   window.NodeRegistry = {
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
+    STATUS_MODES, ITEM_MODES, HP_OPS, SLOT_OPS, SHEET_CONDITIONS,
     FIELD_KINDS, FIELD_KIND_LABELS, FIELD_BLOCKS, FIELD_VALUE_FIELDS, FIELD_FORMULA_FIELDS, blockKindOf, blockKindsOf, blockParamsOf,
     COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,

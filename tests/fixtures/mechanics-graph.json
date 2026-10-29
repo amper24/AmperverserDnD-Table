@@ -1753,7 +1753,7 @@
               "id": "op",
               "type": "logic.op",
               "params": {
-                "op": "xor"
+                "op": "nimp"
               }
             },
             {
@@ -2870,6 +2870,597 @@
             }
           ],
           "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "logic-op-xor-node",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "lv",
+              "type": "condition.context",
+              "params": {
+                "kind": "level",
+                "min": 1,
+                "max": 20
+              }
+            },
+            {
+              "id": "ed",
+              "type": "condition.context",
+              "params": {
+                "kind": "edition",
+                "editions": [
+                  "2014"
+                ]
+              }
+            },
+            {
+              "id": "op",
+              "type": "logic.op",
+              "params": {
+                "op": "xor"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "lv",
+                "socket": "value"
+              },
+              "to": {
+                "node": "op",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "ed",
+                "socket": "value"
+              },
+              "to": {
+                "node": "op",
+                "socket": "b"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-status-modes",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "present",
+              "type": "condition.status",
+              "params": {
+                "name": "Отравленный",
+                "mode": "present"
+              }
+            },
+            {
+              "id": "absent",
+              "type": "condition.status",
+              "params": {
+                "name": "Испуганный",
+                "mode": "absent"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-status-empty-name",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.status",
+              "params": {
+                "name": "   ",
+                "mode": "present"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-status-unknown-mode",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.status",
+              "params": {
+                "name": "Отравленный",
+                "mode": "maybe"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-item-modes",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "owned",
+              "type": "condition.item",
+              "params": {
+                "name": "Кинжал",
+                "mode": "owned"
+              }
+            },
+            {
+              "id": "equipped",
+              "type": "condition.item",
+              "params": {
+                "name": "Кинжал",
+                "mode": "equipped"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-item-empty-name",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.item",
+              "params": {
+                "name": "",
+                "mode": "owned"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-item-unknown-mode",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.item",
+              "params": {
+                "name": "Кинжал",
+                "mode": "worn"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-hp-operations",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "lt",
+              "type": "condition.hp",
+              "params": {
+                "op": "lt",
+                "value": 50,
+                "percent": true
+              }
+            },
+            {
+              "id": "le",
+              "type": "condition.hp",
+              "params": {
+                "op": "le",
+                "value": 10,
+                "percent": false
+              }
+            },
+            {
+              "id": "gt",
+              "type": "condition.hp",
+              "params": {
+                "op": "gt",
+                "value": 0,
+                "percent": false
+              }
+            },
+            {
+              "id": "ge",
+              "type": "condition.hp",
+              "params": {
+                "op": "ge",
+                "value": 100,
+                "percent": true
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-hp-percent-range",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.hp",
+              "params": {
+                "op": "lt",
+                "value": 150,
+                "percent": true
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-hp-unknown-operation",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.hp",
+              "params": {
+                "op": "eq",
+                "value": 10,
+                "percent": false
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-slot-levels",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "first",
+              "type": "condition.slot",
+              "params": {
+                "level": 1,
+                "op": "gte",
+                "value": 1
+              }
+            },
+            {
+              "id": "ninth",
+              "type": "condition.slot",
+              "params": {
+                "level": 9,
+                "op": "lt",
+                "value": 20
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-slot-level-range",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.slot",
+              "params": {
+                "level": 10,
+                "op": "gte",
+                "value": 1
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-slot-value-range",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.slot",
+              "params": {
+                "level": 1,
+                "op": "gte",
+                "value": 21
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-slot-unknown-operation",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "c",
+              "type": "condition.slot",
+              "params": {
+                "level": 1,
+                "op": "gt",
+                "value": 1
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-gates-a-block",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "c",
+              "type": "condition.hp",
+              "params": {
+                "op": "lt",
+                "value": 50,
+                "percent": true
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Ранен",
+                "when": "always"
+              }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "c",
+                "socket": "value"
+              },
+              "to": {
+                "node": "m",
+                "socket": "condition"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "condition-not-into-enabled",
+      "valid": true,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "origin": "fixture",
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Fixture",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "c",
+              "type": "condition.item",
+              "params": {
+                "name": "Кинжал",
+                "mode": "owned"
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Правило",
+                "when": "always"
+              }
+            },
+            {
+              "id": "end",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "end",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "c",
+                "socket": "value"
+              },
+              "to": {
+                "node": "m",
+                "socket": "enabled"
+              }
+            }
+          ],
           "frames": [],
           "groups": []
         }

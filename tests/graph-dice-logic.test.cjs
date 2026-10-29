@@ -138,6 +138,39 @@ test('logic nodes never take the hit condition; only the if node does', () => {
   assert.ok(M.problems(graph).length > 0);
 });
 
+test('все восемь операций логики считаются по таблице истинности', () => {
+  // Та же таблица на сервере: src/mechanics_graph.rs (тест logic_ops_follow_the_truth_table).
+  const truth = {
+    and: (a, b) => a && b, or: (a, b) => a || b, not: a => !a,
+    xor: (a, b) => a !== b, nand: (a, b) => !(a && b), nor: (a, b) => !(a || b),
+    xnor: (a, b) => a === b, implies: (a, b) => !a || b,
+  };
+  const def = R.nodeDef('logic.op');
+  assert.deepEqual(plain(R.LOGIC_OPS).sort(), Object.keys(truth).sort(), 'реестр знает все восемь операций');
+  for (const op of R.LOGIC_OPS) {
+    assert.equal(def.validate({ op }), '', `${op}: операция допустима`);
+    assert.ok(R.LOGIC_OP_LABELS[op], `${op}: подпись для карточки и формы`);
+    // «НЕ» использует только вход «a» — и у узла нет порта «b».
+    assert.deepEqual(Object.keys(def.ports({ op }).inputs).sort(), op === 'not' ? ['a'] : ['a', 'b'], `${op}: порты`);
+    for (const a of [true, false]) for (const b of [true, false]) {
+      assert.equal(def.compute({ op }, socket => ({ a, b })[socket]), truth[op](a, b), `${op}: a=${a}, b=${b}`);
+      // Неизвестный вход остаётся неизвестным, если значение не определено вторым входом.
+      if (op !== 'not' && (op === 'xor' || op === 'xnor')) assert.equal(def.compute({ op }, socket => (socket === 'a' ? a : undefined)), undefined, `${op}: без b — неизвестно`);
+    }
+  }
+  // Неизвестная операция отклоняется и на клиенте, и в плане.
+  assert.notEqual(def.validate({ op: 'nimp' }), '');
+  // xor в графе: истинен только при разных входах.
+  const xorGraph = (a, b) => mech([
+    node('a', 'data.boolean', { value: a }), node('b', 'data.boolean', { value: b }), node('x', 'logic.op', { op: 'xor' }),
+    node('if', 'flow.if'), actionNode('yes', 'damage'), actionNode('no', 'heal'),
+  ], [link('a', 'value', 'x', 'a'), link('b', 'value', 'x', 'b'), link('x', 'value', 'if', 'condition'),
+    link('start', 'exec', 'if', 'exec'), link('if', 'then', 'yes', 'exec'), link('if', 'else', 'no', 'exec')]);
+  assert.deepEqual(plain(M.problems(xorGraph(true, false))), []);
+  assert.deepEqual(blocksOf(xorGraph(true, false)).map(block => block.id), ['yes']);
+  assert.deepEqual(blocksOf(xorGraph(true, true)).map(block => block.id), ['no']);
+});
+
 test('math computes numbers and the boolean node is a constant', () => {
   const math = R.nodeDef('data.math'), bool = R.nodeDef('data.boolean');
   const get = values => socket => values[socket];

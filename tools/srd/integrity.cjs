@@ -63,6 +63,8 @@ function rustConstants() {
   return {
     NODE_TYPES: list('NODE_TYPES'), ABILITIES: list('ABILITIES'), ACTIONS: list('ACTIONS'),
     ROLL_KINDS: list('ROLL_KINDS'), LOGIC_OPS: list('LOGIC_OPS'),
+    STATUS_MODES: list('STATUS_MODES'), ITEM_MODES: list('ITEM_MODES'), HP_OPS: list('HP_OPS'), SLOT_OPS: list('SLOT_OPS'),
+    SHEET_CONDITIONS: list('SHEET_CONDITIONS'),
     FIELD_KINDS: list('FIELD_KINDS'), VALUE_FIELDS: list('VALUE_FIELDS'), FORMULA_FIELDS: list('FORMULA_FIELDS'),
     DICE_ACTIONS: list('DICE_ACTIONS'), SKILL_IDS: list('SKILL_IDS'), BUTTON_STYLES: list('BUTTON_STYLES'), SOCKET_TYPES: list('SOCKET_TYPES'),
   };
@@ -583,6 +585,25 @@ function checkSeed(edition, opts = {}) {
         const field = (node.params || {}).field;
         if (!['level', 'base', 'extra'].includes(field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `поле круга каста «${field}» (level, base или extra)`);
       }
+      // Условия листа: названия состояний/предметов и закрытые списки режимов и операций.
+      if (node.type === 'condition.status' || node.type === 'condition.item') {
+        const params = node.params || {};
+        if (!isStr(params.name) || !params.name.trim() || params.name.length > 120) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.name`, `у условия нет названия (${node.type})`);
+        const modes = node.type === 'condition.status' ? rust.STATUS_MODES : rust.ITEM_MODES;
+        if (!modes.includes(params.mode)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.mode`, `неизвестный режим «${params.mode}» (${modes.join(', ')})`);
+      }
+      if (node.type === 'condition.hp') {
+        const params = node.params || {};
+        if (!rust.HP_OPS.includes(params.op)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.op`, `неизвестная операция сравнения хитов «${params.op}» (${rust.HP_OPS.join(', ')})`);
+        const limit = params.percent === true ? 100 : 1_000_000;
+        if (!isInt(params.value) || params.value < 0 || params.value > limit) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.value`, `значение хитов вне диапазона 0–${limit}`);
+      }
+      if (node.type === 'condition.slot') {
+        const params = node.params || {};
+        if (!isInt(params.level) || params.level < 1 || params.level > 9) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.level`, 'круг ячейки: 1–9');
+        if (!rust.SLOT_OPS.includes(params.op)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.op`, `неизвестная операция сравнения ячеек «${params.op}» (${rust.SLOT_OPS.join(', ')})`);
+        if (!isInt(params.value) || params.value < 0 || params.value > 20) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.value`, 'значение сравнения ячеек: 0–20');
+      }
       // Результаты действий читаются из листа: источник — last или программа этого графа.
       if (node.type === 'data.result') {
         const params = node.params || {};
@@ -721,6 +742,12 @@ function checkRuntime(opts = {}) {
     ['FIELD_KINDS', Registry.FIELD_KINDS, rust.FIELD_KINDS],
     ['FIELD_VALUE_FIELDS', Object.keys(Registry.FIELD_VALUE_FIELDS || {}), rust.VALUE_FIELDS],
     ['FIELD_FORMULA_FIELDS', Object.keys(Registry.FIELD_FORMULA_FIELDS || {}), rust.FORMULA_FIELDS],
+    // Закрытые списки условий листа (condition.status/item/hp/slot).
+    ['STATUS_MODES', Registry.STATUS_MODES, rust.STATUS_MODES],
+    ['ITEM_MODES', Registry.ITEM_MODES, rust.ITEM_MODES],
+    ['HP_OPS', Registry.HP_OPS, rust.HP_OPS],
+    ['SLOT_OPS', Registry.SLOT_OPS, rust.SLOT_OPS],
+    ['SHEET_CONDITIONS', Registry.SHEET_CONDITIONS, rust.SHEET_CONDITIONS],
   ]) {
     const a = (client || []).slice().sort().join(), b = (server || []).slice().sort().join();
     if (a !== b) report.error('client-server-parity', 'static/node-registry.js', name, `списки клиента (${a}) и сервера (${b}) различаются`);

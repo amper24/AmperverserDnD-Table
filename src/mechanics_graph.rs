@@ -27,7 +27,17 @@ const FORMULA_FIELDS: &[&str] = &["speed", "hit_die", "spellcasting", "saves", "
 // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
 const ROLL_KINDS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Операции настраиваемого узла «Логика» (logic.op, параметр op) — как LOGIC_OPS в static/node-registry.js.
-const LOGIC_OPS: &[&str] = &["and", "or", "not"];
+// Порты «a»/«b» нужны всем операциям, кроме «НЕ» (ports_for).
+const LOGIC_OPS: &[&str] = &["and", "or", "not", "xor", "nand", "nor", "xnor", "implies"];
+// Закрытые списки параметров условий листа (condition.status/item/hp/slot) — как STATUS_MODES /
+// ITEM_MODES / HP_OPS / SLOT_OPS в static/node-registry.js.
+const STATUS_MODES: &[&str] = &["present", "absent"];
+const ITEM_MODES: &[&str] = &["owned", "equipped"];
+const HP_OPS: &[&str] = &["lt", "le", "gt", "ge"];
+const SLOT_OPS: &[&str] = &["gte", "lt"];
+// Условия листа считаются только в рантайме и подключаются только ко входу condition блока
+// (там появляется condition_src) — как SHEET_CONDITIONS в static/node-registry.js.
+const SHEET_CONDITIONS: &[&str] = &["condition.status", "condition.item", "condition.hp", "condition.slot"];
 // Действия с костью: их вход «dice» принимает кость проводом (как в static/node-registry.js DICE_KINDS).
 const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
@@ -54,8 +64,14 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
         "data.compare" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "bool".into()); }
-        "logic.op" => { inputs.insert("a".into(), "bool".into()); inputs.insert("b".into(), "bool".into()); outputs.insert("value".into(), "bool".into()); }
-        "condition.context" | "condition.hit" => { outputs.insert("value".into(), "bool".into()); }
+        // Логика: «НЕ» использует только вход «a», остальные операции — «a» и «b».
+        "logic.op" => {
+            inputs.insert("a".into(), "bool".into());
+            if params["op"].as_str() != Some("not") { inputs.insert("b".into(), "bool".into()); }
+            outputs.insert("value".into(), "bool".into());
+        }
+        // Условия листа (состояние, предмет, хиты, ячейки): читаются в рантайме, без листа — false.
+        "condition.context" | "condition.hit" | "condition.status" | "condition.item" | "condition.hp" | "condition.slot" => { outputs.insert("value".into(), "bool".into()); }
         "flow.if" => { inputs.insert("exec".into(), "flow".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("then".into(), "flow".into()); outputs.insert("else".into(), "flow".into()); }
         "rule.class" => { inputs.insert("enabled".into(), "bool".into()); outputs.insert("effect".into(), "effect".into()); }
         "rule.value" => { inputs.insert("enabled".into(), "bool".into()); inputs.insert("amount".into(), "number".into()); outputs.insert("effect".into(), "effect".into()); }
@@ -163,6 +179,34 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
                 _ => return Err(bad("Условие: неизвестный вид.")),
             }
         }
+        // Условие состояния: название состояния листа и режим «наложено / не наложено».
+        "condition.status" => {
+            let name = p["name"].as_str().unwrap_or("");
+            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(bad("Состояние: название от 1 до 120 символов.")); }
+            if !STATUS_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(bad("Состояние: режим present или absent.")); }
+        }
+        // Условие предмета: имя в снаряжении листа и режим «в сумке / надето».
+        "condition.item" => {
+            let name = p["name"].as_str().unwrap_or("");
+            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(bad("Предмет: название от 1 до 120 символов.")); }
+            if !ITEM_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(bad("Предмет: режим owned или equipped.")); }
+        }
+        // Условие хитов: текущие хиты или процент от максимума (0–100) против числа.
+        "condition.hp" => {
+            if !HP_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(bad("Хиты: операция lt, le, gt или ge.")); }
+            let percent = p["percent"].as_bool().unwrap_or(false);
+            let limit = if percent { 100 } else { 1_000_000 };
+            match json_integer(&p["value"]) {
+                Some(value) if (0..=limit).contains(&value) => {}
+                _ => return Err(bad(if percent { "Хиты: процент от 0 до 100." } else { "Хиты: целое число от 0 до 1000000." })),
+            }
+        }
+        // Условие ячеек: круг 1–9, остаток ячеек (с учётом пула Договора) и сравнение с числом 0–20.
+        "condition.slot" => {
+            match json_integer(&p["level"]) { Some(level) if (1..=9).contains(&level) => {} _ => return Err(bad("Ячейки: круг от 1 до 9.")) }
+            if !SLOT_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(bad("Ячейки: операция gte или lt.")); }
+            match json_integer(&p["value"]) { Some(value) if (0..=20).contains(&value) => {} _ => return Err(bad("Ячейки: значение от 0 до 20.")) }
+        }
         "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
         "data.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
         // Результат действия читается из листа в рантайме: источник — «последнее действие» или программа графа.
@@ -175,7 +219,7 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
         "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
         // Круг каста: уровень выбранной ячейки, базовый круг заклинания и число лишних кругов.
         "data.cast" if !["level", "base", "extra"].contains(&p["field"].as_str().unwrap_or("")) => return Err(bad("Круг каста: поле level, base или extra.")),
-        "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
+        "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or, not, xor, nand, nor, xnor или implies.")),
         "action.roll" if p.get("kind").is_some() && !ROLL_KINDS.contains(&p["kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
         // Повышение круга: сколько костей добавляется за каждый круг выше базового (только урон и лечение).
         "action.roll" if p.get("upcast").is_some() => {
@@ -404,6 +448,10 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         };
         if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
         if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") { problems.push("Условие попадания подключается только ко входу «Если».".to_string()); continue; }
+        // Условия листа считаются только в рантайме: провод допустим только ко входу condition блока.
+        if SHEET_CONDITIONS.contains(&from_node["type"].as_str().unwrap_or("")) && !(to_node["type"].as_str().unwrap_or("").starts_with("action.") && in_socket == "condition") {
+            problems.push("Условие листа подключается только ко входу «condition» блока действия.".to_string()); continue;
+        }
         let key = format!("{target}:{in_socket}");
         // В конец («Конец») может прийти несколько проводов; у остальных входов — один.
         if to_node["type"] != "flow.end" && !incoming.insert(key) { problems.push("К каждому входному сокету подключается только один провод.".to_string()); continue; }
@@ -455,7 +503,8 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet", "data.cast",
-    "condition.context", "condition.hit", "logic.op", "flow.if", "flow.end",
+    "condition.context", "condition.hit", "condition.status", "condition.item", "condition.hp", "condition.slot",
+    "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
     "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
 ];
@@ -653,6 +702,42 @@ fn dice_term(d: &Value) -> Option<String> {
 fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<bool> {
     graph_input_value(node, socket, incoming, nodes, context, None).and_then(|value| value.as_bool())
 }
+/// Лист исполнения из контекста: `{"runtime": {"sheet": <лист>}}`; в редакторе и предпросмотре его нет.
+fn runtime_sheet(context: &Value) -> Option<&Value> { context.get("runtime").and_then(|runtime| runtime.get("sheet")) }
+fn sheet_number(value: Option<&Value>) -> Option<f64> { value.and_then(|value| value.as_f64()).filter(|number| number.is_finite()) }
+fn compare_numbers(op: &str, left: f64, right: f64) -> bool {
+    match op { "lt" => left < right, "le" => left <= right, "gt" => left > right, "ge" => left >= right, _ => false }
+}
+/// Остаток ячеек круга: пул Договора (pact_slots), если его круг совпадает, иначе slots[level] (max − used).
+fn slot_remaining(spells: &Value, level: i64) -> f64 {
+    let pact = spells.get("pact_slots");
+    let pact_level = pact.and_then(|pact| pact.get("level")).and_then(Value::as_i64);
+    let pact_max = pact.and_then(|pact| sheet_number(pact.get("max"))).unwrap_or(0.0);
+    if pact_max > 0.0 && pact_level == Some(level) {
+        return pact_max - pact.and_then(|pact| sheet_number(pact.get("used"))).unwrap_or(0.0);
+    }
+    let slot = spells.get("slots").and_then(|slots| slots.get(level.to_string()));
+    slot.and_then(|slot| sheet_number(slot.get("max"))).unwrap_or(0.0)
+        - slot.and_then(|slot| sheet_number(slot.get("used"))).unwrap_or(0.0)
+}
+/// Таблица истинности узла «Логика». Неизвестный вход — None, кроме случаев, где значение
+/// операции уже определено одним входом (И с ложью, ИЛИ с истиной, И-НЕ, ИЛИ-НЕ, импликация).
+fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<Value> {
+    let a = bool_input(node, "a", incoming, nodes, context);
+    let b = bool_input(node, "b", incoming, nodes, context);
+    let value = match params["op"].as_str()? {
+        "not" => !a?,
+        "and" => match (a, b) { (Some(false), _) | (_, Some(false)) => false, (Some(true), Some(true)) => true, _ => return None },
+        "or" => match (a, b) { (Some(true), _) | (_, Some(true)) => true, (Some(false), Some(false)) => false, _ => return None },
+        "nand" => match (a, b) { (Some(false), _) | (_, Some(false)) => true, (Some(true), Some(true)) => false, _ => return None },
+        "nor" => match (a, b) { (Some(true), _) | (_, Some(true)) => false, (Some(false), Some(false)) => true, _ => return None },
+        "xor" => a? != b?,
+        "xnor" => a? == b?,
+        "implies" => match (a, b) { (Some(false), _) | (_, Some(true)) => true, (Some(true), Some(false)) => false, _ => return None },
+        _ => return None,
+    };
+    Some(json!(value))
+}
 fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value) -> Option<Value> {
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
@@ -711,20 +796,47 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let key = match params["field"].as_str().unwrap_or("level") { "base" => "base", "extra" => "extra", _ => "level" };
             Some(cast.and_then(|cast| cast.get(key)).and_then(Value::as_i64).map(|value| json!(value)).unwrap_or(json!(0)))
         }
-        // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
-        "logic.op" => match params["op"].as_str() {
-            Some("not") => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
-            Some("or") => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
-                (Some(true), _) | (_, Some(true)) => Some(json!(true)),
-                (Some(false), Some(false)) => Some(json!(false)),
-                _ => None,
-            },
-            _ => match (bool_input(node, "a", incoming, nodes, context), bool_input(node, "b", incoming, nodes, context)) {
-                (Some(false), _) | (_, Some(false)) => Some(json!(false)),
-                (Some(true), Some(true)) => Some(json!(true)),
-                _ => None,
-            },
-        },
+        // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
+        // Неизвестный вход даёт None, кроме случаев, где значение уже определено одним входом.
+        "logic.op" => logic_value(params, node, incoming, nodes, context),
+        // Условия листа: читают runtime-лист (context["runtime"]["sheet"]). Без листа — false.
+        "condition.status" => {
+            let name = params["name"].as_str()?;
+            let present = runtime_sheet(context).and_then(|sheet| sheet.get("conditions")).and_then(Value::as_array)
+                .map(|items| items.iter().any(|item| item.as_str() == Some(name))).unwrap_or(false);
+            Some(json!(if params["mode"].as_str() == Some("absent") { !present } else { present }))
+        }
+        "condition.item" => {
+            let name = params["name"].as_str()?;
+            let equipped = params["mode"].as_str() == Some("equipped");
+            let found = runtime_sheet(context).and_then(|sheet| sheet.get("inventory")).and_then(Value::as_array)
+                .map(|items| items.iter().any(|item| item["name"].as_str() == Some(name) && (!equipped || item["equipped"].as_bool() == Some(true))))
+                .unwrap_or(false);
+            Some(json!(found))
+        }
+        "condition.hp" => {
+            let op = params["op"].as_str()?;
+            let value = params["value"].as_f64()?;
+            let hp = runtime_sheet(context).and_then(|sheet| sheet.get("hp"));
+            let current = hp.and_then(|hp| sheet_number(hp.get("current")));
+            let left = match current {
+                None => None,
+                Some(current) if params["percent"].as_bool() == Some(true) => {
+                    let max = hp.and_then(|hp| sheet_number(hp.get("max"))).unwrap_or(0.0);
+                    Some(if max > 0.0 { current * 100.0 / max } else { 0.0 })
+                }
+                Some(current) => Some(current),
+            };
+            Some(json!(left.map(|left| compare_numbers(op, left, value)).unwrap_or(false)))
+        }
+        "condition.slot" => {
+            let level = json_integer(&params["level"])?;
+            let op = params["op"].as_str()?;
+            let value = params["value"].as_f64()?;
+            let remaining = runtime_sheet(context).and_then(|sheet| sheet.get("spells")).map(|spells| slot_remaining(spells, level));
+            let matched = remaining.map(|remaining| if op == "lt" { remaining < value } else { remaining >= value }).unwrap_or(false);
+            Some(json!(matched))
+        }
         kind if kind.starts_with("data.") => params.get("value").cloned(),
 
         "condition.context" => match params["kind"].as_str()? {
@@ -948,7 +1060,7 @@ mod hit_gate_tests {
         assert!(validate(&bad_graph).is_err());
     }
 
-    /// Настраиваемый узел «Логика»: op выбирает И / ИЛИ / НЕ, неизвестное значение отклоняется.
+    /// Настраиваемый узел «Логика»: op выбирает одну из восьми операций, неизвестное значение отклоняется.
     #[test]
     fn configurable_logic_node_validates_and_evaluates_ops() {
         let make = |op: &str| json!({"version": 2, "origin": "test", "graph": {"nodes": [
@@ -975,7 +1087,41 @@ mod hit_gate_tests {
         assert_eq!(v1["programs"][0]["blocks"].as_array().unwrap().len(), 1, "И с истинными входами оставляет ветвь «да»");
         let missed = to_v1_with_context(&make("not"), &json!({"edition": "2014", "level": 5}));
         assert_eq!(missed["programs"][0]["blocks"].as_array().unwrap().len(), 0, "НЕ по истинному входу отсекает ветвь «да»");
-        assert!(validate(&make("xor")).is_err());
+        assert!(validate(&make("nimp")).is_err());
+    }
+
+    /// Таблица истинности всех восьми операций узла «Логика» — та же, что compute в static/nodes/logic/op.js.
+    #[test]
+    fn logic_ops_follow_the_truth_table() {
+        let expected = |op: &str, a: bool, b: bool| match op {
+            "and" => a && b, "or" => a || b, "not" => !a,
+            "xor" => a != b, "nand" => !(a && b), "nor" => !(a || b), "xnor" => a == b, "implies" => !a || b,
+            other => panic!("неизвестная операция {other}"),
+        };
+        // Граф из булевых констант: узел «Логика» читает их без листа.
+        let graph = |op: &str, a: bool, b: bool| {
+            let mut nodes = vec![
+                json!({"id": "a", "type": "data.boolean", "params": {"value": a}}),
+                json!({"id": "op", "type": "logic.op", "params": {"op": op}}),
+            ];
+            let mut links = vec![json!({"from": {"node": "a", "socket": "value"}, "to": {"node": "op", "socket": "a"}})];
+            if op != "not" {
+                nodes.push(json!({"id": "b", "type": "data.boolean", "params": {"value": b}}));
+                links.push(json!({"from": {"node": "b", "socket": "value"}, "to": {"node": "op", "socket": "b"}}));
+            }
+            json!({"version": 2, "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}})
+        };
+        for op in LOGIC_OPS {
+            let (inputs, _) = ports_for("logic.op", &json!({"op": op}), &[], None);
+            assert_eq!(inputs.contains_key("b"), *op != "not", "{op}: вход «b» только у операций с двумя входами");
+            for a in [true, false] {
+                for b in [true, false] {
+                    let mechanics = graph(op, a, b);
+                    assert!(validate(&mechanics).is_ok(), "{op}: граф допустим");
+                    assert_eq!(node_value(&mechanics["graph"], "op", &Value::Null).unwrap(), json!(expected(op, a, b)), "{op}: a={a}, b={b}");
+                }
+            }
+        }
     }
 
     /// Один узел «Условие» с видом: редакция, уровень, подкласс и выбор читают контекст листа.
@@ -1332,5 +1478,118 @@ mod data_runtime_tests {
         assert!(validate(&sheet("")).is_err());
         assert!(validate(&sheet("HP.current")).is_err());
         assert!(validate(&sheet("hp..current")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod condition_node_tests {
+    use super::*;
+
+    /// Один узел условия; значение считается в рантайме по листу из `context["runtime"]["sheet"]`.
+    fn value_of(node: Value, sheet: Value) -> Value {
+        let graph = json!({"version": 2, "graph": {"nodes": [node], "links": [], "frames": [], "groups": []}});
+        assert!(validate(&graph).is_ok(), "параметры узла допустимы: {graph}");
+        node_value(&graph["graph"], "c", &json!({"runtime": {"sheet": sheet}})).unwrap()
+    }
+    fn single(node: Value) -> Value {
+        json!({"version": 2, "graph": {"nodes": [node], "links": [], "frames": [], "groups": []}})
+    }
+    fn status(name: &str, mode: &str) -> Value { json!({"id": "c", "type": "condition.status", "params": {"name": name, "mode": mode}}) }
+    fn item(name: &str, mode: &str) -> Value { json!({"id": "c", "type": "condition.item", "params": {"name": name, "mode": mode}}) }
+    fn hp(op: &str, value: i64, percent: bool) -> Value { json!({"id": "c", "type": "condition.hp", "params": {"op": op, "value": value, "percent": percent}}) }
+    fn slot(level: i64, op: &str, value: i64) -> Value { json!({"id": "c", "type": "condition.slot", "params": {"level": level, "op": op, "value": value}}) }
+
+    /// condition.status: точное название в sheet.conditions; режим absent — обратное значение.
+    #[test]
+    fn status_condition_reads_the_sheet_conditions_list() {
+        assert_eq!(value_of(status("Отравленный", "present"), json!({"conditions": ["Отравленный", "Испуганный"]})), json!(true));
+        assert_eq!(value_of(status("Отравленный", "present"), json!({"conditions": ["Испуганный"]})), json!(false));
+        assert_eq!(value_of(status("Отравленный", "absent"), json!({"conditions": ["Испуганный"]})), json!(true));
+        assert_eq!(value_of(status("Отравленный", "absent"), json!({"conditions": ["Отравленный"]})), json!(false));
+        assert_eq!(value_of(status("Отравленный", "present"), json!({})), json!(false), "нет списка состояний — false");
+        // Без контекста исполнения (редактор, предпросмотр) — false, а не ошибка.
+        let graph = single(status("Отравленный", "present"));
+        assert_eq!(node_value(&graph["graph"], "c", &Value::Null).unwrap(), json!(false));
+    }
+
+    /// condition.item: поиск по имени в sheet.inventory; equipped учитывает флаг предмета.
+    #[test]
+    fn item_condition_reads_the_sheet_inventory() {
+        let bag = json!({"inventory": [{"name": "Кинжал", "equipped": false}, {"name": "Верёвка", "equipped": true}]});
+        assert_eq!(value_of(item("Кинжал", "owned"), bag.clone()), json!(true));
+        assert_eq!(value_of(item("Кинжал", "equipped"), bag.clone()), json!(false));
+        assert_eq!(value_of(item("Верёвка", "equipped"), bag.clone()), json!(true));
+        assert_eq!(value_of(item("Меч", "owned"), bag.clone()), json!(false));
+        assert_eq!(value_of(item("кинжал", "owned"), bag.clone()), json!(false), "сравнение по строке — регистр важен");
+        assert_eq!(value_of(item("Кинжал", "equipped"), json!({})), json!(false), "нет снаряжения — false");
+    }
+
+    /// condition.hp: текущие хиты или процент от максимума; без максимума процент считается нулевым.
+    #[test]
+    fn hp_condition_compares_current_hp_or_percent() {
+        let sheet = json!({"hp": {"max": 40, "current": 10}});
+        assert_eq!(value_of(hp("lt", 50, true), sheet.clone()), json!(true), "25% < 50%");
+        assert_eq!(value_of(hp("ge", 25, true), sheet.clone()), json!(true), "25% ≥ 25%");
+        assert_eq!(value_of(hp("gt", 50, true), sheet.clone()), json!(false));
+        assert_eq!(value_of(hp("le", 10, false), sheet.clone()), json!(true));
+        assert_eq!(value_of(hp("gt", 10, false), sheet.clone()), json!(false));
+        assert_eq!(value_of(hp("lt", 50, true), json!({"hp": {"max": 0, "current": 0}})), json!(true), "нулевой максимум — процент 0");
+        assert_eq!(value_of(hp("lt", 5, false), json!({"hp": {}})), json!(false), "нет хитов — false");
+    }
+
+    /// condition.slot: остаток ячеек круга (max − used); круг Договора берёт пул pact_slots.
+    #[test]
+    fn slot_condition_compares_the_remaining_slots() {
+        let sheet = json!({"spells": {"slots": {"1": {"max": 2, "used": 1}, "2": {"max": 3, "used": 3}}}});
+        assert_eq!(value_of(slot(1, "gte", 1), sheet.clone()), json!(true), "1 круг: остаток 1");
+        assert_eq!(value_of(slot(1, "lt", 1), sheet.clone()), json!(false));
+        assert_eq!(value_of(slot(2, "gte", 1), sheet.clone()), json!(false), "2 круг исчерпан");
+        assert_eq!(value_of(slot(2, "lt", 1), sheet.clone()), json!(true));
+        assert_eq!(value_of(slot(3, "gte", 1), sheet.clone()), json!(false), "круга нет — остаток 0");
+        // Ячейки Договора круга 3: остаток берётся из pact_slots, а не из slots[3].
+        let pact = json!({"spells": {"pact_slots": {"level": 3, "max": 2, "used": 0}, "slots": {"3": {"max": 2, "used": 2}}}});
+        assert_eq!(value_of(slot(3, "gte", 2), pact), json!(true));
+        assert_eq!(value_of(slot(1, "gte", 1), json!({})), json!(false), "нет заклинаний — false");
+    }
+
+    /// Параметры условий проверяются при сохранении: пустое имя, чужой режим, значение вне диапазона.
+    #[test]
+    fn condition_parameters_are_validated() {
+        assert!(validate(&single(status("Отравленный", "present"))).is_ok());
+        assert!(validate(&single(status("  ", "present"))).is_err(), "пустое имя состояния");
+        assert!(validate(&single(status("Отравленный", "maybe"))).is_err(), "неизвестный режим состояния");
+        assert!(validate(&single(item("Кинжал", "equipped"))).is_ok());
+        assert!(validate(&single(item("", "owned"))).is_err(), "пустое имя предмета");
+        assert!(validate(&single(item("Кинжал", "worn"))).is_err(), "неизвестный режим предмета");
+        assert!(validate(&single(hp("lt", 50, true))).is_ok());
+        assert!(validate(&single(hp("eq", 50, false))).is_err(), "неизвестная операция хитов");
+        assert!(validate(&single(hp("lt", 150, true))).is_err(), "процент вне 0–100");
+        assert!(validate(&single(hp("lt", -1, false))).is_err(), "отрицательные хиты");
+        assert!(validate(&single(slot(1, "gte", 1))).is_ok());
+        assert!(validate(&single(slot(0, "gte", 1))).is_err(), "круг 0");
+        assert!(validate(&single(slot(10, "gte", 1))).is_err(), "круг 10");
+        assert!(validate(&single(slot(1, "gt", 1))).is_err(), "неизвестная операция ячеек");
+        assert!(validate(&single(slot(1, "gte", 21))).is_err(), "значение вне 0–20");
+    }
+
+    /// Условие листа управляет блоком через condition_src: false пропускает блок, true выполняет.
+    #[test]
+    fn sheet_condition_gates_a_block_in_the_runtime() {
+        let graph = json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "c", "type": "condition.item", "params": {"name": "Кинжал", "mode": "equipped"}},
+            {"id": "m", "type": "action.manual", "params": {"block_id": "m", "text": "Правило", "when": "always"}},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "m", "socket": "exec"}},
+            {"from": {"node": "m", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}},
+            {"from": {"node": "c", "socket": "value"}, "to": {"node": "m", "socket": "condition"}}
+        ], "frames": [], "groups": []}});
+        assert!(problems(&graph).unwrap().is_empty());
+        let plan = to_v1(&graph);
+        assert_eq!(plan["programs"][0]["blocks"][0]["condition_src"], "c", "условие отложено до рантайма");
+        let armed = node_value(&graph["graph"], "c", &json!({"runtime": {"sheet": {"inventory": [{"name": "Кинжал", "equipped": true}]}}})).unwrap();
+        let disarmed = node_value(&graph["graph"], "c", &json!({"runtime": {"sheet": {"inventory": [{"name": "Кинжал", "equipped": false}]}}})).unwrap();
+        assert_eq!((armed, disarmed), (json!(true), json!(false)));
     }
 }

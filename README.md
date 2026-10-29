@@ -161,10 +161,19 @@ logging:  { level: "info,sqlx=warn" }
 `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`, `data.math`,
 `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
 `dice.combine`) → **Условия**
-(`condition.context`, `condition.hit`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 27 типов; ещё два
+(`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
+`condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
+`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 31 тип; ещё два
 внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
-узла есть подсказка, у настраиваемых — единый параметр `kind`. Готовые шаблоны: «Атака и урон
+узла есть подсказка, у настраиваемых — единый параметр `kind`.
+
+`logic.op` знает восемь операций: `and`, `or`, `not`, `xor`, `nand`, `nor`, `xnor`,
+`implies` (у `not` только вход `a`). Условия листа читаются в рантайме: `condition.status`
+(есть ли состояние), `condition.item` (есть ли предмет, в сумке или надетым), `condition.hp`
+(хиты или процент от максимума), `condition.slot` (остаток ячеек круга с учётом Договора).
+Их подводят ко входу `condition` блока; без листа (предпросмотр) они дают `false`.
+
+Готовые шаблоны: «Атака и урон
 по результату», «Лечение при ранении», «Спасбросок против СЛ», «Многоатака: два удара»,
 «Заряды посоха», «Кара: дополнительный урон», «Аура: усиление по уровню», «Скрытая атака».
 
