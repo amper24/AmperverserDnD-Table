@@ -43,7 +43,7 @@
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.result', 'data.sheet']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };

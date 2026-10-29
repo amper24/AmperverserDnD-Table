@@ -82,6 +82,7 @@ test('condition=false skips the block and the flow continues; true runs it',()=>
     const manual=v2node('m','action.manual',{block_id:'m',text:'После условия'});
     return graphOf([program(),field,manual,bool],[wire('p','exec','f','exec'),wire('f','exec','m','exec'),wire('b','value','f','condition')]);
   };
+  // Предпросмотр на клиенте по-прежнему статический: data.result/data.sheet без состояния дают 0.
   const skipped=build(false);
   assert.equal(M.validate(skipped),'');
   assert.deepEqual(plain(M.toLegacy(skipped).programs[0].blocks.map(block=>block.kind)),['manual'],'выключенный блок пропущен, поток идёт дальше');

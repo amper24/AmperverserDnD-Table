@@ -25,7 +25,7 @@
   // «Изменить поле» хранит параметры всех трёх видов; в блок плана попадают только поля своего вида.
   const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet']);
   const STAT_MODES = ['bonus', 'score'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
@@ -357,6 +357,17 @@
   }
   const fail = message => message;
   const idText = (value, max = 80) => typeof value === 'string' && value.length > 0 && value.length <= max;
+  // Программы графа: на них ссылается источник data.result (last — отдельный вариант).
+  function programIds(nodes) {
+    const ids = new Set();
+    for (const node of nodes || []) if (node?.type === 'action.program') ids.add(String(node.params?.program_id || node.id || ''));
+    return ids;
+  }
+  function allProgramIds(graph, groups = []) {
+    const ids = programIds(graph?.nodes);
+    for (const group of groups || []) for (const id of programIds(group?.nodes)) ids.add(id);
+    return ids;
+  }
   function validateInterface(list) {
     if (!Array.isArray(list) || list.length > 16) return 'Интерфейс группы: не более 16 сокетов.';
     const ids = new Set();
@@ -386,6 +397,8 @@
       }
       if (new Set(groups.map(g => g.id)).size !== groups.length) return fail('Повторяющийся ID группы.');
     }
+    // Программы — для ссылки data.result: верхний вызов передаёт набор всего графа (с группами).
+    const programs = options.programs || programIds(nodes);
     const nodeIds = new Set();
     for (const node of nodes) {
       if (!node || !idText(node.id, 100) || nodeIds.has(node.id) || !defOf(node.type)) return fail('Неизвестный узел или повторяющийся ID.');
@@ -394,7 +407,7 @@
       if (node.position !== undefined && (!node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y) || Math.abs(node.position.x) > 100000 || Math.abs(node.position.y) > 100000)) return fail('Координаты узла вне допустимых пределов.');
       if (node.type === 'group.instance' && !groupMap.has(String(node.params?.group_id || ''))) return fail('Узел ссылается на отсутствующую группу.');
       if (['group.input', 'group.output'].includes(node.type) && (!nested || !ownerGroup)) return fail('Узлы интерфейса группы разрешены только внутри повторно используемой группы.');
-      const paramsError = validateNodeParams(node);
+      const paramsError = validateNodeParams(node, programs);
       if (paramsError) return paramsError;
     }
     const incoming = new Set(), adjacency = new Map([...nodeIds].map(id => [id, []])), indegree = new Map([...nodeIds].map(id => [id, 0]));
@@ -460,13 +473,18 @@
     }
     return '';
   }
-  function validateNodeParams(node) {
+  function validateNodeParams(node, programs = null) {
     const type = node.type;
     const p = node.params || {};
     const def = NodeRegistry.nodeDef(type);
     if (def && typeof def.validate === 'function') {
       const err = def.validate(p);
       if (err) return err;
+    }
+    // Источник результата — «последнее действие» или программа этого графа (как на сервере).
+    if (type === 'data.result' && programs) {
+      const source = String(p.source || '');
+      if (source !== 'last' && !programs.has(source)) return 'Результат: выберите последнее действие или программу этого графа.';
     }
     if (actionType(type)) {
       if (!idText(p.block_id, 100)) return 'Узел действия должен иметь стабильный block_id.';
@@ -486,16 +504,17 @@
     if (!mechanics.graph || !Array.isArray(mechanics.graph.groups)) return 'Не более 50 групп повторного использования.';
     if (JSON.stringify(mechanics).length > 1_000_000) return 'Неподдерживаемая или слишком большая схема механик.';
     const list = [];
+    const programs = allProgramIds(mechanics.graph, mechanics.graph.groups);
     // Завершённость потока здесь не проверяется: это смысловая проблема (запись сохраняется), и она
     // не должна отменять проверку плана — иначе незакрытая цепочка скрыла бы ошибки в блоках.
-    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list, { completion: false });
+    const error = validateGraph(mechanics.graph, mechanics.graph.groups, false, null, list, { completion: false, programs });
     if (error) return error;
     if (list.length) return '';
     const planError = Base.validate(v2ToV1(mechanics));
     if (planError) return planError;
     const allNodes = [...(mechanics.graph.nodes || []), ...(mechanics.graph.groups || []).flatMap(g => g.nodes || [])];
     for (const n of allNodes) {
-      const e = validateNodeParams(n);
+      const e = validateNodeParams(n, programs);
       if (e) return e;
     }
     return '';
@@ -504,7 +523,7 @@
   // options.completion = false — без проверки завершённости потока (нужно при правке проводов).
   function graphProblems(graph, groups = graph?.groups || [], options = {}) {
     const list = [];
-    const error = validateGraph(graph, groups, false, null, list, options);
+    const error = validateGraph(graph, groups, false, null, list, { ...options, programs: options.programs || allProgramIds(graph, groups) });
     return error ? [error] : list;
   }
   function problems(mechanics) {
@@ -1448,7 +1467,10 @@
     // Значение записывается в граф на change (уход из поля или Enter), как и в боковой панели.
     function inlineParams(node) {
       const groups = graph.groups.map(item => ({ value: item.id, label: item.name }));
-      const form = NodeForm.nodeParams(node, { inline: false, groups, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      // Источник data.result — программы этого графа (в паре с «последним действием»).
+      const programs = graph.nodes.filter(item => item.type === 'action.program')
+        .map(item => ({ value: String(item.params?.program_id || item.id), label: String(item.params?.name || item.params?.program_id || item.id) }));
+      const form = NodeForm.nodeParams(node, { inline: false, groups, programs, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
       return el('div', { class: 'node-inline', 'data-inline-params': node.id, onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, form);
     }
     function nodeCard(node) {

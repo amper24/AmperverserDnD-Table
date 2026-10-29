@@ -568,6 +568,20 @@ function checkSeed(edition, opts = {}) {
         if (!['quantity', 'charges', 'slot', 'uses'].includes(params.resource)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.resource`, `неизвестный ресурс «${params.resource}»`);
         if (params.resource === 'slot' && !(Number.isInteger(params.slot_level) && params.slot_level >= 1 && params.slot_level <= 9)) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.slot_level`, 'у расхода ячейки нет круга 1…9');
       }
+      // Результаты действий читаются из листа: источник — last или программа этого графа.
+      if (node.type === 'data.result') {
+        const params = node.params || {};
+        // Программы всего графа, включая определения групп: на них ссылается data.result.
+        const programs = new Set([...(graph.nodes || []), ...(graph.groups || []).flatMap(group => group.nodes || [])]
+          .filter(item => item.type === 'action.program').map(item => String(item.params?.program_id || item.id)));
+        if (params.source !== 'last' && !programs.has(String(params.source || ''))) report.error('broken-reference', where, `data.mechanics.graph.nodes[${node.id}].params.source`, `результат читает «${params.source}», а такой программы в графе нет`);
+        if (!['total', 'hit', 'applied', 'spent'].includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `неизвестное поле результата «${params.field}» (total, hit, applied или spent)`);
+      }
+      // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
+      if (node.type === 'data.sheet') {
+        const field = (node.params || {}).field;
+        if (!isStr(field) || field.length > 100 || !/^[a-z0-9_]+(\.[a-z0-9_]+)*$/.test(field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `поле листа «${field}» должно быть непустым путём из [a-z0-9_.]`);
+      }
       if (node.type === 'condition.context' && (node.params || {}).kind === 'edition') {
         const editions = (node.params || {}).editions;
         if (!isArr(editions) || !editions.length) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.editions`, 'не указаны редакции условия');

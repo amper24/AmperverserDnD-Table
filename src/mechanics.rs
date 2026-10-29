@@ -164,13 +164,29 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
     let m = crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
     validate_plan(&m, 0)?;
+    // Граф нужен для condition_src: условие блока считается в рантайме по листу и результатам.
+    let graph = m["graph"].clone();
     let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
     if category=="item" { inventory::validate_use(&doc)?; }
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();
     if blocks.iter().any(|b|b["kind"]=="manual")&&!acknowledged {return Err(bad("Подтвердите ручные правила"));}
     let mut attack_costs: Vec<&Value>=Vec::new();
     let mut spent=Vec::new();let mut rolls=Vec::new();let mut effects=Vec::new();let mut hit=None;let mut crit=false;
+    let mut last_total: Option<i64>=None;
+    // Результаты прошлых действий: новые программы сохраняют уже записанные программы листа.
+    let mut results = s.get("action_results").filter(|value| value.is_object()).cloned().unwrap_or_else(|| json!({"last": Value::Null, "by_program": {}}));
+    if !results["by_program"].is_object() { results["by_program"] = json!({}); }
+    if results.get("last").is_none() { results["last"] = Value::Null; }
     for b in blocks {
+        // condition_src — провод на вход condition: значение считается здесь, по текущему листу.
+        // false или 0 пропускает блок, поток идёт дальше по exec; неизвестный узел — ошибка.
+        if let Some(source) = b["condition_src"].as_str() {
+            let mut context = graph_context.clone();
+            context["runtime"] = json!({"sheet": &s, "results": &results});
+            let value = crate::mechanics_graph::node_value(&graph, source, &context)?;
+            let skip = match &value { Value::Bool(value) => !*value, Value::Number(number) => number.as_f64() == Some(0.0), _ => false };
+            if skip { continue; }
+        }
         let kind=text(b,"kind");let when=text(b,"when");
         if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||bad("Ветвление доступно только после блока атаки"))?;if h!=(when=="hit"){continue;} }
         if kind=="consume" {if b["trigger"]=="attack"{attack_costs.push(b);}else{spend(&mut s,&doc,category,b,1,&mut spent)?;}continue;}
@@ -188,6 +204,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
             let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
             // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.
             if kind=="attack" {crit=n20;let dc=num(b,"dc");hit=Some(n20||(!n1&&(dc<=0||total>=dc)));}
+            last_total=Some(total);
             r["name"]=json!(if text(b,"name").is_empty(){text(p,"name")}else{text(b,"name")});r["kind"]=json!(kind);r["dtype"]=b["damage_type"].clone();r["doubled"]=json!(doubled);r["base_expr"]=json!(base);r["crit"]=json!(n20&&kind=="attack");r["fumble"]=json!(n1&&kind=="attack");rolls.push(r);
         }
         let recipient=&mut s;
@@ -204,9 +221,24 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
             _=>{}
         }
     }
+    // Итог действия — в лист: total последнего броска, hit (0/1), применённое лечение/хиты,
+    // израсходованное и число бросков. Так другие действия читают его через data.result.
+    let applied: i64 = effects.iter().filter(|effect| matches!(text(effect,"kind"), "heal"|"temp_hp"|"damage")).map(|effect| num(effect,"amount")).sum();
+    let spent_total: i64 = spent.iter().map(|entry| num(entry,"amount")).sum();
+    let result = json!({
+        "total": last_total.unwrap_or(0),
+        "hit": hit.map(Value::Bool).unwrap_or(Value::Null),
+        "applied": applied,
+        "spent": spent_total,
+        "rolls": rolls.len(),
+        "at": chrono::Utc::now().timestamp(),
+    });
+    results["last"] = result.clone();
+    results["by_program"][program] = result;
+    s["action_results"] = results.clone();
     inventory::normalize(&mut s)?;
     *sheet=s;
-    Ok(json!({"label":format!("{} · {}",text(&doc,"name"),text(p,"name")),"rolls":rolls,"spent":spent,"effects":effects,"program_id":program,"source_uid":uid,"source_kind":category}))
+    Ok(json!({"label":format!("{} · {}",text(&doc,"name"),text(p,"name")),"rolls":rolls,"spent":spent,"effects":effects,"results":results,"program_id":program,"source_uid":uid,"source_kind":category}))
 }
 
 #[cfg(test)] mod tests {
@@ -359,6 +391,68 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         assert_eq!(formula(&json!({"dice":{"count":1,"sides":8,"bonus":0,"stat":""}})).unwrap(),"1d8");
         assert_eq!(formula(&json!({"dice":{"count":0,"sides":6,"bonus":0,"stat":""}})).unwrap(),"0");
         assert_eq!(formula(&json!({"dice":{"count":1,"sides":20,"bonus":0,"stat":"","advanced":"d20+5"}})).unwrap(),"d20+5");
+    }
+    /// Четыре программы одного предмета: бросок, условие по последнему результату, условие по
+    /// конкретной программе и условие по полю листа.
+    fn result_graph() -> Value {
+        mech(vec![
+            node("p1","action.program",json!({"program_id":"strike","name":"Удар","trigger":"use"})),
+            node("a","action.roll",json!({"block_id":"a","roll_kind":"attack","dc":0,"dice":{"count":0,"sides":20,"bonus":12,"stat":""}})),
+            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":0,"sides":6,"bonus":12,"stat":""}})),
+            node("p2","action.program",json!({"program_id":"follow","name":"После удара","trigger":"use"})),
+            node("res","data.result",json!({"source":"last","field":"total"})),
+            node("ten","data.number",json!({"value":10})),
+            node("cmp","data.compare",json!({"op":">"})),
+            node("f","action.field",json!({"block_id":"f","kind":"value","field":"speed","amount":1})),
+            node("p3","action.program",json!({"program_id":"follow-program","name":"По программе","trigger":"use"})),
+            node("res2","data.result",json!({"source":"strike","field":"total"})),
+            node("ten2","data.number",json!({"value":10})),
+            node("cmp2","data.compare",json!({"op":">"})),
+            node("f2","action.field",json!({"block_id":"f2","kind":"value","field":"speed","amount":2})),
+            node("p4","action.program",json!({"program_id":"sheet-check","name":"По листу","trigger":"use"})),
+            node("sh","data.sheet",json!({"field":"hp.current"})),
+            node("zero","data.number",json!({"value":0})),
+            node("cmp3","data.compare",json!({"op":">"})),
+            node("f3","action.field",json!({"block_id":"f3","kind":"value","field":"speed","amount":4})),
+        ], vec![
+            link("p1","a"), link("a","d"), link("p2","f"), link("p3","f2"), link("p4","f3"),
+            wire("res","value","cmp","a"), wire("ten","value","cmp","b"), wire("cmp","value","f","condition"),
+            wire("res2","value","cmp2","a"), wire("ten2","value","cmp2","b"), wire("cmp2","value","f2","condition"),
+            wire("sh","value","cmp3","a"), wire("zero","value","cmp3","b"), wire("cmp3","value","f3","condition"),
+        ])
+    }
+    /// Результат действия сохраняется в листе, а condition_src следующего действия читает его в рантайме.
+    #[test] fn action_results_gate_the_next_action_in_the_runtime() {
+        let mut s = json!({"hp":{"max":20,"current":10,"temp":0},"speed":30,
+            "inventory":[{"uid":"w","name":"Клинок","qty":1,"type":"gear","mechanics": result_graph()}]});
+        let r = execute(&mut s,"item","w","strike","",false).unwrap();
+        assert_eq!(r["rolls"].as_array().unwrap().len(),2);
+        assert_eq!(r["results"]["last"]["total"],12);
+        let stored = &s["action_results"]["last"];
+        assert_eq!(stored["total"],12);
+        assert_eq!(stored["hit"],true,"попадание атаки хранится как bool в листе");
+        assert_eq!(stored["applied"],0);
+        assert_eq!(stored["spent"],0);
+        assert_eq!(stored["rolls"],2);
+        assert!(stored["at"].as_i64().unwrap()>0,"время выполнения в unix-секундах");
+        assert_eq!(s["action_results"]["by_program"]["strike"]["total"],12);
+        // last.total = 12 > 10 — блок выполняется.
+        execute(&mut s,"item","w","follow","",false).unwrap();
+        assert_eq!(s["speed"],31);
+        assert_eq!(s["action_results"]["last"]["total"],0,"итог последнего действия без бросков");
+        // Программа strike остаётся в by_program: follow-program читает именно её.
+        execute(&mut s,"item","w","follow-program","",false).unwrap();
+        assert_eq!(s["speed"],33);
+        // last.total = 3 — блок пропускается, поток идёт дальше.
+        s["action_results"]["last"] = json!({"total":3,"hit":null,"applied":0,"spent":0,"rolls":0,"at":0});
+        execute(&mut s,"item","w","follow","",false).unwrap();
+        assert_eq!(s["speed"],33,"условие ложно — показатель не изменился");
+        // data.sheet: hp.current > 0 пропускает блок; 0 — нет.
+        execute(&mut s,"item","w","sheet-check","",false).unwrap();
+        assert_eq!(s["speed"],37);
+        s["hp"]["current"] = json!(0);
+        execute(&mut s,"item","w","sheet-check","",false).unwrap();
+        assert_eq!(s["speed"],37,"отсутствующее условие по нулевому хиту блок не выполняет");
     }
     #[test] fn healing_does_not_include_proficiency(){let s=json!({"abilities":{"wis":16},"proficiency_bonus":4,"spells":{"ability":"wis"}});assert_eq!(inventory::resolve("1d8+@spell_mod",&s).unwrap(),"1d8+3");}
     #[test] fn program_modes_apply_to_d20_and_non_d20_rolls(){

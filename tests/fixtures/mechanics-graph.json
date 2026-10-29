@@ -2421,6 +2421,459 @@
         }
       },
       "executable": false
+    },
+    {
+      "name": "data-result-last-action",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "src",
+              "type": "data.result",
+              "params": {
+                "source": "last",
+                "field": "total"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 5
+              }
+            },
+            {
+              "id": "cmp",
+              "type": "data.compare",
+              "params": {
+                "op": ">"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "value",
+                "field": "speed",
+                "amount": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "src",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "cmp",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-result-named-program",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "src",
+              "type": "data.result",
+              "params": {
+                "source": "use",
+                "field": "spent"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 0
+              }
+            },
+            {
+              "id": "cmp",
+              "type": "data.compare",
+              "params": {
+                "op": ">"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "value",
+                "field": "speed",
+                "amount": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "src",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "cmp",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-result-unknown-source",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "src",
+              "type": "data.result",
+              "params": {
+                "source": "other",
+                "field": "total"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-result-unknown-field",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "src",
+              "type": "data.result",
+              "params": {
+                "source": "last",
+                "field": "nat20"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-sheet-valid-field",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "src",
+              "type": "data.sheet",
+              "params": {
+                "field": "hp.current"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 0
+              }
+            },
+            {
+              "id": "cmp",
+              "type": "data.compare",
+              "params": {
+                "op": ">"
+              }
+            },
+            {
+              "id": "f",
+              "type": "action.field",
+              "params": {
+                "block_id": "f",
+                "kind": "value",
+                "field": "speed",
+                "amount": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "f",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "f",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "src",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "cmp",
+                "socket": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "cmp",
+                "socket": "value"
+              },
+              "to": {
+                "node": "f",
+                "socket": "condition"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-sheet-empty-field",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "src",
+              "type": "data.sheet",
+              "params": {
+                "field": ""
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": []
+        }
+      }
     }
   ]
 }

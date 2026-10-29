@@ -33,7 +33,9 @@
       "rule.class": 32,
       "rule.list": 73,
       "rule.value": 42
-    }
+    },
+    "result_reads": 0,
+    "sheet_reads": 0
   },
   "2024": {
     "version": 2,
@@ -68,7 +70,9 @@
       "rule.class": 32,
       "rule.list": 67,
       "rule.value": 22
-    }
+    },
+    "result_reads": 0,
+    "sheet_reads": 0
   },
   "format": "v2-graph",
   "generated_by": "node tools/srd/mechanics_summary.cjs",

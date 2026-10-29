@@ -34,6 +34,8 @@
     'condition.context': { kind: [{ value: 'edition', label: 'Редакция' }, { value: 'level', label: 'Уровень' }, { value: 'subclass', label: 'Подкласс' }, { value: 'choice', label: 'Выбранный вариант' }], editions: EDITIONS },
     'action.program': { style: BUTTON_STYLE_OPTIONS },
     'data.compare': { op: [{ value: '>=', label: '≥ больше или равно' }, { value: '<=', label: '≤ меньше или равно' }, { value: '>', label: '> больше' }, { value: '<', label: '< меньше' }, { value: '=', label: '= равно' }, { value: '!=', label: '≠ не равно' }] },
+    // Результат действия: поле — из закрытого списка, источник — программы текущего графа (динамически).
+    'data.result': { field: [{ value: 'total', label: 'Итог броска' }, { value: 'hit', label: 'Попадание (0/1)' }, { value: 'applied', label: 'Применено (лечение, хиты)' }, { value: 'spent', label: 'Израсходовано' }] },
     // Один узел «Изменить поле»: вид задаёт, какие параметры показывать (см. FIELD_HIDDEN).
     'action.field': {
       kind: [{ value: 'status', label: 'Состояние — наложить или снять' }, { value: 'value', label: 'Показатель — изменить число' }, { value: 'formula', label: 'Формула — параметр при создании' }],
@@ -247,6 +249,8 @@
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
       const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
+      // data.result читает результат конкретной программы или последнего действия графа.
+      if (node?.type === 'data.result') enums.source = [{ value: 'last', label: 'Последнее действие' }, ...(options.programs || [])];
       // У «Изменить поле» список полей зависит от вида: value и formula принимают разные поля листа.
       const fields = node?.type === 'action.field' ? fieldOptions(node?.params) : null;
       if (fields) enums.field = fields;

@@ -33,6 +33,12 @@ const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
 const SKILL_IDS: &[&str] = &["acrobatics", "animal", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight", "stealth", "survival"];
 const SOCKET_TYPES: &[&str] = &["flow", "bool", "number", "dice", "ability", "text", "list", "table", "choice", "effect"];
+// Поля результата действия (data.result). hit хранится как 0/1, остальные — числа.
+const RESULT_FIELDS: &[&str] = &["total", "hit", "applied", "spent"];
+// Поле листа (data.sheet): непустой путь вида hp.current, level, abilities.str.
+fn valid_sheet_field(value: &str) -> bool {
+    !value.is_empty() && utf16_len(value) <= 100 && value.split('.').all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+}
 
 type Ports = (HashMap<String, String>, HashMap<String, String>);
 fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&Value>) -> Ports {
@@ -42,6 +48,8 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.number" => { outputs.insert("value".into(), "number".into()); }
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
+        // Значения, которые знает только рантайм: результат действия и поле листа.
+        "data.result" | "data.sheet" => { outputs.insert("value".into(), "number".into()); }
         "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
@@ -125,7 +133,7 @@ fn check_interface(value: &Value) -> ApiResult<()> {
     }
     Ok(())
 }
-fn validate_node_params(n: &Value) -> ApiResult<()> {
+fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> {
     let p = &n["params"];
     let kind = n["type"].as_str().unwrap_or("");
     match kind {
@@ -157,6 +165,14 @@ fn validate_node_params(n: &Value) -> ApiResult<()> {
         }
         "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
         "data.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
+        // Результат действия читается из листа в рантайме: источник — «последнее действие» или программа графа.
+        "data.result" => {
+            let source = p["source"].as_str().unwrap_or("");
+            if source != "last" && !programs.contains(source) { return Err(bad("Результат: выберите последнее действие или программу этого графа.")); }
+            if !RESULT_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Результат действия: поле total, hit, applied или spent.")); }
+        }
+        // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
+        "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
         "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
         "action.roll" if p.get("roll_kind").is_some() && !ROLL_KINDS.contains(&p["roll_kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
         "action.field" => {
@@ -329,7 +345,7 @@ fn flow_problems(nodes: &[Value], links: &[Value], groups: &[Value], owner_group
     }
     problems.append(&mut ctx.problems);
 }
-fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>, problems: &mut Vec<String>) -> ApiResult<()> {
+fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>, problems: &mut Vec<String>, programs: &HashSet<String>) -> ApiResult<()> {
     if !graph.is_object() { return Err(bad("Граф должен быть объектом.")); }
     let nodes = graph["nodes"].as_array().filter(|a| a.len() <= 500).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
     let links = graph["links"].as_array().filter(|a| a.len() <= 2000).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
@@ -349,7 +365,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         if let Some(pos) = n.get("position") { if !pos["x"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) || !pos["y"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) { return Err(bad("Координаты узла вне допустимых пределов.")); } }
         if kind == "group.instance" && !groups.iter().any(|g| g["id"] == n["params"]["group_id"]) { return Err(bad("Узел ссылается на отсутствующую группу.")); }
         if ["group.input", "group.output"].contains(&kind) && (!nested || owner_group.is_none()) { return Err(bad("Узлы интерфейса группы разрешены только внутри повторно используемой группы.")); }
-        validate_node_params(n)?;
+        validate_node_params(n, programs)?;
     }
     let mut indegree: HashMap<String, usize> = node_ids.iter().map(|x| (x.clone(), 0)).collect();
     let mut adjacency: HashMap<String, Vec<String>> = node_ids.iter().map(|x| (x.clone(), Vec::new())).collect();
@@ -418,7 +434,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine",
+    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet",
     "condition.context", "condition.hit", "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
     "action.program", "action.roll", "action.field", "action.spend", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
@@ -469,6 +485,12 @@ fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
     if mechanics["version"] != 2 || utf16_len(&mechanics.to_string()) > 1_000_000 { return Err(bad("Неподдерживаемая или слишком большая схема механик.")); }
     let graph = &mechanics["graph"];
     let groups = graph["groups"].as_array().filter(|a| a.len() <= 50).ok_or_else(|| bad("Не более 50 групп повторного использования."))?;
+    // Программы всего графа (в том числе внутри групп): на них ссылается источник data.result.
+    let mut programs = HashSet::new();
+    for node in graph["nodes"].as_array().into_iter().flatten().chain(groups.iter().flat_map(|group| group["nodes"].as_array().into_iter().flatten())) {
+        if node["type"] != "action.program" { continue; }
+        if let Some(id) = node["params"]["program_id"].as_str().filter(|id| !id.is_empty()).or_else(|| node["id"].as_str()) { programs.insert(id.to_string()); }
+    }
     let mut group_ids = HashSet::new();
     for g in groups {
         let id = g["id"].as_str().unwrap_or(""); let name = g["name"].as_str().unwrap_or("");
@@ -477,11 +499,11 @@ fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
         if !g["nodes"].is_array() || !g["links"].is_array() { return Err(bad("У группы должны быть свои nodes и links.")); }
         let mut inner = json!({"nodes":g["nodes"],"links":g["links"],"frames":g.get("frames").cloned().unwrap_or(json!([]))});
         if inner["frames"].is_null() { inner["frames"] = json!([]); }
-        validate_graph(&inner, groups, true, Some(g), problems)?;
+        validate_graph(&inner, groups, true, Some(g), problems, &programs)?;
         if !group_boundaries_match(g) { return Err(bad("Порты группы должны иметь по одному соответствующему узлу входа/выхода.")); }
     }
     if !group_cycle(groups) { return Err(bad("Рекурсивная ссылка или цикл между группами запрещён.")); }
-    validate_graph(graph, groups, false, None, problems)
+    validate_graph(graph, groups, false, None, problems, &programs)
 }
 
 struct GraphContext {
@@ -636,6 +658,32 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
             Some(json!(result))
         }
+        // Рантайм-значения: результат действия из листа и поле листа. Без контекста исполнения
+        // (редактор, предпросмотр, статический план) значение — 0.
+        "data.result" => {
+            let source = params["source"].as_str().unwrap_or("last");
+            let field = params["field"].as_str().unwrap_or("total");
+            let results = context.get("runtime").and_then(|runtime| runtime.get("results"));
+            let entry = if source == "last" {
+                results.and_then(|results| results.get("last"))
+            } else {
+                results.and_then(|results| results.get("by_program")).and_then(|programs| programs.get(source))
+            };
+            Some(match entry.and_then(|entry| entry.get(field)) {
+                Some(Value::Bool(hit)) => json!(if *hit { 1 } else { 0 }),
+                Some(Value::Number(number)) => Value::Number(number.clone()),
+                _ => json!(0),
+            })
+        }
+        "data.sheet" => {
+            let field = params["field"].as_str().unwrap_or("");
+            let pointer = format!("/{}", field.replace('.', "/"));
+            let value = context.get("runtime").and_then(|runtime| runtime.get("sheet")).and_then(|sheet| sheet.pointer(&pointer));
+            Some(match value {
+                Some(Value::Number(number)) => Value::Number(number.clone()),
+                _ => json!(0),
+            })
+        }
         // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
         "logic.op" => match params["op"].as_str() {
             Some("not") => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
@@ -748,12 +796,16 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
                 continue;
             }
             if let Some(value) = enabled { block.insert("enabled".into(), value); }
-            // Динамическое условие блока (`condition: bool`) проверяется после enabled: false так же
-            // пропускает блок, а поток идёт дальше по exec. Значение true блок не меняет.
-            if graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) == Some(false) {
-                let key = (node_id.clone(), "exec".to_string());
-                for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
-                continue;
+            // Условие блока: если ко входу condition подведён провод, значение зависит от листа и
+            // результатов действий и вычисляется исполнителем в рантайме. В план кладётся id
+            // узла-источника (condition_src); статическая проверка остаётся только без провода.
+            match incoming.get(&(node_id.clone(), "condition".to_string())).cloned() {
+                Some((source, _)) => { block.insert("condition_src".into(), json!(source)); }
+                None => if graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) == Some(false) {
+                    let key = (node_id.clone(), "exec".to_string());
+                    for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
+                    continue;
+                },
             }
             let block_id = block.remove("block_id").unwrap_or(json!(node_id));
             block.insert("id".into(), block_id); block.insert("kind".into(), json!(kind)); blocks.push(Value::Object(block));
@@ -763,10 +815,30 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
         program.insert("blocks".into(), json!(blocks)); programs.push(Value::Object(program));
     }
     let mut out = json!({"version":1,"programs":programs});
+    // Граф нужен исполнителю: по condition_src он вычисляет условие блока в рантайме.
+    if let Some(graph) = mechanics.get("graph") { out["graph"] = graph.clone(); }
     for key in ["origin", "item_defaults"] { if let Some(value) = mechanics.get(key) { out[key] = value.clone(); } }
     out
 }
 fn from_endpoint(link: &Value) -> Endpoint { (link["from"]["node"].as_str().unwrap_or("").to_string(), link["from"]["socket"].as_str().unwrap_or("").to_string()) }
+
+/// Значение узла графа в рантайме — та же функция, что считает значения при компиляции,
+/// но с контекстом исполнения: `{"runtime": {"sheet": <лист>, "results": <action_results>}}`.
+/// Узлы групп разворачиваются так же, как в плане, поэтому id из condition_src совпадает.
+/// Неизвестный узел — ошибка; невычислимое значение — `null` (исполнитель не пропускает блок).
+pub fn node_value(graph: &Value, node_id: &str, context: &Value) -> ApiResult<Value> {
+    let groups = graph["groups"].as_array().cloned().unwrap_or_default();
+    let (expanded_nodes, links) = expand_graph(graph, &groups);
+    let nodes: HashMap<String, &Value> = expanded_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
+    if !nodes.contains_key(node_id) { return Err(bad("Узел условия не найден в графе.")); }
+    let mut incoming: HashMap<(String, String), Endpoint> = HashMap::new();
+    for link in &links {
+        let to = (link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string());
+        incoming.insert(to, from_endpoint(link));
+    }
+    let endpoint = (node_id.to_string(), "value".to_string());
+    Ok(graph_output_value(&endpoint, &nodes, &incoming, context).unwrap_or(Value::Null))
+}
 
 #[cfg(test)]
 mod tests {
@@ -1019,18 +1091,22 @@ mod action_node_tests {
         }
     }
 
-    /// condition = false пропускает блок, и поток идёт к следующему блоку; true — блок выполняется.
+    /// Провод на вход condition откладывает условие до рантайма: в план попадает блок
+    /// с condition_src (id узла-источника), а не результат статической проверки.
     #[test]
-    fn condition_false_skips_the_block_and_the_flow_continues() {
-        let skipped = chain(value_field(), Some(false));
-        assert!(problems(&skipped).unwrap().is_empty());
-        let compiled = to_v1(&skipped);
+    fn block_condition_is_deferred_to_the_runtime_source_node() {
+        let graph = chain(value_field(), Some(false));
+        assert!(problems(&graph).unwrap().is_empty());
+        let compiled = to_v1(&graph);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
-        assert_eq!(blocks.iter().map(|block| block["kind"].as_str().unwrap()).collect::<Vec<_>>(), vec!["manual"], "выключенный блок пропущен, поток дошёл до ручного правила");
-        let kept = to_v1(&chain(value_field(), Some(true)));
-        assert_eq!(kept["programs"][0]["blocks"].as_array().unwrap().iter().map(|block| block["kind"].as_str().unwrap()).collect::<Vec<_>>(), vec!["adjust", "manual"]);
-        // Без провода на condition блок выполняется как раньше.
-        assert_eq!(to_v1(&chain(value_field(), None))["programs"][0]["blocks"].as_array().unwrap().len(), 2);
+        assert_eq!(blocks.iter().map(|block| block["kind"].as_str().unwrap()).collect::<Vec<_>>(), vec!["adjust", "manual"], "блок с проводом на condition остаётся в плане");
+        assert_eq!(blocks[0]["condition_src"], "c");
+        assert_eq!(compiled["graph"]["nodes"].as_array().unwrap().len(), 5, "план несёт граф для рантайма");
+        // Без провода на condition блок выполняется как раньше и condition_src не появляется.
+        let plain = to_v1(&chain(value_field(), None));
+        let plain_blocks = plain["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(plain_blocks.len(), 2);
+        assert!(plain_blocks[0].get("condition_src").is_none());
     }
 
     /// Виды «Изменить поле» компилируются в прежние блоки плана: status → condition, value → adjust,
@@ -1092,5 +1168,88 @@ mod action_node_tests {
         assert!(validate(&spend(json!({"block_id": "s", "resource": "gold", "source": "self", "amount": 1, "trigger": "use"}))).is_err());
         assert!(validate(&spend(json!({"block_id": "s", "resource": "quantity", "source": "tag", "amount": 1, "trigger": "use"}))).is_err(), "метка обязательна");
         assert!(validate(&spend(json!({"block_id": "s", "resource": "slot", "source": "self", "amount": 1, "trigger": "use", "slot_level": 1}))).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod data_runtime_tests {
+    use super::*;
+
+    /// Программа с блоком, условие которого читает data.result/data.sheet через data.compare.
+    fn gate(sensor: Value) -> Value {
+        json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            sensor,
+            {"id": "n", "type": "data.number", "params": {"value": 5}},
+            {"id": "cmp", "type": "data.compare", "params": {"op": ">"}},
+            {"id": "f", "type": "action.field", "params": {"block_id": "f", "kind": "value", "field": "speed", "amount": 1}},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "f", "socket": "exec"}},
+            {"from": {"node": "f", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}},
+            {"from": {"node": "src", "socket": "value"}, "to": {"node": "cmp", "socket": "a"}},
+            {"from": {"node": "n", "socket": "value"}, "to": {"node": "cmp", "socket": "b"}},
+            {"from": {"node": "cmp", "socket": "value"}, "to": {"node": "f", "socket": "condition"}}
+        ], "frames": [], "groups": []}})
+    }
+    fn runtime(results: Value, sheet: Value) -> Value { json!({"runtime": {"results": results, "sheet": sheet}}) }
+
+    /// data.result: last и конкретная программа; hit хранится bool, а узел отдаёт 0/1.
+    #[test]
+    fn data_result_reads_the_last_action_and_a_named_program() {
+        let graph = gate(json!({"id": "src", "type": "data.result", "params": {"source": "last", "field": "total"}}));
+        assert!(validate(&graph).is_ok());
+        let plan = to_v1(&graph);
+        assert_eq!(plan["programs"][0]["blocks"][0]["condition_src"], "cmp", "источник условия — узел, подключённый к condition");
+        let value = |results: Value| node_value(&graph["graph"], "src", &runtime(results, json!({}))).unwrap();
+        assert_eq!(value(json!({"last": {"total": 9}, "by_program": {}})), json!(9));
+        assert_eq!(value(json!({"last": {"total": 2}, "by_program": {}})), json!(2));
+        let hit = gate(json!({"id": "src", "type": "data.result", "params": {"source": "last", "field": "hit"}}));
+        assert_eq!(node_value(&hit["graph"], "src", &runtime(json!({"last": {"hit": true}}), json!({}))).unwrap(), json!(1));
+        assert_eq!(node_value(&hit["graph"], "src", &runtime(json!({"last": {"hit": false}}), json!({}))).unwrap(), json!(0));
+        // Конкретная программа читается из by_program, а не из last.
+        let named = gate(json!({"id": "src", "type": "data.result", "params": {"source": "use", "field": "total"}}));
+        assert!(validate(&named).is_ok(), "источник — программа этого графа");
+        let results = json!({"last": {"total": 9}, "by_program": {"use": {"total": 3}}});
+        assert_eq!(node_value(&named["graph"], "src", &runtime(results, json!({}))).unwrap(), json!(3));
+        // Без рантайма (редактор/предпросмотр) значение — 0.
+        assert_eq!(node_value(&graph["graph"], "src", &Value::Null).unwrap(), json!(0));
+        // Неизвестный узел — ошибка исполнения.
+        assert!(node_value(&graph["graph"], "missing", &Value::Null).is_err());
+    }
+
+    /// data.sheet: вложенный путь листа; отсутствующее или нечисловое поле — 0.
+    #[test]
+    fn data_sheet_reads_a_nested_sheet_field_and_defaults_to_zero() {
+        let graph = gate(json!({"id": "src", "type": "data.sheet", "params": {"field": "hp.current"}}));
+        assert!(validate(&graph).is_ok());
+        let value = |sheet: Value| node_value(&graph["graph"], "src", &runtime(json!({}), sheet)).unwrap();
+        assert_eq!(value(json!({"hp": {"current": 7}})), json!(7));
+        assert_eq!(value(json!({"hp": {"current": 0}})), json!(0));
+        assert_eq!(value(json!({"hp": {}})), json!(0), "отсутствующее поле — 0");
+        assert_eq!(value(json!({"hp": {"current": "7"}})), json!(0), "нечисловое значение — 0");
+        assert_eq!(node_value(&graph["graph"], "src", &Value::Null).unwrap(), json!(0));
+    }
+
+    /// Параметры узлов проверяются при сохранении: источник результата и путь поля листа.
+    #[test]
+    fn data_result_and_sheet_parameters_are_validated() {
+        let result = |source: &str, field: &str| json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "src", "type": "data.result", "params": {"source": source, "field": field}},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [{"from": {"node": "p", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}], "frames": [], "groups": []}});
+        assert!(validate(&result("last", "total")).is_ok());
+        assert!(validate(&result("use", "spent")).is_ok());
+        assert!(validate(&result("other", "total")).is_err(), "источник — только last или программа графа");
+        assert!(validate(&result("last", "nat20")).is_err(), "поля nat20 нет в схеме результатов");
+        let sheet = |field: &str| json!({"version": 2, "graph": {"nodes": [
+            {"id": "src", "type": "data.sheet", "params": {"field": field}}
+        ], "links": [], "frames": [], "groups": []}});
+        assert!(validate(&sheet("hp.current")).is_ok());
+        assert!(validate(&sheet("abilities.str")).is_ok());
+        assert!(validate(&sheet("")).is_err());
+        assert!(validate(&sheet("HP.current")).is_err());
+        assert!(validate(&sheet("hp..current")).is_err());
     }
 }

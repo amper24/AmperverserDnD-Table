@@ -11,6 +11,8 @@ function summarise(edition) {
   const rows = JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed', `srd_${edition}.json`), 'utf8'));
   const categories = {}, nodeTypes = {}, origin = {};
   let mechanicsRecords = 0, nodes = 0, links = 0, programs = 0, withPrograms = 0;
+  // Узлы, читающие состояние исполнения: результат действия и поле листа (этап 2 v3).
+  let resultReads = 0, sheetReads = 0;
   for (const row of rows) {
     categories[row.category] = (categories[row.category] || 0) + 1;
     const mechanics = row.data && row.data.mechanics;
@@ -25,6 +27,8 @@ function summarise(edition) {
     for (const node of recordNodes) {
       nodeTypes[node.type] = (nodeTypes[node.type] || 0) + 1;
       if (node.type === 'action.program') recordPrograms++;
+      if (node.type === 'data.result') resultReads++;
+      if (node.type === 'data.sheet') sheetReads++;
     }
     programs += recordPrograms;
     if (recordPrograms) withPrograms++;
@@ -42,6 +46,8 @@ function summarise(edition) {
     programs,
     records_with_programs: withPrograms,
     node_types: ordered(nodeTypes),
+    result_reads: resultReads,
+    sheet_reads: sheetReads,
   };
 }
 
