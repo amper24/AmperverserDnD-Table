@@ -239,6 +239,7 @@ struct InventoryOp {
     #[serde(default)] qty: i64,
     #[serde(default)] actions: Vec<usize>,
     #[serde(default)] mode: String,
+    #[serde(default)] slot_level: i64,
     #[serde(default)] gm_only: bool,
     #[serde(default)] scene_id: String,
     #[serde(default)] loot_id: String,
@@ -266,9 +267,9 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
     let mut result = json!({ "op": body.op }); let mut scene_event = None;
     match body.op.as_str() {
         "program" => {
-            result=crate::mechanics::execute(&mut sheet,&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged)?;
+            result=crate::mechanics::execute_with_slot(&mut sheet,&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged,body.slot_level)?;
             result["request_id"]=json!(body.request_id);result["gm_only"]=json!(body.gm_only);
-            result["program_use"]=json!({"character_id":id,"source_kind":body.source_kind,"source_uid":body.source_uid,"program_id":body.program_id,"mode":body.mode,"gm_only":body.gm_only});
+            result["program_use"]=json!({"character_id":id,"source_kind":body.source_kind,"source_uid":body.source_uid,"program_id":body.program_id,"mode":body.mode,"slot_level":body.slot_level,"gm_only":body.gm_only});
         }
         "equip" => crate::inventory::equip(&mut sheet, &body.item_uid, &body.slot)?,
         "split" => { result["new_uid"] = json!(crate::inventory::split(&mut sheet, &body.item_uid, body.qty)?); }

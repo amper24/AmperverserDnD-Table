@@ -148,7 +148,7 @@ test('броски монстров и кубики урона заклинан�
 test('заклинания: спасбросок цели — правило для мастера, а не бросок игрока', () => {
   // 0.7.0 держала на каждый спасбросок отдельную кнопку «Отдельный бросок: Спасбросок» — игрок
   // кидал чужой d20. Теперь характеристика спасброска читается правилом действия «Сотворить»,
-  // а ячейку списывает лист (круг, Договор, ритуал) — расхода в графе нет.
+  // а ячейку списывает узел «Расход ячейки» (круг выбирается при касте).
   let checked = 0;
   for (const edition of EDITIONS) {
     for (const row of spells(edition)) {
@@ -160,7 +160,14 @@ test('заклинания: спасбросок цели — правило д�
         && !n.params.dice.stat && !n.params.dice.bonus && (n.params.kind || 'roll') === 'roll'),
         false, `${row.slug}: у игрока остался бросок d20 спасброска`);
       assert.equal(nodes.some(n => n.type === 'action.spend' && n.params.resource === 'slot'),
-        false, `${row.slug}: расход ячейки в графе спорит с учётом ячеек на листе`);
+        false, `${row.slug}: расход ячейки в старом блоке расхода`);
+      const slot = nodes.find(n => n.type === 'action.slot');
+      if (Number(data.level) > 0) {
+        assert.ok(slot, `${row.slug}: нет узла «Расход ячейки»`);
+        assert.equal(slot.params.level, 0, `${row.slug}: круг ячейки выбирается при касте`);
+      } else {
+        assert.equal(slot, undefined, `${row.slug}: заговор не тратит ячейку`);
+      }
       const action = (data.actions || []).find(a => a.kind === 'save');
       if (!data.save_ability) {
         assert.ok(!action, `${row.slug}: действие спасброска без save_ability`);

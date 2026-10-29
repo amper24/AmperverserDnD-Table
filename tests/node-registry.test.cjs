@@ -99,18 +99,52 @@ test('v3 action nodes show their kind and live in the palette categories', () =>
   assert.equal(R.nodeTitle('action.field', {}), 'Действие · Изменить поле · Показатель');
   assert.equal(R.categoryOf('action.field').id, 'actions');
   assert.equal(R.categoryOf('action.spend').id, 'actions');
+  assert.equal(R.categoryOf('action.slot').id, 'actions');
   assert.equal(R.categoryOf('action.roll').id, 'actions');
   assert.equal(R.categoryOf('action.program').id, 'start');
   assert.equal(R.categoryOf('flow.end').id, 'actions');
   assert.equal(R.categoryOf('data.compare').id, 'data');
+  assert.equal(R.categoryOf('data.cast').id, 'data');
   assert.equal(R.categoryOf('logic.op').id, 'data');
   assert.equal(R.categoryOf('rule.list').id, 'rules');
   assert.deepEqual(plain(R.blockKindsOf('action.field')), ['condition', 'adjust', 'passive']);
   assert.deepEqual(plain(R.blockKindsOf('action.spend')), ['consume']);
+  assert.deepEqual(plain(R.blockKindsOf('action.slot')), ['consume']);
   assert.equal(R.blockKindOf('action.field', { kind: 'formula' }), 'passive');
   assert.equal(R.blockKindOf('action.field', { kind: 'unknown' }), '');
   assert.equal(R.blockKindOf('action.spend', {}), 'consume');
+  assert.equal(R.blockKindOf('action.slot', {}), 'consume');
   assert.equal(R.blockKindOf('action.roll', { kind: 'attack' }), 'attack');
   assert.equal(R.blockKindOf('action.roll', {}), 'roll');
   assert.equal(R.blockKindOf('action.roll', { kind: 'save' }), 'roll', 'неизвестный вид — свободный бросок');
+});
+
+test('action.slot compiles to a consume block with the chosen or fixed circle', () => {
+  assert.equal(R.nodeTitle('action.slot', {}), 'Действие · Расход ячейки');
+  assert.match(R.nodeDef('action.slot').description, /выбранного или фиксированного круга/);
+  assert.equal(R.nodeDef('action.slot').validate({ level: 0, amount: 1 }), '');
+  assert.equal(R.nodeDef('action.slot').validate({ level: 9, amount: 2 }), '');
+  assert.match(R.nodeDef('action.slot').validate({ level: 10, amount: 1 }), /0 до 9/);
+  assert.match(R.nodeDef('action.slot').validate({ level: 1, amount: 0 }), /1 до 10000/);
+  assert.deepEqual(plain(R.blockParamsOf('action.slot', { level: 0, amount: 1, block_id: 's' })),
+    { amount: 1, block_id: 's', resource: 'slot', source: 'self', trigger: 'use', slot_level: 0 });
+  assert.equal(R.blockParamsOf('action.slot', { level: 3, amount: 2, block_id: 's' }).slot_level, 3);
+  assert.equal(R.nodeDef('action.spend').validate({ resource: 'slot', source: 'self', amount: 1, trigger: 'use' }), 'Расход: ресурс quantity, charges или uses.');
+  assert.equal(R.nodeDef('action.slot').defaults.level, 0, 'по умолчанию круг выбирается при касте');
+});
+
+test('action.roll validates upcast and data.cast exposes the cast circle', () => {
+  const roll = R.nodeDef('action.roll');
+  assert.deepEqual(plain(roll.defaults.upcast), { count: 1, sides: 6 });
+  assert.equal(roll.validate({ upcast: { count: 1, sides: 6 } }), '');
+  assert.match(roll.validate({ upcast: { count: 0, sides: 0 } }), /грани 1–1000/);
+  assert.match(roll.validate({ upcast: { count: 101, sides: 6 } }), /0–100/);
+  const cast = R.nodeDef('data.cast');
+  assert.equal(R.nodeTitle('data.cast', {}), 'Данные · Круг каста');
+  assert.equal(cast.outputs.value, 'number');
+  assert.equal(cast.validate({ field: 'level' }), '');
+  assert.equal(cast.validate({ field: 'extra' }), '');
+  assert.match(cast.validate({ field: 'slot' }), /level, base или extra/);
+  assert.equal(cast.compute(), 0, 'без каста в редакторе — 0');
+  assert.ok(R.COMPUTED.has('data.cast'), 'узел вычисляется в предпросмотре');
 });

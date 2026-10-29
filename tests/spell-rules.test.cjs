@@ -113,6 +113,25 @@ test('старая запись со своим блоком расхода: п�
   assert.equal(spells.slots[3].used, 2);
 });
 
+test('узел action.slot: круг выбирается при касте, сервер тратит ячейку и применяет upcast', () => {
+  const spells = { slots: { 2: { max: 1, used: 0 }, 3: { max: 1, used: 0 } }, pact_slots: { level: 3, max: 1, used: 0 } };
+  const program = { id: 'p1', trigger: 'use', blocks: [
+    { kind: 'consume', resource: 'slot', source: 'self', slot_level: 0, amount: 1, trigger: 'use' },
+    { kind: 'damage', dice: { count: 8, sides: 6, bonus: 0, stat: '' }, upcast: { count: 1, sides: 6 } }
+  ] };
+  assert.equal(R.programSlotChoice(program), true);
+  assert.equal(R.programSlotLevel(program), 0);
+  const plan = R.castPlan({ level: 3 }, program, spells);
+  assert.equal(plan.spend, 'server');
+  assert.equal(plan.level, 0, 'круг приходит из операции, а не из графа');
+  assert.deepEqual(plain(plan.options), [
+    { pool: 'slots', level: 3, remaining: 1 }, { pool: 'pact_slots', level: 3, remaining: 1 }
+  ]);
+  // Ячейка 4-го круга тоже подходит: выбор ограничен только свободными кругами.
+  const higher = R.castPlan({ level: 3 }, program, { slots: { 4: { max: 1, used: 0 } } });
+  assert.deepEqual(plain(higher.options), [{ pool: 'slots', level: 4, remaining: 1 }]);
+});
+
 test('«отдельный бросок» и заговор ничего не тратят, заклинание с зарядами списывает заряды', () => {
   const spells = { slots: { 1: { max: 1, used: 0 } } };
   assert.deepEqual(plain(R.castPlan({ level: 1 }, { id: 'p2', name: 'Отдельный бросок: Урон', trigger: 'use', roll_only: true, blocks: [{ kind: 'damage' }] }, spells)),
@@ -161,13 +180,13 @@ test('старые «отдельные броски» сворачиваютс�
   assert.equal(out.programs.length, 2, 'действие «Сотворить» и отдельный «Урон» (отложенный, не сворачивается)');
   const [use, extra] = out.programs;
   assert.equal(extra.roll_only, true, 'отдельное действие больше не тратит ячейку');
-  assert.deepEqual(plain(use.blocks.map(b => b.kind)), ['manual', 'attack', 'damage', 'manual']);
-  assert.match(use.blocks[0].text, /Спасбросок \(МДР\).*не игрок/s);
-  assert.equal(use.blocks[1].dice.stat, 'spell');
-  assert.equal(use.blocks[2].when, 'hit', 'урон после атаки срабатывает по попаданию');
-  assert.equal(use.blocks[2].damage_type, 'некротический');
-  assert.match(use.blocks[3].text, /^Большие круги/);
-  assert.equal(use.blocks.some(b => b.kind === 'consume'), false, 'ячейку списывает лист: расхода в действии нет');
+  assert.deepEqual(plain(use.blocks.map(b => b.kind)), ['consume', 'manual', 'attack', 'damage', 'manual']);
+  assert.equal(use.blocks[0].resource, 'slot', 'расход ячейки остаётся в действии: его считает сервер');
+  assert.match(use.blocks[1].text, /Спасбросок \(МДР\).*не игрок/s);
+  assert.equal(use.blocks[2].dice.stat, 'spell');
+  assert.equal(use.blocks[3].when, 'hit', 'урон после атаки срабатывает по попаданию');
+  assert.equal(use.blocks[3].damage_type, 'некротический');
+  assert.match(use.blocks[4].text, /^Большие круги/);
   assert.equal(use.blocks.some(b => b.kind === 'roll' && b.dice.sides === 20), false, 'игрок не кидает спасбросок цели');
   assert.equal(use.blocks.some(b => b.kind === 'manual' && /Справочная формула/.test(b.text)), false, 'описание записи остаётся описанием');
 });
@@ -181,9 +200,10 @@ test('урон без атаки бросается всегда, повторн
   const meta = { level: 3, desc: 'Яркая вспышка срывается с вашего указательного пальца к выбранной вами точке в пределах дистанции и расцветает взрывом пламени.', actions, saveAbility: 'ЛОВ' };
   const out = R.spellPrograms(spellFireball, meta);
   const blocks = out.programs[0].blocks;
-  assert.deepEqual(plain(blocks.map(b => b.kind)), ['manual', 'damage']);
-  assert.equal(blocks[1].when, 'always', 'без атаки урон не привязан к попаданию');
-  assert.equal(blocks[1].dice.count, 8);
+  assert.deepEqual(plain(blocks.map(b => b.kind)), ['consume', 'manual', 'damage']);
+  assert.equal(blocks[0].slot_level, 3, 'фиксированный круг старой записи сохраняется');
+  assert.equal(blocks[2].when, 'always', 'без атаки урон не привязан к попаданию');
+  assert.equal(blocks[2].dice.count, 8);
   const again = R.spellPrograms(out.programs, meta);
   assert.equal(again.changed, false, 'собранная запись не пересобирается повторно');
 });
@@ -194,8 +214,8 @@ test('запись без бросков и без спасброска не т�
     { id: 'b2', kind: 'manual', when: 'always', text: 'Вспышка света.' }
   ] }];
   const out = R.spellPrograms(plainSpell, { level: 1, desc: 'Вспышка света.' });
-  assert.deepEqual(plain(out.programs[0].blocks.map(b => b.kind)), ['manual'], 'расход ячейки убран, правило записи осталось');
-  assert.equal(out.changed, true);
+  assert.deepEqual(plain(out.programs[0].blocks.map(b => b.kind)), ['consume', 'manual'], 'расход ячейки и правило записи остались');
+  assert.equal(out.changed, false);
   assert.equal(R.serviceManual('Только отдельный бросок кубиков: не тратит ячейку, заряд или действие.'), true, 'пояснение кнопки не требует подтверждения');
   assert.equal(R.serviceManual('Спасбросок (МДР): бросает цель или ДМ, а не игрок.'), true, 'правило спасброска показывает окно по своему условию');
   assert.equal(R.serviceManual('Поздний урон: цель получает 1к6 в начале своего хода.'), false, 'решение мастера подтверждается');
@@ -217,23 +237,47 @@ test('пересборки копий заклинаний больше нет: 
   assert.deepEqual(plain(M.problems({ version: 1, origin: 'spell-v1', programs: legacySpellPrograms() })), ['Неподдерживаемая схема механик.']);
 });
 
-test('все заклинания справочника уже собраны: одно действие, расход на листе, чужого броска нет', () => {
-  let spells = 0, notAssembled = [];
+test('все заклинания справочника: узел «Расход ячейки», концентрация и повышение круга', () => {
+  let spells = 0, slots = 0, concentrations = 0, rituals = 0, upcasts = 0;
   for (const [edition, rows] of Object.entries(seeds)) {
     for (const row of rows) {
       if (row.category !== 'spell') continue;
       spells++;
       const data = row.data;
+      const nodes = data.mechanics.graph.nodes;
+      const cast = nodes.find(node => node.type === 'action.program' && !node.params.roll_only);
+      assert.ok(cast, `${row.slug}: нет действия сотворения`);
+      const slot = nodes.find(node => node.type === 'action.slot');
+      if (Number(data.level) > 0) {
+        slots++;
+        assert.ok(slot, `${row.slug}: у заклинания ${data.level} круга нет узла «Расход ячейки»`);
+        assert.equal(slot.params.level, 0, `${row.slug}: круг ячейки выбирается при касте`);
+        assert.equal(slot.params.amount, 1, `${row.slug}: одна ячейка за каст`);
+      } else {
+        assert.equal(slot, undefined, `${row.slug}: заговор не тратит ячейку`);
+      }
+      const concentration = nodes.find(node => node.type === 'action.field' && node.params.kind === 'status' && node.params.operation === 'concentration');
+      if (data.concentration) {
+        concentrations++;
+        assert.ok(concentration, `${row.slug}: нет состояния концентрации`);
+        assert.equal(concentration.params.condition, '', `${row.slug}: имя заклинания подставляет сервер`);
+      } else {
+        assert.equal(concentration, undefined, `${row.slug}: концентрация без свойства записи`);
+      }
+      if (data.ritual) rituals++;
+      for (const node of nodes.filter(node => node.type === 'action.roll' && node.params.upcast)) {
+        upcasts++;
+        assert.ok(['damage', 'heal'].includes(node.params.kind), `${row.slug}: повышение круга только у урона/лечения`);
+        assert.ok(Number.isInteger(node.params.upcast.count) && node.params.upcast.count >= 1, `${row.slug}: число костей повышения`);
+        assert.ok(Number.isInteger(node.params.upcast.sides) && node.params.upcast.sides >= 1, `${row.slug}: грани повышения`);
+      }
       const legacy = M.toLegacy(data.mechanics, { level: data.level, edition });
-      const meta = { level: data.level, desc: data.desc, actions: data.actions, saveAbility: data.save_ability, lang: 'ru' };
-      const out = R.spellPrograms(legacy.programs, meta);
-      if (out.changed) notAssembled.push(row.slug);
-      const use = out.programs.filter(program => program.trigger === 'use');
-      const casting = use.filter(program => !program.roll_only);
+      const casting = legacy.programs.filter(program => program.trigger === 'use' && !program.roll_only);
       assert.equal(casting.length, 1, `${row.slug}: действий сотворения ${casting.length}`);
-      assert.equal(casting[0].blocks.some(block => block.kind === 'consume' && block.resource === 'slot'), false, `${row.slug}: расход ячейки убран`);
-      for (const program of use) assert.equal(program.blocks.some(block => block.kind === 'roll' && block.dice && block.dice.sides === 20 && !block.dice.stat && !block.dice.bonus),
-        false, `${row.slug}: игроку оставлен бросок спасброска цели`);
+      for (const program of legacy.programs.filter(program => program.trigger === 'use')) {
+        assert.equal(program.blocks.some(block => block.kind === 'roll' && block.dice && block.dice.sides === 20 && !block.dice.stat && !block.dice.bonus),
+          false, `${row.slug}: игроку оставлен бросок спасброска цели`);
+      }
       if (data.save_ability) assert.equal(casting[0].blocks.some(block => block.kind === 'manual' && R.serviceManual(block.text)),
         true, `${row.slug}: нет правила «кто кидает спасбросок»`);
       assert.equal(M.validate(data.mechanics), '', `${row.slug}: ${M.validate(data.mechanics)}`);
@@ -241,5 +285,13 @@ test('все заклинания справочника уже собраны: 
     }
   }
   assert.equal(spells, 658, 'заклинаний в справочнике');
-  assert.deepEqual(notAssembled, [], 'пересборка данных справочника: node tools/srd/migrate_spells_071.cjs');
+  assert.equal(slots, 607, 'заклинаний с ячейкой (295 + 312)');
+  assert.equal(concentrations, 258, 'заклинаний с концентрацией (126 + 132)');
+  assert.equal(rituals, 58, 'ритуальных заклинаний (29 + 29)');
+  assert.ok(upcasts >= 60, `узлов с повышением круга: ${upcasts}`);
+  for (const [edition, slug] of [['2014', 'srd14-fireball'], ['2024', 'srd24-fireball']]) {
+    const row = seeds[edition].find(item => item.slug === slug);
+    const damage = row.data.mechanics.graph.nodes.find(node => node.type === 'action.roll' && node.params.kind === 'damage');
+    assert.deepEqual(plain(damage.params.upcast), { count: 1, sides: 6 }, `${slug}: 1d6 за круг выше базового`);
+  }
 });

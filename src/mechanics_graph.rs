@@ -17,7 +17,7 @@ const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage",
 // require остаётся только в старых сохранённых планах (src/mechanics.rs); граф v3 его не создаёт.
 const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive"];
 // Виды узлов действия (action.*, кроме action.program) — как ACTION_KINDS в static/node-registry.js.
-const ACTION_NODES: &[&str] = &["roll", "field", "spend", "grant_item", "manual"];
+const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", "manual"];
 // Виды узла «Изменить поле» и их блоки плана — как FIELD_KINDS / FIELD_BLOCKS в static/node-registry.js.
 const FIELD_KINDS: &[&str] = &["status", "value", "formula"];
 const FIELD_BLOCKS: &[(&str, &str)] = &[("status", "condition"), ("value", "adjust"), ("formula", "passive")];
@@ -48,8 +48,8 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.number" => { outputs.insert("value".into(), "number".into()); }
         "data.dice" => { outputs.insert("value".into(), "dice".into()); }
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
-        // Значения, которые знает только рантайм: результат действия и поле листа.
-        "data.result" | "data.sheet" => { outputs.insert("value".into(), "number".into()); }
+        // Значения, которые знает только рантайм: результат действия, поле листа и круг каста.
+        "data.result" | "data.sheet" | "data.cast" => { outputs.insert("value".into(), "number".into()); }
         "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
@@ -173,14 +173,29 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
         }
         // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
         "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
+        // Круг каста: уровень выбранной ячейки, базовый круг заклинания и число лишних кругов.
+        "data.cast" if !["level", "base", "extra"].contains(&p["field"].as_str().unwrap_or("")) => return Err(bad("Круг каста: поле level, base или extra.")),
         "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
         "action.roll" if p.get("kind").is_some() && !ROLL_KINDS.contains(&p["kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
+        // Повышение круга: сколько костей добавляется за каждый круг выше базового (только урон и лечение).
+        "action.roll" if p.get("upcast").is_some() => {
+            let upcast = &p["upcast"];
+            let count = json_integer(&upcast["count"]).unwrap_or(-1);
+            let sides = json_integer(&upcast["sides"]).unwrap_or(-1);
+            if !upcast.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) {
+                return Err(bad("Повышение круга: количество костей 0–100 и грани 1–1000."));
+            }
+        }
         "action.field" => {
             let field_kind = p["kind"].as_str().unwrap_or("");
             if !FIELD_KINDS.contains(&field_kind) { return Err(bad("Изменить поле: вид status, value или formula.")); }
             if field_kind == "status" {
                 let name = p["condition"].as_str().unwrap_or("");
-                if name.trim().is_empty() || utf16_len(name) > 200 || !["add", "remove"].contains(&p["operation"].as_str().unwrap_or("")) { return Err(bad("Состояние: название до 200 символов и операция add или remove.")); }
+                let operation = p["operation"].as_str().unwrap_or("");
+                // «Концентрация» не задаёт название вручную: сервер подставляет имя заклинания.
+                if !["add", "remove", "concentration"].contains(&operation) { return Err(bad("Состояние: операция add, remove или concentration.")); }
+                if operation != "concentration" && (name.trim().is_empty() || utf16_len(name) > 200) { return Err(bad("Состояние: название до 200 символов.")); }
+                if operation == "concentration" && utf16_len(name) > 200 { return Err(bad("Состояние: название до 200 символов.")); }
             }
             if field_kind == "value" {
                 if !VALUE_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Недоступный показатель.")); }
@@ -193,15 +208,20 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
         }
         "action.spend" => {
             // Тот же контракт, что у блока consume в src/mechanics.rs: вид ресурса, источник и количество.
+            // Ячейка заклинания — отдельный узел action.slot; здесь остаются предметы и умения.
             let resource = p["resource"].as_str().unwrap_or("");
             let source = p["source"].as_str().unwrap_or("");
-            if !["quantity", "charges", "slot", "uses"].contains(&resource) || !["self", "item", "tag"].contains(&source) || !["use", "attack"].contains(&p["trigger"].as_str().unwrap_or("")) {
+            if !["quantity", "charges", "uses"].contains(&resource) || !["self", "item", "tag"].contains(&source) || !["use", "attack"].contains(&p["trigger"].as_str().unwrap_or("")) {
                 return Err(bad("Неизвестный способ расхода."));
             }
             if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество расхода: целое от 1 до 10000.")); }
             if source == "item" && p["item_uid"].as_str().unwrap_or("").is_empty() { return Err(bad("Не задан источник расхода.")); }
             if source == "tag" && p["tag"].as_str().unwrap_or("").trim().is_empty() { return Err(bad("Не задан источник расхода.")); }
-            if resource == "slot" && json_integer(&p["slot_level"]).map(|number| !(1..=9).contains(&number)).unwrap_or(true) { return Err(bad("Круг ячейки: целое от 1 до 9.")); }
+        }
+        // Расход ячейки заклинания: level 0 — круг, выбранный при касте, 1–9 — фиксированный.
+        "action.slot" => {
+            if json_integer(&p["level"]).map(|number| !(0..=9).contains(&number)).unwrap_or(true) { return Err(bad("Круг ячейки: целое от 0 до 9.")); }
+            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество ячеек: целое от 1 до 10000.")); }
         }
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
@@ -434,10 +454,10 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
     false
 }
 const NODE_TYPES: &[&str] = &[
-    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet",
+    "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet", "data.cast",
     "condition.context", "condition.hit", "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
-    "action.program", "action.roll", "action.field", "action.spend", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
+    "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
 ];
 
 fn group_boundaries_match(group: &Value) -> bool {
@@ -684,6 +704,13 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
                 _ => json!(0),
             })
         }
+        // Круг каста: уровень выбранной ячейки, базовый круг заклинания и число лишних кругов.
+        // Без контекста исполнения (редактор, предпросмотр) — 0.
+        "data.cast" => {
+            let cast = context.get("cast");
+            let key = match params["field"].as_str().unwrap_or("level") { "base" => "base", "extra" => "extra", _ => "level" };
+            Some(cast.and_then(|cast| cast.get(key)).and_then(Value::as_i64).map(|value| json!(value)).unwrap_or(json!(0)))
+        }
         // Неизвестное значение — None: обе ветви «Если» сохраняются, как и в движке клиента.
         "logic.op" => match params["op"].as_str() {
             Some("not") => bool_input(node, "a", incoming, nodes, context).map(|value| json!(!value)),
@@ -774,6 +801,16 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
                 }
             } else if kind == "spend" {
                 kind = "consume".into();
+            } else if kind == "slot" {
+                // Отдельный узел «Расход ячейки»: в плане это прежний блок consume с resource=slot.
+                // level 0 означает «круг, выбранный при касте»: сервер подставит его из контекста.
+                kind = "consume".into();
+                let level = block.remove("level").unwrap_or(json!(0));
+                block.insert("slot_level".into(), level);
+                block.insert("resource".into(), json!("slot"));
+                block.insert("source".into(), json!("self"));
+                block.insert("trigger".into(), json!("use"));
+                if block.get("amount").is_none() { block.insert("amount".into(), json!(1)); }
             } else if kind == "field" {
                 let field_kind = block.remove("kind").and_then(|requested| requested.as_str().map(str::to_string)).unwrap_or_default();
                 kind = FIELD_BLOCKS.iter().find(|(node_kind, _)| *node_kind == field_kind).map(|(_, block_kind)| (*block_kind).to_string()).unwrap_or_default();
@@ -1151,6 +1188,22 @@ mod action_node_tests {
         let compiled = to_v1(&spend_graph);
         assert_eq!(compiled["programs"][0]["blocks"][0]["kind"], "consume");
         assert_eq!(compiled["programs"][0]["blocks"][0]["resource"], "charges");
+        // «Расход ячейки» — отдельный узел: level 0 означает круг, выбранный при касте.
+        let slot_graph = json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "s", "type": "action.slot", "params": {"block_id": "s", "level": 0, "amount": 1}},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "s", "socket": "exec"}},
+            {"from": {"node": "s", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        let compiled = to_v1(&slot_graph);
+        let block = &compiled["programs"][0]["blocks"][0];
+        assert_eq!(block["kind"], "consume");
+        assert_eq!(block["resource"], "slot");
+        assert_eq!(block["source"], "self");
+        assert_eq!(block["slot_level"], 0);
+        assert_eq!(block["amount"], 1);
     }
 
     /// Неизвестный вид «Изменить поле» и неизвестный ресурс расхода отклоняются при сохранении.
@@ -1167,7 +1220,18 @@ mod action_node_tests {
         ], "frames": [], "groups": []}});
         assert!(validate(&spend(json!({"block_id": "s", "resource": "gold", "source": "self", "amount": 1, "trigger": "use"}))).is_err());
         assert!(validate(&spend(json!({"block_id": "s", "resource": "quantity", "source": "tag", "amount": 1, "trigger": "use"}))).is_err(), "метка обязательна");
-        assert!(validate(&spend(json!({"block_id": "s", "resource": "slot", "source": "self", "amount": 1, "trigger": "use", "slot_level": 1}))).is_ok());
+        assert!(validate(&spend(json!({"block_id": "s", "resource": "slot", "source": "self", "amount": 1, "trigger": "use", "slot_level": 1}))).is_err(), "ячейка — отдельный узел action.slot");
+        let slot = |params: Value| json!({"version": 2, "graph": {"nodes": [
+            {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Тест", "trigger": "use"}},
+            {"id": "s", "type": "action.slot", "params": params},
+            {"id": "e", "type": "flow.end", "params": {}}
+        ], "links": [
+            {"from": {"node": "p", "socket": "exec"}, "to": {"node": "s", "socket": "exec"}},
+            {"from": {"node": "s", "socket": "exec"}, "to": {"node": "e", "socket": "exec"}}
+        ], "frames": [], "groups": []}});
+        assert!(validate(&slot(json!({"block_id": "s", "level": 0, "amount": 1}))).is_ok());
+        assert!(validate(&slot(json!({"block_id": "s", "level": 10, "amount": 1}))).is_err());
+        assert!(validate(&slot(json!({"block_id": "s", "level": 1, "amount": 0}))).is_err());
     }
 }
 
@@ -1229,6 +1293,23 @@ mod data_runtime_tests {
         assert_eq!(value(json!({"hp": {}})), json!(0), "отсутствующее поле — 0");
         assert_eq!(value(json!({"hp": {"current": "7"}})), json!(0), "нечисловое значение — 0");
         assert_eq!(node_value(&graph["graph"], "src", &Value::Null).unwrap(), json!(0));
+    }
+
+    /// data.cast: круг выбранной ячейки, базовый круг и число лишних кругов; без каста — 0.
+    #[test]
+    fn data_cast_reads_the_execution_cast_context() {
+        let level = gate(json!({"id": "src", "type": "data.cast", "params": {"field": "level"}}));
+        assert!(validate(&level).is_ok());
+        let cast = json!({"level": 3, "base": 2, "extra": 1});
+        assert_eq!(node_value(&level["graph"], "src", &json!({"cast": cast})).unwrap(), json!(3));
+        let base = gate(json!({"id": "src", "type": "data.cast", "params": {"field": "base"}}));
+        assert_eq!(node_value(&base["graph"], "src", &json!({"cast": cast})).unwrap(), json!(2));
+        let extra = gate(json!({"id": "src", "type": "data.cast", "params": {"field": "extra"}}));
+        assert_eq!(node_value(&extra["graph"], "src", &json!({"cast": cast})).unwrap(), json!(1));
+        // В редакторе без каста значение — 0.
+        assert_eq!(node_value(&level["graph"], "src", &Value::Null).unwrap(), json!(0));
+        let bad = gate(json!({"id": "src", "type": "data.cast", "params": {"field": "slot"}}));
+        assert!(validate(&bad).is_err());
     }
 
     /// Параметры узлов проверяются при сохранении: источник результата и путь поля листа.

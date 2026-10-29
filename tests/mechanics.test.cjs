@@ -126,7 +126,8 @@ test('curated healing: potion expenditure is separate from a target-applied heal
     const data=srd(`data_seed/srd_${ed}.json`);
     const spell=data.find(e=>e.category==='spell'&&e.data.name_en==='Cure Wounds');
     const blocks=spell.data.plan.programs[0].blocks;
-    assert.ok(!blocks.some(b=>b.kind==='consume'),'ячейку списывает лист (круг, Договор, ритуал), а не сама запись');
+    const slot=blocks.find(b=>b.kind==='consume');
+    assert.ok(slot&&slot.resource==='slot'&&slot.slot_level===0,'ячейку выбирает игрок, а списывает действие');
     assert.ok(!blocks.some(b=>b.kind==='heal'));
     const roll=blocks.find(b=>b.kind==='roll');
     assert.equal(roll.name,'Лечение');assert.equal(roll.dice.count,ed==='2014'?1:2);assert.equal(roll.dice.sides,8);assert.equal(roll.dice.stat,'spell_mod');

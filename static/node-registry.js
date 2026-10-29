@@ -13,7 +13,7 @@
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   // Виды узлов действия (action.*, кроме action.program): один узел — один глагол.
-  const ACTION_KINDS = ['roll', 'field', 'spend', 'grant_item', 'manual'];
+  const ACTION_KINDS = ['roll', 'field', 'spend', 'slot', 'grant_item', 'manual'];
   // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
@@ -43,7 +43,7 @@
   const VALUE_TYPES = ['flow', 'bool', 'number', 'dice', 'ability', 'text', 'list', 'table', 'choice', 'effect'];
   const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
   // Общие помощники вычисляемых узлов (их читают классы из static/nodes/).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.result', 'data.sheet']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.result', 'data.sheet', 'data.cast']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
@@ -109,7 +109,11 @@
     const defaultDice = window.Presets?.item('block_defaults', kind)?.table?.dice;
     if (defaultDice) base.dice = Base.dice(defaultDice);
     if (kind === 'roll' && !base.dice) base.dice = Base.dice('1d20');
+    // Повышение круга: число костей за каждый круг выше базового (сервер добавляет их к урону/лечению).
+    if (kind === 'roll') base.upcast = { count: 1, sides: 6 };
     if (kind === 'spend') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
+    // Отдельный узел «Расход ячейки»: 0 — круг, выбранный при касте; 1–9 — фиксированный.
+    if (kind === 'slot') Object.assign(base, { level: 0, amount: 1 });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     // Один узел «Изменить поле»: умолчания всех трёх видов лежат рядом, поэтому переключение вида
     // в форме сразу даёт допустимые параметры (лишние поля не попадают в блок плана).
@@ -127,6 +131,7 @@
     if (type === 'action.roll') return ROLL_KINDS.includes(p.kind) ? p.kind : 'roll';
     if (type === 'action.field') return FIELD_BLOCKS[p.kind] || '';
     if (type === 'action.spend') return 'consume';
+    if (type === 'action.slot') return 'consume';
     return type.startsWith('action.') ? type.slice(7) : '';
   }
   // Все виды блоков плана, которые даёт узел: для паритета клиента и сервера (tools/srd/integrity.cjs).
@@ -134,6 +139,7 @@
     if (type === 'action.roll') return [...ROLL_KINDS];
     if (type === 'action.field') return Object.values(FIELD_BLOCKS);
     if (type === 'action.spend') return ['consume'];
+    if (type === 'action.slot') return ['consume'];
     if (type === 'action.grant_item') return ['grant_item'];
     if (type === 'action.manual') return ['manual'];
     return [];

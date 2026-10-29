@@ -134,7 +134,7 @@
       const r = response.result;
       if (r.message) DiceEngine.committed(r.message);
       else if (r.rolls?.length && !response.replayed) DiceEngine.present(r, { local: true });
-      if(r.effects?.length) toast(r.effects.map(e=>({heal:'Лечение',temp_hp:'Временные хиты',damage:'Урон',grant_item:'Выдано',condition:'Состояние',adjust:'Показатель',manual:'Правило подтверждено'}[e.kind]||e.kind)+(e.amount!==undefined?' · '+e.amount:'')+(e.name?' '+e.name:'')).join(' / '),6500);
+      if(r.effects?.length) toast(r.effects.map(e=>({heal:'Лечение',temp_hp:'Временные хиты',damage:'Урон',grant_item:'Выдано',condition:'Состояние',adjust:'Показатель',manual:'Правило подтверждено',ritual:'Ритуал'}[e.kind]||e.kind)+(e.amount!==undefined?' · '+e.amount:'')+(e.name?' '+e.name:'')+(e.condition?' '+e.condition:'')+(e.text?' '+e.text:'')).join(' / '),6500);
       if (r.spent?.length) toast(r.spent.map(x => `${x.name}: −${x.amount} (осталось ${x.remaining})`).join(' · '));
       else toast(note || (['use','program'].includes(operation?.op) ? 'Использовано · без расхода' : 'Инвентарь обновлён'));
       return response;
@@ -147,7 +147,7 @@
     if(ref.character_id!==id)return toast('Откройте лист владельца.');
     const list=ref.source_kind==='item'?s.inventory:ref.source_kind==='spell'?s.spells.known:s.features;
     const doc=list.find(d=>d.uid===ref.source_uid),p=doc?.mechanics?programsOf(doc).find(p=>p.id===ref.program_id):null;
-    if(!p)return toast('Действие больше недоступно.');return runProgram(doc,ref.source_kind,p,{mode:ref.mode,gm_only:ref.gm_only});
+    if(!p)return toast('Действие больше недоступно.');return runProgram(doc,ref.source_kind,p,{mode:ref.mode,slot_level:Number.isInteger(ref.slot_level)?ref.slot_level:0,gm_only:ref.gm_only});
   };
   window.ITEM_USE = ref => ref.character_id === id ? inventoryOp({ op: 'use', item_uid: ref.item_uid, actions: ref.actions, mode: ref.mode, gm_only: ref.gm_only }) : toast('Используйте предмет на листе его владельца.');
   // Контекст листа для графовых механик: редакция, уровень, подкласс и выборы создания.
@@ -172,7 +172,7 @@
     const { note = '', acknowledged, ...fields } = opts || {};
     const manual=manualRules(p);
     if(manual.length && acknowledged !== true && !(await confirmManual(doc, p, decidingRules(p)))) return;
-    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0||acknowledged===true,...fields}, false, note);
+    return await inventoryOp({op:'program',source_kind:kind,source_uid:doc.uid,program_id:p.id,target_id:id,acknowledged:manual.length>0||acknowledged===true,slot_level:0,...fields}, false, note);
   }
   const docActions=(doc,kind,context)=>M.actionButtons(doc,context||ctx(),`${ch.name}: ${doc.name}`,{disabled:readonly||inventoryBusy,onProgram:(p,opts)=>runProgram(doc,kind,p,opts)});
   // Кнопка заклинания вызывает именно то действие, по которому щёлкнули: «отдельный бросок»
@@ -797,6 +797,9 @@
       slots.append(panel);
     }
     root.append(slots);
+    // Статус концентрации — из состояний листа: сервер заменяет прежнюю запись при новом касте.
+    const concentration = (s.conditions || []).find(value => typeof value === 'string' && value.startsWith('Концентрация:'));
+    if (concentration) root.append(el('div', { class: 'row', style: 'margin:6px 0' }, el('span', { class: 'chip', title: 'Концентрация: новый каст заменит эту запись' }, concentration)));
     const list = el('div');
     root.append(list);
     function draw() {
@@ -852,37 +855,48 @@
     const canRitualFromBook = !!x.ritual && x.casting_mode === 'book';
     if (Number(x.level) > 0 && x.casting_mode !== 'known' && !x.prepared && !canRitualFromBook) return toast('Это заклинание не подготовлено. Подготовьте его или выберите известное заклинание.', 4000);
     const plan = SpellRules.castPlan(x, active, s.spells);
-    // 1. Расход выбирается до броска: круг заклинания или выше, ячейки Договора, ритуал.
-    let choice = {};
-    if (plan.cost === 'slot' && plan.spend !== 'none') {
-      const options = plan.options.map(o => ({ ...o, key: `${o.pool}:${o.level}`, label: o.pool === 'ritual' ? 'Ритуал · без ячейки (длительное сотворение)' : `${o.pool === 'pact_slots' ? 'Договор · ' : ''}${o.level} круг (${o.remaining} свободно)` }));
-      if (!options.length) return toast('Нет доступной ячейки нужного круга. Обычное заклинание без расхода не сотворяется.', 4500);
-      let selected = options[0];
-      if (options.length > 1) {
-        const pick = el('select', {}, ...options.map(o => el('option', { value: o.key }, o.label)));
-        const hint = plan.spend === 'server'
-          ? `Ячейку списывает само действие: доступен только ${plan.level} круг.`
-          : 'Круг выше базового усиливает заклинание — добавьте кубики повышения по описанию «Большие круги».';
-        const result = await modal(`Сотворить «${x.name}»`, el('div', { class: 'field' }, el('label', {}, 'Расход'), pick, el('p', { class: 'muted small' }, hint)), [{ label: 'Сотворить', cls: 'primary', fn: () => pick.value }]);
-        if (!result) return;
-        selected = options.find(o => o.key === result); if (!selected) return;
+    // 1. Круг ячейки выбирается до броска: от базового до 9-го, только свободные круги.
+    //    Ритуал — отдельная галочка: ячейка не тратится, сервер получает slot_level 0.
+    let choice = {}, slotLevel = 0;
+    if (plan.cost === 'slot' && plan.spend !== 'none' && Number(x.level) > 0) {
+      const options = plan.options.filter(o => o.pool !== 'ritual').map(o => ({ ...o, key: `${o.pool}:${o.level}`, label: `${o.pool === 'pact_slots' ? 'Договор · ' : ''}${o.level} круг (${o.remaining} свободно)` }));
+      const ritualAllowed = !!x.ritual;
+      if (!options.length && !ritualAllowed) return toast('Нет ячеек: обычное заклинание без ячейки не сотворяется.', 4500);
+      const base = Math.max(1, Number(x.level) || 0);
+      const initial = options.find(o => o.level === base) || options[0] || null;
+      const pick = options.length ? el('select', { 'aria-label': 'Круг ячейки' }, ...options.map(o => el('option', { value: o.key, selected: o === initial ? '' : null }, o.label))) : null;
+      const ritualInput = ritualAllowed ? el('input', { type: 'checkbox' }) : null;
+      const hint = options.length
+        ? 'Круг выше базового усиливает заклинание: кубики повышения сервер добавит сам.'
+        : 'Нет ячеек — доступен только ритуал.';
+      const content = el('div', { class: 'field' }, pick ? el('label', {}, 'Круг ячейки', pick) : null,
+        el('p', { class: 'muted small' }, hint),
+        ritualInput ? el('label', { class: 'param-check' }, ritualInput, 'Ритуал (без ячейки, 10 минут)') : null);
+      const result = await modal(`Сотворить «${x.name}»`, content, [{ label: 'Сотворить', cls: 'primary', fn: () => ({ level: pick ? pick.value : '', ritual: !!ritualInput?.checked }) }]);
+      if (!result) return;
+      if (result.ritual) { choice = { ritual: true }; slotLevel = 0; }
+      else {
+        const selected = options.find(o => o.key === result.level);
+        if (!selected) return toast('Нет ячеек: выберите круг или ритуал.', 4500);
+        choice = { pool: selected.pool, level: selected.level }; slotLevel = selected.level;
       }
-      choice = selected.pool === 'ritual' ? { ritual: true } : { pool: selected.pool, level: selected.level };
     }
     // 2. Правила действия подтверждаются до расхода: отменили окно — лист не тронут.
     if (active && !(await confirmManual(x, active, decidingRules(active)))) return;
-    // 3. Расход. Новые записи расхода не содержат: ячейку (любого круга), ячейки Договора, ритуал и
-    //    заряды списывает лист — ровно один раз. Старая запись со своим блоком расхода списывает
-    //    себя сама: тогда лист молчит, иначе ячейка ушла бы дважды.
+    // 3. Расход. Действие с узлом «Расход ячейки» или другим блоком consume списывает сервер
+    //    (круг и ритуал уходят в slot_level) — лист молчит. Старые записи без узла считают
+    //    ячейку на листе, ровно один раз.
     let paid = plan.cost === 'free' ? { cost: 'free' } : null, snapshot = null;
     if (plan.spend === 'client') {
       snapshot = costSnapshot(x, s.spells);
       paid = SpellRules.spend(s.spells, x, choice);
       if (!paid.ok) return toast(paid.reason, 4000);
       save();
-    } else if (plan.spend === 'server') paid = plan.level ? { cost: 'slots', level: plan.level } : { cost: 'server' };
+    } else if (plan.spend === 'server') {
+      paid = choice.ritual ? { cost: 'ritual' } : { cost: choice.pool === 'pact_slots' ? 'pact_slots' : 'slots', level: slotLevel || plan.level };
+    }
     if (active) {
-      const result = await runProgram(x, 'spell', active, { ...opts, acknowledged: true, note: costNote(paid) });
+      const result = await runProgram(x, 'spell', active, { ...opts, acknowledged: true, note: costNote(paid), slot_level: slotLevel });
       if (result) return;
       // Действие не выполнено (отменили подтверждение или сервер отказал) — расход возвращаем.
       if (snapshot) { restoreCost(x, s.spells, snapshot); save(); toast('Расход не списан: действие не выполнено.', 4500); }

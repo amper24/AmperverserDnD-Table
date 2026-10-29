@@ -89,13 +89,17 @@ fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
             if ["attack"].contains(&kind) { gate=true; }
             if !["","self","target"].contains(&text(b,"target")) { return Err(bad("Неизвестная цель")); }
             if ["attack","damage","heal","temp_hp","roll"].contains(&kind) { formula(b)?; }
+            if ["damage","heal"].contains(&kind) && b.get("upcast").is_some() {
+                let upcast=&b["upcast"];
+                if !upcast.is_object() || bounded(upcast,"count",0,100).is_err() || bounded(upcast,"sides",1,1000).is_err() { return Err(bad("Повышение круга: количество костей 0–100 и грани 1–1000")); }
+            }
             match kind {
-                "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",1,9)?; } }
+                "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",0,9)?; } }
                 "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_nested(&b["item"]["mechanics"], depth + 1)?; } }
                 "adjust" => { if !field_ok(text(b,"field")) { return Err(bad("Недоступный показатель")); } bounded(b,"amount",-10000,10000)?; }
                 "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
-                "condition" => { if text(b,"condition").trim().is_empty()||text(b,"condition").len()>200||!["add","remove"].contains(&text(b,"operation")) { return Err(bad("Неверное состояние")); } }
+                "condition" => { let operation=text(b,"operation"); if !["add","remove","concentration"].contains(&operation)||(operation!="concentration"&&text(b,"condition").trim().is_empty())||text(b,"condition").len()>200 { return Err(bad("Неверное состояние")); } }
                 "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
                 _ => {}
             }
@@ -117,12 +121,49 @@ fn formula(b: &Value) -> ApiResult<String> {
     if out.is_empty() { out="0".into(); }
     Ok(out)
 }
+/// Ячейка нужного круга: обычная, а если её нет — ячейка Договора того же круга.
+/// Возвращает `(имя для ответа, остаток)`.
+fn take_slot(s: &mut Value, level: i64, need: i64) -> ApiResult<(String, i64)> {
+    if !(1..=9).contains(&level) { return Err(bad("Укажите круг ячейки")); }
+    let key = level.to_string();
+    let max = s["spells"]["slots"][&key]["max"].as_i64().unwrap_or(0);
+    let used = s["spells"]["slots"][&key]["used"].as_i64().unwrap_or(0);
+    if max - used >= need {
+        s["spells"]["slots"][&key]["used"] = json!(used + need);
+        return Ok((format!("Ячейки {level} круга"), max - used - need));
+    }
+    let pact = &s["spells"]["pact_slots"];
+    if pact["level"].as_i64() == Some(level) {
+        let pact_max = pact["max"].as_i64().unwrap_or(0);
+        let pact_used = pact["used"].as_i64().unwrap_or(0);
+        if pact_max - pact_used >= need {
+            s["spells"]["pact_slots"]["used"] = json!(pact_used + need);
+            return Ok((format!("Ячейки Договора {level} круга"), pact_max - pact_used - need));
+        }
+    }
+    Err(bad("Недостаточно ячеек. Цепочка отменена"))
+}
+fn slot_free(s: &Value, level: i64) -> bool {
+    let key = level.to_string();
+    let max = s["spells"]["slots"][&key]["max"].as_i64().unwrap_or(0);
+    let used = s["spells"]["slots"][&key]["used"].as_i64().unwrap_or(0);
+    if max - used > 0 { return true; }
+    let pact = &s["spells"]["pact_slots"];
+    pact["level"].as_i64() == Some(level) && pact["max"].as_i64().unwrap_or(0) > pact["used"].as_i64().unwrap_or(0)
+}
+/// Расход блока consume. Ячейка: `slot_level` 0 — выбранный при касте круг из `sheet.cast`
+/// (ритуал — 0: ячейка не тратится и блок пропускается).
 fn spend(s: &mut Value, doc: &Value, category: &str, b: &Value, times: i64, spent: &mut Vec<Value>) -> ApiResult<()> {
     let mut need=num(b,"amount")*times; if need==0 { return Ok(()); } let resource=text(b,"resource");
     if resource=="slot"||resource=="uses" {
         if resource=="slot" {
-            let key=num(b,"slot_level").to_string();let slot=&mut s["spells"]["slots"][&key];
-            let max=bounded(slot,"max",0,10000)?;let used=bounded(slot,"used",0,10000)?;if used<0||max-used<need {return Err(bad("Недостаточно ячеек. Цепочка отменена"));}slot["used"]=json!(used+need);spent.push(json!({"name":format!("Ячейки {} круга",key),"amount":need,"remaining":max-used-need,"resource":resource}));return Ok(());
+            // Ритуал: круг каста 0 — ячейка не тратится, даже если у старого блока свой круг.
+            if s.get("cast").and_then(|cast|cast["level"].as_i64())==Some(0) { return Ok(()); }
+            let block_level=num(b,"slot_level");
+            let level=if block_level>0 {block_level} else {s.get("cast").and_then(|cast|cast["level"].as_i64()).unwrap_or(0)};
+            if level==0 { return Ok(()); }
+            let (name,remaining)=take_slot(s,level,need)?;
+            spent.push(json!({"name":name,"amount":need,"remaining":remaining,"resource":resource,"slot_level":level}));return Ok(());
         }
         if category!="feature" { return Err(bad("Использования доступны только умению")); }
         let idx=s["features"].as_array().and_then(|a|a.iter().position(|v|v["uid"]==doc["uid"])).ok_or_else(||bad("Умение не найдено"))?; let path=format!("/features/{idx}/uses/cur");
@@ -148,19 +189,79 @@ fn grant(s: &mut Value, b: &Value) -> ApiResult<()> {
     }
     if inv.len()>=2000 {return Err(bad("Инвентарь получателя заполнен"));}inv.push(it);Ok(())
 }
+/// Поле заклинания на листе: модуль хранит `level`/`ritual`/`concentration` на верхнем уровне,
+/// а запись справочника — в `data`. Поддерживаем оба вида.
+fn spell_field(doc: &Value, key: &str) -> Value {
+    doc["data"].get(key).cloned().or_else(|| doc.get(key).cloned()).unwrap_or(Value::Null)
+}
+fn spell_i64(doc: &Value, key: &str) -> i64 { spell_field(doc, key).as_i64().unwrap_or(0) }
+fn spell_true(doc: &Value, key: &str) -> bool { spell_field(doc, key) == json!(true) }
+/// Есть ли в графе заклинания узел, который сам списывает ячейку. Старые записи без него
+/// считают ячейку на листе: сервер не требует круг и не трогает ресурс.
+fn has_slot_node(mechanics: &Value) -> bool {
+    let nodes = || mechanics["graph"]["nodes"].as_array().into_iter().flatten();
+    let groups = || mechanics["graph"]["groups"].as_array().into_iter().flatten().flat_map(|group| group["nodes"].as_array().into_iter().flatten());
+    nodes().chain(groups()).any(|node| node["type"] == "action.slot" || (node["type"] == "action.spend" && node["params"]["resource"] == "slot"))
+}
+/// Есть ли узел, который оставляет круг на выбор игрока (level 0). Старый фиксированный
+/// блок расхода такого выбора не даёт и не требует `slot_level` в операции.
+fn has_slot_choice_node(mechanics: &Value) -> bool {
+    let nodes = || mechanics["graph"]["nodes"].as_array().into_iter().flatten();
+    let groups = || mechanics["graph"]["groups"].as_array().into_iter().flatten().flat_map(|group| group["nodes"].as_array().into_iter().flatten());
+    nodes().chain(groups()).any(|node| (node["type"] == "action.slot" && node["params"]["level"].as_i64().unwrap_or(0) == 0)
+        || (node["type"] == "action.spend" && node["params"]["resource"] == "slot" && node["params"]["slot_level"].as_i64().unwrap_or(0) == 0))
+}
+/// Концентрация — состояние листа «Концентрация: <имя>»: прежняя запись заменяется, чужие не трогаются.
+fn set_concentration(s: &mut Value, name: &str) -> ApiResult<()> {
+    let value = format!("Концентрация: {name}");
+    if s["conditions"].is_null() { s["conditions"] = json!([]); }
+    let list = s["conditions"].as_array_mut().ok_or_else(|| bad("Неверный список состояний"))?;
+    list.retain(|item| !item.as_str().is_some_and(|text| text.starts_with("Концентрация:")));
+    list.push(json!(value));
+    Ok(())
+}
 /// Эффекты применяются только владельцу листа: урон, состояния и спасброски по другим персонажам —
 /// задача ДМ, действие даёт бросок и правило. Лист не меняется ни на йоту при ЛЮБОЙ ошибке цепочки.
 pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool) -> ApiResult<Value> {
+    execute_with_slot(sheet, category, uid, program, mode, acknowledged, 0)
+}
+/// То же, но для заклинания: `slot_level` — выбранный игроком круг ячейки (0 — базовый/ритуал).
+pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool, slot_level: i64) -> ApiResult<Value> {
     let mut s=sheet.clone();inventory::normalize(&mut s)?;
     let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(bad("Неизвестный источник механики"))};
     let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||bad("Источник не найден"))?;
     validate(&doc["mechanics"])?;
-    let graph_context = json!({
+    // Контекст каста: базовый круг из записи, выбранный — из операции. Без узла ячейки в графе
+    // старые записи считают ячейку на клиенте, поэтому строгие проверки круга к ним не применяются.
+    let (base_level, chosen, extra_levels) = if category=="spell" {
+        let base=spell_i64(&doc,"level");
+        if slot_level<0 { return Err(bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+        let own_slot=has_slot_node(&doc["mechanics"]);
+        let slot_choice=own_slot&&has_slot_choice_node(&doc["mechanics"]);
+        // 0 в slot_level — ритуал (ячейка не тратится) или старый клиент, который считает ячейку
+        // на листе. Новый клиент всегда присылает выбранный круг для обычного каста.
+        let chosen=if !own_slot {base}
+            else if slot_level>0 {slot_level}
+            else if base==0 {0}
+            else if spell_true(&doc,"ritual") {0}
+            else if !slot_choice {base}
+            else { return Err(bad("Укажите круг ячейки")); };
+        if !(0..=9).contains(&chosen)||(chosen>0&&chosen<base) { return Err(bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+        if own_slot&&chosen>0&&!slot_free(&s,chosen) { return Err(bad("Недостаточно ячеек. Цепочка отменена")); }
+        (base,chosen,chosen-base)
+    } else { (0,0,0) };
+    let cast=json!({"level":chosen,"base":base_level,"extra":extra_levels});
+    let mut graph_context = json!({
         "edition": s.get("edition").and_then(Value::as_str).unwrap_or("2014"),
         "level": s.get("level").and_then(Value::as_i64).unwrap_or(1),
         "subclass": s.get("subclass").cloned().unwrap_or(json!("")),
         "choices": s.pointer("/creation/rule_choices").filter(|value| value.is_object()).cloned().unwrap_or(json!({})),
     });
+    if category=="spell" {
+        graph_context["cast"]=cast.clone();
+        // Формулы и data.sheet видят круг только на время выполнения: лист его не хранит.
+        s["cast"]=cast.clone();
+    }
     if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
     let m = crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
     validate_plan(&m, 0)?;
@@ -172,6 +273,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     if blocks.iter().any(|b|b["kind"]=="manual")&&!acknowledged {return Err(bad("Подтвердите ручные правила"));}
     let mut attack_costs: Vec<&Value>=Vec::new();
     let mut spent=Vec::new();let mut rolls=Vec::new();let mut effects=Vec::new();let mut hit=None;let mut crit=false;
+    let mut concentration_set=false;
     let mut last_total: Option<i64>=None;
     // Результаты прошлых действий: новые программы сохраняют уже записанные программы листа.
     let mut results = s.get("action_results").filter(|value| value.is_object()).cloned().unwrap_or_else(|| json!({"last": Value::Null, "by_program": {}}));
@@ -196,7 +298,15 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         if kind=="passive" {return Err(bad("Пассивный блок нельзя выполнить повторно"));}
         let mut total=0;
         if ["attack","damage","heal","temp_hp","roll"].contains(&kind) {
-            let raw=formula(b)?;let mut expr=inventory::resolve(&raw,&s)?;
+            let mut raw=formula(b)?;
+            // Upcast: на каждый круг выше базового формула получает ещё count костей sides.
+            if ["damage","heal"].contains(&kind)&&extra_levels>0 {
+                if let Some(upcast)=b.get("upcast").filter(|value| value.is_object()) {
+                    let count=upcast["count"].as_i64().unwrap_or(0);let sides=upcast["sides"].as_i64().unwrap_or(0);
+                    if count>0&&(1..=1000).contains(&sides) { raw.push_str(&format!("+{}d{}",extra_levels*count,sides)); }
+                }
+            }
+            let mut expr=inventory::resolve(&raw,&s)?;
             // Двуручное оружие в одной руке: помеха только на броски атаки предмета.
             let roll_mode=if kind=="attack" {inventory::attack_mode(mode,category=="item"&&inventory::one_hand_penalty(&doc))} else {mode.to_string()};
             expr=crate::realtime::with_dice_mode(&expr,&roll_mode);
@@ -216,10 +326,36 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
                 effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
             }
             "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":"self"}));}
-            "condition"=>{if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}let a=recipient["conditions"].as_array_mut().ok_or_else(||bad("Неверный список состояний"))?;if b["operation"]=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}effects.push(b.clone());}
+            "condition"=>{
+                let operation=text(b,"operation");
+                if operation=="concentration" {
+                    // Название подставляет сервер: condition у узла пустой.
+                    set_concentration(recipient,text(&doc,"name"))?;
+                    concentration_set=true;
+                    effects.push(json!({"kind":"condition","condition":format!("Концентрация: {}",text(&doc,"name")),"target":"self"}));
+                } else {
+                    if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}
+                    let a=recipient["conditions"].as_array_mut().ok_or_else(||bad("Неверный список состояний"))?;
+                    if operation=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}
+                    effects.push(b.clone());
+                }
+            }
             "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
             _=>{}
         }
+    }
+    // Концентрация и ритуал — свойства заклинания, а не блоков: даже запись без узлов
+    // получает состояние и эффект. Концентрация заменяет прежнюю, а не копится.
+    if category=="spell" {
+        if spell_true(&doc,"concentration")&&!concentration_set {
+            set_concentration(&mut s,text(&doc,"name"))?;
+            effects.push(json!({"kind":"condition","condition":format!("Концентрация: {}",text(&doc,"name")),"target":"self"}));
+        }
+        if chosen==0&&base_level>0&&spell_true(&doc,"ritual") {
+            effects.push(json!({"kind":"ritual","text":"Ритуал: 10 минут, ячейка не тратится"}));
+        }
+        // Круг каста — только контекст выполнения: в лист он не сохраняется.
+        if let Some(object)=s.as_object_mut() { object.remove("cast"); }
     }
     // Итог действия — в лист: total последнего броска, hit (0/1), применённое лечение/хиты,
     // израсходованное и число бросков. Так другие действия читают его через data.result.
@@ -238,20 +374,20 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     s["action_results"] = results.clone();
     inventory::normalize(&mut s)?;
     *sheet=s;
-    Ok(json!({"label":format!("{} · {}",text(&doc,"name"),text(p,"name")),"rolls":rolls,"spent":spent,"effects":effects,"results":results,"program_id":program,"source_uid":uid,"source_kind":category}))
+    Ok(json!({"label":format!("{} · {}",text(&doc,"name"),text(p,"name")),"rolls":rolls,"spent":spent,"effects":effects,"results":results,"program_id":program,"source_uid":uid,"source_kind":category,"cast":cast}))
 }
 
 #[cfg(test)] mod tests {
     use super::*;
     /// Узел v2: тип, параметры и координата; ID уникален внутри графа.
-    fn node(id: &str, kind: &str, params: Value) -> Value {
+    pub(super) fn node(id: &str, kind: &str, params: Value) -> Value {
         json!({"id": id, "type": kind, "params": params, "position": {"x": 0, "y": 0}})
     }
     /// Провод между сокетами; `link` — обычный поток управления exec → exec.
     fn wire(from: &str, out_socket: &str, to: &str, in_socket: &str) -> Value {
         json!({"from": {"node": from, "socket": out_socket}, "to": {"node": to, "socket": in_socket}})
     }
-    fn link(from: &str, to: &str) -> Value { wire(from, "exec", to, "exec") }
+    pub(super) fn link(from: &str, to: &str) -> Value { wire(from, "exec", to, "exec") }
     /// Достроить «Конец» каждой программе тестового графа: висячие flow-выходы (exec, then/else)
     /// подключаются к узлу flow.end, а если его ещё нет — узел создаётся (как Mechanics.addFlowEnds).
     fn terminate(graph: &mut Value) {
@@ -286,7 +422,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     }
     /// Оболочка графа v2 — единственная схема, которую принимает сервер после удаления старых механик.
     /// Поток достраивается до «Конца»: с незавершённым потоком граф не исполняется.
-    fn mech(nodes: Vec<Value>, links: Vec<Value>) -> Value {
+    pub(super) fn mech(nodes: Vec<Value>, links: Vec<Value>) -> Value {
         let mut graph = json!({"version": 2, "origin": "test", "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}});
         terminate(&mut graph);
         graph
@@ -515,5 +651,92 @@ mod graph_hit_tests {
         let mut miss = sheet_with(10);
         let r = execute(&mut miss, "item", "w", "use", "", false).unwrap();
         assert_eq!(r["rolls"].as_array().unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod spell_tests {
+    use super::*;
+    use super::tests::{link, mech, node};
+
+    /// Заклинание: «Сотворить» → «Расход ячейки» (level 0) → урон с повышением круга.
+    fn spell_mechanics(concentration: bool) -> Value {
+        let mut nodes = vec![
+            node("p", "action.program", json!({"program_id": "use", "name": "Сотворить", "trigger": "use"})),
+            node("s", "action.slot", json!({"block_id": "s", "level": 0, "amount": 1})),
+            node("d", "action.roll", json!({"block_id": "d", "kind": "damage",
+                "dice": {"count": 2, "sides": 6, "bonus": 0, "stat": ""}, "upcast": {"count": 1, "sides": 6}})),
+        ];
+        let mut links = vec![link("p", "s"), link("s", "d")];
+        if concentration {
+            nodes.push(node("c", "action.field", json!({"block_id": "c", "kind": "status", "operation": "concentration", "condition": "", "target": "self"})));
+            links = vec![link("p", "s"), link("s", "c"), link("c", "d")];
+        }
+        mech(nodes, links)
+    }
+    fn spell_sheet(level: i64, ritual: bool, concentration: bool, slots: Value, conditions: Value) -> Value {
+        json!({
+            "edition": "2014", "level": 5,
+            "hp": {"max": 30, "current": 30, "temp": 0},
+            "spells": {"ability": "int", "slots": slots, "known": [{
+                "uid": "sp", "name": "Огненный шар", "level": level,
+                "ritual": ritual, "concentration": concentration,
+                "mechanics": spell_mechanics(concentration)
+            }]},
+            "conditions": conditions,
+        })
+    }
+    /// Каст 2-го круга ячейкой 3-го: тратится ячейка 3-го, к урону добавляется кость повышения.
+    #[test] fn spell_cast_spends_the_chosen_slot_and_adds_upcast_dice() {
+        let mut s = spell_sheet(2, false, false, json!({"2": {"max": 1, "used": 0}, "3": {"max": 1, "used": 0}}), json!([]));
+        let r = execute_with_slot(&mut s, "spell", "sp", "use", "", false, 3).unwrap();
+        assert_eq!(s["spells"]["slots"]["3"]["used"], 1);
+        assert_eq!(s["spells"]["slots"]["2"]["used"], 0);
+        assert_eq!(r["cast"], json!({"level": 3, "base": 2, "extra": 1}));
+        assert_eq!(r["rolls"][0]["expr"], "2d6+1d6", "2d6 + 1d6 за круг выше базового");
+        assert_eq!(s["spells"]["slots"]["3"]["max"], 1);
+        assert!(s.get("cast").is_none(), "лист не хранит контекст каста");
+    }
+    /// Каст без свободных ячеек — ошибка до любых изменений: лист остаётся прежним.
+    #[test] fn spell_cast_without_slots_changes_nothing() {
+        let mut s = spell_sheet(2, false, false, json!({"2": {"max": 0, "used": 0}, "3": {"max": 0, "used": 0}}), json!([]));
+        let before = s.clone();
+        assert!(execute_with_slot(&mut s, "spell", "sp", "use", "", false, 3).is_err());
+        assert_eq!(s, before);
+    }
+    /// Ритуал: ячейка не тратится, в ответе есть эффект ритуала, круг каста — 0.
+    #[test] fn ritual_cast_needs_no_slot() {
+        let mut s = spell_sheet(2, true, false, json!({"2": {"max": 1, "used": 0}}), json!([]));
+        let r = execute_with_slot(&mut s, "spell", "sp", "use", "", false, 0).unwrap();
+        assert_eq!(s["spells"]["slots"]["2"]["used"], 0);
+        assert_eq!(r["cast"]["level"], 0);
+        assert!(r["effects"].as_array().unwrap().iter().any(|e| e["kind"] == "ritual"));
+    }
+    /// Ритуал пропускает и старый блок с фиксированным кругом: ячейка не тратится.
+    #[test] fn ritual_skips_a_fixed_slot_block() {
+        let mechanics = mech(vec![
+            node("p", "action.program", json!({"program_id": "use", "name": "Сотворить", "trigger": "use"})),
+            node("s", "action.slot", json!({"block_id": "s", "level": 2, "amount": 1})),
+        ], vec![link("p", "s")]);
+        let mut s = json!({"edition": "2014", "level": 5, "hp": {"max": 10, "current": 10, "temp": 0},
+            "spells": {"ability": "int", "slots": {"2": {"max": 1, "used": 0}}, "known": [{
+                "uid": "sp", "name": "Ритуал", "level": 2, "ritual": true, "mechanics": mechanics}]},
+            "conditions": []});
+        let r = execute_with_slot(&mut s, "spell", "sp", "use", "", false, 0).unwrap();
+        assert_eq!(s["spells"]["slots"]["2"]["used"], 0);
+        assert_eq!(r["cast"]["level"], 0);
+        assert!(r["effects"].as_array().unwrap().iter().any(|e| e["kind"] == "ritual"));
+    }
+    /// Концентрация ставится после каста и заменяет прежнюю запись, чужие состояния не трогая.
+    #[test] fn concentration_replaces_the_previous_spell() {
+        let mut s = spell_sheet(2, false, true, json!({"2": {"max": 1, "used": 0}}), json!(["Концентрация: Старое", "Отравленный"]));
+        execute_with_slot(&mut s, "spell", "sp", "use", "", false, 2).unwrap();
+        assert_eq!(s["conditions"], json!(["Отравленный", "Концентрация: Огненный шар"]));
+    }
+    /// Заклинание без концентрации не трогает состояния.
+    #[test] fn non_concentration_spell_keeps_conditions() {
+        let mut s = spell_sheet(2, false, false, json!({"2": {"max": 1, "used": 0}}), json!(["Концентрация: Старое"]));
+        execute_with_slot(&mut s, "spell", "sp", "use", "", false, 2).unwrap();
+        assert_eq!(s["conditions"], json!(["Концентрация: Старое"]));
     }
 }

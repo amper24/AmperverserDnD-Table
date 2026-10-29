@@ -25,7 +25,7 @@
   // «Изменить поле» хранит параметры всех трёх видов; в блок плана попадают только поля своего вида.
   const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
-  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet']);
+  const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast']);
   const STAT_MODES = ['bonus', 'score'];
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);

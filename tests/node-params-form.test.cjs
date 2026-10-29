@@ -122,3 +122,41 @@ test('preview choices editor reports edited choices and works with empty input',
   const add = findAll(editor, n => n.tag === 'button' && n.children[0] === 'Добавить')[0];
   assert.ok(add, 'add-key button exists');
 });
+
+const legend = (root, text) => findAll(root, n => n.tag === 'fieldset' && (n.children || []).some(child => child.tag === 'legend' && child.children?.[0] === text))[0];
+
+test('upcast is a pair of number fields and commits dice per extra level', () => {
+  let committed = null;
+  const node = { id: 'r', type: 'action.roll', params: { block_id: 'r', kind: 'damage', dice: { count: 8, sides: 6, bonus: 0, stat: '' }, upcast: { count: 1, sides: 6 } } };
+  const form = NF.nodeParams(node, { onChange: next => { committed = next; } });
+  const group = legend(form, 'Повышение круга (кости)');
+  assert.ok(group, 'upcast has its own fieldset in the form');
+  const numbers = findAll(group, n => n.tag === 'input' && n.attrs.type === 'number');
+  assert.equal(numbers.length, 2, 'два числа: кости и грани');
+  assert.equal(numbers[0].attrs.value, '1');
+  assert.equal(numbers[1].attrs.value, '6');
+  numbers[0].attrs.onchange({ target: { value: '2' } });
+  eq(committed.upcast, { count: 2, sides: 6 });
+});
+
+test('action.slot, action.spend and data.cast expose their own form fields', () => {
+  // Расход ячейки: круг (0 — круг каста) и количество, без сырого JSON.
+  const slot = NF.nodeParams({ id: 's', type: 'action.slot', params: { block_id: 's', level: 0, amount: 1 } });
+  assert.equal(textareasOf(slot).length, 0);
+  const numbers = inputsOf(slot).filter(i => i.attrs.type === 'number').map(i => i.attrs.value);
+  eq(numbers, ['0', '1']);
+  // Расход предмета: только количество, заряды и использования — ячейки здесь больше нет.
+  const spend = NF.nodeParams({ id: 'c', type: 'action.spend', params: { block_id: 'c', resource: 'quantity', source: 'self', amount: 1, trigger: 'use' } });
+  const resource = findAll(spend, n => n.tag === 'select' && n.children.some(o => o.attrs.value === 'quantity'))[0];
+  assert.ok(resource, 'ресурс — выпадающий список');
+  eq(resource.children.map(o => o.attrs.value), ['quantity', 'charges', 'uses']);
+  // Круг каста: поле выбирается из level / base / extra.
+  const cast = NF.nodeParams({ id: 'cc', type: 'data.cast', params: { field: 'level' } });
+  const castSelect = findAll(cast, n => n.tag === 'select')[0];
+  assert.ok(castSelect, 'поле круга каста — выпадающий список');
+  eq(castSelect.children.map(o => o.attrs.value), ['level', 'base', 'extra']);
+  // Концентрация — операция состояния, имя подставляет сервер.
+  const field = NF.nodeParams({ id: 'f', type: 'action.field', params: { block_id: 'f', kind: 'status', operation: 'concentration', condition: '' } });
+  const operation = findAll(field, n => n.tag === 'select' && n.children.some(o => o.attrs.value === 'concentration'))[0];
+  assert.ok(operation, 'концентрация доступна в операции состояния');
+});

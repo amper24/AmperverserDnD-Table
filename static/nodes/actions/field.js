@@ -26,8 +26,10 @@
     static validate(p) {
       if (!FIELD_KINDS.includes(p.kind)) return 'Изменить поле: вид status, value или formula.';
       if (p.kind === 'status') {
-        if (typeof p.condition !== 'string' || !p.condition.trim() || p.condition.length > 200) return 'Состояние: название до 200 символов.';
-        if (!['add', 'remove'].includes(p.operation)) return 'Состояние: операция add или remove.';
+        if (!['add', 'remove', 'concentration'].includes(p.operation)) return 'Состояние: операция add, remove или concentration.';
+        // «Концентрация» не задаёт название вручную: сервер подставляет имя заклинания.
+        if (p.operation !== 'concentration' && (typeof p.condition !== 'string' || !p.condition.trim() || p.condition.length > 200)) return 'Состояние: название до 200 символов.';
+        if (p.operation === 'concentration' && typeof p.condition === 'string' && p.condition.length > 200) return 'Состояние: название до 200 символов.';
       }
       if (p.kind === 'value') {
         if (!Object.hasOwn(FIELD_VALUE_FIELDS, String(p.field))) return 'Недоступный показатель.';

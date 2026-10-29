@@ -556,16 +556,32 @@ function checkSeed(edition, opts = {}) {
       if (node.type === 'action.roll') {
         const kind = (node.params || {}).kind;
         if (kind !== undefined && !rust.ROLL_KINDS.includes(kind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.kind`, `неизвестный тип броска «${kind}»`);
+        const upcast = (node.params || {}).upcast;
+        if (upcast !== undefined && (!isObj(upcast) || !isInt(upcast.count) || upcast.count < 0 || upcast.count > 100 || !isInt(upcast.sides) || upcast.sides < 1 || upcast.sides > 1000))
+          report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.upcast`, 'повышение круга: количество костей 0–100 и грани 1–1000');
       }      if (node.type === 'action.field') {
         const params = node.params || {};
         if (!rust.FIELD_KINDS.includes(params.kind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.kind`, `неизвестный вид «${params.kind}» (status, value или formula)`);
         else if (params.kind === 'value' && !rust.VALUE_FIELDS.includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `показатель «${params.field}» недоступен`);
         else if (params.kind === 'formula' && !rust.FORMULA_FIELDS.includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `параметр «${params.field}» недоступен для формулы`);
+        else if (params.kind === 'status') {
+          if (!['add', 'remove', 'concentration'].includes(params.operation)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.operation`, `неизвестная операция состояния «${params.operation}»`);
+          if (params.operation !== 'concentration' && (!isStr(params.condition) || !params.condition.trim())) report.error('required-field', where, `data.mechanics.graph.nodes[${node.id}].params.condition`, 'у состояния нет названия');
+        }
       }
       if (node.type === 'action.spend') {
         const params = node.params || {};
-        if (!['quantity', 'charges', 'slot', 'uses'].includes(params.resource)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.resource`, `неизвестный ресурс «${params.resource}»`);
-        if (params.resource === 'slot' && !(Number.isInteger(params.slot_level) && params.slot_level >= 1 && params.slot_level <= 9)) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.slot_level`, 'у расхода ячейки нет круга 1…9');
+        if (!['quantity', 'charges', 'uses'].includes(params.resource)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.resource`, `неизвестный ресурс «${params.resource}» (ячейка — action.slot)`);
+      }
+      // Отдельный узел «Расход ячейки»: level 0 — круг выбирается при касте, 1–9 — фиксированный.
+      if (node.type === 'action.slot') {
+        const params = node.params || {};
+        if (!isInt(params.level) || params.level < 0 || params.level > 9) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.level`, 'круг ячейки: 0 (круг каста) или 1–9');
+        if (!isInt(params.amount) || params.amount < 1 || params.amount > 10000) report.error('field-range', where, `data.mechanics.graph.nodes[${node.id}].params.amount`, 'количество ячеек: 1–10000');
+      }
+      if (node.type === 'data.cast') {
+        const field = (node.params || {}).field;
+        if (!['level', 'base', 'extra'].includes(field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `поле круга каста «${field}» (level, base или extra)`);
       }
       // Результаты действий читаются из листа: источник — last или программа этого графа.
       if (node.type === 'data.result') {

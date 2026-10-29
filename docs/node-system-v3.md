@@ -37,9 +37,10 @@
 | `action.program` | Начало действия и его кнопка | — → `exec` (flow) | `program_id`, `name`, `trigger` = use/passive, `style`, `feature_name`, `group`, `roll_only` |
 | `flow.if` | Ветвление потока по bool | `exec` (flow), `condition` (bool) → `then`/`else` (flow) | нет |
 | `flow.end` | Конец действия | `exec` (flow) → — | нет |
-| `action.roll` | Бросок: атака, урон, лечение, временные хиты, свободный | `exec`, `enabled` (bool), `condition` (bool), `dice` (dice) → `exec` | `kind` = roll/attack/damage/heal/temp_hp, `dice`, `dc`, `name`, `target`/`apply` (лечение, временные хиты), `damage_type` |
-| `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove; value: `field`, `amount`; formula: `field`, `value` |
-| `action.spend` | Расход ресурса | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/slot/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `slot_level`, `item_uid`, `tag` |
+| `action.roll` | Бросок: атака, урон, лечение, временные хиты, свободный | `exec`, `enabled` (bool), `condition` (bool), `dice` (dice) → `exec` | `kind` = roll/attack/damage/heal/temp_hp, `dice`, `dc`, `name`, `target`/`apply` (лечение, временные хиты), `damage_type`, `upcast` = `{ count, sides }` |
+| `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove/concentration; value: `field`, `amount`; formula: `field`, `value` |
+| `action.spend` | Расход ресурса предмета или умения | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `item_uid`, `tag` |
+| `action.slot` | Расход ячейки заклинания | `exec`, `enabled`, `condition` → `exec` | `level` = 0 (круг выбирается при касте) / 1–9, `amount` |
 | `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item`, `target` |
 | `action.manual` | Правило для мастера | `exec`, `enabled`, `condition` → `exec` | `text` |
 | `data.number` | Числовая константа | — → `value` (number) | `value` |
@@ -52,6 +53,7 @@
 | `data.boolean` | Логическая константа | — → `value` (bool) | `value` = true/false |
 | `data.result` | Результат последнего действия или программы | — → `value` (number) | `source` = last/ID программы, `field` = total/hit/applied/spent |
 | `data.sheet` | Числовое поле листа | — → `value` (number) | `field` — путь вида `hp.current`, `level`, `abilities.str` |
+| `data.cast` | Круг текущего каста | — → `value` (number) | `field` = level/base/extra |
 | `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
 | `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
 | `rule.value` | Правило-значение | `enabled` (bool), `amount` (number) → `effect` | `kind` = ability/speed/hp/hit_die/asi/armor_formula + `ability`, `amount`, `value`, `formula`, `table` |
@@ -63,8 +65,9 @@
 | `group.output` | Выход группы (внутренний) | `value` (тип сокета) → — | `socket_id` |
 
 Отдельных узлов изменения состояния, показателя и параметра при создании больше нет — их
-заменяет один `action.field` с параметром `kind`; расход ресурса слит в `action.spend`;
-сравнение чисел переехало в `data.compare`. `data.boolean` остаётся как константа.
+заменяет один `action.field` с параметром `kind`; расход предметных ресурсов — `action.spend`,
+ячейка заклинания — отдельный `action.slot`; сравнение чисел переехало в `data.compare`.
+`data.boolean` остаётся как константа.
 
 ### action.roll
 
@@ -72,21 +75,32 @@
 режимом преимущества. Лечение и временные хиты применяются сразу; урон — это бросок,
 результат которого применяет ДМ (или `action.field` по его решению).
 
+`upcast` = `{ count, sides }` — сколько костей добавляется к урону или лечению за
+каждый круг ячейки выше базового. Сервер дописывает `+(extra*count)d<sides>` к формуле
+только у блоков damage/heal; у атаки и свободного броска параметр не действует.
+
 ### action.field
 
 Изменение листа или состояния: `kind` = status / value / formula. `status` — имя
-состояния в параметре `condition` и операция add/remove; `value` — поле листа `field`
-и целое `amount`; `formula` — пассивный параметр при создании (`field`, `value`,
-например формула защиты без доспехов). Урон, лечение и временные хиты — это броски
-`action.roll`, а не `action.field`.
+состояния в параметре `condition` и операция add/remove; операция `concentration`
+оставляет `condition` пустым — сервер сам подставляет «Концентрация: <имя заклинания>»
+и заменяет прежнюю запись. `value` — поле листа `field` и целое `amount`; `formula` —
+пассивный параметр при создании (`field`, `value`, например формула защиты без доспехов).
+Урон, лечение и временные хиты — это броски `action.roll`, а не `action.field`.
 
 ### action.spend
 
-Расход ресурса: `resource` = quantity / charges / slot / uses, источник `source` =
-self / item / tag, `amount` и момент `trigger` = use / attack. Расход ячейки
-заклинания — `slot` с уровнем `slot_level` (1–9).
+Расход ресурса: `resource` = quantity / charges / uses, источник `source` =
+self / item / tag, `amount` и момент `trigger` = use / attack.
 
-### data.result / data.sheet
+### action.slot
+
+Расход ячейки заклинания. `level` = 0 — круг выбран при касте (сервер берёт его из
+операции и контекста каста), 1–9 — фиксированный круг. `amount` — сколько ячеек
+списать. В план блока исполнения узел компилируется в `consume` с `resource: "slot"`
+и `slot_level`. При ритуале (круг каста 0) блок пропускается: ячейка не тратится.
+
+### data.result / data.sheet / data.cast
 
 `data.result` — выход `value: number`, входов нет. Параметры:
 `source` = `last` (последнее выполненное действие) или `program_id` программы этого
@@ -97,7 +111,11 @@ self / item / tag, `amount` и момент `trigger` = use / attack. Расхо
 `data.sheet` — выход `value: number`, входов нет. Параметр `field` — непустой путь по
 ключевым полям листа из `[a-z0-9_.]` (`hp.current`, `level`, `abilities.str`).
 Отсутствующее или нечисловое поле — `0`; без листа (предпросмотр) — тоже `0`.
-Оба узла используются в условиях (`data.compare`) и формулах.
+
+`data.cast` — выход `value: number`, входов нет. Параметр `field` = `level` (круг
+выбранной ячейки) | `base` (базовый круг заклинания) | `extra` (круги выше базового).
+Читается из контекста каста; без каста (редактор, предпросмотр) — `0`.
+Все три узла используются в условиях (`data.compare`) и формулах.
 
 ### Результаты выполнения
 
@@ -134,11 +152,27 @@ self / item / tag, `amount` и момент `trigger` = use / attack. Расхо
 
 ## Заклинания
 
-Каст — программа с контекстом `slot_level`. Блоки: `action.spend` (slot), `action.roll`
-(атака, урон или проверка), `data.compare` для спасброска против СЛ, `action.field` status
-(концентрация), `action.manual` для ритуала.
-Масштабирование: `data.math` с `slot_level` из контекста. Шаблоны заклинаний создают эти
-цепочки автоматически; данные SRD пересобираются на них.
+Каст — программа `action.program` → `action.slot` → броски и правила. `action.slot.level = 0`
+означает «круг выбирает игрок»: клиент перед кастом показывает круги от базового до 9-го,
+в которых есть свободные ячейки, и отправляет `slot_level` в операции `program`. Сервер
+проверяет `base ≤ chosen ≤ 9`, списывает ячейку нужного круга (обычную, иначе ячейку
+Договора) и кладёт `{ level, base, extra }` в контекст выполнения:
+
+- `extra = chosen - base`; у `action.roll` (damage/heal) с `upcast` к формуле добавляется
+  `extra*count` костей `sides` — например, «Огненный шар» 3-го круга ячейкой 5-го бросает
+  `8d6+2d6`;
+- `data.cast` читает `level` / `base` / `extra` (без каста — 0);
+- ритуал: `slot_level = 0` при `base > 0` разрешён только заклинанию со свойством «Ритуал»;
+  блок `action.slot` пропускается, в ответе эффект «Ритуал: 10 минут, ячейка не тратится»;
+- концентрация: после успешного каста сервер заменяет состояние «Концентрация: …» именем
+  заклинания (прежняя запись удаляется, чужие состояния остаются);
+- `action.field` status с `operation: concentration` — явный узел того же поведения для
+  редактора; `condition` у него пустой, имя подставляет сервер.
+
+Контекст каста живёт только на время выполнения (`sheet.cast` ставится перед блоками и
+удаляется до нормализации), в листе сохраняются лишь ячейки, состояния и `action_results`.
+Шаблон «Ячейка → лечение» использует `action.slot` с `level: 1`; SRD-заклинания —
+`action.slot` с `level: 0`, `upcast` по тексту `higher_level` и узел концентрации.
 
 ## Шаблоны
 
@@ -172,7 +206,9 @@ self / item / tag, `amount` и момент `trigger` = use / attack. Расхо
    сделано.
 2. Состояние выполнения: `data.result`, `data.sheet`, `action_results` в листе и
    `condition_src` в плане (условие блока считается в рантайме; поток остаётся
-   статическим) — сделано; выбор круга заклинания ещё впереди.
-3. Заклинания: круг, ячейка, upcast, концентрация, ритуал; пересборка заклинаний SRD.
+   статическим) — сделано.
+3. Заклинания: отдельный узел `action.slot`, выбор круга, upcast, концентрация, ритуал,
+   `data.cast`; SRD-заклинания пересобраны (295/312 с ячейкой, 126/132 с концентрацией,
+   29/29 ритуальных, 32/37 с upcast) — сделано.
 4. Шаблоны: 40 автоматических механик (включая 8 новых), единая палитра с описаниями и
    подсказками — сделано; редактор продолжает упрощаться (пустые состояния, примеры).

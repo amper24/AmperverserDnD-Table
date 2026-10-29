@@ -21,6 +21,7 @@ PASSIVE = ('speed', 'hit_die', 'spellcasting', 'saves', 'skills', 'languages', '
 # Блок v1 → узел v3. Вид броска и вид изменения листа задаёт параметр kind.
 ACTION_NODES = {
     'consume': 'action.spend',
+    'slot': 'action.slot',
     'attack': 'action.roll', 'damage': 'action.roll', 'heal': 'action.roll',
     'temp_hp': 'action.roll', 'roll': 'action.roll',
     'grant_item': 'action.grant_item',
@@ -98,6 +99,156 @@ def manual(text):
 
 def cost(resource='quantity', amount=1):
     return block('consume', resource=resource, source='self', amount=amount, trigger='use')
+
+
+# Заклинания: отдельный узел «Расход ячейки» (level 0 — круг выбирается при касте),
+# повышение круга по описанию higher_level и концентрация отдельным состоянием.
+SPELL_CAST_RE = re.compile(r'^\s*(Сотворить|Cast)\b', re.I)
+UPCAST_RE = re.compile(r'(\d+)\s*[dк]\s*(\d+)', re.I)
+
+
+def spell_upcast(d):
+    """Первое «NdM» из higher_level — сколько костей добавляется за каждый круг выше базового."""
+    match = UPCAST_RE.search(str(d.get('higher_level') or ''))
+    if not match:
+        return None
+    count, sides = int(match.group(1)), int(match.group(2))
+    if not (1 <= count <= 100 and 1 <= sides <= 1000):
+        return None
+    return {'count': count, 'sides': sides}
+
+
+def slot_block(amount=1):
+    """Блок «Расход ячейки»: level 0 — круг при касте, 1–9 — фиксированный."""
+    return block('slot', level=0, amount=amount)
+
+
+def concentration_block():
+    return block('condition', target='self', operation='concentration', condition='')
+
+
+def _node_position(cast, index):
+    x = int(cast.get('position', {}).get('x', 60)) + 130
+    y = int(cast.get('position', {}).get('y', 70)) + 140 * index
+    return {'x': x, 'y': y}
+
+
+def _cast_program(graph):
+    """Программа сотворения: «Сотворить …» среди активных, иначе первая не-roll_only."""
+    programs = [n for n in graph.get('nodes', []) if n.get('type') == 'action.program' and n.get('params', {}).get('trigger', 'use') != 'passive' and not n.get('params', {}).get('roll_only')]
+    for node in programs:
+        if SPELL_CAST_RE.match(str(node.get('params', {}).get('name') or '')):
+            return node
+    return programs[0] if programs else None
+
+
+def _reachable(graph, start):
+    links = graph.get('links', [])
+    seen, stack = set(), [start]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        for link in links:
+            if link['from']['node'] == current:
+                stack.append(link['to']['node'])
+    return seen
+
+
+def _remove_node(graph, node_id):
+    """Убрать узел, сохранив поток: вход и выход соединяются напрямую."""
+    nodes, links = graph['nodes'], graph['links']
+    incoming = [l for l in links if l['to']['node'] == node_id]
+    outgoing = [l for l in links if l['from']['node'] == node_id]
+    if len(incoming) == 1 and len(outgoing) == 1:
+        links.append({'from': dict(incoming[0]['from']), 'to': dict(outgoing[0]['to'])})
+    graph['links'] = [l for l in links if l['from']['node'] != node_id and l['to']['node'] != node_id]
+    graph['nodes'] = [n for n in nodes if n['id'] != node_id]
+
+
+def _insert_after(graph, after_id, new_nodes):
+    """Вставить цепочку сразу после узла; хвост прежней цепочки остаётся подключённым."""
+    if not new_nodes:
+        return
+    links = graph['links']
+    index = next((i for i, l in enumerate(links) if l['from']['node'] == after_id and l['from']['socket'] == 'exec'), None)
+    chain = [n['id'] for n in new_nodes]
+    graph['nodes'].extend(new_nodes)
+    if index is None:
+        end = next((n['id'] for n in graph['nodes'] if n['type'] == 'flow.end'), None)
+        links.append({'from': {'node': after_id, 'socket': 'exec'}, 'to': {'node': chain[0], 'socket': 'exec'}})
+        if end:
+            links.append({'from': {'node': chain[-1], 'socket': 'exec'}, 'to': {'node': end, 'socket': 'exec'}})
+        return
+    target = dict(links[index]['to'])
+    links[index]['to'] = {'node': chain[0], 'socket': 'exec'}
+    for left, right in zip(chain, chain[1:]):
+        links.append({'from': {'node': left, 'socket': 'exec'}, 'to': {'node': right, 'socket': 'exec'}})
+    links.append({'from': {'node': chain[-1], 'socket': 'exec'}, 'to': target})
+
+
+def refresh_spell(e):
+    """Пересобрать служебные узлы заклинания: ячейка, концентрация, повышение круга.
+
+    Остальные узлы (атака, урон, правила спасброска) сохраняются: генератор не переписывает
+    уже собранные графы, а добавляет к ним нормальное исполнение заклинаний. Идемпотентно.
+    """
+    d = e.get('data', {})
+    mechanics = d.get('mechanics')
+    if not isinstance(mechanics, dict) or mechanics.get('version') != VERSION:
+        return {'slot': 0, 'upcast': 0, 'concentration': 0, 'ritual': 0}
+    graph = mechanics.setdefault('graph', {})
+    graph.setdefault('nodes', [])
+    graph.setdefault('links', [])
+    cast = _cast_program(graph)
+    if cast is None:
+        return {'slot': 0, 'upcast': 0, 'concentration': 0, 'ritual': 0}
+    slug = e.get('slug') or e.get('name') or 'spell'
+    # Убираем прежние служебные узлы (в том числе action.spend с resource=slot из ранней миграции).
+    for node in list(graph['nodes']):
+        params = node.get('params', {})
+        stale = node.get('type') == 'action.slot' or (node.get('type') == 'action.spend' and params.get('resource') == 'slot') or (node.get('type') == 'action.field' and params.get('kind') == 'status' and params.get('operation') == 'concentration')
+        if stale:
+            _remove_node(graph, node['id'])
+    level = int(d.get('level') or 0)
+    added = []
+    if level > 0:
+        added.append({'id': f'spell-{slug}-slot', 'type': 'action.slot',
+                      'params': {'enabled': True, 'when': 'always', 'level': 0, 'amount': 1, 'block_id': f'{slug}-slot'},
+                      'position': _node_position(cast, 1)})
+    if d.get('concentration'):
+        added.append({'id': f'spell-{slug}-concentration', 'type': 'action.field',
+                      'params': {'enabled': True, 'when': 'always', 'kind': 'status', 'operation': 'concentration', 'condition': '', 'target': 'self', 'block_id': f'{slug}-concentration'},
+                      'position': _node_position(cast, 2)})
+    _insert_after(graph, cast['id'], added)
+    # Повышение круга — только у бросков урона/лечения внутри программы сотворения.
+    upcast = spell_upcast(d)
+    inside = _reachable(graph, cast['id'])
+    attached = 0
+    for node in graph['nodes']:
+        params = node.get('params', {})
+        if node.get('type') != 'action.roll' or params.get('kind') not in ('damage', 'heal'):
+            continue
+        if node['id'] not in inside:
+            continue
+        if upcast:
+            params['upcast'] = dict(upcast)
+            attached += 1
+        else:
+            params.pop('upcast', None)
+    return {'slot': 1 if level > 0 else 0, 'upcast': 1 if attached else 0,
+            'concentration': 1 if d.get('concentration') else 0, 'ritual': 1 if d.get('ritual') else 0}
+
+
+def refresh_spells(entries):
+    totals = Counter()
+    for e in entries:
+        if e.get('category') != 'spell':
+            continue
+        totals['spells'] += 1
+        totals.update(refresh_spell(e))
+    return totals
 
 
 # Использование предмета — только когда источник прямо задаёт действие/триггер.
@@ -240,6 +391,8 @@ def node_for(block):
     params['block_id'] = block.get('id')
     if node_type == 'action.roll':
         params['kind'] = kind if kind in ROLL_BLOCKS else 'roll'
+    elif node_type == 'action.spend' or node_type == 'action.slot':
+        params.pop('kind', None)
     elif node_type == 'action.field':
         field_kind = FIELD_BLOCKS[kind]
         params['kind'] = field_kind
@@ -384,13 +537,20 @@ def convert_entry(e, edition, force=False):
     elif category == 'spell':
         blocks=[]
         level=d.get('level',0)
+        upcast=spell_upcast(d)
         if level:
-            blocks.append(block('consume',resource='slot',source='self',slot_level=level,amount=1,trigger='use'))
+            # Круг выбирает игрок при касте: узел «Расход ячейки» с level 0.
+            blocks.append(slot_block())
+        if d.get('concentration'):
+            blocks.append(concentration_block())
         if name in ('Cure Wounds','Healing Word'):
             sides=8 if name=='Cure Wounds' else 4
             blocks.append(manual(_('spell_check')))
             # Лечение другого существа — отдельный бросок с правилом: хиты цели применяет ДМ.
-            blocks.append(block('roll',name=_('heal_roll'),dice=dice(f'{2 if edition=="2024" else 1}d{sides}+@spell_mod')))
+            heal=block('roll',name=_('heal_roll'),dice=dice(f'{2 if edition=="2024" else 1}d{sides}+@spell_mod'))
+            if upcast:
+                heal['upcast']=dict(upcast)
+            blocks.append(heal)
             blocks.append(manual(_('heal_rule')))
         else:
             blocks.append(manual(d.get('desc','') or _('spell_default')))
@@ -493,16 +653,40 @@ def refresh_en(entries, edition):
 
 
 if __name__=='__main__':
+    import sys
     root=Path(__file__).resolve().parents[2]
+    check='--check' in sys.argv[1:]
     report={}
+    stale=[]
     for edition in ('2014','2024'):
         path=root/'data_seed'/f'srd_{edition}.json'
-        data=convert(json.loads(path.read_text()),edition)
-        refreshed=refresh_en(data,edition)
-        path.write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
-        print(edition,'английский слой механик пересчитан:',refreshed)
+        original=path.read_text()
+        records=json.loads(original)
+        # Пересобираются только заклинания: остальные записи остаются байт-в-байт.
+        spells=[e for e in records if e.get('category')=='spell']
+        convert(spells,edition)
+        spell_totals=refresh_spells(spells)
+        refreshed=refresh_en(spells,edition)
+        data=records
+        text=json.dumps(data,ensure_ascii=False,separators=(',',':'))
+        if check:
+            if text!=original:
+                stale.append(edition)
+        else:
+            path.write_text(text)
+        print(edition,'английский слой механик пересчитан:',refreshed,
+              '| заклинаний:',spell_totals['spells'],
+              '| ячейка:',spell_totals['slot'],
+              '| upcast:',spell_totals['upcast'],
+              '| концентрация:',spell_totals['concentration'],
+              '| ритуал:',spell_totals['ritual'])
         types=Counter(node['type'] for e in data
                       for node in (e['data'].get('mechanics', {}).get('graph', {}).get('nodes') or []))
         report[edition]={'records':len(data),'categories':dict(Counter(e['category'] for e in data)),
                          'mechanics_records':sum('mechanics' in e['data'] for e in data),'node_types':dict(types)}
+    if check:
+        if stale:
+            print('данные заклинаний устарели: запустите python tools/srd/mechanics.py', file=sys.stderr)
+            sys.exit(1)
+        print('данные заклинаний актуальны')
     print(json.dumps(report,ensure_ascii=False,indent=2))

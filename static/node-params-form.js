@@ -39,7 +39,16 @@
     // Один узел «Изменить поле»: вид задаёт, какие параметры показывать (см. FIELD_HIDDEN).
     'action.field': {
       kind: [{ value: 'status', label: 'Состояние — наложить или снять' }, { value: 'value', label: 'Показатель — изменить число' }, { value: 'formula', label: 'Формула — параметр при создании' }],
-      operation: [{ value: 'add', label: 'Наложить' }, { value: 'remove', label: 'Снять' }],
+      operation: [{ value: 'add', label: 'Наложить' }, { value: 'remove', label: 'Снять' }, { value: 'concentration', label: 'Концентрация (имя заклинания)' }],
+    },
+    // Ресурсы предмета и умения; ячейка заклинания — отдельный узел «Расход ячейки».
+    'action.spend': {
+      resource: [{ value: 'quantity', label: 'Количество' }, { value: 'charges', label: 'Заряды' }, { value: 'uses', label: 'Использования' }],
+      source: [{ value: 'self', label: 'Сам предмет / умение' }, { value: 'item', label: 'Предмет' }, { value: 'tag', label: 'Метка' }],
+      trigger: [{ value: 'use', label: 'При использовании' }, { value: 'attack', label: 'За атаку' }],
+    },
+    'data.cast': {
+      field: [{ value: 'level', label: 'Круг выбранной ячейки' }, { value: 'base', label: 'Базовый круг заклинания' }, { value: 'extra', label: 'Круги выше базового' }],
     },
     'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
@@ -93,7 +102,8 @@
     formula: 'Формула', field: 'Поле', kind: 'Тип', group_id: 'Группа', socket_id: 'Вход / выход', trigger: 'Запуск',
     resource: 'Ресурс', source: 'Источник', when: 'Когда', target: 'Цель', operation: 'Операция', condition: 'Состояние',
     feature_name: 'Имя умения', item: 'Предмет', dice: 'Кость', enabled: 'Включено', minimum: 'Минимум', choice: 'Выбор',
-    subclass: 'Подкласс', level: 'Уровень', edition: 'Редакция', hp: 'Хиты', program_id: 'ID программы', block_id: 'ID блока',
+    subclass: 'Подкласс', level: 'Уровень / круг (0 — круг каста)', edition: 'Редакция', hp: 'Хиты', program_id: 'ID программы', block_id: 'ID блока',
+    upcast: 'Повышение круга (кости)', base: 'Базовый круг', extra: 'Лишние круги',
     choices: 'Выборы', spell: 'Заклинание', mode_label: 'Режим', prompt: 'Подсказка', description: 'Описание',
     kind: 'Тип', op: 'Операция', damage_type: 'Тип урона', grip: 'Хват', apply: 'Применить к листу',
     // Параметры узлов правил и таблиц (чтобы не показывать сырые английские ключи).

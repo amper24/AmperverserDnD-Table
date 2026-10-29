@@ -16,15 +16,16 @@
     "origin": {
       "srd-graph-v2": 981
     },
-    "nodes": 12473,
-    "links": 8722,
+    "nodes": 12894,
+    "links": 9143,
     "programs": 3625,
     "records_with_programs": 976,
     "node_types": {
-      "action.field": 33,
+      "action.field": 159,
       "action.manual": 3538,
       "action.program": 3625,
       "action.roll": 1377,
+      "action.slot": 295,
       "action.spend": 89,
       "condition.context": 13,
       "condition.hit": 13,
@@ -54,15 +55,16 @@
     "origin": {
       "srd-graph-v2": 986
     },
-    "nodes": 11560,
-    "links": 8105,
+    "nodes": 12004,
+    "links": 8549,
     "programs": 3349,
     "records_with_programs": 977,
     "node_types": {
-      "action.field": 32,
+      "action.field": 164,
       "action.manual": 3275,
       "action.program": 3349,
       "action.roll": 1343,
+      "action.slot": 312,
       "action.spend": 61,
       "condition.hit": 15,
       "flow.end": 3349,

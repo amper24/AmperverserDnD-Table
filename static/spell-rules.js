@@ -82,9 +82,9 @@ window.SpellRules = (() => {
   }
 
   // ---------- сотворение: кто списывает ячейку ----------
-  /// Старое действие тратит ячейку само, если в нём остался блок «Расход: ячейка» (граф хранит круг).
-  /// Новые записи такого блока не содержат: ячейку списывает лист, поэтому работают ячейки Договора,
-  /// ритуал и выбранный круг, а двойного расхода не бывает.
+  /// Старое действие тратит ячейку само, если в нём остался блок «Расход: ячейка» с фиксированным
+  /// кругом. Новый узел action.slot с level 0 означает «круг выбирает игрок»: расход по-прежнему
+  /// считает сервер, но круг приходит из операции. Двойного расхода не бывает.
   function programSlotLevel(program) {
     for (const b of program?.blocks || []) {
       if (!b || b.enabled === false || b.kind !== 'consume' || b.resource !== 'slot') continue;
@@ -93,22 +93,26 @@ window.SpellRules = (() => {
     }
     return 0;
   }
+  /// Узел «Расход ячейки» без фиксированного круга: круг выбирается при касте и уходит на сервер.
+  function programSlotChoice(program) {
+    return (program?.blocks || []).some(b => b && b.enabled !== false && b.kind === 'consume' && b.resource === 'slot' && numeric(b.slot_level) === 0);
+  }
   /// Действие с собственным расходом (ячейка, заряды, предмет) распоряжается им само.
   const programConsumes = program => (program?.blocks || []).some(b => b && b.enabled !== false && b.kind === 'consume');
   /// «Отдельный бросок» — кнопка без расхода: она только бросает кубики.
   const programRollOnly = program => program?.roll_only === true;
   /// Варианты расхода для окна сотворения: ячейки не ниже круга заклинания, ячейки Договора, ритуал.
-  /// Действие со своим расходом берёт только свой круг — иначе выбранная ячейка и граф разойдутся.
+  /// Действие со своим фиксированным кругом берёт только свой круг — иначе выбранная ячейка и граф разойдутся.
   function spendOptions(spells, spell, program) {
     const fixed = programSlotLevel(program);
     let options;
     if (fixed) options = [{ pool: 'slots', level: fixed, remaining: Math.max(0, numeric(spells?.slots?.[fixed]?.max) - numeric(spells?.slots?.[fixed]?.used)) }];
-    else if (programConsumes(program)) options = [];
+    else if (programConsumes(program) && !programSlotChoice(program)) options = [];
     else options = slotPool(spells, spell);
     if (spell?.ritual) options.push({ pool: 'ritual', level: Math.max(0, numeric(spell?.level)), remaining: 0 });
     return options.filter(o => o.pool === 'ritual' || o.remaining > 0);
   }
-  /// План сотворения: 'server' — расход считает само действие (старые записи с блоком расхода),
+  /// План сотворения: 'server' — расход считает действие (узел «Расход ячейки» или старый блок),
   /// 'client' — ячейку или заряды списывает лист, 'none' — заговор или отдельный бросок.
   function castPlan(spell, program, spells) {
     const cost = castCost(spell);
@@ -202,9 +206,9 @@ window.SpellRules = (() => {
     const spellAttackD20 = d => !!d && !d.advanced && Number(d.sides) === 20 && ['spell', 'atk', 'atk_str', 'atk_dex', 'best', 'prof'].includes(String(d.stat || ''));
     const readBlock = (b, program) => {
       if (!b || typeof b !== 'object') return;
-      // «Расход: ячейка» убирается из плана: ячейку списывает лист — круг, ячейки Договора и
-      // ритуал выбирает игрок. Прочие расходы (заряды, предмет) остаются у записи.
-      if (b.kind === 'consume') { if (b.resource === 'slot') return; consume.push({ ...b, when: 'always' }); return; }
+      // «Расход: ячейка» остаётся в плане: круг и ритуал выбирает игрок, а списывает сервер.
+      // Прочие расходы (заряды, предмет) тоже остаются у записи.
+      if (b.kind === 'consume') { consume.push({ ...b, when: 'always' }); return; }
       if (b.kind === 'attack') { addAttack({ dice: b.dice, name: b.name }); return; }
       if (b.kind === 'damage') { addDamage({ dice: b.dice, dtype: b.damage_type || '', name: b.name || labels.damage }); return; }
       if (b.kind === 'heal') { addRoll({ dice: b.dice, name: b.name || labels.heal }); return; }
@@ -257,6 +261,6 @@ window.SpellRules = (() => {
     return { programs: out, changed: CANONICAL(out) !== CANONICAL(list) };
   }
   return { castCost, slotPool, spend, restore, spendHitDice, recoverHitDice,
-           programSlotLevel, programConsumes, programRollOnly, spendOptions, castPlan,
+           programSlotLevel, programSlotChoice, programConsumes, programRollOnly, spendOptions, castPlan,
            serviceManual, spellPrograms, expression, dice };
 })();
