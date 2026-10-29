@@ -4,6 +4,7 @@
   class ActionGrantItem extends GraphNode {
     static type = 'action.grant_item';
     static label = window.Mechanics.TYPES.grant_item?.[0] || 'grant_item';
+    static description = 'Выдача предмета владельцу листа.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };

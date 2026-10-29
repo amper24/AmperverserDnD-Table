@@ -4,6 +4,7 @@
   class DataBoolean extends GraphNode {
     static type = 'data.boolean';
     static label = 'Логическая константа';
+    static description = 'Логическая константа true или false.';
     static group = 'Данные';
     static outputs = { value: 'bool' };
     static defaults = { value: true };

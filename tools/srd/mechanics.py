@@ -18,7 +18,7 @@ GRAPH_ORIGIN = 'srd-graph-v2'
 # Входной маркер прежнего генератора: записи с этой механикой пересобираются, готовый граф — нет.
 ORIGIN = 'srd-blocks-v1'
 PASSIVE = ('speed', 'hit_die', 'spellcasting', 'saves', 'skills', 'languages', 'armor', 'weapons')
-# Блок v1 → узел v3. Вид блока броска задаёт roll_kind, вид изменения листа — параметр kind.
+# Блок v1 → узел v3. Вид броска и вид изменения листа задаёт параметр kind.
 ACTION_NODES = {
     'consume': 'action.spend',
     'attack': 'action.roll', 'damage': 'action.roll', 'heal': 'action.roll',
@@ -239,7 +239,7 @@ def node_for(block):
     params = {k: v for k, v in block.items() if k != 'id'}
     params['block_id'] = block.get('id')
     if node_type == 'action.roll':
-        params['roll_kind'] = kind if kind in ROLL_BLOCKS else 'roll'
+        params['kind'] = kind if kind in ROLL_BLOCKS else 'roll'
     elif node_type == 'action.field':
         field_kind = FIELD_BLOCKS[kind]
         params['kind'] = field_kind

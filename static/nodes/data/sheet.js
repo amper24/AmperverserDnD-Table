@@ -6,6 +6,7 @@
   class DataSheet extends GraphNode {
     static type = 'data.sheet';
     static label = 'Поле листа';
+    static description = 'Числовое поле листа: hp.current, level, abilities.str.';
     static group = 'Данные';
     static inputs = {};
     static outputs = { value: 'number' };

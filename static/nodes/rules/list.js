@@ -11,6 +11,7 @@
   class RuleList extends GraphNode {
     static type = 'rule.list';
     static label = 'Список';
+    static description = 'Правило-список: языки, владения, навыки, заклинания, снаряжение.';
     static group = 'Правила персонажа';
     static inputs = { enabled: 'bool', amount: 'number' };
     static outputs = { effect: 'effect' };

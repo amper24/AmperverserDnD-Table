@@ -156,6 +156,16 @@ logging:  { level: "info,sqlx=warn" }
 пропускает блок, а поток идёт дальше. Палитра и принципы — [docs/node-system-v3.md](docs/node-system-v3.md),
 формат графа и типы узлов — [docs/mechanics-v2.md](docs/mechanics-v2.md).
 
+Коротко палитра идёт рабочим процессом: **Начало** (`action.program`) → **Действия**
+(`action.roll`, `action.field`, `action.spend`, `action.grant_item`, `action.manual`, `flow.if`,
+`flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`, `data.math`, `data.compare`,
+`logic.op`, `data.boolean`, `data.result`, `data.sheet`, `dice.combine`) → **Условия**
+(`condition.context`, `condition.hit`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
+`rule.manual`) → **Группы** (`group.instance`). У каждого узла есть подсказка, у настраиваемых —
+единый параметр `kind`. Готовые шаблоны: «Атака и урон по результату», «Лечение при ранении»,
+«Спасбросок против СЛ», «Многоатака: два удара», «Заряды посоха», «Кара: дополнительный урон»,
+«Аура: усиление по уровню», «Скрытая атака».
+
 ## Редактор класса
 
 Свой конструктор вместо JSON-правки: **Справочник → Классы → «+ Создать свою запись»**,

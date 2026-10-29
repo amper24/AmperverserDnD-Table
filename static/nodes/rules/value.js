@@ -6,6 +6,7 @@
   class RuleValue extends GraphNode {
     static type = 'rule.value';
     static label = 'Правило';
+    static description = 'Правило-значение: характеристика, скорость, хиты, кость, ASI, защита.';
     static group = 'Правила персонажа';
     static inputs = { enabled: 'bool', amount: 'number' };
     static outputs = { effect: 'effect' };

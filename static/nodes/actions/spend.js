@@ -5,6 +5,7 @@
   class ActionSpend extends GraphNode {
     static type = 'action.spend';
     static label = 'Расход ресурса';
+    static description = 'Расход ресурса: количество, заряды, ячейка или использование.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };

@@ -994,7 +994,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "atk",
-                "roll_kind": "attack",
+                "kind": "attack",
                 "enabled": true,
                 "dice": {
                   "count": 0,
@@ -1020,7 +1020,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "dmg",
-                "roll_kind": "damage",
+                "kind": "damage",
                 "enabled": true,
                 "dice": {
                   "count": 1,
@@ -1126,7 +1126,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "atk",
-                "roll_kind": "attack",
+                "kind": "attack",
                 "enabled": true,
                 "dice": {
                   "count": 0,
@@ -1152,7 +1152,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "dmg",
-                "roll_kind": "damage",
+                "kind": "damage",
                 "enabled": true,
                 "dice": {
                   "count": 1,
@@ -1243,7 +1243,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "a",
-                "roll_kind": "damage",
+                "kind": "damage",
                 "dice": {
                   "count": 1,
                   "sides": 6,
@@ -1257,7 +1257,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "b",
-                "roll_kind": "heal",
+                "kind": "heal",
                 "dice": {
                   "count": 1,
                   "sides": 4,
@@ -1349,7 +1349,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "d",
-                "roll_kind": "damage",
+                "kind": "damage",
                 "dice": {
                   "count": 0,
                   "sides": 6,
@@ -1487,7 +1487,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "r",
-                "roll_kind": "damage",
+                "kind": "damage",
                 "enabled": true,
                 "dice": {
                   "count": 1,
@@ -1553,7 +1553,7 @@
               "type": "action.roll",
               "params": {
                 "block_id": "r",
-                "roll_kind": "save",
+                "kind": "save",
                 "enabled": true,
                 "dice": {
                   "count": 1,

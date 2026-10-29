@@ -5,6 +5,7 @@
   class GroupOutput extends GraphNode {
     static type = 'group.output';
     static label = 'Выход группы';
+    static description = 'Выход группы: отдаёт значение в интерфейс.';
     static group = 'Группы';
     static inputs = { value: 'text' };
     static outputs = {};

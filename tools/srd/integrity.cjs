@@ -554,10 +554,9 @@ function checkSeed(edition, opts = {}) {
         if (stat !== undefined && !STATS.includes(stat)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.dice.stat`, `неизвестный модификатор «${stat}»`);
       }
       if (node.type === 'action.roll') {
-        const rollKind = (node.params || {}).roll_kind;
-        if (rollKind !== undefined && !rust.ROLL_KINDS.includes(rollKind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.roll_kind`, `неизвестный тип броска «${rollKind}»`);
-      }
-      if (node.type === 'action.field') {
+        const kind = (node.params || {}).kind;
+        if (kind !== undefined && !rust.ROLL_KINDS.includes(kind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.kind`, `неизвестный тип броска «${kind}»`);
+      }      if (node.type === 'action.field') {
         const params = node.params || {};
         if (!rust.FIELD_KINDS.includes(params.kind)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.kind`, `неизвестный вид «${params.kind}» (status, value или formula)`);
         else if (params.kind === 'value' && !rust.VALUE_FIELDS.includes(params.field)) report.error('enum-values', where, `data.mechanics.graph.nodes[${node.id}].params.field`, `показатель «${params.field}» недоступен`);
@@ -692,8 +691,8 @@ function checkRuntime(opts = {}) {
   for (const type of Registry.INTERNAL) {
     if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
   }
-  // Настраиваемые узлы покрывают несколько видов блоков плана: «Бросок» — через roll_kind,
-  // «Изменить поле» — через kind, «Расход ресурса» — один блок consume.
+  // Настраиваемые узлы покрывают несколько видов блоков плана: «Бросок» и «Изменить поле» — через kind,
+  // «Расход ресурса» — один блок consume.
   const expandKind = t => (Registry.blockKindsOf ? Registry.blockKindsOf(t) : (t === 'action.roll' ? (Registry.ROLL_KINDS || ['roll']) : [t.slice(7)]));
   const actionKinds = [...new Set(defs.filter(t => t.startsWith('action.') && t !== 'action.program').flatMap(expandKind))];
   if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);

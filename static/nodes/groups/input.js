@@ -5,6 +5,7 @@
   class GroupInput extends GraphNode {
     static type = 'group.input';
     static label = 'Вход группы';
+    static description = 'Вход группы: принимает значение из интерфейса.';
     static group = 'Группы';
     static inputs = {};
     static outputs = { value: 'text' };

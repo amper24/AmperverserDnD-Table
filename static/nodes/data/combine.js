@@ -5,6 +5,7 @@
   class DiceCombine extends GraphNode {
     static type = 'dice.combine';
     static label = 'Сложить кости';
+    static description = 'Сложить две кости в одну формулу.';
     static group = 'Данные';
     static inputs = { a: 'dice', b: 'dice' };
     static outputs = { value: 'dice' };

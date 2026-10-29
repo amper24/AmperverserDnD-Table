@@ -4,6 +4,7 @@
   class DataNumber extends GraphNode {
     static type = 'data.number';
     static label = 'Число';
+    static description = 'Числовая константа для условий и формул.';
     static group = 'Данные';
     static inputs = {};
     static outputs = { value: 'number' };

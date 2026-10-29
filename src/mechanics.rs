@@ -298,7 +298,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
             "mechanics": mech(vec![
                 node("p", "action.program", json!({"program_id": "use", "name": "Drink", "trigger": "use"})),
                 node("c", "action.spend", json!({"block_id": "c", "resource": "quantity", "source": "self", "amount": 1, "trigger": "use"})),
-                node("h", "action.roll", json!({"block_id": "h", "roll_kind": "heal", "target": "self", "dice": {"count": 0, "sides": 6, "bonus": 7, "stat": ""}})),
+                node("h", "action.roll", json!({"block_id": "h", "kind": "heal", "target": "self", "dice": {"count": 0, "sides": 6, "bonus": 7, "stat": ""}})),
                 node("g", "action.grant_item", json!({"block_id": "g", "target": "self", "amount": 1, "item": {"name": "Vial", "type": "gear"}}))
             ], vec![link("p", "c"), link("c", "h"), link("h", "g")])
         }]})
@@ -337,7 +337,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         let mut s=json!({"hp":{"max":20,"current":20,"temp":0},"inventory":[{"uid":"w","name":"Wand","qty":1,"type":"gear","mechanics": mech(vec![
             node("p","action.program",json!({"program_id":"use","name":"Burst","trigger":"use"})),
             node("m","action.manual",json!({"block_id":"m","text":RULE})),
-            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}))
+            node("d","action.roll",json!({"block_id":"d","kind":"damage","dice":{"count":1,"sides":6,"bonus":0,"stat":""}}))
         ], vec![link("p","m"), link("m","d")])}]});
         // Текст правила передаётся в графе как есть: спасбросок больше не генерируется автоматически.
         // Правило подтверждается игроком — без подтверждения сервер отказывает до любых эффектов.
@@ -357,10 +357,10 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     #[test] fn hit_branch_uses_only_the_roll(){
         let mk=|dc:i64| json!({"hp":{"max":20,"current":10,"temp":0},"ac":99,"inventory":[{"uid":"w","name":"W","qty":1,"type":"gear","mechanics": mech(vec![
             node("p","action.program",json!({"program_id":"use","name":"Hit","trigger":"use"})),
-            node("a","action.roll",json!({"block_id":"a","roll_kind":"attack","dc":dc,"dice":{"count":0,"sides":20,"bonus":5,"stat":""}})),
+            node("a","action.roll",json!({"block_id":"a","kind":"attack","dc":dc,"dice":{"count":0,"sides":20,"bonus":5,"stat":""}})),
             node("hit","condition.hit",json!({})),
             node("f","flow.if",json!({})),
-            node("heal","action.roll",json!({"block_id":"h","roll_kind":"heal","dice":{"count":0,"sides":6,"bonus":7,"stat":""}}))
+            node("heal","action.roll",json!({"block_id":"h","kind":"heal","dice":{"count":0,"sides":6,"bonus":7,"stat":""}}))
         ], vec![link("p","a"), link("a","f"), wire("hit","value","f","condition"), wire("f","then","heal","exec")])}]});
         let mut hit=mk(3); // результат 5 достигает КД 3 — срабатывает ветка попадания
         let r=execute(&mut hit,"item","w","use","",false).unwrap();
@@ -397,8 +397,8 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     fn result_graph() -> Value {
         mech(vec![
             node("p1","action.program",json!({"program_id":"strike","name":"Удар","trigger":"use"})),
-            node("a","action.roll",json!({"block_id":"a","roll_kind":"attack","dc":0,"dice":{"count":0,"sides":20,"bonus":12,"stat":""}})),
-            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":0,"sides":6,"bonus":12,"stat":""}})),
+            node("a","action.roll",json!({"block_id":"a","kind":"attack","dc":0,"dice":{"count":0,"sides":20,"bonus":12,"stat":""}})),
+            node("d","action.roll",json!({"block_id":"d","kind":"damage","dice":{"count":0,"sides":6,"bonus":12,"stat":""}})),
             node("p2","action.program",json!({"program_id":"follow","name":"После удара","trigger":"use"})),
             node("res","data.result",json!({"source":"last","field":"total"})),
             node("ten","data.number",json!({"value":10})),
@@ -458,7 +458,7 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
     #[test] fn program_modes_apply_to_d20_and_non_d20_rolls(){
         let attack=||json!({"features":[{"uid":"f","name":"Проверка","mechanics": mech(vec![
             node("p","action.program",json!({"program_id":"p","name":"Бросок","trigger":"use"})),
-            node("r","action.roll",json!({"block_id":"b","roll_kind":"attack","dice":{"count":1,"sides":20,"bonus":5,"stat":"","advanced":"d20+5"}}))
+            node("r","action.roll",json!({"block_id":"b","kind":"attack","dice":{"count":1,"sides":20,"bonus":5,"stat":"","advanced":"d20+5"}}))
         ], vec![link("p","r")])}]});
         for (mode,expected) in [("adv","2d20kh1+5"),("dis","2d20kl1+5")] {
             let mut sheet=attack();let result=execute(&mut sheet,"feature","f","p",mode,false).unwrap();
@@ -466,8 +466,8 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
         }
         let generic=||json!({"hp":{"max":20,"current":0,"temp":0},"features":[{"uid":"f","name":"Проверка","mechanics": mech(vec![
             node("p","action.program",json!({"program_id":"p","name":"Бросок","trigger":"use"})),
-            node("d","action.roll",json!({"block_id":"d","roll_kind":"damage","dice":{"count":1,"sides":8,"bonus":2,"stat":"","advanced":"d8+2"}})),
-            node("h","action.roll",json!({"block_id":"h","roll_kind":"heal","dice":{"count":1,"sides":4,"bonus":1,"stat":"","advanced":"d4+1"}}))
+            node("d","action.roll",json!({"block_id":"d","kind":"damage","dice":{"count":1,"sides":8,"bonus":2,"stat":"","advanced":"d8+2"}})),
+            node("h","action.roll",json!({"block_id":"h","kind":"heal","dice":{"count":1,"sides":4,"bonus":1,"stat":"","advanced":"d4+1"}}))
         ], vec![link("p","d"), link("d","h")])}]});
         for (mode,damage,heal) in [("adv","2d8kh1+2","2d4kh1+1"),("dis","2d8kl1+2","2d4kl1+1")] {
             let mut sheet=generic();let result=execute(&mut sheet,"feature","f","p",mode,false).unwrap();
@@ -487,10 +487,10 @@ mod graph_hit_tests {
     fn sheet_with(dc: i64) -> Value {
         json!({"hp": {"max": 20, "current": 10, "temp": 0}, "inventory": [{"uid": "w", "name": "Клинок", "qty": 1, "type": "gear", "mechanics": {"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}, "position": {"x": 0, "y": 0}},
-            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": dc}, "position": {"x": 260, "y": 0}},
             {"id": "h", "type": "condition.hit", "params": {}, "position": {"x": 520, "y": 120}},
             {"id": "f", "type": "flow.if", "params": {}, "position": {"x": 520, "y": 0}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}},
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}, "position": {"x": 780, "y": 0}},
             {"id": "e", "type": "flow.end", "params": {}, "position": {"x": 1040, "y": 0}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},

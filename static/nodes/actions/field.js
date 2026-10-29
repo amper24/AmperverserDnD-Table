@@ -7,6 +7,7 @@
   class ActionField extends GraphNode {
     static type = 'action.field';
     static label = 'Изменить поле';
+    static description = 'Изменение листа: состояние, показатель или параметр при создании.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };

@@ -24,7 +24,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
         nodes: [
           { id: 'potion', type: 'action.program', params: { program_id: 'potion', name: 'Выпить зелье', trigger: 'use' }, position: { x: 60, y: 70 } },
           { id: 'consume', type: 'action.spend', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, trigger: 'use', when: 'always', enabled: true }, position: { x: 330, y: 70 } },
-          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
+          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
           { id: 'end', type: 'flow.end', params: {}, position: { x: 850, y: 70 } },
         ],
         links: [
@@ -62,16 +62,16 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.match(await dialog.locator('.templates-subtitle').innerText(), /Выпить зелье/, 'подзаголовок с именем действия');
 
     // 2. Вкладки со счётчиками и готовые карточки с мини-превью.
-    assert.equal(await tabs('ready').locator('.templates-count').innerText(), '5', 'пять готовых шаблонов');
+    assert.equal(await tabs('ready').locator('.templates-count').innerText(), '13', 'тринадцать готовых шаблонов');
     assert.equal(await tabs('mine').locator('.templates-count').innerText(), '0', 'своих пока нет');
     assert.equal(await tabs('groups').locator('.templates-count').innerText(), '0', 'групп пока нет');
-    assert.equal(await cards().count(), 5, 'карточки готовых шаблонов');
+    assert.equal(await cards().count(), 13, 'карточки готовых шаблонов');
     const speed = page.locator('.templates-card[data-template-id="speed-level"]');
     assert.equal(await speed.locator('.templates-preview-svg').count(), 1, 'у карточки есть SVG-превью');
     assert.equal(await speed.locator('.templates-preview-node').count(), 2, 'в превью две рамки узлов');
     assert.equal(await speed.locator('.templates-preview-link').count(), 1, 'в превью одна связь');
     assert.equal(await speed.locator('.templates-preview-node.cat-conditions').count(), 1, 'цвет категории «Условия»');
-    assert.equal(await speed.locator('.templates-preview-node.cat-character').count(), 1, 'цвет категории «Персонаж»');
+    assert.equal(await speed.locator('.templates-preview-node.cat-rules').count(), 1, 'цвет категории «Правила»');
     assert.match(await speed.innerText(), /готовый/, 'бейдж «готовый»');
     assert.equal(await speed.getByRole('button', { name: 'Удалить', exact: true }).count(), 0, 'готовый шаблон нельзя удалить');
 
@@ -86,7 +86,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal(await cards().count(), 0, 'ничего не найдено');
     assert.equal(await dialog.locator('[data-templates-empty]').innerText(), 'Ничего не найдено по запросу.', 'текст пустого поиска');
     await search.fill('');
-    assert.equal(await cards().count(), 5, 'фильтр сброшен');
+    assert.equal(await cards().count(), 13, 'фильтр сброшен');
 
     // 4. Вкладки «Мои» и «Группы»: пустые подсказки и переключение стрелками.
     await tabs('mine').click();
@@ -153,7 +153,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
 
     // 10. Вставка своего шаблона в новое действие и отмена вставки.
     await page.locator('.node-toolbar button.node-add[title="action.program"]').click();
-    assert.equal(await page.locator('.node-starters button').count(), 6, 'быстрые стартеры пустого действия: 5 встроенных и свой шаблон');
+    assert.equal(await page.locator('.node-starters button').count(), 14, 'быстрые стартеры пустого действия: 13 встроенных и свой шаблон');
     // В пустом действии сохранять нечего: кнопка недоступна, причина написана в форме.
     await page.getByRole('button', { name: 'Сохранить как шаблон', exact: true }).click();
     await dialog.waitFor();

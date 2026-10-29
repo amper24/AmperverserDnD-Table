@@ -1,4 +1,4 @@
-// Один настраиваемый узел «Бросок» (action.roll + roll_kind) и один узел «Логика» (logic.op + op):
+// Один настраиваемый узел «Бросок» (action.roll + kind) и один узел «Логика» (logic.op + op):
 // реестр отдаёт только абстрактные узлы, механики принимаются только графом v2.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -35,17 +35,17 @@ test('v1 не принимается, а v2-броски компилируют�
   assert.equal(M.validate({ version: 1, programs: [] }), 'Неподдерживаемая схема механик.');
   const kinds = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const nodes = [program];
-  kinds.forEach((kind, i) => nodes.push({ id: `r${i}`, type: 'action.roll', params: { block_id: `b${i}`, roll_kind: kind, dice: { count: 1, sides: 6, bonus: 0, stat: '' } }, position: { x: i, y: 0 } }));
+  kinds.forEach((kind, i) => nodes.push({ id: `r${i}`, type: 'action.roll', params: { block_id: `b${i}`, kind: kind, dice: { count: 1, sides: 6, bonus: 0, stat: '' } }, position: { x: i, y: 0 } }));
   const links = kinds.map((_, i) => link(i ? `r${i - 1}` : 'start', 'exec', `r${i}`, 'exec'));
   const graph = mech(nodes.slice(1), links);
   assert.equal(M.validate(graph), '');
   const blocks = plain(M.toLegacy(graph).programs[0].blocks);
   assert.deepEqual(blocks.map(b => b.kind), kinds);
-  assert.ok(blocks.every(b => b.roll_kind === undefined));
+  assert.ok(blocks.every(b => b.dice && !('block_id' in b)), 'параметры узла не протекают в блок');
 });
 
-test('roll_kind настраивается: один и тот же узел компилируется в разные блоки', () => {
-  const node = kind => mech([{ id: 'x', type: 'action.roll', params: { block_id: 'x', roll_kind: kind, dice: { count: 1, sides: 8, bonus: 0, stat: '' } } }], [link('start', 'exec', 'x', 'exec')]);
+test('kind настраивается: один и тот же узел компилируется в разные блоки', () => {
+  const node = kind => mech([{ id: 'x', type: 'action.roll', params: { block_id: 'x', kind: kind, dice: { count: 1, sides: 8, bonus: 0, stat: '' } } }], [link('start', 'exec', 'x', 'exec')]);
   for (const kind of R.ROLL_KINDS) {
     const graph = node(kind);
     assert.equal(M.validate(graph), '', kind);
@@ -77,8 +77,8 @@ test('logic.op исполняет И, ИЛИ и НЕ; неизвестная о�
 });
 
 test('заголовок карточки показывает выбранный режим настраиваемого узла', () => {
-  assert.equal(R.nodeTitle('action.roll', { roll_kind: 'attack' }), 'Бросок · Атака');
-  assert.equal(R.nodeTitle('action.roll', {}), 'Бросок · Свободный');
-  assert.equal(R.nodeTitle('logic.op', { op: 'not' }), 'Логика · НЕ');
-  assert.equal(R.nodeTitle('logic.op', { op: 'or' }), 'Логика · ИЛИ');
+  assert.equal(R.nodeTitle('action.roll', { kind: 'attack' }), 'Действие · Бросок · Атака');
+  assert.equal(R.nodeTitle('action.roll', {}), 'Действие · Бросок · Свободный');
+  assert.equal(R.nodeTitle('logic.op', { op: 'not' }), 'Данные · Логика · НЕ');
+  assert.equal(R.nodeTitle('logic.op', { op: 'or' }), 'Данные · Логика · ИЛИ');
 });

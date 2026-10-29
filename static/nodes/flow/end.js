@@ -4,6 +4,7 @@
   class FlowEnd extends GraphNode {
     static type = 'flow.end';
     static label = 'Конец';
+    static description = 'Конец действия: сюда сходится поток каждой ветви.';
     static group = 'Поток';
     static inputs = { exec: 'flow' };
     static outputs = {};

@@ -1555,8 +1555,8 @@ body.lu-open { overflow: hidden; }
 /* Node-based mechanics v2 editor. */
 .node-editor{border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:18px;background:var(--panel,var(--bg));text-align:left;overflow:hidden;
   /* Палитра редактора: цвета категорий узлов, типов значений и сетки холста (см. cat-* / socket-* ниже). */
-  --cat-data:#5b9bd5;--cat-conditions:#b47ad6;--cat-logic:#8f7de8;--cat-flow:#7f8da3;--cat-combat:#d4794f;
-  --cat-effects:#5aa98a;--cat-resources:#c8a24a;--cat-character:#4f9fae;--cat-groups:#9585c8;--cat-other:#7f8a99;
+  --cat-start:#7f8da3;--cat-actions:#d4794f;--cat-data:#5b9bd5;--cat-conditions:#b47ad6;
+  --cat-rules:#4f9fae;--cat-groups:#9585c8;--cat-other:#7f8a99;
   --socket-flow:#cfd8e3;--socket-bool:#e0736c;--socket-number:#7fc98e;--socket-dice:#6cc5ea;--socket-ability:#9aa8ff;
   --socket-text:#d8c27a;--socket-list:#86ccb9;--socket-table:#bfa4f2;--socket-choice:#e79ac6;--socket-effect:#b9ad97;
   --node-grid-minor:color-mix(in srgb,var(--border) 62%,transparent);--node-grid-major:color-mix(in srgb,var(--muted) 42%,transparent)}
@@ -1574,9 +1574,8 @@ body.lu-open { overflow: hidden; }
   background-size:100px 100px,100px 100px,20px 20px,20px 20px;background-position:0 0,0 0,0 0,0 0}
 /* Карточка в духе Blender: цветная полоска категории, шапка-градиент, скругления и тень. */
 .graph-node{position:absolute;z-index:2;width:260px;min-height:94px;--node-cat:var(--accent);border:1px solid color-mix(in srgb,var(--node-cat) 30%,var(--border));border-radius:10px;background:var(--panel,#fff);box-shadow:0 8px 18px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.3);user-select:none;touch-action:none}
-.graph-node.cat-data{--node-cat:var(--cat-data)}.graph-node.cat-conditions{--node-cat:var(--cat-conditions)}.graph-node.cat-logic{--node-cat:var(--cat-logic)}
-.graph-node.cat-flow{--node-cat:var(--cat-flow)}.graph-node.cat-combat{--node-cat:var(--cat-combat)}.graph-node.cat-effects{--node-cat:var(--cat-effects)}
-.graph-node.cat-resources{--node-cat:var(--cat-resources)}.graph-node.cat-character{--node-cat:var(--cat-character)}.graph-node.cat-groups{--node-cat:var(--cat-groups)}
+.graph-node.cat-start{--node-cat:var(--cat-start)}.graph-node.cat-actions{--node-cat:var(--cat-actions)}.graph-node.cat-data{--node-cat:var(--cat-data)}
+.graph-node.cat-conditions{--node-cat:var(--cat-conditions)}.graph-node.cat-rules{--node-cat:var(--cat-rules)}.graph-node.cat-groups{--node-cat:var(--cat-groups)}
 .graph-node.cat-other{--node-cat:var(--cat-other)}
 .graph-node.selected{outline:2px solid var(--accent);outline-offset:1px;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent),0 12px 26px rgba(0,0,0,.5)}
 .graph-node-head{display:flex;align-items:center;gap:7px;min-height:33px;padding:6px 8px 5px;border-bottom:1px solid color-mix(in srgb,var(--node-cat) 26%,var(--border));border-radius:9px 9px 0 0;cursor:grab;
@@ -1758,14 +1757,11 @@ body.lu-open { overflow: hidden; }
 .templates-preview-svg { display: block; width: 100%; height: 100%; }
 .templates-preview-link { stroke: color-mix(in srgb, var(--muted) 72%, transparent); stroke-width: 1.4; stroke-linecap: round; }
 .templates-preview-node { fill: color-mix(in srgb, var(--cat-other) 26%, var(--panel)); stroke: var(--cat-other); stroke-width: 1.4; }
+.templates-preview-node.cat-start { fill: color-mix(in srgb, var(--cat-start) 26%, var(--panel)); stroke: var(--cat-start); }
+.templates-preview-node.cat-actions { fill: color-mix(in srgb, var(--cat-actions) 26%, var(--panel)); stroke: var(--cat-actions); }
 .templates-preview-node.cat-data { fill: color-mix(in srgb, var(--cat-data) 26%, var(--panel)); stroke: var(--cat-data); }
 .templates-preview-node.cat-conditions { fill: color-mix(in srgb, var(--cat-conditions) 26%, var(--panel)); stroke: var(--cat-conditions); }
-.templates-preview-node.cat-logic { fill: color-mix(in srgb, var(--cat-logic) 26%, var(--panel)); stroke: var(--cat-logic); }
-.templates-preview-node.cat-flow { fill: color-mix(in srgb, var(--cat-flow) 26%, var(--panel)); stroke: var(--cat-flow); }
-.templates-preview-node.cat-combat { fill: color-mix(in srgb, var(--cat-combat) 26%, var(--panel)); stroke: var(--cat-combat); }
-.templates-preview-node.cat-effects { fill: color-mix(in srgb, var(--cat-effects) 26%, var(--panel)); stroke: var(--cat-effects); }
-.templates-preview-node.cat-resources { fill: color-mix(in srgb, var(--cat-resources) 26%, var(--panel)); stroke: var(--cat-resources); }
-.templates-preview-node.cat-character { fill: color-mix(in srgb, var(--cat-character) 26%, var(--panel)); stroke: var(--cat-character); }
+.templates-preview-node.cat-rules { fill: color-mix(in srgb, var(--cat-rules) 26%, var(--panel)); stroke: var(--cat-rules); }
 .templates-preview-node.cat-groups { fill: color-mix(in srgb, var(--cat-groups) 26%, var(--panel)); stroke: var(--cat-groups); }
 .templates-preview-empty { fill: none; stroke: var(--border); stroke-dasharray: 4 3; }
 .templates-card-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

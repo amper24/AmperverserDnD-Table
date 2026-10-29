@@ -109,7 +109,7 @@ test('броски монстров и кубики урона заклинан�
         const fields = compact([data.damage, data.damage_type, (data.properties || []).join(' '),
           data.category, data.desc].join(' '));
         for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
-          if (!(node.type === 'action.roll' && node.params.roll_kind === 'damage')) continue;
+          if (!(node.type === 'action.roll' && node.params.kind === 'damage')) continue;
           const roll = node.params.dice || {};
           if (!roll.count) continue;
           const base = `${roll.count}d${roll.sides}`;
@@ -128,7 +128,7 @@ test('броски монстров и кубики урона заклинан�
       if (row.category !== 'spell') continue;
       const description = compact(data.desc);
       for (const node of ((data.mechanics || {}).graph || {}).nodes || []) {
-        if (!(node.type === 'action.roll' && ['damage', 'roll'].includes(node.params.roll_kind || 'roll'))) continue;
+        if (!(node.type === 'action.roll' && ['damage', 'roll'].includes(node.params.kind || 'roll'))) continue;
         const roll = node.params.dice || {};
         if (!roll.count) continue;
         const base = `${roll.count}d${roll.sides}`;
@@ -157,7 +157,7 @@ test('заклинания: спасбросок цели — правило д�
       assert.equal(nodes.some(n => n.type === 'action.program' && String(n.params.name || '').startsWith(SAVE_PROGRAM)),
         false, `${row.slug}: осталась кнопка «${SAVE_PROGRAM}»`);
       assert.equal(nodes.some(n => n.type === 'action.roll' && n.params.dice && n.params.dice.sides === 20
-        && !n.params.dice.stat && !n.params.dice.bonus && (n.params.roll_kind || 'roll') === 'roll'),
+        && !n.params.dice.stat && !n.params.dice.bonus && (n.params.kind || 'roll') === 'roll'),
         false, `${row.slug}: у игрока остался бросок d20 спасброска`);
       assert.equal(nodes.some(n => n.type === 'action.spend' && n.params.resource === 'slot'),
         false, `${row.slug}: расход ячейки в графе спорит с учётом ячеек на листе`);

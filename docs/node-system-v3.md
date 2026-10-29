@@ -27,14 +27,40 @@
 
 ## Палитра v3
 
-| Категория | Узлы |
-|---|---|
-| Поток | `action.program` (trigger: use/passive), `flow.if`, `flow.end` |
-| Значения | `data.number`, `data.dice`, `data.stat`, `data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.sheet`, `data.result` |
-| Условия | `condition.context`, `condition.hit` |
-| Действия | `action.roll`, `action.field`, `action.spend`, `action.grant_item`, `action.manual` |
-| Правила | `rule.value`, `rule.list`, `rule.class`, `rule.manual` |
-| Группы | `group.instance`, `group.input`, `group.output` |
+Порядок категорий в меню — рабочий процесс: **Начало → Действия → Данные → Условия → Правила → Группы**.
+У каждого типа есть короткое описание одной строкой (подсказка в меню и на карточке).
+Заголовки карточек единообразны: `Действие · …`, `Данные · …`, `Условие · …`, `Правило · …`;
+у настраиваемых узлов после названия идёт выбранный вид (`Действие · Бросок · Атака`).
+
+| Тип | Назначение | Входы → выходы | Параметры |
+|---|---|---|---|
+| `action.program` | Начало действия и его кнопка | — → `exec` (flow) | `program_id`, `name`, `trigger` = use/passive, `style`, `feature_name`, `group`, `roll_only` |
+| `flow.if` | Ветвление потока по bool | `exec` (flow), `condition` (bool) → `then`/`else` (flow) | нет |
+| `flow.end` | Конец действия | `exec` (flow) → — | нет |
+| `action.roll` | Бросок: атака, урон, лечение, временные хиты, свободный | `exec`, `enabled` (bool), `condition` (bool), `dice` (dice) → `exec` | `kind` = roll/attack/damage/heal/temp_hp, `dice`, `dc`, `name`, `target`/`apply` (лечение, временные хиты), `damage_type` |
+| `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove; value: `field`, `amount`; formula: `field`, `value` |
+| `action.spend` | Расход ресурса | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/slot/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `slot_level`, `item_uid`, `tag` |
+| `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item`, `target` |
+| `action.manual` | Правило для мастера | `exec`, `enabled`, `condition` → `exec` | `text` |
+| `data.number` | Числовая константа | — → `value` (number) | `value` |
+| `data.dice` | Кость или формула | — → `value` (dice) | `value` = `{ count, sides, bonus, stat }` |
+| `data.stat` | Характеристика или навык | — → `value` (dice) | `id`, `mode` = bonus/score |
+| `data.math` | Арифметика | `a`, `b` (number) → `value` (number) | `op` = add/sub/mul/div/min/max |
+| `data.compare` | Сравнение чисел | `a`, `b` (number) → `value` (bool) | `op` = `>=`, `<=`, `>`, `<`, `=`, `!=` |
+| `dice.combine` | Сложение двух костей | `a`, `b` (dice) → `value` (dice) | нет |
+| `logic.op` | Логика И / ИЛИ / НЕ | `a`, `b` (bool) → `value` (bool) | `op` = and/or/not |
+| `data.boolean` | Логическая константа | — → `value` (bool) | `value` = true/false |
+| `data.result` | Результат последнего действия или программы | — → `value` (number) | `source` = last/ID программы, `field` = total/hit/applied/spent |
+| `data.sheet` | Числовое поле листа | — → `value` (number) | `field` — путь вида `hp.current`, `level`, `abilities.str` |
+| `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
+| `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
+| `rule.value` | Правило-значение | `enabled` (bool), `amount` (number) → `effect` | `kind` = ability/speed/hp/hit_die/asi/armor_formula + `ability`, `amount`, `value`, `formula`, `table` |
+| `rule.list` | Правило-список | `enabled`, `amount` (number) → `effect` | `kind` = languages/proficiencies/skill_proficiency/saving_throws/skills/spell_list/feature/class_features/equipment/equipment_choice + поля вида |
+| `rule.class` | Правило класса | `enabled` (bool) → `effect` | `kind` = class_progression/class_rules/spell_slots/spellcasting, `table`, `ability` |
+| `rule.manual` | Ручное правило пассивной программы | `enabled` (bool) → `effect` | `text` |
+| `group.instance` | Вызов повторно используемой группы | порты группы → порты группы | `group_id` |
+| `group.input` | Вход группы (внутренний) | — → `value` (тип сокета) | `socket_id` |
+| `group.output` | Выход группы (внутренний) | `value` (тип сокета) → — | `socket_id` |
 
 Отдельных узлов изменения состояния, показателя и параметра при создании больше нет — их
 заменяет один `action.field` с параметром `kind`; расход ресурса слит в `action.spend`;
@@ -42,7 +68,7 @@
 
 ### action.roll
 
-Бросок с видом `roll_kind` (roll / attack / damage / heal / temp_hp), кубиками, DC и
+Бросок с видом `kind` (roll / attack / damage / heal / temp_hp), кубиками, DC и
 режимом преимущества. Лечение и временные хиты применяются сразу; урон — это бросок,
 результат которого применяет ДМ (или `action.field` по его решению).
 
@@ -114,6 +140,32 @@ self / item / tag, `amount` и момент `trigger` = use / attack. Расхо
 Масштабирование: `data.math` с `slot_level` из контекста. Шаблоны заклинаний создают эти
 цепочки автоматически; данные SRD пересобираются на них.
 
+## Шаблоны
+
+Готовые шаблоны лежат в двух наборах и собираются только из узлов v3:
+
+- `static/presets/mechanic-templates.json` — полные графы (`action.program` → блоки → `flow.end`)
+  для библиотеки `Mechanics.templates(category)`;
+- `static/presets/graph-starters.json` — тела цепочек с `attach: true` для диалога «Шаблоны действий»:
+  вставка в пустое действие ставит цепочку между существующими «Началом» и «Концом».
+
+Новые шаблоны (появились вместе с унификацией палитры):
+
+| Шаблон | Цепочка |
+|---|---|
+| Атака и урон по результату | `action.roll` (attack) → `condition.hit` → `flow.if` → `action.roll` (damage) в ветке «да» |
+| Лечение при ранении | `data.sheet` (hp.current, hp.max) + `data.math` → `data.compare` (`<`) → `action.roll` (heal) с условием |
+| Спасбросок против СЛ | `action.roll` (roll с `dc`) → `data.result` (total) → `data.compare` с СЛ → `flow.if` → урон при провале |
+| Многоатака: два удара | два `action.roll` (attack) подряд |
+| Заряды посоха | `action.spend` (charges) → `action.roll` (damage) |
+| Кара: дополнительный урон | attack → `flow.if` (hit) → основной damage → дополнительный damage в той же ветке |
+| Аура: усиление по уровню | `condition.context` (level) → `action.field` (value: speed) с условием |
+| Скрытая атака | `condition.context` (level ≥ 3) → `action.roll` (damage 3d6) с условием |
+
+Все шаблоны проходят `Mechanics.validate`/`Mechanics.problems`, каждый граф содержит `flow.end`,
+а вставляемые варианты проверяются на отсутствие висячих exec-выходов после attach
+(`tests/template-presets.test.cjs`).
+
 ## Этапы
 
 1. Палитра v3: слияние узлов, условия `enabled`/`condition` у блоков, миграция данных —
@@ -122,5 +174,5 @@ self / item / tag, `amount` и момент `trigger` = use / attack. Расхо
    `condition_src` в плане (условие блока считается в рантайме; поток остаётся
    статическим) — сделано; выбор круга заклинания ещё впереди.
 3. Заклинания: круг, ячейка, upcast, концентрация, ритуал; пересборка заклинаний SRD.
-4. Шаблоны: 15+ автоматических механик в диалоге шаблонов; документация и упрощение
-   редактора (подсказки, пустые состояния, примеры).
+4. Шаблоны: 40 автоматических механик (включая 8 новых), единая палитра с описаниями и
+   подсказками — сделано; редактор продолжает упрощаться (пустые состояния, примеры).

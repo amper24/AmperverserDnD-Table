@@ -6,6 +6,7 @@
   class ConditionContext extends GraphNode {
     static type = 'condition.context';
     static label = 'Условие';
+    static description = 'Условие редакции, уровня, подкласса или выбранного варианта.';
     static group = 'Условия';
     static inputs = {};
     static outputs = { value: 'bool' };

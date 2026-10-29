@@ -20,7 +20,7 @@ const hitDamage = { id: 'dmg', kind: 'damage', when: 'hit', dice: { count: 1, si
 const missHeal = { id: 'heal', kind: 'heal', when: 'miss', target: 'self', apply: true, dice: { count: 0, sides: 6, bonus: 1, stat: '' } };
 const node = (id, type, params = {}) => ({ id, type, params, position: { x: 0, y: 0 } });
 const program = (id = 'p', name = 'Удар') => node(id, 'action.program', { program_id: id, name, trigger: 'use' });
-const roll = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, enabled: true, when: 'always', ...params });
+const roll = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, kind: kind, enabled: true, when: 'always', ...params });
 const wire = (from, fromSocket, to, toSocket) => ({ from: { node: from, socket: fromSocket }, to: { node: to, socket: toSocket } });
 // Хелпер достраивает «Конец» каждой оборванной ветви (как редактор): графы тестов остаются исполнimыми.
 const vault = (nodes, links) => {
@@ -48,11 +48,11 @@ test('v1 не принимается: ветка попадания задаёт
 test('the then and else outputs gate hit and miss blocks separately', () => {
   const graph = withEnds({ version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Выбор', trigger: 'use' } },
-    { id: 'a', type: 'action.roll', params: { block_id: 'atk', roll_kind: 'attack', enabled: true, dice: attackBlock.dice, dc: 3 } },
+    { id: 'a', type: 'action.roll', params: { block_id: 'atk', kind: 'attack', enabled: true, dice: attackBlock.dice, dc: 3 } },
     { id: 'h', type: 'condition.hit', params: {} },
     { id: 'f', type: 'flow.if', params: {} },
-    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: hitDamage.dice } },
-    { id: 'm', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', enabled: true, dice: missHeal.dice } },
+    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', kind: 'damage', enabled: true, dice: hitDamage.dice } },
+    { id: 'm', type: 'action.roll', params: { block_id: 'heal', kind: 'heal', enabled: true, dice: missHeal.dice } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'a', socket: 'exec' } },
     { from: { node: 'a', socket: 'exec' }, to: { node: 'f', socket: 'exec' } },
@@ -78,7 +78,7 @@ test('a hit condition wired to anything but a branch is saved but not executed',
   const graph = withEnds({ version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Удар', trigger: 'use' } },
     { id: 'h', type: 'condition.hit', params: {} },
-    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', roll_kind: 'damage', enabled: true, dice: hitDamage.dice } },
+    { id: 'd', type: 'action.roll', params: { block_id: 'dmg', kind: 'damage', enabled: true, dice: hitDamage.dice } },
   ], links: [
     { from: { node: 'p', socket: 'exec' }, to: { node: 'd', socket: 'exec' } },
     { from: { node: 'h', socket: 'value' }, to: { node: 'd', socket: 'enabled' } },
@@ -124,7 +124,7 @@ test('starter presets are data: every starter saves, the attached ones execute',
       nodes.push({ id, type: node.type, params, position: { x: node.x, y: node.y } });
     }
     for (const [from, out, to, into] of starter.links) links.push({ from: { node: ids2.get(from), socket: out }, to: { node: ids2.get(to), socket: into } });
-    const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
+    const head = starter.nodes.find(n => !starter.links.some(([, , to, into]) => to === n.key && into === 'exec'));
     if (starter.attach && head) links.push({ from: { node: 'program', socket: 'exec' }, to: { node: ids2.get(head.key), socket: 'exec' } });
     const graph = withEnds({ version: 2, graph: { nodes, links, frames: [], groups: [] } });
     assert.equal(M.validate(graph), '', `${starter.id}: saves`);
@@ -140,8 +140,8 @@ test('attack and damage are two separate starters with their own button styles',
   assert.ok(!P.item('graph_starter', 'attack-hit-damage'), 'the combined starter is gone');
   assert.equal(attack.style, 'attack');
   assert.equal(damage.style, 'damage');
-  assert.deepEqual(plain(attack.nodes.map(n => [n.type, n.params.roll_kind])), [['action.roll', 'attack']]);
-  assert.deepEqual(plain(damage.nodes.map(n => [n.type, n.params.roll_kind])), [['action.roll', 'damage']]);
+  assert.deepEqual(plain(attack.nodes.map(n => [n.type, n.params.kind])), [['action.roll', 'attack']]);
+  assert.deepEqual(plain(damage.nodes.map(n => [n.type, n.params.kind])), [['action.roll', 'damage']]);
 });
 
 test('weapon and spell templates split attack and damage into separate actions', () => {
@@ -156,7 +156,7 @@ test('weapon and spell templates split attack and damage into separate actions',
     const nodes = graphNodes.filter(node => node.type !== 'flow.end');
     assert.equal(nodes.length, 2, `${id}: program + one block`);
     assert.equal(nodes[1].type, 'action.roll', `${id}: single configurable roll node`);
-    assert.equal(nodes[1].params.roll_kind, type, `${id}: roll kind`);
+    assert.equal(nodes[1].params.kind, type, `${id}: roll kind`);
     assert.equal(nodes[0].params.style, style, `${id}: button style`);
   }
 });

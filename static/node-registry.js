@@ -14,7 +14,7 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   // Виды узлов действия (action.*, кроме action.program): один узел — один глагол.
   const ACTION_KINDS = ['roll', 'field', 'spend', 'grant_item', 'manual'];
-  // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
+  // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
   // Виды узла «Изменить поле»: состояние, показатель и параметр при создании (три бывших узла).
@@ -120,11 +120,11 @@
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
     return base;
   }
-  // Вид блока плана для узла действия: «Бросок» берёт вид из roll_kind, «Изменить поле» — из kind,
+  // Вид блока плана для узла действия: у «Броска» и «Изменить поле» его задаёт параметр kind,
   // «Расход ресурса» компилируется в прежний блок consume. Пустая строка — вид неизвестен.
   function blockKindOf(type, params) {
     const p = params || {};
-    if (type === 'action.roll') return ROLL_KINDS.includes(p.roll_kind) ? p.roll_kind : 'roll';
+    if (type === 'action.roll') return ROLL_KINDS.includes(p.kind) ? p.kind : 'roll';
     if (type === 'action.field') return FIELD_BLOCKS[p.kind] || '';
     if (type === 'action.spend') return 'consume';
     return type.startsWith('action.') ? type.slice(7) : '';
@@ -144,44 +144,49 @@
     return def && typeof def.blockParams === 'function' ? def.blockParams(params || {}) : { ...(params || {}) };
   }
   const nodeDef = type => NODE_DEFS[type];
-  // Заголовок карточки: настраиваемые узлы показывают выбранный режим («Бросок · Атака», «Логика · И»).
+  // Единый префикс заголовка по категории: «Действие · …», «Данные · …», «Условие · …», «Правило · …».
+  // «Начало» и «Конец» остаются короткими: их роль понятна по категории.
+  const TITLE_PREFIX = { actions: 'Действие', data: 'Данные', conditions: 'Условие', rules: 'Правило' };
+  // Заголовок карточки: категория и выбранный режим («Действие · Бросок · Атака», «Правило · Список · Языки»).
   function nodeTitle(type, params = null) {
     const def = NODE_DEFS[type];
     if (!def) return type;
     const p = params || {};
-    if (type === 'action.roll') return `${def.label} · ${ROLL_KIND_LABELS[p.roll_kind] || ROLL_KIND_LABELS.roll}`;
-    if (type === 'action.field') return `${def.label} · ${FIELD_KIND_LABELS[p.kind] || FIELD_KIND_LABELS.value}`;
-    if (type === 'rule.value') return `${def.label} · ${RULE_VALUE_KINDS[p.kind] || RULE_VALUE_KINDS.speed}`;
-    if (type === 'rule.list') return `${def.label} · ${RULE_LIST_KINDS[p.kind] || RULE_LIST_KINDS.languages}`;
-    if (type === 'rule.class') return `${def.label} · ${RULE_CLASS_KINDS[p.kind] || RULE_CLASS_KINDS.class_progression}`;
-    if (type === 'condition.context') return `${def.label} · ${CONTEXT_KINDS[p.kind] || CONTEXT_KINDS.level}`;
-    if (type === 'logic.op') return `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
-    return def.label;
+    let title = def.label;
+    if (type === 'action.roll') title = `${def.label} · ${ROLL_KIND_LABELS[p.kind] || ROLL_KIND_LABELS.roll}`;
+    else if (type === 'action.field') title = `${def.label} · ${FIELD_KIND_LABELS[p.kind] || FIELD_KIND_LABELS.value}`;
+    else if (type === 'rule.value') title = `${def.label} · ${RULE_VALUE_KINDS[p.kind] || RULE_VALUE_KINDS.speed}`;
+    else if (type === 'rule.list') title = `${def.label} · ${RULE_LIST_KINDS[p.kind] || RULE_LIST_KINDS.languages}`;
+    else if (type === 'rule.class') title = `${def.label} · ${RULE_CLASS_KINDS[p.kind] || RULE_CLASS_KINDS.class_progression}`;
+    else if (type === 'condition.context') title = `${def.label} · ${CONTEXT_KINDS[p.kind] || CONTEXT_KINDS.level}`;
+    else if (type === 'logic.op') title = `${def.label} · ${LOGIC_OP_LABELS[p.op] || LOGIC_OP_LABELS.and}`;
+    // «Если» и «Конец» — элементы потока, а не действия: их короткие имена понятны без префикса.
+    if (type === 'flow.if' || type === 'flow.end') return title;
+    const prefix = TITLE_PREFIX[categoryOf(type).id];
+    return prefix && !title.startsWith(prefix) ? `${prefix} · ${title}` : title;
   }
-  // Категории меню (порядок показа). Узел попадает в первую подходящую категорию.
+  // Категории меню (порядок показа = рабочий процесс: начало → действия → данные → условия → правила → группы).
+  // Узел попадает в первую подходящую категорию.
   const CATEGORIES = [
-    { id: 'data', title: 'Данные', match: type => type.startsWith('data.') || type === 'dice.combine' },
+    { id: 'start', title: 'Начало', match: type => type === 'action.program' },
+    { id: 'actions', title: 'Действия', match: type => type.startsWith('action.') || type === 'flow.if' || type === 'flow.end' },
+    { id: 'data', title: 'Данные', match: type => type.startsWith('data.') || type === 'dice.combine' || type === 'logic.op' },
     { id: 'conditions', title: 'Условия', match: type => type.startsWith('condition.') },
-    { id: 'logic', title: 'Логика', match: type => type.startsWith('logic.') },
-    { id: 'flow', title: 'Поток управления', match: type => type.startsWith('flow.') || type === 'action.program' },
-    { id: 'combat', title: 'Броски', match: type => type === 'action.roll' },
-    { id: 'effects', title: 'Эффекты', match: type => ['action.field', 'action.grant_item'].includes(type) },
-    { id: 'resources', title: 'Ресурсы', match: type => type === 'action.spend' },
-    { id: 'character', title: 'Персонаж', match: type => type.startsWith('rule.') },
+    { id: 'rules', title: 'Правила', match: type => type.startsWith('rule.') },
     { id: 'groups', title: 'Группы', match: type => type.startsWith('group.') },
-    { id: 'other', title: 'Прочее', match: type => type.startsWith('action.') },
   ];
   const INTERNAL = new Set(['group.input', 'group.output']);
-  const categoryOf = type => (CATEGORIES.find(c => c.id !== 'other' && c.match(type)) || CATEGORIES[CATEGORIES.length - 1]);
+  const categoryOf = type => CATEGORIES.find(c => c.match(type)) || CATEGORIES[2];
   // Сокеты совместимы, только если типы совпадают: это же правило проверяет движок (validateGraph).
   const sameType = (fromType, toType) => Boolean(fromType) && fromType === toType;
   // Каталог для меню: категории с узлами, внутренние узлы групп не показываются. Псевдонимы в меню не попадают.
+  // description — короткая подсказка для меню (одна строка).
   function catalog(query = '') {
     const q = String(query).trim().toLocaleLowerCase();
     const items = Object.entries(NODE_DEFS)
       .filter(([type]) => !INTERNAL.has(type))
-      .map(([type, def]) => ({ type, label: def.label, category: categoryOf(type).id, categoryTitle: categoryOf(type).title }))
-      .filter(item => !q || `${item.type} ${item.label} ${item.categoryTitle}`.toLocaleLowerCase().includes(q));
+      .map(([type, def]) => ({ type, label: def.label, description: def.description || '', category: categoryOf(type).id, categoryTitle: categoryOf(type).title }))
+      .filter(item => !q || `${item.type} ${item.label} ${item.description} ${item.categoryTitle}`.toLocaleLowerCase().includes(q));
     return CATEGORIES.map(c => ({ id: c.id, title: c.title, items: items.filter(item => item.category === c.id).sort((a, b) => a.label.localeCompare(b.label, 'ru')) }))
       .filter(section => section.items.length);
   }

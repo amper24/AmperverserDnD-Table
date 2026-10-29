@@ -4,6 +4,7 @@
   class FlowIf extends GraphNode {
     static type = 'flow.if';
     static label = 'Если';
+    static description = 'Ветвление: продолжает поток по «да» или «нет».';
     static group = 'Поток';
     static inputs = { exec: 'flow', condition: 'bool' };
     static outputs = { then: 'flow', else: 'flow' };

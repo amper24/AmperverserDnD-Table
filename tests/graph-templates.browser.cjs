@@ -24,7 +24,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
         nodes: [
           { id: 'potion', type: 'action.program', params: { program_id: 'potion', name: 'Выпить зелье', trigger: 'use' }, position: { x: 60, y: 70 } },
           { id: 'consume', type: 'action.spend', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, trigger: 'use', when: 'always', enabled: true }, position: { x: 330, y: 70 } },
-          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
+          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
         ],
         links: [
           { from: { node: 'potion', socket: 'exec' }, to: { node: 'consume', socket: 'exec' } },
@@ -95,8 +95,38 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog', { name: 'Шаблоны действий' }).count(), 0, 'Esc закрывает диалог');
 
+    // 6. Новые готовые шаблоны вставляются в пустое действие и не ломают «Начало → Конец».
+    const newTemplates = [
+      ['attack-damage-result', 'Атака и урон по результату'],
+      ['heal-when-hurt', 'Лечение при ранении'],
+      ['save-dc-damage', 'Спасбросок против СЛ'],
+      ['multiattack-two', 'Многоатака: два удара'],
+      ['staff-charges', 'Заряды посоха'],
+      ['smite-extra', 'Кара: дополнительный урон'],
+      ['aura-buff', 'Аура: усиление по уровню'],
+      ['sneak-attack', 'Скрытая атака'],
+    ];
+    for (const [id, name] of newTemplates) {
+      await page.locator('.node-toolbar button.node-add[title="action.program"]').click();
+      await page.getByRole('button', { name: 'Шаблоны действий', exact: true }).click();
+      const tplDialog = page.getByRole('dialog', { name: 'Шаблоны действий' });
+      await tplDialog.waitFor();
+      const readyCard = tplDialog.locator(`.templates-card[data-template-id="${id}"]`);
+      await readyCard.waitFor();
+      assert.match(await readyCard.innerText(), new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${id}: карточка шаблона`);
+      await readyCard.getByRole('button', { name: 'Вставить', exact: true }).click();
+      await tplDialog.waitFor({ state: 'detached' });
+      const problems = await page.evaluate(() => window.Mechanics.problems({ version: 2, graph: document.querySelector('.node-editor').getGraph() }));
+      assert.deepEqual(problems, [], `${id}: поток завершён после вставки в пустое действие`);
+    }
+    const flowCounts = await page.evaluate(() => {
+      const nodes = document.querySelector('.node-editor').getGraph().nodes;
+      return { programs: nodes.filter(n => n.type === 'action.program').length, ends: nodes.filter(n => n.type === 'flow.end').length };
+    });
+    assert.equal(flowCounts.ends, flowCounts.programs, 'у каждого действия ровно один «Конец»');
+
     assert.deepEqual(errors, [], 'страница без ошибок');
-    console.log('PASS graph templates: end node on the quick panel, single end per action, save/insert/delete own template');
+    console.log('PASS graph templates: end node on the quick panel, single end per action, save/insert/delete own template, 8 new starters attach');
   } finally {
     await browser.close();
   }

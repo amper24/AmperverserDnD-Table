@@ -36,7 +36,7 @@ const MY_SET = {
     // Диалог наборов поверх окна редактора предмета: ищем его по заголовку.
     const dialog = () => page.locator('.modal', { has: page.locator('h2', { hasText: 'Наборы данных' }) });
     const before = await starterButtons().count();
-    assert.equal(before, 5, 'встроенные стартовые графы на месте');
+    assert.equal(before, 13, 'встроенные стартовые графы на месте');
 
     // 1. Открываем диалог из редактора и импортируем свой набор текстом.
     await page.locator('button[data-action="presets"]').click();

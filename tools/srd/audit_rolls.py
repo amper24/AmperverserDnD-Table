@@ -7,7 +7,7 @@
 
 * монстры: бонус атаки `1d20+N` и кубики урона `NdM+K` из `data.actions_roll` ищутся в русском
   тексте умений записи («Рукопашная атака: +9», «14 (2к8 + 5) Звукового урона»);
-* заклинания: кубики узлов `action.roll` (roll_kind `damage` и `roll` — урон и лечение) ищутся в описании
+* заклинания: кубики узлов `action.roll` (kind `damage` и `roll` — урон и лечение) ищутся в описании
   заклинания («8к6 урона огнём»); отдельные броски спасброска (`1d20`) не проверяются — их
   в описании и не должно быть;
 * с `--src <каталог с дампом>` те же броски сверяются с официальным английским текстом:
@@ -129,7 +129,7 @@ def spell_dice(rows, problems, report):
         description = compact(row['data'].get('desc'))
         for node in ((row['data'].get('mechanics') or {}).get('graph') or {}).get('nodes', []):
             params = node.get('params') or {}
-            if not (node['type'] == 'action.roll' and (params.get('roll_kind') or 'roll') in ('damage', 'roll')):
+            if not (node['type'] == 'action.roll' and (params.get('kind') or 'roll') in ('damage', 'roll')):
                 continue
             dice = params.get('dice') or {}
             if not dice.get('count'):
@@ -162,7 +162,7 @@ def item_dice(rows, problems, report):
                                    data.get('desc') or '']))
         for node in ((data.get('mechanics') or {}).get('graph') or {}).get('nodes', []):
             params = node.get('params') or {}
-            if not (node['type'] == 'action.roll' and params.get('roll_kind') == 'damage'):
+            if not (node['type'] == 'action.roll' and params.get('kind') == 'damage'):
                 continue
             dice = params.get('dice') or {}
             if not dice.get('count'):
@@ -201,7 +201,7 @@ def dump_spells(src, edition, problems, report):
         text = compact(' '.join(part for part in parts if part))
         for node in ((row['data'].get('mechanics') or {}).get('graph') or {}).get('nodes', []):
             params = node.get('params') or {}
-            if not (node['type'] == 'action.roll' and (params.get('roll_kind') or 'roll') in ('damage', 'roll')):
+            if not (node['type'] == 'action.roll' and (params.get('kind') or 'roll') in ('damage', 'roll')):
                 continue
             dice = params.get('dice') or {}
             if not dice.get('count'):

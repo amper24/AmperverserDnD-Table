@@ -5,6 +5,7 @@
   class LogicOp extends GraphNode {
     static type = 'logic.op';
     static label = 'Логика';
+    static description = 'Логика: И, ИЛИ, НЕ для булевых значений.';
     static group = 'Логика';
     static inputs = { a: 'bool', b: 'bool' };
     static outputs = { value: 'bool' };

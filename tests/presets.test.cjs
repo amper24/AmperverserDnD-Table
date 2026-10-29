@@ -22,7 +22,7 @@ const set = (items, extra = {}) => ({ kind: 'graph_starter', id: 'user.' + Math.
 test('встроенные наборы загружаются с диска по index.json', async () => {
   const P = await fresh();
   assert.equal(P.loaded, true);
-  assert.equal(P.items('graph_starter').length, 5);
+  assert.equal(P.items('graph_starter').length, 13);
   assert.deepEqual(plain(P.items('item_preset').map(i => i.id)), ['weapon', 'armor', 'consumable', 'magic', 'gear', 'blank']);
   assert.deepEqual(plain(P.items('spell_preset').map(i => i.id)), ['cantrip', 'spell1', 'spell3', 'ritual', 'blank']);
   for (const ed of ['2014', '2024']) {

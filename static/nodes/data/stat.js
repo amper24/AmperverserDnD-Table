@@ -5,6 +5,7 @@
   class DataStat extends GraphNode {
     static type = 'data.stat';
     static label = 'Характеристика / навык';
+    static description = 'Характеристика или навык: бонус либо значение.';
     static group = 'Данные';
     static inputs = {};
     static outputs = { value: 'dice' };

@@ -23,7 +23,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
         nodes: [
           { id: 'potion', type: 'action.program', params: { program_id: 'potion', name: 'Выпить зелье', trigger: 'use' }, position: { x: 60, y: 70 } },
           { id: 'consume', type: 'action.spend', params: { block_id: 'consume', resource: 'quantity', source: 'self', amount: 1, trigger: 'use', when: 'always', enabled: true }, position: { x: 330, y: 70 } },
-          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', roll_kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
+          { id: 'heal', type: 'action.roll', params: { block_id: 'heal', kind: 'heal', dice: { count: 2, sides: 4, bonus: 2, stat: '' }, when: 'always', enabled: true }, position: { x: 590, y: 70 } },
           { id: 'vial', type: 'action.grant_item', params: { block_id: 'vial', item: { name: 'Пустой флакон', type: 'gear', qty: 1 }, amount: 1, when: 'always', enabled: true }, position: { x: 850, y: 70 } },
           { id: 'end', type: 'flow.end', params: {}, position: { x: 1110, y: 70 } },
         ],

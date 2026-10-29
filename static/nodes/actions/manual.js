@@ -4,6 +4,7 @@
   class ActionManual extends GraphNode {
     static type = 'action.manual';
     static label = window.Mechanics.TYPES.manual?.[0] || 'manual';
+    static description = 'Правило для мастера: текст без автоматических эффектов.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };
     static outputs = { exec: 'flow' };

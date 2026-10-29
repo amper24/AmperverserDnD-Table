@@ -4,6 +4,7 @@
   class GroupInstance extends GraphNode {
     static type = 'group.instance';
     static label = 'Группа';
+    static description = 'Вызов повторно используемой группы узлов.';
     static group = 'Группы';
     static inputs = {};
     static outputs = {};

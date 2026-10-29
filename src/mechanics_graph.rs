@@ -24,7 +24,7 @@ const FIELD_BLOCKS: &[(&str, &str)] = &[("status", "condition"), ("value", "adju
 // Допустимые поля листа: те же списки, что в static/node-registry.js (FIELD_VALUE_FIELDS / FIELD_FORMULA_FIELDS).
 const VALUE_FIELDS: &[&str] = &["speed", "initiative_bonus", "currency.gp", "currency.sp", "hp.max", "abilities.str", "abilities.dex", "abilities.con", "abilities.int", "abilities.wis", "abilities.cha"];
 const FORMULA_FIELDS: &[&str] = &["speed", "hit_die", "spellcasting", "saves", "skills", "languages", "armor", "weapons", "unarmored_defense", "asi.str", "asi.dex", "asi.con", "asi.int", "asi.wis", "asi.cha"];
-// Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр roll_kind выбирает смысл броска.
+// Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
 const ROLL_KINDS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Операции настраиваемого узла «Логика» (logic.op, параметр op) — как LOGIC_OPS в static/node-registry.js.
 const LOGIC_OPS: &[&str] = &["and", "or", "not"];
@@ -174,7 +174,7 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
         // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
         "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
         "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or или not.")),
-        "action.roll" if p.get("roll_kind").is_some() && !ROLL_KINDS.contains(&p["roll_kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
+        "action.roll" if p.get("kind").is_some() && !ROLL_KINDS.contains(&p["kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
         "action.field" => {
             let field_kind = p["kind"].as_str().unwrap_or("");
             if !FIELD_KINDS.contains(&field_kind) { return Err(bad("Изменить поле: вид status, value или formula.")); }
@@ -766,10 +766,10 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             }
             let mut block = current["params"].as_object().cloned().unwrap_or_default();
             let mut kind = current["type"].as_str().unwrap_or("").strip_prefix("action.").unwrap_or("").to_string();
-            // Вид блока плана: у «Броска» его задаёт roll_kind, у «Изменить поле» — kind,
+            // Вид блока плана: у «Броска» и «Изменить поле» — параметр kind,
             // «Расход ресурса» компилируется в прежний блок consume (как blockKindOf в клиенте).
             if kind == "roll" {
-                if let Some(requested) = block.remove("roll_kind").and_then(|requested| requested.as_str().map(str::to_string)) {
+                if let Some(requested) = block.remove("kind").and_then(|requested| requested.as_str().map(str::to_string)) {
                     if ROLL_KINDS.contains(&requested.as_str()) { kind = requested; }
                 }
             } else if kind == "spend" {
@@ -871,10 +871,10 @@ mod hit_gate_tests {
     fn hit_chain() -> Value {
         json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
-            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}, "dc": 3}},
             {"id": "h", "type": "condition.hit", "params": {}},
             {"id": "f", "type": "flow.if", "params": {}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}},
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "kind": "damage", "enabled": true, "dice": {"count": 0, "sides": 6, "bonus": 2, "stat": ""}}},
             {"id": "e", "type": "flow.end", "params": {}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
@@ -886,13 +886,13 @@ mod hit_gate_tests {
         ], "frames": [], "groups": []}})
     }
 
-    /// Настраиваемый узел «Бросок»: roll_kind задаёт вид блока v1, сам параметр в блок не попадает.
+    /// Настраиваемый узел «Бросок»: kind задаёт вид блока v1 и не остаётся лишним параметром.
     #[test]
-    fn configurable_roll_node_compiles_roll_kind_into_the_block_kind() {
+    fn configurable_roll_node_compiles_kind_param_into_the_block_kind() {
         let graph = json!({"version": 2, "origin": "test", "graph": {"nodes": [
             {"id": "p", "type": "action.program", "params": {"program_id": "use", "name": "Удар", "trigger": "use"}},
-            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "roll_kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}}},
-            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "roll_kind": "damage", "enabled": true, "dice": {"count": 1, "sides": 6, "bonus": 0, "stat": ""}}},
+            {"id": "a", "type": "action.roll", "params": {"block_id": "atk", "kind": "attack", "enabled": true, "dice": {"count": 0, "sides": 20, "bonus": 5, "stat": ""}}},
+            {"id": "d", "type": "action.roll", "params": {"block_id": "dmg", "kind": "damage", "enabled": true, "dice": {"count": 1, "sides": 6, "bonus": 0, "stat": ""}}},
             {"id": "e", "type": "flow.end", "params": {}}
         ], "links": [
             {"from": {"node": "p", "socket": "exec"}, "to": {"node": "a", "socket": "exec"}},
@@ -904,10 +904,10 @@ mod hit_gate_tests {
         let blocks = v1["programs"][0]["blocks"].as_array().unwrap();
         assert_eq!(blocks[0]["kind"], "attack");
         assert_eq!(blocks[1]["kind"], "damage");
-        assert!(blocks.iter().all(|block| block.get("roll_kind").is_none()));
+        assert!(blocks.iter().all(|block| block.get("dice").is_some()));
         // Неизвестный вид броска отклоняется при сохранении.
         let mut bad_graph = graph.clone();
-        bad_graph["graph"]["nodes"][1]["params"]["roll_kind"] = json!("save");
+        bad_graph["graph"]["nodes"][1]["params"]["kind"] = json!("save");
         assert!(validate(&bad_graph).is_err());
     }
 

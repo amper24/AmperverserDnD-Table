@@ -17,8 +17,8 @@ const wire=(from,fromSocket,to,toSocket)=>({from:{node:from,socket:fromSocket},t
 test('dice composer round trips healing without proficiency',()=>{assert.deepEqual(plain(M.dice('2d8+@spell_mod')),{count:2,sides:8,bonus:0,stat:'spell_mod'});assert.equal(M.expression(M.dice('2d8+@spell_mod')),'2d8+@spell_mod');assert.equal(M.dice('2d20kh1+@prof').advanced,'2d20kh1+@prof');});
 test('each use program is one button: attack and damage in one program are a single chain, not two buttons',()=>{
   ctx.window.SHEET_CTX={};
-  const attack=v2node('a','action.roll',{block_id:'a',roll_kind:'attack',dice:M.dice('d20+5')});
-  const damage=v2node('d','action.roll',{block_id:'d',roll_kind:'damage',dice:M.dice('1d8+3')});
+  const attack=v2node('a','action.roll',{block_id:'a',kind:'attack',dice:M.dice('d20+5')});
+  const damage=v2node('d','action.roll',{block_id:'d',kind:'damage',dice:M.dice('1d8+3')});
   const buttons=root=>{const all=[];const visit=n=>{if(!n||typeof n!=='object')return;if(n.tag==='button')all.push(n);(n.children||[]).forEach(visit);};visit(root);return all;};
   const pure=M.buttons({mechanics:graphOf([program('p','Удар'),attack,damage],[wire('p','exec','a','exec'),wire('a','exec','d','exec')])});
   assert.equal(buttons(pure).length,1);
@@ -89,7 +89,7 @@ test('condition=false skips the block and the flow continues; true runs it',()=>
   assert.deepEqual(plain(M.toLegacy(build(true)).programs[0].blocks.map(block=>block.kind)),['adjust','manual'],'включённый блок выполняется');
 });
 test('advanced dice formulas are validated at save time, including stat variables',()=>{
-  const damage=v2node('d','action.roll',{block_id:'d',roll_kind:'damage',dice:{...M.dice('2d6'),advanced:'2d6+@str'}});
+  const damage=v2node('d','action.roll',{block_id:'d',kind:'damage',dice:{...M.dice('2d6'),advanced:'2d6+@str'}});
   const m=graphOf([program(),damage],[wire('p','exec','d','exec')]);
   assert.equal(M.validate(m),'');
   damage.params.dice.advanced='2d6++4'; assert.match(M.validate(m),/формула кубов/i);
@@ -245,7 +245,7 @@ test('blocks never target another character: damage is a roll, a save is a GM ru
   assert.equal(c.target,'self');
   // Спасбросок цели — обычное ручное правило узла, а не автоматически созданный блок.
   const rule='Спасбросок (ЛОВ): бросает цель или ДМ, а не игрок. СЛ 15 из записи.';
-  const m=graphOf([program('p','Пламя'),v2node('s','action.manual',{block_id:'s',text:rule}),v2node('d','action.roll',{block_id:'d',roll_kind:'damage',dice:M.dice('8d6')})],
+  const m=graphOf([program('p','Пламя'),v2node('s','action.manual',{block_id:'s',text:rule}),v2node('d','action.roll',{block_id:'d',kind:'damage',dice:M.dice('8d6')})],
     [wire('p','exec','s','exec'),wire('s','exec','d','exec')]);
   assert.equal(M.validate(m),'');
   const blocks=plain(M.toLegacy(m).programs[0].blocks);

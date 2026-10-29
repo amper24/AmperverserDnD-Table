@@ -11,7 +11,7 @@ window.NodeMenu = (() => {
   function addSections(query = '') {
     return window.NodeRegistry.catalog(query).map(section => ({
       title: section.title,
-      items: section.items.map(item => ({ label: item.label, hint: item.type, run: () => ({ type: item.type }) })),
+      items: section.items.map(item => ({ label: item.label, hint: item.type, title: item.description, run: () => ({ type: item.type }) })),
     }));
   }
 
@@ -19,7 +19,7 @@ window.NodeMenu = (() => {
   function catalogCategories() {
     return window.NodeRegistry.catalog('').map(section => ({
       label: section.title,
-      children: section.items.map(item => ({ label: item.label, hint: item.type, run: () => ({ type: item.type }) })),
+      children: section.items.map(item => ({ label: item.label, hint: item.type, title: item.description, run: () => ({ type: item.type }) })),
     }));
   }
 
@@ -77,6 +77,7 @@ window.NodeMenu = (() => {
         button.className = 'node-menu-item';
         button.setAttribute('role', 'menuitem');
         button.textContent = item.label;
+        if (item.title) button.title = item.title;
         if (item.hint) { const hint = document.createElement('small'); hint.textContent = item.hint; button.append(hint); }
         button.addEventListener('click', () => { const result = item.run?.(); close(); onPick?.(result); });
         return { el: button, first: { item, button } };

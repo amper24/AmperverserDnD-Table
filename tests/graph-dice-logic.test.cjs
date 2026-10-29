@@ -15,7 +15,7 @@ const R = ctx.window.NodeRegistry;
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const node = (id, type, params = {}) => ({ id, type, params: { ...plain(R.NODE_DEFS[type]?.defaults || {}), ...params } });
-const actionNode = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, roll_kind: kind, ...params });
+const actionNode = (id, kind, params = {}) => node(id, 'action.roll', { block_id: id, kind: kind, ...params });
 const link = (fromNode, fromSocket, toNode, toSocket) => ({ from: { node: fromNode, socket: fromSocket }, to: { node: toNode, socket: toSocket } });
 const start = node('start', 'action.program', { program_id: 'p', name: 'Тест', trigger: 'use' });
 // Хелпер достраивает «Конец» действию (как редактор): иначе поток не исполняется.

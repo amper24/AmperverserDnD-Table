@@ -66,7 +66,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.node-menu').waitFor();
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
-    for (const title of ['Данные', 'Условия', 'Логика', 'Поток управления', 'Броски', 'Эффекты', 'Ресурсы', 'Персонаж']) assert.ok(titles.includes(title), `категория «${title}»`);
+    assert.deepEqual(titles, ['Начало', 'Действия', 'Данные', 'Условия', 'Правила', 'Группы'], 'категории идут рабочим процессом');
     await page.locator('.node-menu-search').fill('условие');
     const filtered = await page.locator('.node-menu-title').allTextContents();
     assert.deepEqual(filtered, ['Условия'], 'поиск оставляет подходящую категорию');

@@ -63,7 +63,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     await page.locator('.node-editor').waitFor();
     // Стартовые графы показываются в пустом действии: у новой записи сначала нет ни одного.
     await page.locator('button[data-action="new-action"]').click();
-    assert.equal(await page.locator('.node-starters button').count(), 5, 'blank action (only start and end) offers the starters from the presets set');
+    assert.equal(await page.locator('.node-starters button').count(), 13, 'blank action (only start and end) offers the starters from the presets set');
     const base = await page.locator('.graph-node').count();
     await page.locator('.node-starters button', { hasText: 'Скорость с уровня' }).click();
     assert.equal(await page.locator('.graph-node').count(), base + 2, 'speed starter adds two nodes');

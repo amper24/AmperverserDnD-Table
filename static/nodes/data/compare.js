@@ -5,6 +5,7 @@
   class DataCompare extends GraphNode {
     static type = 'data.compare';
     static label = 'Сравнить числа';
+    static description = 'Сравнить два числа и получить «да» или «нет».';
     static group = 'Данные';
     static inputs = { a: 'number', b: 'number' };
     static outputs = { value: 'bool' };

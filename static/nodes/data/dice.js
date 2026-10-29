@@ -6,6 +6,7 @@
   class DataDice extends GraphNode {
     static type = 'data.dice';
     static label = 'Кость';
+    static description = 'Кость или формула вида 1d20+@atk.';
     static group = 'Данные';
     static inputs = {};
     static outputs = { value: 'dice' };

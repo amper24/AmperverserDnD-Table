@@ -99,7 +99,7 @@ try:
         nodes = [
             node('program', 'action.program', dict(program_id='drink', name='Drink', trigger='use')),
             node('cost', 'action.spend', dict(block_id='cost', amount=1, source='self', resource='quantity', trigger='use')),
-            node('heal', 'action.roll', dict(block_id='heal', roll_kind='heal', dice=dict(count=0, sides=6, bonus=7, stat=''))),
+            node('heal', 'action.roll', dict(block_id='heal', kind='heal', dice=dict(count=0, sides=6, bonus=7, stat=''))),
             node('vial', 'action.grant_item', dict(block_id='vial', amount=1, item=dict(name='Empty vial', type='gear'))),
             node('end', 'flow.end', {}),
         ]

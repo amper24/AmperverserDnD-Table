@@ -4,6 +4,7 @@
   class ConditionHit extends GraphNode {
     static type = 'condition.hit';
     static label = 'Попадание атаки';
+    static description = 'Попадание предыдущей атаки: «да» или «нет».';
     static group = 'Условия';
     static inputs = {};
     static outputs = { value: 'bool' };

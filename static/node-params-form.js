@@ -45,7 +45,7 @@
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
     'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
     // Один настраиваемый узел всех бросков: тип броска выбирается выпадающим списком прямо на карточке.
-    'action.roll': { roll_kind: [
+    'action.roll': { kind: [
       { value: 'roll', label: 'Свободный бросок' }, { value: 'attack', label: 'Бросок атаки' }, { value: 'damage', label: 'Урон' },
       { value: 'heal', label: 'Лечение' }, { value: 'temp_hp', label: 'Временные хиты' },
     ] },
@@ -95,7 +95,7 @@
     feature_name: 'Имя умения', item: 'Предмет', dice: 'Кость', enabled: 'Включено', minimum: 'Минимум', choice: 'Выбор',
     subclass: 'Подкласс', level: 'Уровень', edition: 'Редакция', hp: 'Хиты', program_id: 'ID программы', block_id: 'ID блока',
     choices: 'Выборы', spell: 'Заклинание', mode_label: 'Режим', prompt: 'Подсказка', description: 'Описание',
-    roll_kind: 'Тип броска', op: 'Операция', damage_type: 'Тип урона', grip: 'Хват', apply: 'Применить к листу',
+    kind: 'Тип', op: 'Операция', damage_type: 'Тип урона', grip: 'Хват', apply: 'Применить к листу',
     // Параметры узлов правил и таблиц (чтобы не показывать сырые английские ключи).
     items: 'Предметы', title: 'Название', gold: 'Золото', qty: 'Количество', type: 'Тип',
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',

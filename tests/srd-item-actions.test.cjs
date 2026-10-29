@@ -29,8 +29,8 @@ for (const edition of ['2014', '2024']) {
       assert.equal(damage?.params.style, 'damage', `${row.slug}: damage style`);
       const first = id => g.links.find(l => l.from.node === id && l.from.socket === 'exec')?.to.node;
       const typeOf = id => g.nodes.find(n => n.id === id).type;
-      // Все броски — один настраиваемый узел action.roll; смысл задаёт параметр roll_kind.
-      const kindOf = id => { const n = g.nodes.find(x => x.id === id); return n.type === 'action.roll' ? `roll:${n.params.roll_kind || 'roll'}` : n.type; };
+      // Все броски — один настраиваемый узел action.roll; смысл задаёт параметр kind.
+      const kindOf = id => { const n = g.nodes.find(x => x.id === id); return n.type === 'action.roll' ? `roll:${n.params.kind || 'roll'}` : n.type; };
       // Цепочка действия заканчивается узлом flow.end: он не блок и в проверку вида не входит.
       const chainOf = id => {
         const chain = [];

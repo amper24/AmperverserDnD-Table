@@ -5,6 +5,7 @@
   class RuleClass extends GraphNode {
     static type = 'rule.class';
     static label = 'Класс';
+    static description = 'Правило класса: прогрессия, правила, ячейки, заклинательная характеристика.';
     static group = 'Правила персонажа';
     static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };

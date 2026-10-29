@@ -5,6 +5,7 @@
   class DataMath extends GraphNode {
     static type = 'data.math';
     static label = 'Вычислить';
+    static description = 'Арифметика: сложить, вычесть, умножить, разделить, минимум, максимум.';
     static group = 'Данные';
     static inputs = { a: 'number', b: 'number' };
     static outputs = { value: 'number' };

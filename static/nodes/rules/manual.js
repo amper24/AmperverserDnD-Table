@@ -4,6 +4,7 @@
   class RuleManual extends GraphNode {
     static type = 'rule.manual';
     static label = 'Ручное правило';
+    static description = 'Ручное правило пассивной программы.';
     static group = 'Правила персонажа';
     static inputs = { enabled: 'bool' };
     static outputs = { effect: 'effect' };

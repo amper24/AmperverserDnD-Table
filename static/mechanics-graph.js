@@ -20,7 +20,7 @@
   const nodeLabel = (type, params = null) => (defOf(type) ? NodeRegistry.nodeTitle(type, params) : type);
   const mkId = prefix => `${prefix}-${(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)}`;
   const actionType = type => type.startsWith('action.') && (ACTION_KINDS.includes(type.slice(7)));
-  // Вид блока плана для узла действия (реестр знает про roll_kind, field.kind и spend → consume).
+  // Вид блока плана для узла действия (реестр знает про kind броска, kind поля и spend → consume).
   const blockKind = (type, p) => NodeRegistry.blockKindOf(type, p);
   // «Изменить поле» хранит параметры всех трёх видов; в блок плана попадают только поля своего вида.
   const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
@@ -221,7 +221,7 @@
         if (!skip && inputValue(node, 'condition', undefined) === false) skip = true;
         if (!skip) {
           if (enabled !== undefined) ap.enabled = enabled;
-          delete ap.block_id; delete ap.enabled_input; delete ap.roll_kind;
+          delete ap.block_id; delete ap.enabled_input; delete ap.kind;
           p.blocks.push({ ...ap, id: blockId, kind });
         }
         for (const target of [...(outgoing.get(`${node.id}:exec`) || [])].reverse()) pending.push([target, null]);
@@ -488,7 +488,7 @@
     }
     if (actionType(type)) {
       if (!idText(p.block_id, 100)) return 'Узел действия должен иметь стабильный block_id.';
-      if (type === 'action.roll' && p.roll_kind !== undefined && !ROLL_KINDS.includes(p.roll_kind)) return 'Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.';
+      if (type === 'action.roll' && p.kind !== undefined && !ROLL_KINDS.includes(p.kind)) return 'Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.';
       const kind = blockKind(type, p);
       if (ROLL_KINDS.includes(kind)) {
         const error = Base.validate({ version: 1, programs: [{ id: 'p', name: 'p', trigger: 'use', blocks: [{ id: 'b', kind, dice: p.dice || { count: 0, sides: 6, bonus: 0 }, enabled: p.enabled, when: p.when }] }] });
@@ -838,7 +838,9 @@
       const program = nodeById(activeAction);
       // Стиль кнопки (иконка) задаётся в «Начале»; меняем его, только если там стиль по умолчанию.
       if (starter.style && program && (!program.params?.style || program.params.style === 'default')) program.params = { ...program.params, style: starter.style };
-      const head = starter.nodes.find(n => !starter.links.some(([, , to]) => to === n.key));
+      // Голова цепочки — первый узел с exec-входом, на который не ведёт exec-провод пресета:
+      // провод условия на вход condition не делает блок продолжением потока.
+      const head = starter.nodes.find(n => !starter.links.some(([, , to, into]) => to === n.key && into === 'exec'));
       if (starter.attach && program && head && defOf(head.type)?.inputs?.exec) {
         // Прямой провод «Начало» → «Конец» (действие было пустым) заменяем цепочкой шаблона:
         // «Начало» → первый узел, висячие exec-выходы цепочки → тот же «Конец».
@@ -879,7 +881,8 @@
         return { key: ids.get(n.id), type: n.type, params: clone(params), x: (n.position?.x || 0) - minX, y: (n.position?.y || 0) - minY };
       });
       const links = graph.links.filter(l => ids.has(l.from.node) && ids.has(l.to.node)).map(l => [ids.get(l.from.node), l.from.socket, ids.get(l.to.node), l.to.socket]);
-      const head = body.find(n => defOf(n.type)?.inputs?.exec && !links.some(([, , to]) => to === ids.get(n.id)));
+      // Голова — узел с exec-входом без входящего exec-провода (провод условия не в счёт).
+      const head = body.find(n => defOf(n.type)?.inputs?.exec && !links.some(([, , to, into]) => to === ids.get(n.id) && into === 'exec'));
       const item = { id: 'my-' + Date.now().toString(36), name: trimmed, hint: `Свой шаблон: ${body.length} ${plural(body.length, 'узел', 'узла', 'узлов')}`, attach: Boolean(head), nodes, links };
       try { window.Presets.upsertUserItem('graph_starter', item); } catch (e) { return { error: e.message }; }
       return { item };
@@ -1503,7 +1506,7 @@
           onPick: r => { if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
         // Шапка как в Blender: цвет категории, имя узла и компактный id; ниже — список портов, затем поля.
         el('header', { class: 'graph-node-head' },
-          el('span', { class: 'node-dot' }), el('b', { title: node.type }, label),
+          el('span', { class: 'node-dot' }), el('b', { title: [node.type, NodeRegistry.nodeDef(node.type)?.description].filter(Boolean).join(' · ') }, label),
           el('span', { class: 'node-id', title: node.id }, node.id.slice(0, 14)),
           el('button', { class: 'node-delete', title: 'Удалить узел', onclick: e => { e.stopPropagation(); deleteNodes([node.id]); } }, '×')),
         sockets,
@@ -1637,9 +1640,9 @@
       ].filter(Boolean));
       const searchBox = el('input', { class: 'node-search', value: search, placeholder: 'Найти узел…  Shift+A', 'aria-label': 'Поиск узла', oninput: e => { search = e.target.value; render(); root.querySelector?.('.node-search')?.focus?.(); } });
       const query = search.toLocaleLowerCase();
-      const palette = Object.entries(NODE_DEFS).filter(([type, def]) => !['group.input', 'group.output'].includes(type) && (!query || `${type} ${def.label} ${def.group}`.toLocaleLowerCase().includes(query)));
+      const palette = Object.entries(NODE_DEFS).filter(([type, def]) => !['group.input', 'group.output'].includes(type) && (!query || `${type} ${def.label} ${def.description || ''} ${def.group}`.toLocaleLowerCase().includes(query)));
       const shownPalette = query ? palette.slice(0, 8) : QUICK_NODES.filter(t => NODE_DEFS[t]).map(t => [t, NODE_DEFS[t]]);
-      const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...shownPalette.map(([type, def]) => el('button', { class: 'small node-add', title: type, onclick: () => addNode(type) }, '+ ', def.label)),
+      const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...shownPalette.map(([type, def]) => el('button', { class: 'small node-add', title: type, 'data-description': def.description || '', onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),

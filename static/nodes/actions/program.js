@@ -5,6 +5,7 @@
   class ActionProgram extends GraphNode {
     static type = 'action.program';
     static label = 'Начало действия';
+    static description = 'Начало действия: точка входа программы и её кнопка.';
     static group = 'Действия';
     static inputs = {};
     static outputs = { exec: 'flow' };

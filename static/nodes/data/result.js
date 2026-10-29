@@ -6,6 +6,7 @@
   class DataResult extends GraphNode {
     static type = 'data.result';
     static label = 'Результат действия';
+    static description = 'Итог последнего действия или выбранной программы из листа.';
     static group = 'Данные';
     static inputs = {};
     static outputs = { value: 'number' };
