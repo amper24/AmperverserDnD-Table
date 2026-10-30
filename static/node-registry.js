@@ -14,7 +14,7 @@
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   // Виды узлов действия (action.*, кроме action.program): один узел — один глагол.
-  const ACTION_KINDS = ['roll', 'field', 'spend', 'slot', 'grant_item', 'manual', 'setvar'];
+  const ACTION_KINDS = ['roll', 'field', 'spend', 'slot', 'hands', 'grant_item', 'manual', 'setvar'];
   // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
@@ -191,6 +191,8 @@
     if (kind === 'spend') Object.assign(base, { resource: 'quantity', source: 'self', amount: 1, trigger: 'use' });
     // Отдельный узел «Расход ячейки»: 0 — круг, выбранный при касте; 1–9 — фиксированный.
     if (kind === 'slot') Object.assign(base, { level: 0, amount: 1 });
+    // Руки: add/remove меняют число дополнительных рук на count, set задаёт общее число рук (2 = main+off).
+    if (kind === 'hands') Object.assign(base, { operation: 'add', count: 1 });
     if (kind === 'manual') base.text = 'Опишите правило, которое мастер применяет вручную.';
     // Один узел «Изменить поле»: умолчания всех трёх видов лежат рядом, поэтому переключение вида
     // в форме сразу даёт допустимые параметры (лишние поля не попадают в блок плана).
@@ -219,6 +221,7 @@
     if (type === 'action.field') return Object.values(FIELD_BLOCKS);
     if (type === 'action.spend') return ['consume'];
     if (type === 'action.slot') return ['consume'];
+    if (type === 'action.hands') return ['hands'];
     if (type === 'action.grant_item') return ['grant_item'];
     if (type === 'action.manual') return ['manual'];
     if (type === 'action.setvar') return ['setvar'];

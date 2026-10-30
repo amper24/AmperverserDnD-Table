@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
 // `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
-const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive","setvar"];
+const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive","setvar","hands"];
 fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
 fn num(v: &Value, k: &str) -> i64 { v[k].as_i64().unwrap_or(0) }
@@ -101,6 +101,11 @@ fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
                 "condition" => { let operation=text(b,"operation"); if !["add","remove","concentration"].contains(&operation)||(operation!="concentration"&&text(b,"condition").trim().is_empty())||text(b,"condition").len()>200 { return Err(bad("Неверное состояние")); } }
                 "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
+                // Руки: add/remove — на столько extra_hands, set — общее число рук (2 = main+off).
+                "hands" => {
+                    if !["add", "remove", "set"].contains(&text(b,"operation")) { return Err(bad("Руки: операция add, remove или set")); }
+                    bounded(b,"count",1,6)?;
+                }
                 // Переменная: имя и область те же, что у узлов action.setvar/data.var; значение —
                 // число или (в рантайме) провод value_src.
                 "setvar" => {
@@ -354,6 +359,23 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
                 effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
             }
             "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":"self"}));}
+            // Руки: extra_hands — это дополнительные руки после main/off. add/remove меняют их на count,
+            // set задаёт общее число рук: 2 — обычные две, 3 — одна дополнительная и т. д.
+            "hands"=>{
+                let operation=text(b,"operation");
+                let count=bounded(b,"count",1,6)?;
+                let current=inventory::extra_hands(recipient);
+                let next=match operation {
+                    "add"=>current.saturating_add(count).min(inventory::MAX_EXTRA_HANDS),
+                    "remove"=>current.saturating_sub(count).max(0),
+                    "set"=>(count-2).clamp(0,inventory::MAX_EXTRA_HANDS),
+                    _=>return Err(bad("Руки: операция add, remove или set")),
+                };
+                recipient["extra_hands"]=json!(next);
+                // Предметы с исчезнувших дополнительных рук уходят в рюкзак и попадают в отчёт эффекта.
+                let removed=inventory::drop_extra_hands(recipient,next);
+                effects.push(json!({"kind":kind,"operation":operation,"count":count,"extra_hands":next,"removed":removed,"target":"self"}));
+            }
             "condition"=>{
                 let operation=text(b,"operation");
                 if operation=="concentration" {

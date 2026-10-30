@@ -157,16 +157,23 @@ logging:  { level: "info,sqlx=warn" }
 формат графа и типы узлов — [docs/mechanics-v2.md](docs/mechanics-v2.md).
 
 Коротко палитра идёт рабочим процессом: **Начало** (`action.program`) → **Действия**
-(`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.grant_item`, `action.manual`,
+(`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.hands`, `action.grant_item`, `action.manual`,
 `action.setvar`, `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`,
 `data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
 `data.var`, `data.ref`, `data.call`, `data.mathfun`, `dice.combine`, `data.text`, `data.textlen`,
 `data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`) → **Условия**
 (`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
 `condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 43 типа; ещё два
+`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 44 типа; ещё два
 внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
 узла есть подсказка, у настраиваемых — единый параметр `kind`.
+
+Руки: у листа две обычные руки (`main`, `off`), а поле `sheet.extra_hands` (0–4) добавляет
+дополнительные — слоты `extra1`..`extra4` для трёхруких существ. Узел `action.hands` меняет это
+число (`add`/`remove` — на сколько дополнительных рук, `set` — всего рук, 2 = `main` + `off`),
+панель рук показывает «Доп. рука N» и строку «Рук: N», а `normalize` снимает предметы с
+исчезнувших слотов. Двуручное оружие по-прежнему занимает `main`+`off` и в дополнительную руку
+не берётся.
 
 Переменные и ссылки: `action.setvar` пишет число (`scope: action` — до конца выполнения,
 `scope: sheet` — в `sheet.vars` листа), `data.var` читает его, `data.ref` подставляет

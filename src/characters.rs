@@ -17,6 +17,8 @@ pub fn default_sheet(name: &str) -> Value {
         "proficiency_bonus": 2, "saving_throws": [], "skills": [], "expertise": [],
         "hp": { "max": 10, "current": 10, "temp": 0, "hit_dice": "1d8" },
         "ac": 10, "auto_armor": true, "speed": 30, "initiative_bonus": 0, "inspiration": false,
+        // Дополнительные руки после main/off: слоты extra1..extra4 (0 — обычные две руки).
+        "extra_hands": 0,
         "attacks": [], "inventory": [], "spells": { "slots": {}, "known": [], "ability": "" },
         "features": [], "traits": { "personality": "", "ideals": "", "bonds": "", "flaws": "" },
         "notes": "", "currency": { "cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0 },

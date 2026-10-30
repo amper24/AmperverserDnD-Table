@@ -8,10 +8,19 @@
 window.Equipment = (() => {
   const mechanicsPrograms = (mechanics, context) => window.Mechanics?.programsOf ? window.Mechanics.programsOf(mechanics, context) : mechanics?.programs || [];
   // Слоты рук и одежды. Эти ключи зеркалят src/inventory.rs; сервер повторно проверяет операции.
+  // extra1..extra4 — дополнительные руки: слот существует, пока его номер не больше sheet.extra_hands.
+  const MAX_EXTRA_HANDS = 4;
   const slots = {
-    main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', armor: 'Доспех', head: 'Голова',
+    main: 'Основная рука', off: 'Вторая рука', both: 'Обе руки', extra1: 'Доп. рука 1', extra2: 'Доп. рука 2',
+    extra3: 'Доп. рука 3', extra4: 'Доп. рука 4', armor: 'Доспех', head: 'Голова',
     neck: 'Шея', cloak: 'Плащ', gloves: 'Перчатки', belt: 'Пояс', feet: 'Обувь', ring1: 'Кольцо 1', ring2: 'Кольцо 2',
   };
+  // Сколько дополнительных рук у листа (0..4); отсутствие поля — обычные две руки.
+  const extraHands = sheet => Math.max(0, Math.min(MAX_EXTRA_HANDS, Math.floor(Number(sheet?.extra_hands) || 0)));
+  // Слоты дополнительных рук: extra1..extraN.
+  const extraSlots = extra => Array.from({ length: extraHands({ extra_hands: extra }) }, (_, index) => `extra${index + 1}`);
+  // Все руки листа по порядку: main, off, extra1..extraN.
+  const handSlots = sheet => ['main', 'off', ...extraSlots(extraHands(sheet))];
   const kinds = { none: 'Не в руках', one: 'Одноручный', two: 'Двуручный', versatile: 'Универсальный: 1 или 2 руки' };
   const wearKinds = {
     '': 'Нельзя экипировать', armor: 'Доспех (тело)', head: 'Голова', neck: 'Шея', cloak: 'Плащ',
@@ -55,8 +64,17 @@ window.Equipment = (() => {
     return inferWear(it);
   }
   // Двуручное оружие тоже можно держать одной рукой: как универсальное, но без взятия одной рукой по умолчанию.
-  const choices = it => ['two', 'versatile'].includes(handednessOf(it)) ? ['main', 'off', 'both'] : handednessOf(it) === 'one' ? ['main', 'off'] : wornSlots(wearKind(it));
-  const canEquip = it => choices(it).length > 0;
+  // Дополнительные руки листа (sheet.extra_hands) добавляют слоты extra1..extraN одноручному и универсальному
+  // оружию; двуручное занимает main+off и в дополнительную руку не берётся (как на сервере).
+  function choices(it, sheet = null) {
+    const hands = handednessOf(it);
+    const extra = extraSlots(extraHands(sheet));
+    if (hands === 'two') return ['main', 'off', 'both'];
+    if (hands === 'versatile') return ['main', 'off', 'both', ...extra];
+    if (hands === 'one') return ['main', 'off', ...extra];
+    return wornSlots(wearKind(it));
+  }
+  const canEquip = (it, sheet = null) => choices(it, sheet).length > 0;
   // Активное свойство недоступно, пока предмет требует экипировки/настройки, но они не выполнены.
   const canUse = it => (it.qty ?? 1) > 0 &&
     (handednessOf(it) === 'none' && !wearKind(it) || it.equipped === true) &&
@@ -89,6 +107,7 @@ window.Equipment = (() => {
   // а оружие ждёт в рюкзаке. Слоты проверяет migrate(): стопки и конфликты не создают дублей.
   function equipDefaults(inventory, options = {}) {
     const canHands = options.hands !== false, canWear = options.wear !== false;
+    const extra = extraHands(options);
     const free = it => (it.qty ?? 1) === 1 && !it.equipped;
     const shieldOf = it => handednessOf(it) !== 'none' && textHas('shield', itemText(it)) && !textHas('jewelry', itemText(it));
     const oneHanded = it => ['one', 'versatile'].includes(handednessOf(it));
@@ -102,18 +121,23 @@ window.Equipment = (() => {
       // Двуручное автоматически берётся только в обе руки; одноручный хват выбирает игрок.
       if (!held('main')) for (const it of inventory) if (free(it) && !['none', 'two'].includes(handednessOf(it)) && !shieldOf(it)) { hold(it, 'main'); break; }
     }
-    return migrate(inventory);
+    return migrate(inventory, extra);
   }
-  function migrate(inventory) {
+  // Приводит инвентарь к допустимым слотам: extra — число дополнительных рук листа (0..4).
+  function migrate(inventory, extra = 0) {
+    const sheet = { extra_hands: extraHands({ extra_hands: extra }) };
+    const freeExtras = extraSlots(extra);
     const occupied = new Set(), worn = new Set();
     inventory.forEach(it => {
       normalize(it);
       if (!it.equipped) return;
       if (it.handedness !== 'none') {
         it.worn_slot = null;
-        const slot = it.hand_slot || (it.handedness === 'two' ? 'both' : occupied.has('main') ? 'off' : 'main');
+        const allowed = choices(it, sheet);
+        const slot = it.hand_slot || (it.handedness === 'two' ? 'both'
+          : ['main', 'off', ...freeExtras].find(name => !occupied.has(name)) || 'off');
         const used = slot === 'both' ? ['main', 'off'] : [slot];
-        if (it.qty !== 1 || used.some(s => occupied.has(s)) || !choices(it).includes(slot)) { it.equipped = false; it.hand_slot = null; }
+        if (it.qty !== 1 || used.some(s => occupied.has(s)) || !allowed.includes(slot)) { it.equipped = false; it.hand_slot = null; }
         else { it.hand_slot = slot; used.forEach(s => occupied.add(s)); }
       } else if (it.wear) {
         it.hand_slot = null;
@@ -242,7 +266,7 @@ window.Equipment = (() => {
     const all = (sheet.inventory || []).filter(it => it && it.equipped && (it.qty ?? 1) === 1);
     const bySlot = {};
     for (const it of all) { const slot = it.hand_slot || it.worn_slot; if (slot) (bySlot[slot] ||= []).push(it); }
-    const rows = ['main', 'off', 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
+    const rows = ['main', 'off', ...extraSlots(extraHands(sheet)), 'both', 'armor', 'head', 'neck', 'cloak', 'gloves', 'belt', 'feet', 'ring1', 'ring2']
       .map(key => ({ key, label: slots[key], items: bySlot[key] || [] }));
     const shields = all.filter(it => handednessOf(it) !== 'none' && textHas('shield', itemText(it)) && !textHas('jewelry', itemText(it)));
     const armor = all.filter(it => it.worn_slot === 'armor' && wearKind(it) === 'armor');
@@ -266,5 +290,6 @@ window.Equipment = (() => {
     if (it.consume?.enabled && (!Number.isInteger(it.consume.amount) || it.consume.amount < 1 || it.consume.amount > 10000)) return 'Расход: целое число от 1 до 10000.';
     return '';
   }
-  return { slots, kinds, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate };
+  return { slots, kinds, slotsAudit, normalize, migrate, equipDefaults, choices, canEquip, canUse, wornSlots, wearKind, handedness: handednessOf, activeActions, resourceStatus, armorClass, armorClassParts, editor, validate,
+    MAX_EXTRA_HANDS, extraHands, extraSlots, handSlots };
 })();

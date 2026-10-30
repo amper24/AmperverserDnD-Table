@@ -96,15 +96,77 @@ pub fn validate_use(it: &Value) -> ApiResult<()> {
     if it["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Предмет закончился")); }
     if it["attunement"] == true && it["attuned"] != true { return Err(AppError::bad("Сначала настройтесь на предмет")); }
     if handedness(it) != "none" && it["equipped"] != true { return Err(AppError::bad("Сначала возьмите предмет в руку")); }
+    // Двуручное оружие занимает main+off: в дополнительной руке его держать нельзя.
+    if handedness(it) == "two" && extra_slot_index(it["hand_slot"].as_str().unwrap_or("")).is_some() { return Err(AppError::bad("Двуручное оружие нельзя держать в дополнительной руке")); }
     if !wear_kind(it).is_empty() && it["equipped"] != true { return Err(AppError::bad("Сначала наденьте предмет")); }
     Ok(())
 }
 
 pub fn slots(slot: &str) -> &[&str] { match slot { "main" => &["main"], "off" => &["off"], "both" => &["main", "off"], _ => &[] } }
+/// Дополнительные руки после main/off: 0..=4. Слот `extraN` существует, пока N ≤ `extra_hands` листа.
+pub const MAX_EXTRA_HANDS: i64 = 4;
+/// Сколько дополнительных рук у листа: отсутствие поля — 0, значение вне 0..=4 — 0 (лечит normalize).
+pub fn extra_hands(sheet: &Value) -> i64 { sheet["extra_hands"].as_i64().unwrap_or(0).clamp(0, MAX_EXTRA_HANDS) }
+/// Имя слота дополнительной руки: 1 → `extra1`.
+pub fn extra_slot(index: i64) -> String { format!("extra{index}") }
+/// Номер дополнительной руки по имени слота; None — это не extra-слот (в том числе `extra5`).
+pub fn extra_slot_index(slot: &str) -> Option<i64> {
+    slot.strip_prefix("extra").and_then(|rest| rest.parse::<i64>().ok()).filter(|index| (1..=MAX_EXTRA_HANDS).contains(index))
+}
+/// Все руки листа по порядку: `main`, `off`, затем `extra1`..`extraN`.
+pub fn hand_slots(sheet: &Value) -> Vec<String> {
+    let mut out = vec!["main".to_string(), "off".to_string()];
+    out.extend((1..=extra_hands(sheet)).map(extra_slot));
+    out
+}
+/// Какие слоты занимает предмет в слоте `slot` при `extra` дополнительных руках.
+/// Пусто — слот недопустим (неизвестное имя или `extraN` сверх `extra`).
+pub fn hand_slot_occupies(extra: i64, slot: &str) -> Vec<String> {
+    if let Some(index) = extra_slot_index(slot) {
+        return if index <= extra { vec![extra_slot(index)] } else { Vec::new() };
+    }
+    slots(slot).iter().map(|name| (*name).to_string()).collect()
+}
+/// Допустим ли слот для этого хвата: двуручное — только main/off/both, в дополнительную руку его не берут.
+pub fn hand_slot_allowed(extra: i64, hands: &str, slot: &str) -> bool {
+    match hands {
+        "one" => matches!(slot, "main" | "off") || extra_slot_index(slot).is_some_and(|index| index <= extra),
+        "versatile" => !slots(slot).is_empty() || extra_slot_index(slot).is_some_and(|index| index <= extra),
+        "two" => !slots(slot).is_empty(),
+        _ => false,
+    }
+}
+/// Слот по умолчанию, если хват не задан: обе руки для двуручного, иначе первая свободная рука (включая дополнительные).
+fn default_hand_slot(hands: &str, slots: &[String], occupied: &HashSet<String>) -> String {
+    if hands == "two" { return "both".into(); }
+    slots.iter().find(|slot| !occupied.contains(*slot)).cloned().unwrap_or_else(|| "off".into())
+}
+/// Снимает предметы с дополнительных рук, которых больше нет (`extraN` при N > `extra`): остаются в рюкзаке с тем же qty.
+/// Возвращает снятые предметы для отчёта эффекта; лист меняется только по слотам экипировки.
+pub fn drop_extra_hands(sheet: &mut Value, extra: i64) -> Vec<Value> {
+    let mut removed = Vec::new();
+    let Some(inv) = sheet["inventory"].as_array_mut() else { return removed; };
+    for it in inv.iter_mut() {
+        if it["equipped"] != true { continue; }
+        let Some(slot) = it["hand_slot"].as_str().map(str::to_string) else { continue };
+        let Some(index) = extra_slot_index(&slot) else { continue };
+        if index <= extra { continue; }
+        removed.push(json!({ "uid": it["uid"], "name": it["name"], "slot": slot, "qty": it["qty"] }));
+        unequip(it);
+    }
+    removed
+}
 pub fn unequip(it: &mut Value) { it["equipped"] = json!(false); it["hand_slot"] = Value::Null; it["worn_slot"] = Value::Null; }
 pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
     if !sheet.is_object() { return Err(AppError::bad("Лист должен быть объектом")); }
     if sheet.get("inventory").is_none() { sheet["inventory"] = json!([]); }
+    // Дополнительные руки: целое 0..=4, отсутствие поля — 0. Предметы со снятых extraN уходят в рюкзак ниже.
+    let extra = match sheet.get("extra_hands") {
+        None | Some(Value::Null) => 0,
+        Some(value) => value.as_i64().filter(|n| (0..=MAX_EXTRA_HANDS).contains(n)).ok_or_else(|| AppError::bad("Дополнительные руки: целое от 0 до 4"))?,
+    };
+    sheet["extra_hands"] = json!(extra);
+    let hand_slots = hand_slots(sheet);
     let inv = sheet["inventory"].as_array_mut().ok_or_else(|| AppError::bad("Инвентарь должен быть списком"))?;
     if inv.len() > 2000 { return Err(AppError::bad("Слишком много предметов")); }
     let mut seen = HashSet::new(); let mut occupied = HashSet::new(); let mut worn_taken: HashSet<String> = HashSet::new();
@@ -136,10 +198,10 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
         if hands != "none" {
             it["worn_slot"] = Value::Null;
             let mut slot = it["hand_slot"].as_str().unwrap_or("").to_string();
-            if slot.is_empty() { slot = if hands == "two" { "both" } else if !occupied.contains("main") { "main" } else { "off" }.into(); }
-            let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(&slot).is_empty() };
-            if !valid || qty != 1 || slots(&slot).iter().any(|s| occupied.contains(*s)) { unequip(it); }
-            else { it["hand_slot"] = json!(slot); occupied.extend(slots(&slot).iter().map(|s| s.to_string())); }
+            if slot.is_empty() { slot = default_hand_slot(&hands, &hand_slots, &occupied); }
+            let taken = hand_slot_occupies(extra, &slot);
+            if !hand_slot_allowed(extra, &hands, &slot) || qty != 1 || taken.iter().any(|s| occupied.contains(s)) { unequip(it); }
+            else { it["hand_slot"] = json!(slot); occupied.extend(taken); }
         } else if !wear.is_empty() {
             // одежда: слот из вида предмета; кольца занимают любой из двух слотов, лишние предметы снимаются
             it["hand_slot"] = Value::Null;
@@ -172,6 +234,7 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
 }
 pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
     normalize(sheet)?;
+    let extra = extra_hands(sheet);
     let inv = sheet["inventory"].as_array_mut().unwrap();
     let pos = inv.iter().position(|i| i["uid"] == uid).ok_or_else(|| AppError::not_found("Предмет не найден"))?;
     if slot == "backpack" { unequip(&mut inv[pos]); return normalize(sheet); }
@@ -179,8 +242,12 @@ pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
     let wear = wear_kind(&inv[pos]);
     let mut target = String::new();
     if hands != "none" {
-        let valid = match hands.as_str() { "one" => slot == "main" || slot == "off", _ => !slots(slot).is_empty() };
-        if !valid { return Err(AppError::bad("Этот хват недоступен для предмета")); }
+        // Дополнительная рука: двуручное туда не берут, а слот сверх extra_hands не существует.
+        if let Some(index) = extra_slot_index(slot) {
+            if hands == "two" { return Err(AppError::bad("Двуручное оружие нельзя взять в дополнительную руку")); }
+            if index > extra { return Err(AppError::bad("У листа нет такой дополнительной руки")); }
+        }
+        if !hand_slot_allowed(extra, &hands, slot) { return Err(AppError::bad("Этот хват недоступен для предмета")); }
     } else if !wear.is_empty() {
         let allowed = worn_slots(&wear);
         if slot == "worn" || slot.is_empty() {
@@ -193,9 +260,10 @@ pub fn equip(sheet: &mut Value, uid: &str, slot: &str) -> ApiResult<()> {
         return Err(AppError::bad("Этот предмет нельзя экипировать"));
     }
     if inv[pos]["qty"] != 1 { return Err(AppError::bad("Сначала отделите один предмет от стопки")); }
+    let taken = hand_slot_occupies(extra, slot);
     for (i, it) in inv.iter_mut().enumerate() {
         if i == pos { continue; }
-        let hand_clash = hands != "none" && slots(it["hand_slot"].as_str().unwrap_or("")).iter().any(|s| slots(slot).contains(s));
+        let hand_clash = hands != "none" && hand_slot_occupies(extra, it["hand_slot"].as_str().unwrap_or("")).iter().any(|s| taken.contains(s));
         let worn_clash = hands == "none" && it["equipped"] == true && it["worn_slot"].as_str() == Some(target.as_str());
         if hand_clash || worn_clash { unequip(it); }
     }
@@ -515,5 +583,98 @@ mod tests {
         use_item(&mut s,"p",&[],"").unwrap(); assert_eq!(s["inventory"][0]["qty"],0); assert!(use_item(&mut s,"p",&[],"").is_err());
         s["inventory"][0]["qty"]=json!(1); s["inventory"][0]["charges"]=json!({"cur":2,"max":2}); s["inventory"][0]["consume"]["resource"]=json!("charges");
         use_item(&mut s,"p",&[],"").unwrap(); assert_eq!(s["inventory"][0]["charges"]["cur"],1); assert_eq!(s["inventory"][0]["qty"],1);
+    }
+
+    // ---- Дополнительные руки (трёхрукие существа) ----
+    fn hands_sheet(extra: i64) -> Value { json!({ "extra_hands": extra, "abilities": {"str":14,"dex":16}, "proficiency_bonus": 2, "inventory": [
+        {"uid":"sword","name":"Меч","type":"weapon","qty":1,"handedness":"versatile"},
+        {"uid":"shield","name":"Щит","type":"armor","qty":1,"handedness":"one","ac":"+2"},
+        {"uid":"dagger","name":"Кинжал","type":"weapon","qty":1,"handedness":"one"},
+        {"uid":"bow","name":"Лук","type":"weapon","qty":1,"handedness":"two"},
+        {"uid":"torch","name":"Факел","type":"gear","qty":3}
+    ]}) }
+    fn hands_graph(operation: &str, count: i64) -> Value { json!({"version":2,"graph":{"nodes":[
+        {"id":"p","type":"action.program","params":{"program_id":"use","name":"Руки","trigger":"use"}},
+        {"id":"h","type":"action.hands","params":{"block_id":"h","operation":operation,"count":count}},
+        {"id":"e","type":"flow.end","params":{}}
+    ],"links":[
+        {"from":{"node":"p","socket":"exec"},"to":{"node":"h","socket":"exec"}},
+        {"from":{"node":"h","socket":"exec"},"to":{"node":"e","socket":"exec"}}
+    ],"frames":[],"groups":[]}}) }
+    #[test] fn extra_hand_is_a_slot_and_two_handed_never_goes_there() {
+        let mut s = hands_sheet(1);
+        equip(&mut s, "sword", "main").unwrap();
+        equip(&mut s, "shield", "off").unwrap();
+        assert_eq!(s["inventory"][1]["hand_slot"], "off", "вторая рука занята щитом");
+        equip(&mut s, "dagger", "extra1").unwrap();
+        assert_eq!(s["inventory"][2]["hand_slot"], "extra1");
+        // двуручное в дополнительную руку не берут, а сверх extra_hands слота нет
+        assert!(equip(&mut s, "bow", "extra1").is_err());
+        assert!(equip(&mut s, "dagger", "extra2").is_err());
+        // предмет без слота по умолчанию занимает свободную дополнительную руку
+        equip(&mut s, "dagger", "backpack").unwrap();
+        s["inventory"][2]["equipped"] = json!(true);
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"][2]["hand_slot"], "extra1");
+        // универсальное оружие в дополнительной руке вытесняет прежний предмет
+        equip(&mut s, "sword", "extra1").unwrap();
+        assert_eq!(s["inventory"][2]["equipped"], false);
+        assert_eq!(s["inventory"][0]["hand_slot"], "extra1");
+    }
+    #[test] fn shrinking_extra_hands_returns_items_to_the_backpack() {
+        let mut s = hands_sheet(2);
+        equip(&mut s, "dagger", "extra2").unwrap();
+        assert_eq!(s["inventory"][2]["hand_slot"], "extra2");
+        s["extra_hands"] = json!(0);
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"][2]["equipped"], false);
+        assert_eq!(s["inventory"][2]["hand_slot"], Value::Null);
+        assert_eq!(s["inventory"][2]["qty"], 1, "количество сохраняется");
+        // снятые extra-предметы возвращаются в рюкзак, а extra_hands остаётся целым 0..4
+        assert_eq!(s["extra_hands"], 0);
+    }
+    #[test] fn normalize_drops_unknown_extra_slots_and_rejects_bad_hand_count() {
+        let mut s = hands_sheet(1);
+        s["inventory"][2]["equipped"] = json!(true);
+        s["inventory"][2]["hand_slot"] = json!("extra3");
+        normalize(&mut s).unwrap();
+        assert_eq!(s["inventory"][2]["equipped"], false, "extra3 при одной дополнительной руке не существует");
+        assert_eq!(s["inventory"][2]["hand_slot"], Value::Null);
+        let mut bad = hands_sheet(5);
+        assert!(normalize(&mut bad).is_err(), "extra_hands вне 0..4 — ошибка листа");
+        assert_eq!(hand_slots(&json!({"extra_hands":2})), vec!["main","off","extra1","extra2"]);
+        assert_eq!(hand_slot_occupies(1, "both"), vec!["main","off"]);
+        assert!(hand_slot_occupies(1, "extra2").is_empty());
+        assert!(!hand_slot_allowed(0, "two", "extra1"));
+    }
+    #[test] fn hands_action_changes_the_sheet_and_strips_vanished_slots() {
+        let mut s = hands_sheet(0);
+        s["features"] = json!([{"uid":"f","name":"Третья рука","mechanics": hands_graph("add", 1)}]);
+        let result = crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        assert_eq!(s["extra_hands"], 1);
+        assert_eq!(result["effects"][0]["kind"], "hands");
+        assert_eq!(result["effects"][0]["extra_hands"], 1);
+        equip(&mut s, "dagger", "extra1").unwrap();
+        assert_eq!(s["inventory"][2]["hand_slot"], "extra1");
+        // remove 1 снимает предмет с исчезнувшей руки и сообщает об этом эффектом
+        s["features"][0]["mechanics"] = hands_graph("remove", 1);
+        let result = crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        assert_eq!(s["extra_hands"], 0);
+        assert_eq!(s["inventory"][2]["equipped"], false);
+        assert_eq!(s["inventory"][2]["qty"], 1);
+        assert_eq!(result["effects"][0]["removed"][0]["uid"], "dagger");
+        assert_eq!(result["effects"][0]["removed"][0]["slot"], "extra1");
+        // set 6 — шесть рук, то есть четыре дополнительные; add упирается в максимум 4
+        s["features"][0]["mechanics"] = hands_graph("set", 6);
+        crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        assert_eq!(s["extra_hands"], MAX_EXTRA_HANDS);
+        s["features"][0]["mechanics"] = hands_graph("add", 6);
+        crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        assert_eq!(s["extra_hands"], MAX_EXTRA_HANDS);
+        // недопустимое число рук отклоняется до изменения листа
+        s["features"][0]["mechanics"] = hands_graph("add", 7);
+        let before = s.clone();
+        assert!(crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).is_err());
+        assert_eq!(s, before, "ошибка не меняет лист");
     }
 }

@@ -44,6 +44,7 @@
 | `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove/concentration; value: `field`, `amount`; formula: `field`, `value` |
 | `action.spend` | Расход ресурса предмета или умения | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `item_uid`, `tag` |
 | `action.slot` | Расход ячейки заклинания | `exec`, `enabled`, `condition` → `exec` | `level` = 0 (круг выбирается при касте) / 1–9, `amount` |
+| `action.hands` | Руки: добавить, убрать или задать число рук | `exec`, `enabled`, `condition` → `exec` | `operation` = add/remove/set, `count` = 1–6 (add/remove — на сколько дополнительных рук, set — всего рук, 2 = main и off) |
 | `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item` |
 | `action.manual` | Правило для мастера | `exec`, `enabled`, `condition` → `exec` | `text` |
 | `action.setvar` | Записать число в переменную действия или листа | `exec`, `enabled` (bool), `condition` (bool), `value` (number) → `exec` | `name` (1–32 символа `[a-z0-9_]`), `scope` = action/sheet |
@@ -120,6 +121,31 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 операции и контекста каста), 1–9 — фиксированный круг. `amount` — сколько ячеек
 списать. В план блока исполнения узел компилируется в `consume` с `resource: "slot"`
 и `slot_level`. При ритуале (круг каста 0) блок пропускается: ячейка не тратится.
+
+### Руки и слоты
+
+У листа две обычные руки — `main` и `off`. Поле `sheet.extra_hands` (целое 0–4, по умолчанию 0)
+добавляет дополнительные руки: слоты `extra1`..`extra4`. Слот `extraN` существует, только пока
+`N ≤ extra_hands`; при уменьшении поля предметы с исчезнувших слотов возвращаются в рюкзак с тем
+же количеством. Это делает `normalize` на сервере и его зеркало `Equipment.migrate` на клиенте:
+несуществующий слот — не ошибка листа, а повод снять предмет.
+
+- `both` — двуручный хват: занимает `main` и `off` сразу. Двуручное оружие (`handedness: two`)
+  в дополнительную руку не берётся: `equip` отвечает ошибкой, а панель рук не предлагает его
+  в списке дополнительной руки.
+- Одноручное и универсальное оружие в дополнительной руке держат одной рукой; универсальное
+  может занять `both`, если свободны обе обычные руки.
+- Предмет без слота при нормализации получает первую свободную руку: `main`, затем `off`,
+  затем `extra1`..`extraN`.
+- Экипировка в дополнительную руку атомарна, как и в обычную: она вытесняет предмет из этого
+  слота, а не создаёт копию; предметы из стопки сначала отделяют.
+
+Узел `action.hands` меняет `extra_hands` блоком `hands`: `add` и `remove` — на `count`
+дополнительных рук, `set` — общее число рук (`extra_hands = count − 2`, то есть 2 — обычные
+`main`+`off`, 3 — одна дополнительная). `count` — целое 1–6, а `extra_hands` не выходит из 0–4;
+`set` со значением 1 считается двумя руками. Если рук стало меньше, предметы с исчезнувших
+слотов снимаются, а эффект действия перечисляет их в `removed`. Панель рук показывает слоты
+`extra1`..`extraN` с подписями «Доп. рука N» и строку «Рук: N», когда дополнительных рук больше нуля.
 
 ### data.result / data.sheet / data.cast
 
@@ -438,7 +464,7 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 6. Переменные и ссылки: `action.setvar`/`data.var` (области action и sheet), `data.ref`
    на числовой узел графа и `data.mathfun`; переменные выполнения в контексте
    `runtime.vars`, значение `setvar` с провода считается в рантайме — сделано.
-   Типов в палитре 45 (43 видимых + два внутренних узла групп); строки и списки —
+   Типов в палитре 46 (44 видимых + два внутренних узла групп); строки и списки —
    `data.text`, `data.textlen`, `data.textcheck`, `data.list`, `data.listget`,
    `data.listlen`, `data.listjoin`. Функции-группы и вызов `data.call` — value-only
    группа, позиционные числовые аргументы и типизированный результат.

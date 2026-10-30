@@ -52,6 +52,10 @@
       source: [{ value: 'self', label: 'Сам предмет / умение' }, { value: 'item', label: 'Предмет' }, { value: 'tag', label: 'Метка' }],
       trigger: [{ value: 'use', label: 'При использовании' }, { value: 'attack', label: 'За атаку' }],
     },
+    // Дополнительные руки: add/remove — на сколько рук, set — общее число рук (2 = main+off).
+    'action.hands': {
+      operation: [{ value: 'add', label: 'Добавить дополнительные руки' }, { value: 'remove', label: 'Убрать дополнительные руки' }, { value: 'set', label: 'Задать общее число рук (2 — main и off)' }],
+    },
     'data.cast': {
       field: [{ value: 'level', label: 'Круг выбранной ячейки' }, { value: 'base', label: 'Базовый круг заклинания' }, { value: 'extra', label: 'Круги выше базового' }],
     },
@@ -150,7 +154,10 @@
     separator: 'Разделитель', case: 'Учитывать регистр', group: 'Группа-функция',
   };
   // Подписи полей, которые зависят от типа узла: у data.list items — строки списка, а не «Предметы».
-  const TYPE_LABELS = { 'data.list': { items: 'Строки списка' } };
+  const TYPE_LABELS = {
+    'data.list': { items: 'Строки списка' },
+    'action.hands': { count: 'Число рук: add/remove — на сколько, set — всего (1–6)' },
+  };
   const labelOf = key => LABELS[key] || key;
 
   // ---- чистые помощники -------------------------------------------------

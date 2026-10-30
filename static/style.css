@@ -1711,6 +1711,8 @@ body.lu-open { overflow: hidden; }
 .hand-slot[draggable="true"] { cursor: grab; }
 .hand-slot.two-handed { border-color: var(--accent); }
 .hand-slot.merged { grid-column: span 2; }
+/* Строка «Рук: N» над слотами рук: занимает всю ширину сетки, а не отдельную ячейку. */
+.equipment-hands > .hands-count { grid-column: 1 / -1; margin: 0; }
 .hand-hint { color: var(--accent); line-height: 1.3; }
 .hand-slot.dragover { outline: 2px dashed var(--ok); outline-offset: 3px; background: color-mix(in srgb, var(--ok) 12%, var(--panel)); }
 .hand-slot.drop-invalid { outline: 2px dashed var(--danger); outline-offset: 3px; }

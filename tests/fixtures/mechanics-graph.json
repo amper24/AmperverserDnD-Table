@@ -6345,6 +6345,183 @@
         }
       },
       "executable": false
+    },
+    {
+      "name": "action-hands",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Руки",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "h",
+              "type": "action.hands",
+              "params": {
+                "block_id": "h",
+                "operation": "add",
+                "count": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "h",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "action-hands-unknown-operation",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Руки",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "h",
+              "type": "action.hands",
+              "params": {
+                "block_id": "h",
+                "operation": "grow",
+                "count": 1
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "h",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "action-hands-count-range",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Руки",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "h",
+              "type": "action.hands",
+              "params": {
+                "block_id": "h",
+                "operation": "set",
+                "count": 7
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "h",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "h",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
     }
   ]
 }

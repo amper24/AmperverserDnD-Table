@@ -15,9 +15,9 @@ const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage",
 // Виды блоков плана (внутренний IR): их исполняет src/mechanics.rs. Имена узлов v3 отличаются —
 // action.spend компилируется в consume, action.field — в condition/adjust/passive.
 // require остаётся только в старых сохранённых планах (src/mechanics.rs); граф v3 его не создаёт.
-const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive", "setvar"];
+const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive", "setvar", "hands"];
 // Виды узлов действия (action.*, кроме action.program) — как ACTION_KINDS в static/node-registry.js.
-const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", "manual", "setvar"];
+const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", "manual", "setvar", "hands"];
 // Области переменных (action.setvar / data.var) — как VAR_SCOPES в static/node-registry.js:
 // action живёт до конца выполнения, sheet сохраняет значение в sheet.vars.
 const VAR_SCOPES: &[&str] = &["action", "sheet"];
@@ -477,6 +477,11 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], 
             if json_integer(&p["level"]).map(|number| !(0..=9).contains(&number)).unwrap_or(true) { return Err(bad("Круг ячейки: целое от 0 до 9.")); }
             if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество ячеек: целое от 1 до 10000.")); }
         }
+        // Руки: add/remove меняют extra_hands на count, set задаёт общее число рук (2 = main+off).
+        "action.hands" => {
+            if !["add", "remove", "set"].contains(&p["operation"].as_str().unwrap_or("")) { return Err(bad("Руки: операция add, remove или set.")); }
+            if json_integer(&p["count"]).map(|number| !(1..=6).contains(&number)).unwrap_or(true) { return Err(bad("Руки: целое число от 1 до 6.")); }
+        }
         "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
@@ -729,7 +734,7 @@ const NODE_TYPES: &[&str] = &[
     "condition.context", "condition.hit", "condition.status", "condition.item", "condition.hp", "condition.slot",
     "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
-    "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.grant_item", "action.manual", "action.setvar", "group.instance", "group.input", "group.output",
+    "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.hands", "action.grant_item", "action.manual", "action.setvar", "group.instance", "group.input", "group.output",
 ];
 
 fn group_boundaries_match(group: &Value) -> bool {

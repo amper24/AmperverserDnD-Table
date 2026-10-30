@@ -51,6 +51,8 @@
     const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
     for (const k of ['name', 'race', 'class', 'subclass', 'background', 'alignment', 'notes', 'proficiencies']) if (typeof s[k] !== 'string') s[k] = s[k] === null || s[k] === undefined ? '' : String(s[k]);
     s.level = Math.min(20, Math.max(1, Math.round(num(s.level, 1)))); s.xp = num(s.xp, 0); s.ac = num(s.ac, 10); s.speed = num(s.speed, 30); s.initiative_bonus = num(s.initiative_bonus, 0);
+    // Дополнительные руки: целое 0..4 (слоты extra1..extra4); у старых листов поля нет — обычные две руки.
+    s.extra_hands = Math.max(0, Math.min(Equipment.MAX_EXTRA_HANDS, Math.floor(num(s.extra_hands, 0))));
     s.proficiency_bonus = num(s.proficiency_bonus, Math.ceil(1 + s.level / 4));
     if (s.classes !== undefined) { const list = Array.isArray(s.classes) ? s.classes.filter(c => c && typeof c === 'object' && String(c.name || '').trim() && Number(c.level) > 0) : []; if (list.length) s.classes = list; else delete s.classes; }
     s.abilities = obj(s.abilities); for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) s.abilities[k] = num(s.abilities[k], 10);
@@ -80,7 +82,7 @@
   function migrate() {
     normalizeSheet();
     s.inventory ||= []; s.spells ||= { ability: 'int', slots: {}, known: [] }; s.spells.known ||= []; s.spells.slots ||= {}; s.features ||= []; s.attacks ||= []; s.notes_by ||= {}; s.currency ||= { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }; s.traits ||= {};
-    s.inventory = Equipment.migrate(s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' })));
+    s.inventory = Equipment.migrate(s.inventory.map(it => it.uid ? it : M.newItem({ ...it, type: it.type || 'gear' })), s.extra_hands);
     s.features=s.features.map(f=>f.uid?f:M.newFeature(f));
     s.spells.known = s.spells.known.map(sp => sp.uid ? sp : M.newSpell({ ...sp, actions: sp.actions || [] }));
   }
@@ -210,33 +212,45 @@
     const ok = await LevelUp.open({ sheet: s, campaignId: ch.campaign_id, onApply: () => { dirty = true; } });
     if (ok) { s.ac = Equipment.armorClass(s); save(); render(); } else if (dirty) { save(); }
   }
-  // Руки: перетаскивание предмета из одной руки в другую. Оружие с двуручным или универсальным хватом,
-  // брошенное в свободную вторую руку, берёт обе; перетаскивание из «обеих» в одну руку возвращает одноручный хват.
+  // Руки: main, off и дополнительные extra1..extraN по листу. Оружие с двуручным или универсальным хватом,
+  // брошенное в свободную вторую руку, берёт обе; перетаскивание из «обеих» в одну руку возвращает одноручный
+  // хват. Двуручное в дополнительную руку не берут — в её списке такого оружия нет.
   let draggingHand = null;
   function handsSection() {
-    const occupied = key => s.inventory.find(i => i.equipped && (i.hand_slot === key || i.hand_slot === 'both'));
+    const extra = Equipment.extraHands(s);
+    // Предмет в «обеих» руках занимает main и off, но не дополнительные руки.
+    const occupies = (it, key) => it.equipped && (it.hand_slot === key || (it.hand_slot === 'both' && (key === 'main' || key === 'off')));
+    const occupied = key => s.inventory.find(it => occupies(it, key));
     const canBoth = it => ['two', 'versatile'].includes(Equipment.handedness(it));
     const otherHand = key => (key === 'main' ? 'off' : 'main');
+    const isExtra = key => key.startsWith('extra');
     // Что произойдёт при сбросе предмета uid в руку key: { slot } или { error }.
     const planMove = (uid, key) => {
       const it = s.inventory.find(i => i.uid === uid);
       if (!it) return { error: 'Предмет не найден' };
+      if (isExtra(key) && Equipment.handedness(it) === 'two') return { error: 'Двуручное оружие нельзя взять в дополнительную руку' };
       const target = occupied(key);
       if (target && target.uid !== uid) return { error: `Рука занята: ${target.name}. Сначала освободите её.` };
       if (it.hand_slot === key) return { slot: null };
       let slot = key;
-      const other = occupied(otherHand(key));
-      if (canBoth(it) && it.hand_slot !== 'both' && (!other || other.uid === uid)) slot = 'both';
+      // Взять двумя руками можно только из main/off: дополнительная рука всегда одна.
+      if (!isExtra(key)) {
+        const other = occupied(otherHand(key));
+        if (canBoth(it) && it.hand_slot !== 'both' && (!other || other.uid === uid)) slot = 'both';
+      }
       return { slot };
     };
     const dropHint = (uid, key) => { const plan = planMove(uid, key); return plan.error ? { ok: false, text: plan.error } : { ok: true, text: plan.slot === 'both' ? 'Взять двумя руками' : '' }; };
     const clearOver = () => document.querySelectorAll('.equipment-hands .hand-slot').forEach(n => n.classList.remove('dragover', 'drop-invalid'));
-    return el('section', { class: 'equipment-hands', 'aria-label': 'Экипировка рук и доспеха' }, ...['main', 'off'].map(key => {
+    return el('section', { class: 'equipment-hands', 'aria-label': 'Экипировка рук и доспеха' },
+      extra > 0 ? el('p', { class: 'muted small hands-count' }, `Рук: ${2 + extra}`) : null,
+      ...['main', 'off', ...Equipment.extraSlots(extra)].map(key => {
       const current = occupied(key);
       const twoHanded = current?.hand_slot === 'both';
       // Двуручный хват: одна общая рамка на обе руки (вторая ячейка не выводится).
       if (twoHanded && key === 'off') return null;
-      const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none' && Equipment.canEquip(it));
+      // В дополнительную руку двуручное оружие не предлагается: только main/off/both.
+      const choices = s.inventory.filter(it => it.qty === 1 && it.handedness !== 'none' && Equipment.canEquip(it, s) && (!isExtra(key) || it.handedness !== 'two'));
       const oneHandedTwo = current && !twoHanded && current.handedness === 'two';
       const hint = !current ? null : twoHanded ? null
         : oneHandedTwo ? 'Одной рукой: броски атаки с помехой. Перетащите во вторую руку, чтобы взять двумя руками'
@@ -264,12 +278,13 @@
           if (plan.slot) inventoryOp({ op: 'equip', item_uid: uid, slot: plan.slot });
         },
       }, el('label', {}, twoHanded ? 'Обе руки' : Equipment.slots[key]),
-        el('strong', {}, current?.name || 'Свободна'), el('span', { class: 'muted small' }, twoHanded ? 'Двуручный хват: броски атаки без помехи' : current ? Equipment.kinds[current.handedness] : 'Оружие, щит'),
+        el('strong', {}, current?.name || 'Свободна'), el('span', { class: 'muted small' }, twoHanded ? 'Двуручный хват: броски атаки без помехи' : current ? Equipment.kinds[current.handedness] : isExtra(key) ? 'Только одноручное оружие' : 'Оружие, щит'),
         hint && !readonly ? el('span', { class: 'hand-hint small' }, hint) : null,
         twoHanded && !readonly ? el('button', { class: 'small', title: 'Держать в одной руке: броски атаки с помехой', onclick: () => inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'main' }) }, 'Одной рукой') : null,
         readonly ? null : el('select', { 'aria-label': Equipment.slots[key], onchange: e => {
           if (!e.target.value && current) return inventoryOp({ op: 'equip', item_uid: current.uid, slot: 'backpack' });
-          const it = s.inventory.find(i => i.uid === e.target.value); if (it) inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.handedness === 'two' ? 'both' : key });
+          const it = s.inventory.find(i => i.uid === e.target.value);
+          if (it) inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.handedness === 'two' && !isExtra(key) ? 'both' : key });
         } }, el('option', { value: '', selected: !current ? '' : null }, '— Свободна —'), ...choices.map(it => el('option', { value: it.uid, selected: it.uid === current?.uid ? '' : null }, it.name + (it.handedness === 'two' ? ' · 2 руки' : '')))));
       return cell;
     }), armorSection());
@@ -353,7 +368,7 @@
 
   // ================= РЕНДЕР =================
   function render() {
-    Equipment.migrate(s.inventory);
+    Equipment.migrate(s.inventory, s.extra_hands);
     s.ac = Equipment.armorClass(s);
     ctx();
     app.innerHTML = '';
@@ -687,7 +702,7 @@
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), noteBtn('item:' + it.uid, it.name), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
       el('div', { class: 'qty', onclick: e => e.stopPropagation() }, readonly ? el('span', {}, '×' + it.qty) : [el('button', { class: 'tiny', onclick: () => { it.qty = Math.max(0, (it.qty ?? 1) - 1); if (!it.qty) { it.equipped = false; it.hand_slot = null; }; save(); render(); } }, '−'), el('span', {}, it.qty ?? 1), el('button', { class: 'tiny', onclick: () => { it.qty = (it.qty ?? 1) + 1; save(); render(); } }, '+')]),
       readonly ? null : favButton(it),
-      readonly || !Equipment.canEquip(it) ? null : el('button', { disabled: it.qty === 0 ? '' : null, class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.equipped ? 'backpack' : it.handedness !== 'none' ? Equipment.choices(it)[0] : 'worn' }); } }, icon('check', 12)));
+      readonly || !Equipment.canEquip(it, s) ? null : el('button', { disabled: it.qty === 0 ? '' : null, class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.equipped ? 'backpack' : it.handedness !== 'none' ? Equipment.choices(it, s)[0] : 'worn' }); } }, icon('check', 12)));
     card.append(head);
     const acts = itemActions(it);
     const resource = Equipment.resourceStatus(it, s.inventory);
@@ -698,7 +713,7 @@
       if (noteLine('item:' + it.uid)) body.append(noteLine('item:' + it.uid));
       if (it.desc) body.append(el('div', { class: 'card-desc' }, M.rich(it.desc, c, { prose:!!it.mechanics, prefix: `${ch.name}: ${it.name}` })));
       if (it.charges) body.append(el('div', { class: 'row small', style: 'align-items:center;gap:6px' }, 'Заряды: ', ...Array.from({ length: it.charges.max }, (_, i) => el('span', { class: 'pip' + (i < it.charges.cur ? ' on' : ''), style: 'cursor:pointer', onclick: () => { if (readonly) return; it.charges.cur = i < it.charges.cur ? i : i + 1; save(); render(); } })), it.charges.recharge ? el('span', { class: 'muted' }, `(${it.charges.recharge})`) : null));
-      if (!readonly && Equipment.canEquip(it)) body.append(el('label', { class: 'item-grip' }, it.handedness !== 'none' ? 'Положение / хват' : 'Слот', el('select', { onchange: e => inventoryOp({ op: 'equip', item_uid: it.uid, slot: e.target.value }) }, ...['backpack', ...Equipment.choices(it)].map(slot => el('option', { value: slot, selected: (it.equipped ? it.hand_slot || it.worn_slot || 'backpack' : 'backpack') === slot ? '' : null }, Equipment.slots[slot])))));
+      if (!readonly && Equipment.canEquip(it, s)) body.append(el('label', { class: 'item-grip' }, it.handedness !== 'none' ? 'Положение / хват' : 'Слот', el('select', { onchange: e => inventoryOp({ op: 'equip', item_uid: it.uid, slot: e.target.value }) }, ...['backpack', ...Equipment.choices(it, s)].map(slot => el('option', { value: slot, selected: (it.equipped ? it.hand_slot || it.worn_slot || 'backpack' : 'backpack') === slot ? '' : null }, Equipment.slots[slot])))));
       else if (!readonly) body.append(el('div', { class: 'muted small' }, 'Этот предмет нельзя экипировать: он лежит в рюкзаке. Если это носимая вещь, измените «Носится на» в редакторе предмета.'));
       if (it.cost || it.source) body.append(el('div', { class: 'muted small' }, [it.cost, it.source].filter(Boolean).join(' · ')));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' },
