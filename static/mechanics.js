@@ -13,7 +13,7 @@ window.Mechanics = (() => {
   // бывший «спасбросок цели» — это своё действие (бросок и правило), результат которого применяет ДМ.
   // Русское название состояния по его ключу из набора conditions (запасом — сам ключ).
   const conditionName = key => window.Presets?.item('conditions', key)?.table?.ru || key;
-  const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'] };
+  const TYPES = { consume: ['Расход ресурса','cost'], attack: ['Атака','roll'], damage: ['Урон · бросок','roll'], heal: ['Лечение','effect'], temp_hp: ['Временные хиты','effect'], roll: ['Своё действие','roll'], grant_item: ['Выдать предмет','effect'], condition: ['Состояние','effect'], adjust: ['Изменить показатель','effect'], require: ['Проверка условия','control'], manual: ['Ручное правило','control'], passive: ['Параметр при создании','passive'], setvar: ['Записать переменную','effect'] };
   // Спасбросок цели — не бросок игрока: его кидает цель (или ДМ), а лист показывает правило и урон.
   // Короткий код характеристики: «МДР» в русском тексте, «WIS» в английском.
   const ABILITY_INPUT = { str: 'str', dex: 'dex', con: 'con', int: 'int', wis: 'wis', cha: 'cha',

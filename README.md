@@ -158,14 +158,20 @@ logging:  { level: "info,sqlx=warn" }
 
 Коротко палитра идёт рабочим процессом: **Начало** (`action.program`) → **Действия**
 (`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.grant_item`, `action.manual`,
-`flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`, `data.math`,
-`data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
-`dice.combine`) → **Условия**
+`action.setvar`, `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`,
+`data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
+`data.var`, `data.ref`, `data.mathfun`, `dice.combine`) → **Условия**
 (`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
 `condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 31 тип; ещё два
+`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 35 типов; ещё два
 внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
 узла есть подсказка, у настраиваемых — единый параметр `kind`.
+
+Переменные и ссылки: `action.setvar` пишет число (`scope: action` — до конца выполнения,
+`scope: sheet` — в `sheet.vars` листа), `data.var` читает его, `data.ref` подставляет
+значение числового узла этого же графа (себя и циклы ссылок граф отклоняет), а `data.mathfun`
+считает `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sign`. Подробности —
+[docs/node-system-v3.md](docs/node-system-v3.md).
 
 ПКМ по узлу предлагает быстрые подключения: **«Подключить к этой ноде»** — типы, чей выход
 совместим с любым входом текущего узла (новый узел подключается к текущему), и

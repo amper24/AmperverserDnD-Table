@@ -3465,6 +3465,842 @@
           "groups": []
         }
       }
+    },
+    {
+      "name": "action-setvar-writes-a-variable",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 5
+              }
+            },
+            {
+              "id": "sv",
+              "type": "action.setvar",
+              "params": {
+                "block_id": "sv",
+                "name": "bonus",
+                "scope": "action"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "sv",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "action-setvar-unknown-scope",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 5
+              }
+            },
+            {
+              "id": "sv",
+              "type": "action.setvar",
+              "params": {
+                "block_id": "sv",
+                "name": "bonus",
+                "scope": "global"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "sv",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "n",
+                "socket": "value"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-var-name-must-be-latin",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "v",
+              "type": "data.var",
+              "params": {
+                "name": "Бонус",
+                "scope": "action"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-ref-reads-a-number",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r",
+              "type": "data.ref",
+              "params": {
+                "node": "n"
+              }
+            },
+            {
+              "id": "n",
+              "type": "data.number",
+              "params": {
+                "value": 7
+              }
+            },
+            {
+              "id": "sv",
+              "type": "action.setvar",
+              "params": {
+                "block_id": "sv",
+                "name": "x",
+                "scope": "sheet"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "sv",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "r",
+                "socket": "value"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-ref-self-reference",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r",
+              "type": "data.ref",
+              "params": {
+                "node": "r"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-ref-cycle",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r1",
+              "type": "data.ref",
+              "params": {
+                "node": "r2"
+              }
+            },
+            {
+              "id": "r2",
+              "type": "data.ref",
+              "params": {
+                "node": "r1"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-ref-missing-target",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "r",
+              "type": "data.ref",
+              "params": {
+                "node": "ghost"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-mathfun-clamp",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "data.number",
+              "params": {
+                "value": 10
+              }
+            },
+            {
+              "id": "b",
+              "type": "data.number",
+              "params": {
+                "value": 0
+              }
+            },
+            {
+              "id": "c",
+              "type": "data.number",
+              "params": {
+                "value": 6
+              }
+            },
+            {
+              "id": "mf",
+              "type": "data.mathfun",
+              "params": {
+                "op": "clamp"
+              }
+            },
+            {
+              "id": "sv",
+              "type": "action.setvar",
+              "params": {
+                "block_id": "sv",
+                "name": "x",
+                "scope": "action"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "sv",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "value"
+              },
+              "to": {
+                "node": "mf",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "b",
+                "socket": "value"
+              },
+              "to": {
+                "node": "mf",
+                "socket": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "c",
+                "socket": "value"
+              },
+              "to": {
+                "node": "mf",
+                "socket": "c"
+              }
+            },
+            {
+              "from": {
+                "node": "mf",
+                "socket": "value"
+              },
+              "to": {
+                "node": "sv",
+                "socket": "value"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-mathfun-clamp-without-limits",
+      "valid": true,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "a",
+              "type": "data.number",
+              "params": {
+                "value": 10
+              }
+            },
+            {
+              "id": "mf",
+              "type": "data.mathfun",
+              "params": {
+                "op": "clamp"
+              }
+            },
+            {
+              "id": "m",
+              "type": "action.manual",
+              "params": {
+                "block_id": "m",
+                "text": "Ручное правило",
+                "when": "always"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "m",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "m",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            },
+            {
+              "from": {
+                "node": "a",
+                "socket": "value"
+              },
+              "to": {
+                "node": "mf",
+                "socket": "a"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-mathfun-unknown-operation",
+      "valid": false,
+      "executable": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Тест",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "mf",
+              "type": "data.mathfun",
+              "params": {
+                "op": "root"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": []
+        }
+      }
+    },
+    {
+      "name": "data-ref-inside-a-group",
+      "valid": true,
+      "executable": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "p",
+              "type": "action.program",
+              "params": {
+                "program_id": "use",
+                "name": "Группа",
+                "trigger": "use"
+              }
+            },
+            {
+              "id": "inst",
+              "type": "group.instance",
+              "params": {
+                "group_id": "g1"
+              }
+            },
+            {
+              "id": "e",
+              "type": "flow.end",
+              "params": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "p",
+                "socket": "exec"
+              },
+              "to": {
+                "node": "inst",
+                "socket": "i"
+              }
+            },
+            {
+              "from": {
+                "node": "inst",
+                "socket": "o"
+              },
+              "to": {
+                "node": "e",
+                "socket": "exec"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g1",
+              "name": "Ссылка в группе",
+              "inputs": [
+                {
+                  "id": "i",
+                  "name": "Вход",
+                  "type": "flow"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "o",
+                  "name": "Выход",
+                  "type": "flow"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i"
+                  }
+                },
+                {
+                  "id": "n",
+                  "type": "data.number",
+                  "params": {
+                    "value": 9
+                  }
+                },
+                {
+                  "id": "r",
+                  "type": "data.ref",
+                  "params": {
+                    "node": "n"
+                  }
+                },
+                {
+                  "id": "sv",
+                  "type": "action.setvar",
+                  "params": {
+                    "block_id": "sv",
+                    "name": "x",
+                    "scope": "action"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "o"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "sv",
+                    "socket": "exec"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "r",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "sv",
+                    "socket": "value"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "sv",
+                    "socket": "exec"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      }
     }
   ]
 }

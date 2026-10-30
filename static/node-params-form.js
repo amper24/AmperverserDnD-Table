@@ -57,6 +57,16 @@
     },
     'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
+    // Математика одного числа: операция выбирается списком (таблица та же, что mathfunValue в реестре).
+    'data.mathfun': { op: [
+      { value: 'min', label: 'Минимум из a и b' }, { value: 'max', label: 'Максимум из a и b' },
+      { value: 'clamp', label: 'Ограничить диапазоном b…c' }, { value: 'abs', label: 'Модуль' },
+      { value: 'round', label: 'Округлить (от 0,5 вверх)' }, { value: 'floor', label: 'Округлить вниз' },
+      { value: 'ceil', label: 'Округлить вверх' }, { value: 'sign', label: 'Знак: −1, 0 или 1' },
+    ] },
+    // Переменная действия или листа: область задаётся списком.
+    'action.setvar': { scope: [{ value: 'action', label: 'Действие — до конца выполнения' }, { value: 'sheet', label: 'Лист — сохранить в sheet.vars' }] },
+    'data.var': { scope: [{ value: 'action', label: 'Действие — до конца выполнения' }, { value: 'sheet', label: 'Лист — из sheet.vars' }] },
     'data.stat': { mode: [{ value: 'bonus', label: 'Бонус (модификатор)' }, { value: 'score', label: 'Значение (навык — пассивное)' }] },
     // Один настраиваемый узел всех бросков: тип броска выбирается выпадающим списком прямо на карточке.
     'action.roll': { kind: [
@@ -121,7 +131,7 @@
     items: 'Предметы', title: 'Название', gold: 'Золото', qty: 'Количество', type: 'Тип',
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
     caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита', label: 'Метка вида',
-    percent: 'Процент от максимума',
+    percent: 'Процент от максимума', scope: 'Область', node: 'Узел',
   };
   const labelOf = key => LABELS[key] || key;
 
@@ -273,6 +283,8 @@
       const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
       // data.result читает результат конкретной программы или последнего действия графа.
       if (node?.type === 'data.result') enums.source = [{ value: 'last', label: 'Последнее действие' }, ...(options.programs || [])];
+      // data.ref выбирает числовой узел текущего графа (существование и циклы проверяет граф).
+      if (node?.type === 'data.ref') enums.node = [{ value: '', label: '— выберите узел —' }, ...(options.refNodes || [])];
       // У «Изменить поле» список полей зависит от вида: value и formula принимают разные поля листа.
       const fields = node?.type === 'action.field' ? fieldOptions(node?.params) : null;
       if (fields) enums.field = fields;

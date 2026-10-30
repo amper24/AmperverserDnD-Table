@@ -15,9 +15,36 @@ const BUTTON_STYLES: &[&str] = &["default", "attack", "spell", "heal", "damage",
 // Виды блоков плана (внутренний IR): их исполняет src/mechanics.rs. Имена узлов v3 отличаются —
 // action.spend компилируется в consume, action.field — в condition/adjust/passive.
 // require остаётся только в старых сохранённых планах (src/mechanics.rs); граф v3 его не создаёт.
-const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive"];
+const ACTIONS: &[&str] = &["consume", "attack", "damage", "heal", "temp_hp", "roll", "grant_item", "condition", "adjust", "manual", "passive", "setvar"];
 // Виды узлов действия (action.*, кроме action.program) — как ACTION_KINDS в static/node-registry.js.
-const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", "manual"];
+const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", "manual", "setvar"];
+// Области переменных (action.setvar / data.var) — как VAR_SCOPES в static/node-registry.js:
+// action живёт до конца выполнения, sheet сохраняет значение в sheet.vars.
+const VAR_SCOPES: &[&str] = &["action", "sheet"];
+// Операции узла «Математика» (data.mathfun) — как MATHFUN_OPS в static/node-registry.js.
+const MATHFUN_OPS: &[&str] = &["min", "max", "clamp", "abs", "round", "floor", "ceil", "sign"];
+/// Имя переменной: 1–32 символа из [a-z0-9_] (та же проверка на клиенте).
+pub(crate) fn valid_var_name(value: &str) -> bool {
+    !value.is_empty() && utf16_len(value) <= 32 && value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+/// Область переменной: действие (до конца выполнения) или лист (сохраняется в sheet.vars).
+pub(crate) fn valid_var_scope(value: &str) -> bool { VAR_SCOPES.contains(&value) }
+/// Таблица операций data.mathfun (как mathfunValue в static/node-registry.js).
+/// a обязателен; min/max нужен b, clamp — b и c.
+fn mathfun_value(op: &str, a: f64, b: Option<f64>, c: Option<f64>) -> Option<f64> {
+    Some(match op {
+        "abs" => a.abs(),
+        // Как Math.floor(a + 0.5): округление половины вверх.
+        "round" => (a + 0.5).floor(),
+        "floor" => a.floor(),
+        "ceil" => a.ceil(),
+        "sign" => if a > 0.0 { 1.0 } else if a < 0.0 { -1.0 } else { 0.0 },
+        "min" => a.min(b?),
+        "max" => a.max(b?),
+        "clamp" => a.max(b?).min(c?),
+        _ => return None,
+    })
+}
 // Виды узла «Изменить поле» и их блоки плана — как FIELD_KINDS / FIELD_BLOCKS в static/node-registry.js.
 const FIELD_KINDS: &[&str] = &["status", "value", "formula"];
 const FIELD_BLOCKS: &[(&str, &str)] = &[("status", "condition"), ("value", "adjust"), ("formula", "passive")];
@@ -60,6 +87,15 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.stat" => { outputs.insert("value".into(), "dice".into()); }
         // Значения, которые знает только рантайм: результат действия, поле листа и круг каста.
         "data.result" | "data.sheet" | "data.cast" => { outputs.insert("value".into(), "number".into()); }
+        // Переменная действия или листа: число, без состояния выполнения — 0.
+        "data.var" => { outputs.insert("value".into(), "number".into()); }
+        // Ссылка на числовой узел этого же графа (значение цели).
+        "data.ref" => { outputs.insert("value".into(), "number".into()); }
+        // Математика одного числа: a обязателен, b — min/max, b и c — clamp.
+        "data.mathfun" => {
+            inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); inputs.insert("c".into(), "number".into());
+            outputs.insert("value".into(), "number".into());
+        }
         "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
@@ -83,6 +119,8 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
             // Условие блока: enabled — статическое, condition — динамическое bool-значение.
             inputs.insert("exec".into(), "flow".into()); inputs.insert("enabled".into(), "bool".into()); inputs.insert("condition".into(), "bool".into()); outputs.insert("exec".into(), "flow".into());
             if DICE_ACTIONS.contains(&&x[7..]) { inputs.insert("dice".into(), "dice".into()); }
+            // Записать переменную: значение приходит числом по проводу (иначе 0).
+            if x == "action.setvar" { inputs.insert("value".into(), "number".into()); }
         }
         "group.instance" => {
             let id = params["group_id"].as_str().unwrap_or("");
@@ -149,10 +187,43 @@ fn check_interface(value: &Value) -> ApiResult<()> {
     }
     Ok(())
 }
-fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> {
+fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value]) -> ApiResult<()> {
     let p = &n["params"];
     let kind = n["type"].as_str().unwrap_or("");
     match kind {
+        // Переменная: имя из [a-z0-9_] (1–32) и область action или sheet. У action.setvar и data.var
+        // один контракт параметров — как в static/nodes/actions/setvar.js и static/nodes/data/var.js.
+        "action.setvar" | "data.var" => {
+            if !valid_var_name(p["name"].as_str().unwrap_or("")) { return Err(bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
+            if !VAR_SCOPES.contains(&p["scope"].as_str().unwrap_or("")) { return Err(bad("Переменная: область action или sheet.")); }
+        }
+        // Ссылка: цель — числовой узел этого же графа; себя и циклы ссылок граф запрещает.
+        "data.ref" => {
+            let target_id = p["node"].as_str().unwrap_or("");
+            if target_id.is_empty() || utf16_len(target_id) > 100 { return Err(bad("Ссылка: выберите узел графа.")); }
+            if target_id == n["id"].as_str().unwrap_or("") { return Err(bad("Ссылка: узел не может ссылаться на себя.")); }
+            let mut current = match nodes.iter().find(|item| item["id"].as_str() == Some(target_id)) {
+                Some(target) => target,
+                None => return Err(bad("Ссылка: узел не найден в этом графе.")),
+            };
+            let (_, outs) = ports_for(current["type"].as_str().unwrap_or(""), &current["params"], &[], None);
+            if outs.get("value").map(String::as_str) != Some("number") { return Err(bad("Ссылка: выберите числовой узел графа.")); }
+            let mut seen: HashSet<String> = HashSet::new();
+            seen.insert(n["id"].as_str().unwrap_or("").to_string());
+            while current["type"] == "data.ref" {
+                let id = current["id"].as_str().unwrap_or("");
+                if !seen.insert(id.to_string()) { return Err(bad("Циклическая ссылка")); }
+                let next_id = current["params"]["node"].as_str().unwrap_or("");
+                current = match nodes.iter().find(|item| item["id"].as_str() == Some(next_id)) {
+                    Some(next) => next,
+                    None => return Err(bad("Ссылка: узел не найден в этом графе.")),
+                };
+            }
+        }
+        // Математика: закрытый список операций; clamp без входов b и c не считается (провод — в validate_graph).
+        "data.mathfun" if !MATHFUN_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
+            return Err(bad("Математика: допустимы min, max, clamp, abs, round, floor, ceil и sign."));
+        }
         "data.boolean" if !p["value"].is_boolean() => return Err(bad("Логическая константа: значение true или false.")),
         "data.math" if !["add", "sub", "mul", "div", "min", "max"].contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Вычисление: неизвестная операция.")),
         "data.number" if !p["value"].as_f64().map(|number| number.is_finite()).unwrap_or(false) => return Err(bad("Числовой узел должен содержать конечное число.")),
@@ -324,6 +395,7 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>) -> ApiResult<()> 
 // Смысловые проблемы связей пишутся в problems (сохранение их не блокирует, исполнение пропускает граф).
 const FLOW_END_UNWIRED: &str = "«Конец» ни к чему не подключён";
 const FLOW_BRANCH_UNFINISHED: &str = "Ветка не завершается узлом «Конец»";
+const MATHFUN_CLAMP_UNWIRED: &str = "Математика: для clamp нужны провода на входы b и c";
 fn flow_action_unfinished(name: &str) -> String { format!("Действие «{}» не завершается узлом «Конец»", name) }
 /// Выходы узла с типом flow (exec у действий, then/else у «Если», flow-порты групп) — как flowPorts в JS.
 fn flow_output_names(outs: &HashMap<String, String>) -> Vec<String> {
@@ -425,11 +497,15 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     for n in nodes {
         let id = n["id"].as_str().unwrap_or(""); let kind = n["type"].as_str().unwrap_or("");
         if id.is_empty() || utf16_len(id) > 100 || !node_ids.insert(id.to_string()) || !NODE_TYPES.contains(&kind) { return Err(bad("Неизвестный узел или повторяющийся ID.")); }
+    }
+    // Параметры проверяются после сбора ID: ссылка data.ref может указывать на узел, объявленный ниже.
+    for n in nodes {
+        let kind = n["type"].as_str().unwrap_or("");
         if let Some(p) = n.get("params") { if !p.is_object() || utf16_len(&p.to_string()) > 100_000 { return Err(bad("Параметры узла должны быть ограниченным JSON-объектом.")); } }
         if let Some(pos) = n.get("position") { if !pos["x"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) || !pos["y"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) { return Err(bad("Координаты узла вне допустимых пределов.")); } }
         if kind == "group.instance" && !groups.iter().any(|g| g["id"] == n["params"]["group_id"]) { return Err(bad("Узел ссылается на отсутствующую группу.")); }
         if ["group.input", "group.output"].contains(&kind) && (!nested || owner_group.is_none()) { return Err(bad("Узлы интерфейса группы разрешены только внутри повторно используемой группы.")); }
-        validate_node_params(n, programs)?;
+        validate_node_params(n, programs, nodes)?;
     }
     let mut indegree: HashMap<String, usize> = node_ids.iter().map(|x| (x.clone(), 0)).collect();
     let mut adjacency: HashMap<String, Vec<String>> = node_ids.iter().map(|x| (x.clone(), Vec::new())).collect();
@@ -460,6 +536,12 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         adjacency.get_mut(source).unwrap().push(target.to_string()); *indegree.get_mut(target).unwrap() += 1;
     }
     for node in nodes { if node["type"] == "flow.if" && !incoming.contains(&format!("{}:condition", node["id"].as_str().unwrap_or(""))) { problems.push("Условному узлу требуется типизированное логическое условие.".to_string()); } }
+    // Математика: clamp ограничивает значение обоими пределами, поэтому нужны провода на b и c.
+    for node in nodes {
+        if node["type"] != "data.mathfun" || node["params"]["op"].as_str() != Some("clamp") { continue; }
+        let id = node["id"].as_str().unwrap_or("");
+        if ["b", "c"].iter().any(|socket| !incoming.contains(&format!("{id}:{socket}"))) { problems.push(MATHFUN_CLAMP_UNWIRED.to_string()); }
+    }
     let mut queue: VecDeque<String> = indegree.iter().filter(|(_, d)| **d == 0).map(|(id, _)| id.clone()).collect(); let mut visited = 0;
     while let Some(current) = queue.pop_front() { visited += 1; for target in adjacency.get(&current).into_iter().flatten() { let d = indegree.get_mut(target).unwrap(); *d -= 1; if *d == 0 { queue.push_back(target.clone()); } } }
     if visited != node_ids.len() { problems.push("Цикл в графе запрещён.".to_string()); }
@@ -503,10 +585,11 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet", "data.cast",
+    "data.var", "data.ref", "data.mathfun",
     "condition.context", "condition.hit", "condition.status", "condition.item", "condition.hp", "condition.slot",
     "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
-    "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.grant_item", "action.manual", "group.instance", "group.input", "group.output",
+    "action.program", "action.roll", "action.field", "action.spend", "action.slot", "action.grant_item", "action.manual", "action.setvar", "group.instance", "group.input", "group.output",
 ];
 
 fn group_boundaries_match(group: &Value) -> bool {
@@ -699,8 +782,8 @@ fn dice_term(d: &Value) -> Option<String> {
     if out.is_empty() { out = "0".into(); }
     Some(out)
 }
-fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<bool> {
-    graph_input_value(node, socket, incoming, nodes, context, None).and_then(|value| value.as_bool())
+fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize) -> Option<bool> {
+    graph_input_value(node, socket, incoming, nodes, context, None, depth).and_then(|value| value.as_bool())
 }
 /// Лист исполнения из контекста: `{"runtime": {"sheet": <лист>}}`; в редакторе и предпросмотре его нет.
 fn runtime_sheet(context: &Value) -> Option<&Value> { context.get("runtime").and_then(|runtime| runtime.get("sheet")) }
@@ -722,9 +805,9 @@ fn slot_remaining(spells: &Value, level: i64) -> f64 {
 }
 /// Таблица истинности узла «Логика». Неизвестный вход — None, кроме случаев, где значение
 /// операции уже определено одним входом (И с ложью, ИЛИ с истиной, И-НЕ, ИЛИ-НЕ, импликация).
-fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value) -> Option<Value> {
-    let a = bool_input(node, "a", incoming, nodes, context);
-    let b = bool_input(node, "b", incoming, nodes, context);
+fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize) -> Option<Value> {
+    let a = bool_input(node, "a", incoming, nodes, context, depth);
+    let b = bool_input(node, "b", incoming, nodes, context, depth);
     let value = match params["op"].as_str()? {
         "not" => !a?,
         "and" => match (a, b) { (Some(false), _) | (_, Some(false)) => false, (Some(true), Some(true)) => true, _ => return None },
@@ -738,13 +821,22 @@ fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String)
     };
     Some(json!(value))
 }
-fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value) -> Option<Value> {
+/// Предел вложенности вычисления значений: защищает от цикла ссылок data.ref→data.ref,
+/// а также от петли «ссылка → узел → ссылка», которую проверка параметров не обходит.
+const MAX_VALUE_DEPTH: usize = 64;
+/// Цель ссылки с префиксом экземпляра группы: `data.ref` хранит локальный ID, а развёрнутые
+/// узлы групп адресуются с префиксом. В корневом графе префикса нет.
+fn ref_node_id(current: &str, local: &str) -> String {
+    match current.rfind('/') { Some(index) => format!("{}{}", &current[..=index], local), None => local.to_string() }
+}
+fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value, depth: usize) -> Option<Value> {
+    if depth > MAX_VALUE_DEPTH { return None; }
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
         "data.boolean" => params.get("value").and_then(Value::as_bool).map(|value| json!(value)),
         "data.math" => {
-            let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
-            let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth)?.as_f64()?;
             let value = match params["op"].as_str()? {
                 "add" => a + b, "sub" => a - b, "mul" => a * b, "div" if b != 0.0 => a / b,
                 "min" => a.min(b), "max" => a.max(b), _ => return None,
@@ -753,13 +845,13 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         }
         "data.stat" => Some(stat_dice(params)),
         "dice.combine" => {
-            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None)?)?;
-            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None)?)?;
+            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None, depth)?)?;
+            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None, depth)?)?;
             Some(json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": format!("{a}+{b}")}))
         }
         "data.compare" => {
-            let a = graph_input_value(node, "a", incoming, nodes, context, None)?.as_f64()?;
-            let b = graph_input_value(node, "b", incoming, nodes, context, None)?.as_f64()?;
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth)?.as_f64()?;
             let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
             Some(json!(result))
         }
@@ -796,9 +888,43 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let key = match params["field"].as_str().unwrap_or("level") { "base" => "base", "extra" => "extra", _ => "level" };
             Some(cast.and_then(|cast| cast.get(key)).and_then(Value::as_i64).map(|value| json!(value)).unwrap_or(json!(0)))
         }
+        // Переменная выполнения: `runtime.vars` — числа листа плюс записанные действием.
+        // Область sheet дополнительно проверяет лист: в рантайме обе карты синхронны.
+        // Без контекста выполнения (редактор, предпросмотр) — 0.
+        "data.var" => {
+            let name = params["name"].as_str().unwrap_or("");
+            let runtime = context.get("runtime");
+            let vars = runtime.and_then(|runtime| runtime.get("vars"));
+            let sheet_vars = runtime.and_then(|runtime| runtime.get("sheet")).and_then(|sheet| sheet.get("vars"));
+            let map = if params["scope"].as_str() == Some("sheet") { sheet_vars.or(vars) } else { vars.or(sheet_vars) };
+            Some(json!(map.and_then(|map| map.get(name)).and_then(Value::as_f64).unwrap_or(0.0)))
+        }
+        // Ссылка на числовой узел этого же графа (или группы): значение цели в том же контексте.
+        // Цепочку ref→ref ведём явно, чтобы не зациклиться на испорченной записи.
+        "data.ref" => {
+            // ID цели локальный, а развёрнутые узлы группы адресуются с префиксом экземпляра.
+            let mut target = ref_node_id(node["id"].as_str()?, params["node"].as_str()?);
+            let mut seen: HashSet<String> = HashSet::new();
+            loop {
+                if !seen.insert(target.clone()) || seen.len() > MAX_VALUE_DEPTH { return None; }
+                let target_node = nodes.get(&target)?;
+                if target_node["type"] != "data.ref" {
+                    return graph_output_value(&(target, "value".to_string()), nodes, incoming, context, depth + 1);
+                }
+                let local = target_node["params"]["node"].as_str()?;
+                target = ref_node_id(&target, local);
+            }
+        }
+        // Математика одного числа и диапазона (та же таблица, что mathfunValue на клиенте).
+        "data.mathfun" => {
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
+            let c = graph_input_value(node, "c", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
+            mathfun_value(params["op"].as_str()?, a, b, c).map(|value| json!(value))
+        }
         // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
         // Неизвестный вход даёт None, кроме случаев, где значение уже определено одним входом.
-        "logic.op" => logic_value(params, node, incoming, nodes, context),
+        "logic.op" => logic_value(params, node, incoming, nodes, context, depth),
         // Условия листа: читают runtime-лист (context["runtime"]["sheet"]). Без листа — false.
         "condition.status" => {
             let name = params["name"].as_str()?;
@@ -859,9 +985,9 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         _ => None,
     }
 }
-fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>) -> Option<Value> {
+fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>, depth: usize) -> Option<Value> {
     let key = (node["id"].as_str().unwrap_or("").to_string(), socket.to_string());
-    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context) } else { fallback }
+    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context, depth + 1) } else { fallback }
 }
 pub fn to_v1(mechanics: &Value) -> Value { to_v1_with_context(mechanics, &Value::Null) }
 pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
@@ -894,7 +1020,7 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             let Some(current) = nodes.get(&node_id).copied() else { continue; };
             if current["type"] == "flow.if" {
                 let hit_gate = incoming.get(&(node_id.clone(), "condition".to_string())).and_then(|source| nodes.get(&source.0).copied()).is_some_and(|source| source["type"] == "condition.hit");
-                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) };
+                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None, 0).and_then(|value| value.as_bool()) };
                 let sockets: &[&str] = match condition { Some(true) => &["then"], Some(false) => &["else"], None => &["then", "else"] };
                 for socket in sockets.iter().rev() {
                     let branch: Option<String> = if hit_gate { Some(if *socket == "then" { "hit".to_string() } else { "miss".to_string() }) } else { gate.clone() };
@@ -937,8 +1063,20 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             if !ACTIONS.contains(&kind.as_str()) { continue; }
             if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
             // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
-            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None) { block.insert("dice".into(), value); }
-            let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned());
+            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None, 0) { block.insert("dice".into(), value); }
+            // Записать переменную: имя и область остаются в блоке, значение — с провода value.
+            // Исполнитель считает провод в рантайме по value_src (как condition_src); рядом
+            // лежит статическая оценка для предпросмотра.
+            if kind == "setvar" {
+                match incoming.get(&(node_id.clone(), "value".to_string())).cloned() {
+                    Some((source, _)) => {
+                        if let Some(value) = graph_input_value(current, "value", &incoming, &nodes, context, None, 0) { block.insert("value".into(), value); }
+                        block.insert("value_src".into(), json!(source));
+                    }
+                    None => { if block.get("value").is_none() { block.insert("value".into(), json!(0)); } }
+                }
+            }
+            let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned(), 0);
             if enabled.as_ref().is_some_and(|value| value == &json!(false)) {
                 let key = (node_id.clone(), "exec".to_string());
                 for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
@@ -950,7 +1088,7 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             // узла-источника (condition_src); статическая проверка остаётся только без провода.
             match incoming.get(&(node_id.clone(), "condition".to_string())).cloned() {
                 Some((source, _)) => { block.insert("condition_src".into(), json!(source)); }
-                None => if graph_input_value(current, "condition", &incoming, &nodes, context, None).and_then(|value| value.as_bool()) == Some(false) {
+                None => if graph_input_value(current, "condition", &incoming, &nodes, context, None, 0).and_then(|value| value.as_bool()) == Some(false) {
                     let key = (node_id.clone(), "exec".to_string());
                     for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
                     continue;
@@ -986,7 +1124,7 @@ pub fn node_value(graph: &Value, node_id: &str, context: &Value) -> ApiResult<Va
         incoming.insert(to, from_endpoint(link));
     }
     let endpoint = (node_id.to_string(), "value".to_string());
-    Ok(graph_output_value(&endpoint, &nodes, &incoming, context).unwrap_or(Value::Null))
+    Ok(graph_output_value(&endpoint, &nodes, &incoming, context, 0).unwrap_or(Value::Null))
 }
 
 #[cfg(test)]
@@ -1008,6 +1146,15 @@ mod tests {
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
         assert_eq!(blocks.iter().map(|block| block["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["inner-manual", "root-roll"]);
+    }
+    /// Ссылка внутри повторно используемой группы: локальный ID цели получает префикс экземпляра.
+    #[test]
+    fn data_ref_inside_a_group_resolves_with_the_instance_prefix() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let graph = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-ref-inside-a-group").unwrap();
+        let compiled = to_v1(&graph["mechanics"]);
+        let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks[0]["value"].as_f64(), Some(9.0));
     }
 }
 

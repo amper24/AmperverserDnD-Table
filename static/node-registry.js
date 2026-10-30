@@ -14,7 +14,7 @@
   if (!Base) throw new Error('mechanics.js должен быть загружен до node-registry.js');
   const clone = value => JSON.parse(JSON.stringify(value));
   // Виды узлов действия (action.*, кроме action.program): один узел — один глагол.
-  const ACTION_KINDS = ['roll', 'field', 'spend', 'slot', 'grant_item', 'manual'];
+  const ACTION_KINDS = ['roll', 'field', 'spend', 'slot', 'grant_item', 'manual', 'setvar'];
   // Все виды бросков собраны в одном настраиваемом узле «Бросок»: параметр kind выбирает смысл броска.
   const ROLL_KINDS = ['roll', 'attack', 'damage', 'heal', 'temp_hp'];
   const ROLL_KIND_LABELS = { roll: 'Свободный', attack: 'Атака', damage: 'Урон', heal: 'Лечение', temp_hp: 'Временные хиты' };
@@ -61,7 +61,7 @@
   // Список обязан совпадать с классами, объявившими compute; это проверяет tests/node-registry.test.cjs.
   // Условия листа (condition.status/item/hp/slot) без листа дают false.
   const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast',
-    'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
+    'data.var', 'data.ref', 'data.mathfun', 'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
@@ -70,6 +70,32 @@
   // Виды условия контекста: редакция, уровень, подкласс и выбранный вариант.
   const CONTEXT_KINDS = { edition: 'Редакция', level: 'Уровень', subclass: 'Подкласс', choice: 'Выбранный вариант' };
   const MATH_OPS = ['add', 'sub', 'mul', 'div', 'min', 'max'];
+  // Функции одного числа (data.mathfun): abs/sign/round/floor/ceil — один аргумент,
+  // min/max — a и b, clamp — a (значение), b (минимум), c (максимум).
+  const MATHFUN_OPS = ['min', 'max', 'clamp', 'abs', 'round', 'floor', 'ceil', 'sign'];
+  const MATHFUN_OP_LABELS = {
+    min: 'Минимум', max: 'Максимум', clamp: 'Ограничить диапазоном', abs: 'Модуль',
+    round: 'Округлить (от 0,5 вверх)', floor: 'Округлить вниз', ceil: 'Округлить вверх', sign: 'Знак',
+  };
+  // Области переменных: действие живёт до конца выполнения, лист сохраняет значение в sheet.vars.
+  const VAR_SCOPES = ['action', 'sheet'];
+  const VAR_SCOPE_LABELS = { action: 'Действие', sheet: 'Лист' };
+  // Имя переменной: 1–32 символа из [a-z0-9_] (общая проверка клиента и сервера).
+  const varName = value => typeof value === 'string' && /^[a-z0-9_]{1,32}$/.test(value);
+  // Чистая функция математики: одна таблица для узла, предпросмотра и сервера
+  // (src/mechanics_graph.rs mathfun_value). Неизвестный аргумент — undefined.
+  function mathfunValue(op, a, b, c) {
+    const number = value => typeof value === 'number' && Number.isFinite(value);
+    if (!number(a)) return undefined;
+    if (op === 'abs') return Math.abs(a);
+    if (op === 'round') return Math.floor(a + 0.5);
+    if (op === 'floor') return Math.floor(a);
+    if (op === 'ceil') return Math.ceil(a);
+    if (op === 'sign') return a > 0 ? 1 : a < 0 ? -1 : 0;
+    if (op === 'min' || op === 'max') return number(b) ? (op === 'min' ? Math.min(a, b) : Math.max(a, b)) : undefined;
+    if (op === 'clamp') return number(b) && number(c) ? Math.min(Math.max(a, b), c) : undefined;
+    return undefined;
+  }
   const COMPARE_OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b, '!=': (a, b) => a !== b };
   const isStatId = id => ABILITIES.includes(id) || (window.SKILLS || []).some(skill => skill[0] === id);
   function statDice(p) {
@@ -140,6 +166,8 @@
       condition: window.Presets?.item('conditions', 'poisoned')?.table?.ru || 'poisoned', operation: 'add', value: 30,
     });
     if (kind === 'grant_item') Object.assign(base, { amount: 1, item: { name: 'Пустой флакон', type: 'gear', qty: 1 } });
+    // Переменная: имя из [a-z0-9_] и область action/sheet (те же умолчания у data.var).
+    if (kind === 'setvar') Object.assign(base, { name: 'value', scope: 'action' });
     return base;
   }
   // Вид блока плана для узла действия: у «Броска» и «Изменить поле» его задаёт параметр kind,
@@ -160,6 +188,7 @@
     if (type === 'action.slot') return ['consume'];
     if (type === 'action.grant_item') return ['grant_item'];
     if (type === 'action.manual') return ['manual'];
+    if (type === 'action.setvar') return ['setvar'];
     return [];
   }
   // Параметры блока плана для узла действия: класс узла может отбросить лишние для вида поля.
@@ -219,7 +248,8 @@
     VALUE_TYPES, ACTION_KINDS, ROLL_KINDS, ROLL_KIND_LABELS, LOGIC_OPS, LOGIC_OP_LABELS, ABILITIES,
     STATUS_MODES, ITEM_MODES, HP_OPS, SLOT_OPS, SHEET_CONDITIONS,
     FIELD_KINDS, FIELD_KIND_LABELS, FIELD_BLOCKS, FIELD_VALUE_FIELDS, FIELD_FORMULA_FIELDS, blockKindOf, blockKindsOf, blockParamsOf,
-    COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
+    COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, MATHFUN_OPS, MATHFUN_OP_LABELS, mathfunValue, VAR_SCOPES, VAR_SCOPE_LABELS, varName,
+    RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
   };

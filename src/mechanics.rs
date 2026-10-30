@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
 // `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
-const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive"];
+const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive","setvar"];
 fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
 fn num(v: &Value, k: &str) -> i64 { v[k].as_i64().unwrap_or(0) }
@@ -101,6 +101,14 @@ fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
                 "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
                 "condition" => { let operation=text(b,"operation"); if !["add","remove","concentration"].contains(&operation)||(operation!="concentration"&&text(b,"condition").trim().is_empty())||text(b,"condition").len()>200 { return Err(bad("Неверное состояние")); } }
                 "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
+                // Переменная: имя и область те же, что у узлов action.setvar/data.var; значение —
+                // число или (в рантайме) провод value_src.
+                "setvar" => {
+                    if !crate::mechanics_graph::valid_var_name(text(b,"name")) { return Err(bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
+                    if !crate::mechanics_graph::valid_var_scope(text(b,"scope")) { return Err(bad("Переменная: область action или sheet.")); }
+                    if let Some(value) = b.get("value") { if !value.as_f64().is_some_and(f64::is_finite) { return Err(bad("Переменная: значение должно быть конечным числом.")); } }
+                    if let Some(source) = b.get("value_src") { if !source.as_str().is_some_and(|source| !source.is_empty() && source.chars().count() <= 100) { return Err(bad("Переменная: некорректный источник значения.")); } }
+                }
                 _ => {}
             }
             if text(p,"trigger")=="passive"&&!["passive","manual"].contains(&kind) { return Err(bad("Пассивная программа не может расходовать или выдавать ресурсы")); }
@@ -279,18 +287,38 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
     let mut results = s.get("action_results").filter(|value| value.is_object()).cloned().unwrap_or_else(|| json!({"last": Value::Null, "by_program": {}}));
     if !results["by_program"].is_object() { results["by_program"] = json!({}); }
     if results.get("last").is_none() { results["last"] = Value::Null; }
+    // Переменные выполнения: числа sheet.vars — стартовые значения. Переменные области action
+    // живут только до конца этого выполнения и в лист не попадают.
+    let mut vars: serde_json::Map<String, Value> = s.get("vars").and_then(Value::as_object)
+        .map(|object| object.iter().filter_map(|(name, value)| value.as_f64().map(|number| (name.clone(), json!(number)))).collect())
+        .unwrap_or_default();
     for b in blocks {
-        // condition_src — провод на вход condition: значение считается здесь, по текущему листу.
-        // false или 0 пропускает блок, поток идёт дальше по exec; неизвестный узел — ошибка.
+        // Контекст пересобирается на каждый блок: лист и переменные меняются по ходу цепочки.
+        // condition_src — провод на вход condition: false или 0 пропускает блок, поток идёт дальше.
+        let mut context = graph_context.clone();
+        context["runtime"] = json!({"sheet": &s, "results": &results, "vars": Value::Object(vars.clone())});
         if let Some(source) = b["condition_src"].as_str() {
-            let mut context = graph_context.clone();
-            context["runtime"] = json!({"sheet": &s, "results": &results});
             let value = crate::mechanics_graph::node_value(&graph, source, &context)?;
             let skip = match &value { Value::Bool(value) => !*value, Value::Number(number) => number.as_f64() == Some(0.0), _ => false };
             if skip { continue; }
         }
         let kind=text(b,"kind");let when=text(b,"when");
         if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||bad("Ветвление доступно только после блока атаки"))?;if h!=(when=="hit"){continue;} }
+        // Записать переменную: значение с провода value считается в рантайме, без провода — 0.
+        if kind=="setvar" {
+            let raw = match b["value_src"].as_str() {
+                Some(source) => crate::mechanics_graph::node_value(&graph, source, &context)?,
+                None => b["value"].clone(),
+            };
+            let value = raw.as_f64().filter(|value| value.is_finite()).ok_or_else(||bad("Переменная: значение входа value должно быть конечным числом"))?;
+            let name=text(b,"name");
+            if text(b,"scope")=="sheet" {
+                if !s["vars"].is_object() { s["vars"]=json!({}); }
+                s["vars"][name]=json!(value);
+            }
+            vars.insert(name.to_string(), json!(value));
+            continue;
+        }
         if kind=="consume" {if b["trigger"]=="attack"{attack_costs.push(b);}else{spend(&mut s,&doc,category,b,1,&mut spent)?;}continue;}
         if kind=="attack"{for cost in &attack_costs{spend(&mut s,&doc,category,cost,1,&mut spent)?;}}
         if kind=="require" {if s.pointer(&pointer(text(b,"field"))).and_then(Value::as_i64).unwrap_or(0)<num(b,"minimum"){return Err(bad("Условие действия не выполнено"));}continue;}
@@ -610,6 +638,122 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             assert_eq!(result["rolls"][0]["expr"],damage);
             assert_eq!(result["rolls"][1]["expr"],heal);
         }
+    }
+    /// Действие с переменной области action: значение живёт только до конца выполнения.
+    #[test] fn setvar_action_scope_is_visible_to_later_blocks_only() {
+        let mut s = json!({"hp":{"max":20,"current":10,"temp":0},"speed":30,"features":[{"uid":"f","name":"Переменная","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Переменная","trigger":"use"})),
+            node("five","data.number",json!({"value":5})),
+            node("sv","action.setvar",json!({"block_id":"sv","name":"tmp","scope":"action"})),
+            node("v","data.var",json!({"name":"tmp","scope":"action"})),
+            node("three","data.number",json!({"value":3})),
+            node("cmp","data.compare",json!({"op":">"})),
+            node("f","action.field",json!({"block_id":"f","kind":"value","field":"speed","amount":1})),
+        ], vec![
+            link("p","sv"), wire("five","value","sv","value"), link("sv","f"),
+            wire("v","value","cmp","a"), wire("three","value","cmp","b"), wire("cmp","value","f","condition"),
+        ])}]});
+        execute(&mut s,"feature","f","use","",false).unwrap();
+        assert_eq!(s["speed"],31,"условие читает переменную, записанную этим же действием");
+        assert!(s.get("vars").is_none(),"переменная действия не сохраняется в лист");
+        // План блока: имя и область из узла, статическая оценка провода и его источник для рантайма.
+        let compiled = crate::mechanics_graph::to_v1(&s["features"][0]["mechanics"]);
+        let block = &compiled["programs"][0]["blocks"][0];
+        assert_eq!(block["kind"],"setvar");
+        assert_eq!(block["name"],"tmp");
+        assert_eq!(block["scope"],"action");
+        assert_eq!(block["value"],5);
+        assert_eq!(block["value_src"],"five");
+    }
+    /// Переменная области sheet сохраняется после execute и видна второй программе.
+    #[test] fn setvar_sheet_scope_persists_for_the_next_program() {
+        let mut s = json!({"hp":{"max":20,"current":10,"temp":0},"speed":30,"features":[{"uid":"f","name":"Переменная","mechanics": mech(vec![
+            node("p1","action.program",json!({"program_id":"store","name":"Записать","trigger":"use"})),
+            node("seven","data.number",json!({"value":7})),
+            node("sv","action.setvar",json!({"block_id":"sv","name":"power","scope":"sheet"})),
+            node("end1","flow.end",json!({})),
+            node("p2","action.program",json!({"program_id":"read","name":"Прочитать","trigger":"use"})),
+            node("v","data.var",json!({"name":"power","scope":"sheet"})),
+            node("three","data.number",json!({"value":3})),
+            node("cmp","data.compare",json!({"op":">"})),
+            node("f","action.field",json!({"block_id":"f","kind":"value","field":"speed","amount":2})),
+            node("end2","flow.end",json!({})),
+        ], vec![
+            link("p1","sv"), wire("seven","value","sv","value"), link("sv","end1"),
+            link("p2","f"), wire("v","value","cmp","a"), wire("three","value","cmp","b"),
+            wire("cmp","value","f","condition"), link("f","end2"),
+        ])}]});
+        execute(&mut s,"feature","f","store","",false).unwrap();
+        assert_eq!(s["vars"]["power"],7.0,"sheet.vars сохраняется в лист");
+        assert_eq!(s["speed"],30,"вторая программа ещё не выполнялась");
+        execute(&mut s,"feature","f","read","",false).unwrap();
+        assert_eq!(s["speed"],32,"вторая программа видит sheet-переменную первой");
+        assert_eq!(s["vars"]["power"],7.0);
+    }
+    /// Математика одного числа: все восемь операций считаются при компиляции плана.
+    #[test] fn mathfun_node_evaluates_every_operation() {
+        let cases: &[(&str, f64, Option<f64>, Option<f64>, f64)] = &[
+            ("abs", -4.0, None, None, 4.0),
+            ("round", 2.5, None, None, 3.0),
+            ("round", -2.5, None, None, -2.0),
+            ("floor", 2.9, None, None, 2.0),
+            ("ceil", 2.1, None, None, 3.0),
+            ("sign", -9.0, None, None, -1.0),
+            ("sign", 0.0, None, None, 0.0),
+            ("min", 5.0, Some(3.0), None, 3.0),
+            ("max", 5.0, Some(3.0), None, 5.0),
+            ("clamp", 10.0, Some(0.0), Some(6.0), 6.0),
+        ];
+        for (op, a, b, c, expected) in cases {
+            let mut nodes = vec![
+                node("p","action.program",json!({"program_id":"use","name":"Математика","trigger":"use"})),
+                node("a","data.number",json!({"value":a})),
+                node("mf","data.mathfun",json!({"op":op})),
+                node("sv","action.setvar",json!({"block_id":"sv","name":"x","scope":"action"})),
+            ];
+            let mut links = vec![link("p","sv"), wire("a","value","mf","a"), wire("mf","value","sv","value")];
+            if let Some(b)=b { nodes.push(node("b","data.number",json!({"value":b}))); links.push(wire("b","value","mf","b")); }
+            if let Some(c)=c { nodes.push(node("c","data.number",json!({"value":c}))); links.push(wire("c","value","mf","c")); }
+            let graph = mech(nodes, links);
+            let plan = crate::mechanics_graph::to_v1(&graph);
+            let blocks = plan["programs"][0]["blocks"].as_array().unwrap();
+            assert_eq!(blocks[0]["value"].as_f64(), Some(*expected), "операция {op}");
+        }
+        let unknown = mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Математика","trigger":"use"})),
+            node("mf","data.mathfun",json!({"op":"root"})),
+        ], vec![link("p","mf")]);
+        assert!(crate::mechanics_graph::validate(&unknown).unwrap_err().1.contains("Математика"));
+    }
+    /// Ссылка на статический числовой узел работает при исполнении, а цикл ссылок отклоняется.
+    #[test] fn data_ref_reads_a_number_and_rejects_cycles() {
+        let mut s = json!({"hp":{"max":20,"current":10,"temp":0},"speed":30,"features":[{"uid":"f","name":"Ссылка","mechanics": mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
+            node("r","data.ref",json!({"node":"n"})),
+            node("n","data.number",json!({"value":7})),
+            node("sv","action.setvar",json!({"block_id":"sv","name":"x","scope":"sheet"})),
+        ], vec![link("p","sv"), wire("r","value","sv","value")])}]});
+        execute(&mut s,"feature","f","use","",false).unwrap();
+        assert_eq!(s["vars"]["x"],7.0,"ссылка читает значение числового узла");
+        let cycle = mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
+            node("r1","data.ref",json!({"node":"r2"})),
+            node("r2","data.ref",json!({"node":"r1"})),
+            node("end","flow.end",json!({})),
+        ], vec![link("p","end")]);
+        assert!(crate::mechanics_graph::validate(&cycle).unwrap_err().1.contains("Циклическая ссылка"));
+        let self_ref = mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
+            node("r","data.ref",json!({"node":"r"})),
+            node("end","flow.end",json!({})),
+        ], vec![link("p","end")]);
+        assert!(crate::mechanics_graph::validate(&self_ref).unwrap_err().1.contains("не может ссылаться на себя"));
+        let missing = mech(vec![
+            node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
+            node("r","data.ref",json!({"node":"ghost"})),
+            node("end","flow.end",json!({})),
+        ], vec![link("p","end")]);
+        assert!(crate::mechanics_graph::validate(&missing).unwrap_err().1.contains("не найден"));
     }
 }
 

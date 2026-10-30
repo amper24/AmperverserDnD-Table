@@ -158,6 +158,12 @@
     collect(root, [root]);
     return { nodes, links };
   }
+  // Ссылка data.ref локальна своему графу: внутри группы цель получает префикс экземпляра,
+  // как и остальные развёрнутые узлы. В корневом графе префикса нет.
+  function refNodeId(currentId, localId) {
+    const prefix = String(currentId || '').includes('/') ? String(currentId).slice(0, String(currentId).lastIndexOf('/') + 1) : '';
+    return `${prefix}${localId}`;
+  }
   function v2ToV1(mechanics, context = {}) {
     if (!mechanics || mechanics.version !== GRAPH_VERSION) return clone(mechanics);
     const groups = new Map((mechanics.graph?.groups || []).map(g => [g.id, g]));
@@ -169,17 +175,26 @@
       outgoing.get(key).push(link.to.node);
       incoming.set(`${link.to.node}:${link.to.socket}`, link.from);
     }
-    function outputValue(endpoint) {
-      const node = byId.get(endpoint?.node); if (!node) return undefined;
+    function outputValue(endpoint, chain = new Set()) {
+      const id = endpoint?.node;
+      // Цепочка значений: защищает от цикла ссылок, в том числе ref → узел → ref.
+      if (!id || chain.has(id)) return undefined;
+      const node = byId.get(id); if (!node) return undefined;
+      const path = new Set(chain); path.add(id);
       const p = node.params || {};
-      if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined));
+      // Ссылка на узел: значение цели в том же контексте; цепочка защищена от цикла.
+      if (node.type === 'data.ref') {
+        const local = String(p.node || ''); if (!local) return undefined;
+        return outputValue({ node: refNodeId(node.id, local), socket: 'value' }, path);
+      }
+      if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined, path));
       if (node.type.startsWith('data.')) return clone(p.value);
       if (node.type === 'condition.context') return contextConditionValue(p, context);
       return undefined;
     }
-    function inputValue(node, socket, fallback) {
+    function inputValue(node, socket, fallback, chain) {
       const source = incoming.get(`${node.id}:${socket}`);
-      return source ? outputValue(source) : fallback;
+      return source ? outputValue(source, chain) : fallback;
     }
     const programs = [];
     for (const n of expanded.nodes.filter(node => node.type === 'action.program')) {
@@ -208,6 +223,8 @@
         if (gate && (ap.when === undefined || ap.when === 'always')) ap.when = gate;
         // Кость, поданная проводом на вход «Кость», заменяет поле dice блока.
         const diceIn = inputValue(node, 'dice', undefined); if (diceIn !== undefined) ap.dice = diceIn;
+        // Значение переменной: в план попадает вычисленное значение провода (сервер уточняет его в рантайме).
+        if (node.type === 'action.setvar') { const valueIn = inputValue(node, 'value', undefined); if (valueIn !== undefined) ap.value = valueIn; }
         const enabled = inputValue(node, 'enabled', ap.enabled);
         // Динамическое условие блока проверяется после enabled: false пропускает блок,
         // а поток идёт дальше по exec — как у выключенного блока.
@@ -404,7 +421,7 @@
       if (node.position !== undefined && (!node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y) || Math.abs(node.position.x) > 100000 || Math.abs(node.position.y) > 100000)) return fail('Координаты узла вне допустимых пределов.');
       if (node.type === 'group.instance' && !groupMap.has(String(node.params?.group_id || ''))) return fail('Узел ссылается на отсутствующую группу.');
       if (['group.input', 'group.output'].includes(node.type) && (!nested || !ownerGroup)) return fail('Узлы интерфейса группы разрешены только внутри повторно используемой группы.');
-      const paramsError = validateNodeParams(node, programs);
+      const paramsError = validateNodeParams(node, programs, nodes, groupMap, ownerGroup);
       if (paramsError) return paramsError;
     }
     const incoming = new Set(), adjacency = new Map([...nodeIds].map(id => [id, []])), indegree = new Map([...nodeIds].map(id => [id, 0]));
@@ -429,6 +446,11 @@
       adjacency.get(source.node).push(target.node); indegree.set(target.node, indegree.get(target.node) + 1);
     }
     for (const node of nodes) if (node.type === 'flow.if' && !incoming.has(`${node.id}:condition`)) { const e = soft(problems, 'Условному узлу требуется типизированное логическое условие.'); if (e) return e; }
+    // Математика: clamp ограничивает значение обоими пределами, поэтому нужны провода на b и c.
+    for (const node of nodes) {
+      if (node.type !== 'data.mathfun' || node.params?.op !== 'clamp') continue;
+      if (!incoming.has(`${node.id}:b`) || !incoming.has(`${node.id}:c`)) { const e = soft(problems, 'Математика: для clamp нужны провода на входы b и c'); if (e) return e; }
+    }
     const queue = [...nodeIds].filter(id => indegree.get(id) === 0); let visited = 0;
     while (queue.length) { const current = queue.pop(); visited++; for (const target of adjacency.get(current)) { indegree.set(target, indegree.get(target) - 1); if (indegree.get(target) === 0) queue.push(target); } }
     if (visited !== nodeIds.size) { const e = soft(problems, 'Цикл в графе запрещён.'); if (e) return e; }
@@ -473,10 +495,38 @@
     }
     return '';
   }
-  function validateNodeParams(node, programs = null) {
+  // Узлы границ и экземпляры групп не существуют в развёрнутом графе как значения,
+  // поэтому ссылаться на них нельзя (цель — обычный числовой узел этого же графа/группы).
+  const REF_BOUNDARY_TYPES = new Set(['group.input', 'group.output', 'group.instance']);
+  // Проверка ссылки data.ref: цель существует в текущем графе, это не сам узел, она даёт
+  // number и цепочка ссылок не замыкается. Группы проверяются своим списком узлов (своя область).
+  function referenceError(node, nodes, groups = new Map(), ownerGroup = null) {
+    const targetId = String(node?.params?.node || '');
+    if (!targetId) return 'Ссылка: выберите узел графа.';
+    const list = Array.isArray(nodes) ? nodes : [];
+    const target = list.find(item => item?.id === targetId);
+    if (!target) return 'Ссылка: узел не найден в этом графе.';
+    if (target.id === node.id) return 'Ссылка: узел не может ссылаться на себя.';
+    if (REF_BOUNDARY_TYPES.has(target.type)) return 'Ссылка: выберите числовой узел графа.';
+    if (socketMap(target, groups, ownerGroup).outputs?.value !== 'number') return 'Ссылка: выберите числовой узел графа.';
+    const seen = new Set([node.id]);
+    let current = target;
+    while (current?.type === 'data.ref') {
+      if (seen.has(current.id)) return 'Циклическая ссылка';
+      seen.add(current.id);
+      current = list.find(item => item?.id === String(current.params?.node || ''));
+      if (!current) return 'Ссылка: узел не найден в этом графе.';
+    }
+    return '';
+  }
+  function validateNodeParams(node, programs = null, nodes = null, groups = new Map(), ownerGroup = null) {
     const type = node.type;
     const p = node.params || {};
     const def = NodeRegistry.nodeDef(type);
+    if (type === 'data.ref') {
+      const error = referenceError(node, nodes, groups, ownerGroup);
+      if (error) return error;
+    }
     if (def && typeof def.validate === 'function') {
       const err = def.validate(p);
       if (err) return err;
@@ -512,9 +562,13 @@
     if (list.length) return '';
     const planError = Base.validate(v2ToV1(mechanics));
     if (planError) return planError;
-    const allNodes = [...(mechanics.graph.nodes || []), ...(mechanics.graph.groups || []).flatMap(g => g.nodes || [])];
+    const groups = mechanics.graph.groups || [];
+    const groupMap = new Map(groups.map(group => [group.id, group]));
+    const allNodes = [...(mechanics.graph.nodes || []), ...groups.flatMap(g => g.nodes || [])];
     for (const n of allNodes) {
-      const e = validateNodeParams(n, programs);
+      // Ссылка проверяется в своей области: у узла группы — её узлы, у корня — корневые.
+      const owner = groups.find(group => (group.nodes || []).includes(n));
+      const e = validateNodeParams(n, programs, owner ? owner.nodes : (mechanics.graph.nodes || []), groupMap, owner || null);
       if (e) return e;
     }
     return '';
@@ -1601,7 +1655,12 @@
       // Источник data.result — программы этого графа (в паре с «последним действием»).
       const programs = graph.nodes.filter(item => item.type === 'action.program')
         .map(item => ({ value: String(item.params?.program_id || item.id), label: String(item.params?.name || item.params?.program_id || item.id) }));
-      const form = NodeForm.nodeParams(node, { inline: false, groups, programs, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      // Цель data.ref — числовой узел этого же графа; ссылка на себя в списке не предлагается.
+      const groupMap = new Map(graph.groups.map(item => [item.id, item]));
+      const refNodes = node.type === 'data.ref' ? graph.nodes
+        .filter(item => item.id !== node.id && socketMap(item, groupMap).outputs?.value === 'number')
+        .map(item => ({ value: item.id, label: `${NodeRegistry.nodeDef(item.type)?.label || item.type} · ${item.id.slice(0, 14)}` })) : null;
+      const form = NodeForm.nodeParams(node, { inline: false, groups, programs, refNodes, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
       return el('div', { class: 'node-inline', 'data-inline-params': node.id, onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, form);
     }
     function nodeCard(node) {

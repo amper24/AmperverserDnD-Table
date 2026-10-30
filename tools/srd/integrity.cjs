@@ -62,7 +62,7 @@ function rustConstants() {
   };
   return {
     NODE_TYPES: list('NODE_TYPES'), ABILITIES: list('ABILITIES'), ACTIONS: list('ACTIONS'),
-    ROLL_KINDS: list('ROLL_KINDS'), LOGIC_OPS: list('LOGIC_OPS'),
+    ROLL_KINDS: list('ROLL_KINDS'), LOGIC_OPS: list('LOGIC_OPS'), VAR_SCOPES: list('VAR_SCOPES'), MATHFUN_OPS: list('MATHFUN_OPS'),
     STATUS_MODES: list('STATUS_MODES'), ITEM_MODES: list('ITEM_MODES'), HP_OPS: list('HP_OPS'), SLOT_OPS: list('SLOT_OPS'),
     SHEET_CONDITIONS: list('SHEET_CONDITIONS'),
     FIELD_KINDS: list('FIELD_KINDS'), VALUE_FIELDS: list('VALUE_FIELDS'), FORMULA_FIELDS: list('FORMULA_FIELDS'),
@@ -737,6 +737,9 @@ function checkRuntime(opts = {}) {
   if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
   if ((Registry.ROLL_KINDS || []).slice().sort().join() !== rust.ROLL_KINDS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ROLL_KINDS', `виды настраиваемого броска клиента (${(Registry.ROLL_KINDS || []).join(',')}) и сервера (${rust.ROLL_KINDS.join(',')}) различаются`);
   if ((Registry.LOGIC_OPS || []).slice().sort().join() !== rust.LOGIC_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'LOGIC_OPS', `операции логики клиента (${(Registry.LOGIC_OPS || []).join(',')}) и сервера (${rust.LOGIC_OPS.join(',')}) различаются`);
+  // Переменные и математика: закрытые списки областей и операций обязаны совпадать.
+  if ((Registry.VAR_SCOPES || []).slice().sort().join() !== rust.VAR_SCOPES.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'VAR_SCOPES', `области переменных клиента (${(Registry.VAR_SCOPES || []).join(',')}) и сервера (${rust.VAR_SCOPES.join(',')}) различаются`);
+  if ((Registry.MATHFUN_OPS || []).slice().sort().join() !== rust.MATHFUN_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'MATHFUN_OPS', `операции математики клиента (${(Registry.MATHFUN_OPS || []).join(',')}) и сервера (${rust.MATHFUN_OPS.join(',')}) различаются`);
   // «Изменить поле»: виды и списки полей листа обязаны совпадать у клиента и сервера.
   for (const [name, client, server] of [
     ['FIELD_KINDS', Registry.FIELD_KINDS, rust.FIELD_KINDS],
