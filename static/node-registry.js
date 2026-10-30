@@ -61,7 +61,7 @@
   // Список обязан совпадать с классами, объявившими compute; это проверяет tests/node-registry.test.cjs.
   // Условия листа (condition.status/item/hp/slot) без листа дают false.
   const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast',
-    'data.var', 'data.ref', 'data.mathfun', 'data.text', 'data.textlen', 'data.textcheck', 'data.list', 'data.listget', 'data.listlen', 'data.listjoin',
+    'data.var', 'data.ref', 'data.call', 'data.mathfun', 'data.text', 'data.textlen', 'data.textcheck', 'data.list', 'data.listget', 'data.listlen', 'data.listjoin',
     'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };

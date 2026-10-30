@@ -30,9 +30,9 @@
   const fieldBlockParams = (type, params) => NodeRegistry.blockParamsOf(type, params);
   // Новые узлы: характеристики и навыки, кости, сравнение и логика. Одинаковы в клиенте и в движке сервера (src/mechanics_graph.rs).
   // Значение узла по значениям входов: get(socket) отдаёт значение входа или undefined. Неизвестное — undefined.
-  function computedValue(type, p, get) {
+  function computedValue(type, p, get, env) {
     const def = NodeRegistry.nodeDef(type);
-    if (def && typeof def.compute === 'function') return def.compute(p, get);
+    if (def && typeof def.compute === 'function') return def.compute(p, get, env);
     return undefined;
   }
   // Условие контекста (редакция/уровень/подкласс/выбор) считается по снимку листа, а не по входам.
@@ -164,10 +164,79 @@
     const prefix = String(currentId || '').includes('/') ? String(currentId).slice(0, String(currentId).lastIndexOf('/') + 1) : '';
     return `${prefix}${localId}`;
   }
+  // ---- группы-функции (data.call) ---------------------------------------
+  // Типы параметров/результата функции. Числовые аргументы MVP; результат — любой value-тип.
+  const FUNCTION_TYPES = ['number', 'text', 'bool', 'list'];
+  const MAX_CALL_DEPTH = 16;
+  const defaultValue = type => type === 'number' ? 0 : type === 'text' ? '' : type === 'bool' ? false : type === 'list' ? [] : undefined;
+  // Приведение к типу функции: без значения — 0 / "" / false / []. Та же таблица на сервере.
+  function coerceFunctionValue(type, value) {
+    if (type === 'number') return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    if (type === 'text') return typeof value === 'string' ? value : '';
+    if (type === 'bool') return typeof value === 'boolean' ? value : false;
+    if (type === 'list') return Array.isArray(value) ? value : [];
+    return undefined;
+  }
+  // Узел, допустимый внутри группы-функции: только значения (data.*, логика, кости, условия)
+  // и границы группы; действия, поток и правила запрещены (сервер: is_function_value_node).
+  const isFunctionValueNode = type => type.startsWith('data.') || type === 'logic.op' || type === 'dice.combine' || type.startsWith('condition.') || type === 'group.input' || type === 'group.output';
+  // Имя параметра функции: пусто или 1–32 символа [a-z0-9_] (как на сервере).
+  const validParamName = name => name === '' || /^[a-z0-9_]{1,32}$/.test(String(name || ''));
+  // Кандидат в группы-функции для выпадающего списка: ровно один value-выход и до трёх value-входов.
+  function isFunctionGroup(group) {
+    const inputs = Array.isArray(group?.inputs) ? group.inputs : [], outputs = Array.isArray(group?.outputs) ? group.outputs : [];
+    return outputs.length === 1 && FUNCTION_TYPES.includes(outputs[0].type) && inputs.length <= 3
+      && inputs.every(socket => FUNCTION_TYPES.includes(socket.type) && validParamName(socket.name));
+  }
+  // Вызов группы-функции: аргументы по порядку group.input, результат — значение на group.output.
+  // Рекурсия и глубина 16 дают значение по умолчанию. Та же семантика в call_group_value (Rust).
+  function groupValue(groups, groupId, args, resultType, context, stack) {
+    const id = String(groupId || ''), group = groups.get(id);
+    if (!group || stack.includes(id) || stack.length >= MAX_CALL_DEPTH) return defaultValue(resultType);
+    const inputs = Array.isArray(group.inputs) ? group.inputs : [], outputs = Array.isArray(group.outputs) ? group.outputs : [];
+    if (outputs.length !== 1 || inputs.length > 3) return defaultValue(resultType);
+    const nodes = new Map((group.nodes || []).map(node => [node.id, node]));
+    const incoming = new Map();
+    for (const link of group.links || []) if (link?.from && link?.to) incoming.set(`${link.to.node}:${link.to.socket}`, link.from);
+    const bindings = new Map();
+    inputs.forEach((socket, index) => {
+      const boundary = (group.nodes || []).find(node => node.type === 'group.input' && node.params?.socket_id === socket.id);
+      if (boundary) bindings.set(boundary.id, coerceFunctionValue(socket.type, args?.[index]));
+    });
+    const output = (group.nodes || []).find(node => node.type === 'group.output' && node.params?.socket_id === outputs[0].id);
+    const source = output ? incoming.get(`${output.id}:value`) : undefined;
+    if (!source) return defaultValue(resultType);
+    const nextStack = [...stack, id];
+    const env = { groups, callGroup: (nextId, nextArgs, nextResult) => groupValue(groups, nextId, nextArgs, nextResult, context, nextStack) };
+    function localValue(endpoint, chain) {
+      if (!endpoint || !endpoint.node || chain.has(endpoint.node)) return undefined;
+      const node = nodes.get(endpoint.node);
+      if (!node) return undefined;
+      if (node.type === 'group.input') return bindings.get(node.id);
+      const path = new Set(chain); path.add(node.id);
+      const p = node.params || {};
+      const get = socket => { const src = incoming.get(`${node.id}:${socket}`); return src ? localValue(src, path) : undefined; };
+      // Ссылка на узел этой же группы: цепочка ref → ref защищена набором path.
+      if (node.type === 'data.ref') {
+        const local = String(p.node || '');
+        return local ? localValue({ node: refNodeId(node.id, local), socket: 'value' }, path) : undefined;
+      }
+      if (COMPUTED.has(node.type)) return computedValue(node.type, p, get, env);
+      if (node.type.startsWith('data.')) return clone(p.value);
+      if (node.type === 'condition.context') return contextConditionValue(p, context);
+      return undefined;
+    }
+    return coerceFunctionValue(resultType, localValue({ node: source.node, socket: source.socket }, new Set()));
+  }
+  // Окружение значений корневого графа: data.call получает доступ к группам через callGroup.
+  function callEnvironment(groups, context) {
+    return { groups, callGroup: (groupId, args, resultType) => groupValue(groups, groupId, args, resultType, context, []) };
+  }
   function v2ToV1(mechanics, context = {}) {
     if (!mechanics || mechanics.version !== GRAPH_VERSION) return clone(mechanics);
     const groups = new Map((mechanics.graph?.groups || []).map(g => [g.id, g]));
     const expanded = expandGroups(graphOf(mechanics), groups), byId = new Map(expanded.nodes.map(node => [node.id, node]));
+    const callEnv = callEnvironment(groups, context);
     const outgoing = new Map(), incoming = new Map();
     for (const link of expanded.links) {
       const key = `${link.from.node}:${link.from.socket}`;
@@ -187,7 +256,7 @@
         const local = String(p.node || ''); if (!local) return undefined;
         return outputValue({ node: refNodeId(node.id, local), socket: 'value' }, path);
       }
-      if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined, path));
+      if (COMPUTED.has(node.type)) return computedValue(node.type, p, socket => inputValue(node, socket, undefined, path), callEnv);
       if (node.type.startsWith('data.')) return clone(p.value);
       if (node.type === 'condition.context') return contextConditionValue(p, context);
       return undefined;
@@ -386,7 +455,9 @@
     if (!Array.isArray(list) || list.length > 16) return 'Интерфейс группы: не более 16 сокетов.';
     const ids = new Set();
     for (const socket of list) {
-      if (!socket || !idText(socket.id, 64) || ids.has(socket.id) || typeof socket.name !== 'string' || !socket.name.trim() || socket.name.length > 100 || !VALUE_TYPES.includes(socket.type)) return 'Некорректный типизированный сокет группы.';
+      // Имя — необязательная подпись: у параметров функции оно может быть пустым.
+      const name = socket?.name ?? '';
+      if (!socket || !idText(socket.id, 64) || ids.has(socket.id) || typeof name !== 'string' || name.length > 100 || !VALUE_TYPES.includes(socket.type)) return 'Некорректный типизированный сокет группы.';
       ids.add(socket.id);
     }
     return '';
@@ -472,7 +543,20 @@
       }
     }
     if (!nested) {
-      const refs = new Map(groups.map(g => [g.id, (g.nodes || []).filter(n => n.type === 'group.instance').map(n => String(n.params?.group_id || ''))]));
+      // Рекурсия только по вызовам data.call: отдельное сообщение, как на сервере.
+      const callRefs = new Map(groups.map(g => [g.id, (g.nodes || []).filter(n => n.type === 'data.call').map(n => String(n.params?.group || ''))]));
+      const callVisiting = new Set(), callDone = new Set();
+      const walkCalls = id => {
+        if (callVisiting.has(id)) return false;
+        if (callDone.has(id)) return true;
+        callVisiting.add(id);
+        for (const next of callRefs.get(id) || []) if (callRefs.has(next) && !walkCalls(next)) return false;
+        callVisiting.delete(id); callDone.add(id); return true;
+      };
+      for (const id of callRefs.keys()) if (!walkCalls(id)) return fail('Рекурсивный вызов группы');
+      // Смешанные циклы (экземпляры групп и вызовы) ловит общий обход.
+      const refs = new Map(groups.map(g => [g.id, [...(g.nodes || []).filter(n => n.type === 'group.instance').map(n => String(n.params?.group_id || '')),
+        ...(g.nodes || []).filter(n => n.type === 'data.call').map(n => String(n.params?.group || ''))]]));
       const visiting = new Set(), visitedGroups = new Set();
       const walk = id => {
         if (visiting.has(id)) return false;
@@ -519,12 +603,38 @@
     }
     return '';
   }
+  // Проверка узла data.call: группа существует, является функцией (value-only, ровно один
+  // value-выход, ≤3 value-входа с допустимыми именами) и тип результата совпадает с выходом.
+  function callError(node, groups = new Map()) {
+    const params = node?.params || {};
+    const groupId = String(params.group || '');
+    const result = String(params.result || '');
+    if (!groupId || groupId.length > 64) return 'Узел вызова: выберите группу.';
+    if (!FUNCTION_TYPES.includes(result)) return 'Узел вызова: тип результата number, text, bool или list.';
+    const group = groups.get(groupId);
+    if (!group) return 'Узел вызова: группа не найдена.';
+    const inputs = Array.isArray(group.inputs) ? group.inputs : [], outputs = Array.isArray(group.outputs) ? group.outputs : [];
+    if (outputs.length !== 1) return 'Узел вызова: у группы-функции должен быть ровно один выход.';
+    if (!FUNCTION_TYPES.includes(outputs[0].type)) return 'Узел вызова: выход группы-функции должен быть number, text, bool или list.';
+    if (outputs[0].type !== result) return 'Узел вызова: результат не совпадает с типом выхода группы.';
+    if (inputs.length > 3) return 'Узел вызова: у группы-функции не может быть больше 3 входов.';
+    for (const socket of inputs) {
+      if (!FUNCTION_TYPES.includes(socket.type)) return 'Узел вызова: вход группы-функции должен быть number, text, bool или list.';
+      if (!validParamName(socket.name)) return 'Узел вызова: имя входа группы — 1–32 символа [a-z0-9_] или пусто.';
+    }
+    if ((group.nodes || []).some(item => !isFunctionValueNode(item.type))) return 'Группа-функция не может содержать блоки действий';
+    return '';
+  }
   function validateNodeParams(node, programs = null, nodes = null, groups = new Map(), ownerGroup = null) {
     const type = node.type;
     const p = node.params || {};
     const def = NodeRegistry.nodeDef(type);
     if (type === 'data.ref') {
       const error = referenceError(node, nodes, groups, ownerGroup);
+      if (error) return error;
+    }
+    if (type === 'data.call') {
+      const error = callError(node, groups);
       if (error) return error;
     }
     if (def && typeof def.validate === 'function') {
@@ -643,13 +753,14 @@
     const { ordered, linksByTarget } = orderedNodes(graphOf(mechanics), new Map((mechanics.graph.groups || []).map(g => [g.id, g])));
     const values = { linksByTarget, outputs: new Map() };
     const context = { edition, level, subclass: options.subclass || '', choices: options.choices || {}, source: options.source || '', nodeId: '', effects: [] };
+    const callEnv = callEnvironment(new Map((mechanics.graph.groups || []).map(g => [g.id, g])), context);
     const get = (node, socket) => valueForInput(node, socket, values);
     for (const node of ordered) {
       context.nodeId = node.id;
       const p = node.params || {}, type = node.type;
       if (type === 'data.number' || type === 'data.dice') values.outputs.set(`${node.id}:value`, clone(p.value));
       else if (type === 'condition.context') values.outputs.set(`${node.id}:value`, contextConditionValue(p, context));
-      else if (COMPUTED.has(type)) values.outputs.set(`${node.id}:value`, computedValue(type, p, socket => get(node, socket)));
+      else if (COMPUTED.has(type)) values.outputs.set(`${node.id}:value`, computedValue(type, p, socket => get(node, socket), callEnv));
       else if (type.startsWith('rule.')) applyRuleNode(type, p, socket => get(node, socket), sheet, context, values.outputs);
     }
     sheet.skills = [...new Set(sheet.skills)];
@@ -743,7 +854,7 @@
   // по его параметрам (socketMap учитывает def.ports, например logic.op), у кандидата —
   // по умолчаниям класса, потому что новый узел создаётся именно с ними.
   // ---------------------------------------------------------------------------
-  const CONNECT_LIMIT = 9;
+  const CONNECT_LIMIT = 10;
   // 'to' — кандидат.выход → текущий.вход («Подключить к этой ноде»);
   // 'from' — текущий.выход → кандидат.вход («Подключить от этой ноды»).
   const CONNECT_TO = 'to', CONNECT_FROM = 'from';
@@ -1569,6 +1680,13 @@
         const id = `out-${i + 1}`, source = nodeById(link.from.node), type = portType(source, 'outputs', link.from.socket);
         return { id, name: `Выход ${i + 1}`, type, link };
       });
+      // Группа из value-узлов сразу пригодна как функция: имена параметров — x/y/z и result
+      // (data.call связывает аргументы по порядку, но проверка имени ожидает [a-z0-9_]).
+      const functionLike = outputs.length === 1 && FUNCTION_TYPES.includes(outputs[0].type) && inputs.length <= 3 && inputs.every(input => FUNCTION_TYPES.includes(input.type));
+      if (functionLike) {
+        inputs.forEach((input, index) => { input.name = ['x', 'y', 'z'][index]; });
+        outputs[0].name = 'result';
+      }
       for (const input of inputs) {
         const boundaryId = mkId('gin');
         boundaryNodes.push({ id: boundaryId, type: 'group.input', params: { socket_id: input.id }, position: { x: 0, y: 0 } });
@@ -1652,6 +1770,8 @@
     // Значение записывается в граф на change (уход из поля или Enter), как и в боковой панели.
     function inlineParams(node) {
       const groups = graph.groups.map(item => ({ value: item.id, label: item.name }));
+      // data.call выбирает только группы-функции: ровно один value-выход и до трёх value-входов.
+      const callGroups = graph.groups.filter(isFunctionGroup).map(item => ({ value: item.id, label: item.name }));
       // Источник data.result — программы этого графа (в паре с «последним действием»).
       const programs = graph.nodes.filter(item => item.type === 'action.program')
         .map(item => ({ value: String(item.params?.program_id || item.id), label: String(item.params?.name || item.params?.program_id || item.id) }));
@@ -1660,7 +1780,7 @@
       const refNodes = node.type === 'data.ref' ? graph.nodes
         .filter(item => item.id !== node.id && socketMap(item, groupMap).outputs?.value === 'number')
         .map(item => ({ value: item.id, label: `${NodeRegistry.nodeDef(item.type)?.label || item.type} · ${item.id.slice(0, 14)}` })) : null;
-      const form = NodeForm.nodeParams(node, { inline: false, groups, programs, refNodes, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
+      const form = NodeForm.nodeParams(node, { inline: false, groups, callGroups, programs, refNodes, onChange: next => { node.params = next; checkpoint(); status = ''; render(); } });
       return el('div', { class: 'node-inline', 'data-inline-params': node.id, onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() }, form);
     }
     function nodeCard(node) {

@@ -55,6 +55,12 @@
     'data.cast': {
       field: [{ value: 'level', label: 'Круг выбранной ячейки' }, { value: 'base', label: 'Базовый круг заклинания' }, { value: 'extra', label: 'Круги выше базового' }],
     },
+    // Вызов группы-функции: группа выбирается динамически (список передаёт редактор),
+    // тип результата — закрытый список value-типов.
+    'data.call': { result: [
+      { value: 'number', label: 'Число' }, { value: 'text', label: 'Текст' },
+      { value: 'bool', label: 'Логическое значение' }, { value: 'list', label: 'Список' },
+    ] },
     'rule.value': { kind: [{ value: 'ability', label: 'Характеристика (+ к значению)' }, { value: 'speed', label: 'Скорость' }, { value: 'hp', label: 'Хиты' }, { value: 'hit_die', label: 'Кость хитов' }, { value: 'asi', label: 'Повышение характеристик' }, { value: 'armor_formula', label: 'Защита без доспехов' }], ability: ABILS },
     'data.math': { op: [{ value: 'add', label: 'Сложить (a + b)' }, { value: 'sub', label: 'Вычесть (a − b)' }, { value: 'mul', label: 'Умножить (a × b)' }, { value: 'div', label: 'Разделить (a ÷ b)' }, { value: 'min', label: 'Минимум' }, { value: 'max', label: 'Максимум' }] },
     // Математика одного числа: операция выбирается списком (таблица та же, что mathfunValue в реестре).
@@ -141,7 +147,7 @@
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
     caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита', label: 'Метка вида',
     percent: 'Процент от максимума', scope: 'Область', node: 'Узел',
-    separator: 'Разделитель', case: 'Учитывать регистр',
+    separator: 'Разделитель', case: 'Учитывать регистр', group: 'Группа-функция',
   };
   // Подписи полей, которые зависят от типа узла: у data.list items — строки списка, а не «Предметы».
   const TYPE_LABELS = { 'data.list': { items: 'Строки списка' } };
@@ -300,6 +306,8 @@
       if (node?.type === 'data.result') enums.source = [{ value: 'last', label: 'Последнее действие' }, ...(options.programs || [])];
       // data.ref выбирает числовой узел текущего графа (существование и циклы проверяет граф).
       if (node?.type === 'data.ref') enums.node = [{ value: '', label: '— выберите узел —' }, ...(options.refNodes || [])];
+      // data.call выбирает группу-функцию: редактор передаёт только value-only группы с одним выходом.
+      if (node?.type === 'data.call') enums.group = [{ value: '', label: '— выберите группу —' }, ...(options.callGroups || options.groups || [])];
       // У «Изменить поле» список полей зависит от вида: value и formula принимают разные поля листа.
       const fields = node?.type === 'action.field' ? fieldOptions(node?.params) : null;
       if (fields) enums.field = fields;

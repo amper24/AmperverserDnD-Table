@@ -5290,6 +5290,1061 @@
           "groups": []
         }
       }
+    },
+    {
+      "name": "data-call-simple-function",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "a",
+              "type": "data.number",
+              "params": {
+                "value": 2
+              }
+            },
+            {
+              "id": "b",
+              "type": "data.number",
+              "params": {
+                "value": 3
+              }
+            },
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-add",
+                "result": "number"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "a",
+                "socket": "value"
+              },
+              "to": {
+                "node": "call",
+                "socket": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "b",
+                "socket": "value"
+              },
+              "to": {
+                "node": "call",
+                "socket": "b"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-add",
+              "name": "Сложить",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                },
+                {
+                  "id": "y",
+                  "name": "y",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi-x",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "gi-y",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "y"
+                  }
+                },
+                {
+                  "id": "math",
+                  "type": "data.math",
+                  "params": {
+                    "op": "add"
+                  }
+                },
+                {
+                  "id": "res",
+                  "type": "data.mathfun",
+                  "params": {
+                    "op": "abs"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi-x",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "gi-y",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "math",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "res",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "data-call-nested-function",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "five",
+              "type": "data.number",
+              "params": {
+                "value": 5
+              }
+            },
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-outer",
+                "result": "number"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "five",
+                "socket": "value"
+              },
+              "to": {
+                "node": "call",
+                "socket": "a"
+              }
+            }
+          ],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-inner",
+              "name": "Сложить",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                },
+                {
+                  "id": "y",
+                  "name": "y",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi-x",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "gi-y",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "y"
+                  }
+                },
+                {
+                  "id": "math",
+                  "type": "data.math",
+                  "params": {
+                    "op": "add"
+                  }
+                },
+                {
+                  "id": "res",
+                  "type": "data.mathfun",
+                  "params": {
+                    "op": "abs"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi-x",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "gi-y",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "math",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "res",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            },
+            {
+              "id": "g-outer",
+              "name": "Плюс десять",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi-x",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "call-inner",
+                  "type": "data.call",
+                  "params": {
+                    "group": "g-inner",
+                    "result": "number"
+                  }
+                },
+                {
+                  "id": "ten",
+                  "type": "data.number",
+                  "params": {
+                    "value": 10
+                  }
+                },
+                {
+                  "id": "res",
+                  "type": "data.math",
+                  "params": {
+                    "op": "add"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi-x",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "call-inner",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "ten",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "call-inner",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "call-inner",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "ten",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "res",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "data-call-bool-result",
+      "valid": true,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-eq",
+                "result": "bool"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-eq",
+              "name": "Сравнить строки",
+              "inputs": [],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "bool"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "l1",
+                  "type": "data.list",
+                  "params": {
+                    "items": [
+                      "Огонь"
+                    ]
+                  }
+                },
+                {
+                  "id": "j1",
+                  "type": "data.listjoin",
+                  "params": {}
+                },
+                {
+                  "id": "l2",
+                  "type": "data.list",
+                  "params": {
+                    "items": [
+                      "огонь"
+                    ]
+                  }
+                },
+                {
+                  "id": "j2",
+                  "type": "data.listjoin",
+                  "params": {}
+                },
+                {
+                  "id": "check",
+                  "type": "data.textcheck",
+                  "params": {
+                    "op": "eq",
+                    "case": false
+                  }
+                },
+                {
+                  "id": "res",
+                  "type": "data.textcheck",
+                  "params": {
+                    "op": "eq",
+                    "case": false
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "l1",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "j1",
+                    "socket": "list"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "l2",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "j2",
+                    "socket": "list"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "j1",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "check",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "j2",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "check",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "j1",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "j2",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "res",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": true
+    },
+    {
+      "name": "data-call-wrong-group",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-flow",
+                "result": "number"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-flow",
+              "name": "Поток",
+              "inputs": [
+                {
+                  "id": "i",
+                  "name": "Вход",
+                  "type": "flow"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "o",
+                  "name": "Выход",
+                  "type": "flow"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i"
+                  }
+                },
+                {
+                  "id": "manual",
+                  "type": "action.manual",
+                  "params": {
+                    "block_id": "m",
+                    "text": "Шаг"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "o"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "manual",
+                    "socket": "exec"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "manual",
+                    "socket": "exec"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "data-call-recursive",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-a",
+                "result": "number"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-a",
+              "name": "А",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "next",
+                  "type": "data.call",
+                  "params": {
+                    "group": "g-b",
+                    "result": "number"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "next",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "next",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            },
+            {
+              "id": "g-b",
+              "name": "Б",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "next",
+                  "type": "data.call",
+                  "params": {
+                    "group": "g-a",
+                    "result": "number"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "next",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "next",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "data-call-four-inputs",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-four",
+                "result": "number"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-four",
+              "name": "Четыре входа",
+              "inputs": [
+                {
+                  "id": "i1",
+                  "name": "a",
+                  "type": "number"
+                },
+                {
+                  "id": "i2",
+                  "name": "b",
+                  "type": "number"
+                },
+                {
+                  "id": "i3",
+                  "name": "c",
+                  "type": "number"
+                },
+                {
+                  "id": "i4",
+                  "name": "d",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi1",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i1"
+                  }
+                },
+                {
+                  "id": "gi2",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i2"
+                  }
+                },
+                {
+                  "id": "gi3",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i3"
+                  }
+                },
+                {
+                  "id": "gi4",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "i4"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi1",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": false
+    },
+    {
+      "name": "data-call-result-type-mismatch",
+      "valid": false,
+      "mechanics": {
+        "version": 2,
+        "graph": {
+          "nodes": [
+            {
+              "id": "call",
+              "type": "data.call",
+              "params": {
+                "group": "g-add",
+                "result": "text"
+              }
+            }
+          ],
+          "links": [],
+          "frames": [],
+          "groups": [
+            {
+              "id": "g-add",
+              "name": "Сложить",
+              "inputs": [
+                {
+                  "id": "x",
+                  "name": "x",
+                  "type": "number"
+                },
+                {
+                  "id": "y",
+                  "name": "y",
+                  "type": "number"
+                }
+              ],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "",
+                  "type": "number"
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "gi-x",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "x"
+                  }
+                },
+                {
+                  "id": "gi-y",
+                  "type": "group.input",
+                  "params": {
+                    "socket_id": "y"
+                  }
+                },
+                {
+                  "id": "math",
+                  "type": "data.math",
+                  "params": {
+                    "op": "add"
+                  }
+                },
+                {
+                  "id": "res",
+                  "type": "data.mathfun",
+                  "params": {
+                    "op": "abs"
+                  }
+                },
+                {
+                  "id": "go",
+                  "type": "group.output",
+                  "params": {
+                    "socket_id": "out"
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "from": {
+                    "node": "gi-x",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "gi-y",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "math",
+                    "socket": "b"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "math",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "res",
+                    "socket": "a"
+                  }
+                },
+                {
+                  "from": {
+                    "node": "res",
+                    "socket": "value"
+                  },
+                  "to": {
+                    "node": "go",
+                    "socket": "value"
+                  }
+                }
+              ],
+              "frames": []
+            }
+          ]
+        }
+      },
+      "executable": false
     }
   ]
 }

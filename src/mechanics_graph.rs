@@ -105,6 +105,10 @@ const DICE_ACTIONS: &[&str] = &["roll", "attack", "damage", "heal", "temp_hp"];
 // Навыки (как SKILLS в static/common.js): идентификаторы для узла «Характеристика / навык».
 const SKILL_IDS: &[&str] = &["acrobatics", "animal", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight", "stealth", "survival"];
 const SOCKET_TYPES: &[&str] = &["flow", "bool", "number", "dice", "ability", "text", "list", "table", "choice", "effect"];
+// Типы параметров и результата группы-функции (data.call): числовые аргументы MVP.
+const FUNCTION_TYPES: &[&str] = &["number", "text", "bool", "list"];
+// Предел вложенности вызовов групп (data.call): защита от испорченной записи без проверки.
+const MAX_CALL_DEPTH: usize = 16;
 // Поля результата действия (data.result). hit хранится как 0/1, остальные — числа.
 const RESULT_FIELDS: &[&str] = &["total", "hit", "applied", "spent"];
 // Поле листа (data.sheet): непустой путь вида hp.current, level, abilities.str.
@@ -126,6 +130,13 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.var" => { outputs.insert("value".into(), "number".into()); }
         // Ссылка на числовой узел этого же графа (значение цели).
         "data.ref" => { outputs.insert("value".into(), "number".into()); }
+        // Вызов группы-функции: a, b, c — числовые аргументы по порядку входов группы,
+        // выход value получает объявленный тип результата (по умолчанию number).
+        "data.call" => {
+            inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); inputs.insert("c".into(), "number".into());
+            let result = params["result"].as_str().filter(|kind| FUNCTION_TYPES.contains(kind)).unwrap_or("number");
+            outputs.insert("value".into(), result.into());
+        }
         // Математика одного числа: a обязателен, b — min/max, b и c — clamp.
         "data.mathfun" => {
             inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); inputs.insert("c".into(), "number".into());
@@ -232,13 +243,62 @@ fn check_interface(value: &Value) -> ApiResult<()> {
     for s in items {
         let id = s["id"].as_str().unwrap_or("");
         let kind = s["type"].as_str().unwrap_or("");
-        if id.is_empty() || utf16_len(id) > 64 || !ids.insert(id.to_string()) || s["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(s["name"].as_str().unwrap_or("")) > 100 || !SOCKET_TYPES.contains(&kind) {
+        // Имя — необязательная подпись: у параметров функции оно может быть пустым.
+        let name = s["name"].as_str().unwrap_or("");
+        if id.is_empty() || utf16_len(id) > 64 || !ids.insert(id.to_string()) || utf16_len(name) > 100 || !SOCKET_TYPES.contains(&kind) {
             return Err(bad("Некорректный типизированный сокет группы."));
         }
     }
     Ok(())
 }
-fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value]) -> ApiResult<()> {
+/// Узел, допустимый в графе группы-функции: только значения (data.*, логика, кости,
+/// условия листа) и границы группы. Действия, поток, правила и вложенные экземпляры групп
+/// запрещены — вложенность выражается узлом data.call.
+fn is_function_value_node(kind: &str) -> bool {
+    kind.starts_with("data.") || kind == "logic.op" || kind == "dice.combine" || kind.starts_with("condition.")
+        || kind == "group.input" || kind == "group.output"
+}
+/// Имя параметра функции: пусто или 1–32 символа [a-z0-9_] (как имя переменной).
+fn valid_function_param_name(value: &str) -> bool { value.is_empty() || valid_var_name(value) }
+/// Проверка группы, на которую ссылается data.call: ровно один value-выход, ≤3 value-входов,
+/// допустимые имена параметров и только value-узлы внутри. Тип результата сверяется с выходом.
+fn function_group_check(group: &Value, result: &str) -> ApiResult<()> {
+    let inputs = group["inputs"].as_array().ok_or_else(|| bad("Узел вызова: у группы нет интерфейса входов."))?;
+    let outputs = group["outputs"].as_array().ok_or_else(|| bad("Узел вызова: у группы нет интерфейса выходов."))?;
+    if outputs.len() != 1 { return Err(bad("Узел вызова: у группы-функции должен быть ровно один выход.")); }
+    let output_type = outputs[0]["type"].as_str().unwrap_or("");
+    if !FUNCTION_TYPES.contains(&output_type) { return Err(bad("Узел вызова: выход группы-функции должен быть number, text, bool или list.")); }
+    if output_type != result { return Err(bad("Узел вызова: результат не совпадает с типом выхода группы.")); }
+    if inputs.len() > 3 { return Err(bad("Узел вызова: у группы-функции не может быть больше 3 входов.")); }
+    for socket in inputs {
+        let kind = socket["type"].as_str().unwrap_or("");
+        if !FUNCTION_TYPES.contains(&kind) { return Err(bad("Узел вызова: вход группы-функции должен быть number, text, bool или list.")); }
+        if !valid_function_param_name(socket["name"].as_str().unwrap_or("")) { return Err(bad("Узел вызова: имя входа группы — 1–32 символа [a-z0-9_] или пусто.")); }
+    }
+    if group["nodes"].as_array().into_iter().flatten().any(|node| !is_function_value_node(node["type"].as_str().unwrap_or(""))) {
+        return Err(bad("Группа-функция не может содержать блоки действий"));
+    }
+    Ok(())
+}
+/// Цикл только по рёбрам data.call: сообщение «Рекурсивный вызов группы».
+/// Смешанные циклы (group.instance + data.call) ловит общий group_cycle.
+fn group_call_cycle(groups: &[Value]) -> bool {
+    let refs: HashMap<String, Vec<String>> = groups.iter().map(|g| (
+        g["id"].as_str().unwrap_or("").to_string(),
+        g["nodes"].as_array().into_iter().flatten().filter(|n| n["type"] == "data.call")
+            .filter_map(|n| n["params"]["group"].as_str().map(str::to_string)).collect(),
+    )).collect();
+    fn visit(id: &str, refs: &HashMap<String, Vec<String>>, visiting: &mut HashSet<String>, done: &mut HashSet<String>) -> bool {
+        if visiting.contains(id) { return false; }
+        if done.contains(id) { return true; }
+        visiting.insert(id.to_string());
+        for next in refs.get(id).into_iter().flatten() { if refs.contains_key(next) && !visit(next, refs, visiting, done) { return false; } }
+        visiting.remove(id); done.insert(id.to_string()); true
+    }
+    let mut visiting = HashSet::new(); let mut done = HashSet::new();
+    !refs.keys().all(|id| visit(id, &refs, &mut visiting, &mut done))
+}
+fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], groups: &[Value]) -> ApiResult<()> {
     let p = &n["params"];
     let kind = n["type"].as_str().unwrap_or("");
     match kind {
@@ -270,6 +330,16 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value]) 
                     None => return Err(bad("Ссылка: узел не найден в этом графе.")),
                 };
             }
+        }
+        // Вызов группы-функции: группа должна быть value-only, иметь ровно один value-выход
+        // и не более трёх входов; тип результата узла совпадает с типом выхода группы.
+        "data.call" => {
+            let group_id = p["group"].as_str().unwrap_or("");
+            let result = p["result"].as_str().unwrap_or("");
+            if group_id.is_empty() || utf16_len(group_id) > 64 { return Err(bad("Узел вызова: выберите группу.")); }
+            if !FUNCTION_TYPES.contains(&result) { return Err(bad("Узел вызова: тип результата number, text, bool или list.")); }
+            let Some(group) = groups.iter().find(|g| g["id"].as_str() == Some(group_id)) else { return Err(bad("Узел вызова: группа не найдена.")); };
+            function_group_check(group, result)?;
         }
         // Математика: закрытый список операций; clamp без входов b и c не считается (провод — в validate_graph).
         "data.mathfun" if !MATHFUN_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
@@ -574,7 +644,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
         if let Some(pos) = n.get("position") { if !pos["x"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) || !pos["y"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) { return Err(bad("Координаты узла вне допустимых пределов.")); } }
         if kind == "group.instance" && !groups.iter().any(|g| g["id"] == n["params"]["group_id"]) { return Err(bad("Узел ссылается на отсутствующую группу.")); }
         if ["group.input", "group.output"].contains(&kind) && (!nested || owner_group.is_none()) { return Err(bad("Узлы интерфейса группы разрешены только внутри повторно используемой группы.")); }
-        validate_node_params(n, programs, nodes)?;
+        validate_node_params(n, programs, nodes, groups)?;
     }
     let mut indegree: HashMap<String, usize> = node_ids.iter().map(|x| (x.clone(), 0)).collect();
     let mut adjacency: HashMap<String, Vec<String>> = node_ids.iter().map(|x| (x.clone(), Vec::new())).collect();
@@ -654,7 +724,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 }
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet", "data.cast",
-    "data.var", "data.ref", "data.mathfun",
+    "data.var", "data.ref", "data.call", "data.mathfun",
     "data.text", "data.textlen", "data.textcheck", "data.list", "data.listget", "data.listlen", "data.listjoin",
     "condition.context", "condition.hit", "condition.status", "condition.item", "condition.hp", "condition.slot",
     "logic.op", "flow.if", "flow.end",
@@ -675,7 +745,11 @@ fn group_cycle(groups: &[Value]) -> bool {
     let mut refs: HashMap<String, Vec<String>> = HashMap::new();
     for g in groups {
         let id = g["id"].as_str().unwrap_or("").to_string();
-        let ids = g["nodes"].as_array().into_iter().flatten().filter(|n| n["type"] == "group.instance").map(|n| n["params"]["group_id"].as_str().unwrap_or("").to_string()).collect();
+        let ids = g["nodes"].as_array().into_iter().flatten().flat_map(|n| match n["type"].as_str().unwrap_or("") {
+            "group.instance" => vec![n["params"]["group_id"].as_str().unwrap_or("").to_string()],
+            "data.call" => vec![n["params"]["group"].as_str().unwrap_or("").to_string()],
+            _ => Vec::new(),
+        }).collect();
         refs.insert(id, ids);
     }
     fn visit(id: &str, refs: &HashMap<String, Vec<String>>, visiting: &mut HashSet<String>, done: &mut HashSet<String>) -> bool {
@@ -724,6 +798,7 @@ fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
         validate_graph(&inner, groups, true, Some(g), problems, &programs)?;
         if !group_boundaries_match(g) { return Err(bad("Порты группы должны иметь по одному соответствующему узлу входа/выхода.")); }
     }
+    if group_call_cycle(groups) { return Err(bad("Рекурсивный вызов группы")); }
     if !group_cycle(groups) { return Err(bad("Рекурсивная ссылка или цикл между группами запрещён.")); }
     validate_graph(graph, groups, false, None, problems, &programs)
 }
@@ -852,8 +927,58 @@ fn dice_term(d: &Value) -> Option<String> {
     if out.is_empty() { out = "0".into(); }
     Some(out)
 }
-fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize) -> Option<bool> {
-    graph_input_value(node, socket, incoming, nodes, context, None, depth).and_then(|value| value.as_bool())
+/// Окружение вычисления значений: группы доступны узлу data.call, bindings подставляет
+/// аргументы на границы group.input, stack хранит цепочку вызовов (рекурсия и глубина 16).
+struct ValueEnv<'a> {
+    groups: &'a [Value],
+    bindings: HashMap<String, Value>,
+    stack: Vec<String>,
+}
+impl<'a> ValueEnv<'a> {
+    fn root(groups: &'a [Value]) -> Self { ValueEnv { groups, bindings: HashMap::new(), stack: Vec::new() } }
+}
+/// Приведение значения к объявленному типу функции: без значения — 0 / "" / false / [].
+fn coerce_function_value(kind: &str, value: Option<Value>) -> Value {
+    match kind {
+        "number" => value.and_then(|value| value.as_f64()).filter(|value| value.is_finite()).map(|value| json!(value)).unwrap_or(json!(0)),
+        "text" => value.and_then(|value| value.as_str().map(str::to_string)).map(|value| json!(value)).unwrap_or(json!("")),
+        "bool" => value.and_then(|value| value.as_bool()).map(|value| json!(value)).unwrap_or(json!(false)),
+        "list" => value.and_then(|value| value.as_array().cloned()).map(Value::Array).unwrap_or_else(|| json!([])),
+        _ => Value::Null,
+    }
+}
+/// Вызов группы-функции: аргументы по порядку группы.input, результат — значение, поданное
+/// на group.output. Рекурсия и глубина 16 дают None (узел вернёт 0/""/false).
+fn call_group_value(group_id: &str, args: &[Option<Value>], result_type: &str, context: &Value, depth: usize, env: &ValueEnv) -> Option<Value> {
+    if env.stack.iter().any(|id| id == group_id) || env.stack.len() >= MAX_CALL_DEPTH { return None; }
+    let group = env.groups.iter().find(|group| group["id"].as_str() == Some(group_id))?;
+    let inputs = group["inputs"].as_array()?;
+    if inputs.len() > 3 { return None; }
+    let outputs = group["outputs"].as_array()?;
+    if outputs.len() != 1 { return None; }
+    let group_nodes = group["nodes"].as_array()?;
+    let nodes: HashMap<String, &Value> = group_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
+    let mut incoming: HashMap<(String, String), Endpoint> = HashMap::new();
+    for link in group["links"].as_array().into_iter().flatten() {
+        incoming.insert((link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string()), from_endpoint(link));
+    }
+    let mut bindings = HashMap::new();
+    for (index, socket) in inputs.iter().enumerate() {
+        let socket_id = socket["id"].as_str().unwrap_or("");
+        let Some(boundary) = group_nodes.iter().find(|node| node["type"] == "group.input" && node["params"]["socket_id"].as_str() == Some(socket_id)) else { continue; };
+        let Some(boundary_id) = boundary["id"].as_str() else { continue; };
+        bindings.insert(boundary_id.to_string(), coerce_function_value(socket["type"].as_str().unwrap_or(""), args.get(index).cloned().flatten()));
+    }
+    let output_socket_id = outputs[0]["id"].as_str()?;
+    let output_node = group_nodes.iter().find(|node| node["type"] == "group.output" && node["params"]["socket_id"].as_str() == Some(output_socket_id))?;
+    let source = incoming.get(&(output_node["id"].as_str()?.to_string(), "value".to_string()))?;
+    let mut stack = env.stack.clone(); stack.push(group_id.to_string());
+    let child = ValueEnv { groups: env.groups, bindings, stack };
+    let value = graph_output_value(source, &nodes, &incoming, context, depth + 1, &child);
+    Some(coerce_function_value(result_type, value))
+}
+fn bool_input(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize, env: &ValueEnv) -> Option<bool> {
+    graph_input_value(node, socket, incoming, nodes, context, None, depth, env).and_then(|value| value.as_bool())
 }
 /// Лист исполнения из контекста: `{"runtime": {"sheet": <лист>}}`; в редакторе и предпросмотре его нет.
 fn runtime_sheet(context: &Value) -> Option<&Value> { context.get("runtime").and_then(|runtime| runtime.get("sheet")) }
@@ -875,9 +1000,9 @@ fn slot_remaining(spells: &Value, level: i64) -> f64 {
 }
 /// Таблица истинности узла «Логика». Неизвестный вход — None, кроме случаев, где значение
 /// операции уже определено одним входом (И с ложью, ИЛИ с истиной, И-НЕ, ИЛИ-НЕ, импликация).
-fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize) -> Option<Value> {
-    let a = bool_input(node, "a", incoming, nodes, context, depth);
-    let b = bool_input(node, "b", incoming, nodes, context, depth);
+fn logic_value(params: &Value, node: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize, env: &ValueEnv) -> Option<Value> {
+    let a = bool_input(node, "a", incoming, nodes, context, depth, env);
+    let b = bool_input(node, "b", incoming, nodes, context, depth, env);
     let value = match params["op"].as_str()? {
         "not" => !a?,
         "and" => match (a, b) { (Some(false), _) | (_, Some(false)) => false, (Some(true), Some(true)) => true, _ => return None },
@@ -899,14 +1024,14 @@ const MAX_VALUE_DEPTH: usize = 64;
 fn ref_node_id(current: &str, local: &str) -> String {
     match current.rfind('/') { Some(index) => format!("{}{}", &current[..=index], local), None => local.to_string() }
 }
-fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value, depth: usize) -> Option<Value> {
+fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value, depth: usize, env: &ValueEnv) -> Option<Value> {
     if depth > MAX_VALUE_DEPTH { return None; }
     let node = nodes.get(&endpoint.0)?; let params = &node["params"];
     match node["type"].as_str().unwrap_or("") {
         "data.boolean" => params.get("value").and_then(Value::as_bool).map(|value| json!(value)),
         "data.math" => {
-            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
-            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth)?.as_f64()?;
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth, env)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth, env)?.as_f64()?;
             let value = match params["op"].as_str()? {
                 "add" => a + b, "sub" => a - b, "mul" => a * b, "div" if b != 0.0 => a / b,
                 "min" => a.min(b), "max" => a.max(b), _ => return None,
@@ -915,13 +1040,13 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         }
         "data.stat" => Some(stat_dice(params)),
         "dice.combine" => {
-            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None, depth)?)?;
-            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None, depth)?)?;
+            let a = dice_term(&graph_input_value(node, "a", incoming, nodes, context, None, depth, env)?)?;
+            let b = dice_term(&graph_input_value(node, "b", incoming, nodes, context, None, depth, env)?)?;
             Some(json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": format!("{a}+{b}")}))
         }
         "data.compare" => {
-            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
-            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth)?.as_f64()?;
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth, env)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth, env)?.as_f64()?;
             let result = match params["op"].as_str()? { ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, "=" => a == b, "!=" => a != b, _ => return None };
             Some(json!(result))
         }
@@ -969,6 +1094,21 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let map = if params["scope"].as_str() == Some("sheet") { sheet_vars.or(vars) } else { vars.or(sheet_vars) };
             Some(json!(map.and_then(|map| map.get(name)).and_then(Value::as_f64).unwrap_or(0.0)))
         }
+        // Вызов группы-функции: a, b, c связываются с group.input по порядку (имена не важны).
+        // Нет группы, runtime-значения или цикл — узел отдаёт 0/""/false по типу результата.
+        "data.call" => {
+            let group_id = params["group"].as_str()?;
+            let result_type = params["result"].as_str().unwrap_or("number");
+            let args = [
+                graph_input_value(node, "a", incoming, nodes, context, None, depth, env),
+                graph_input_value(node, "b", incoming, nodes, context, None, depth, env),
+                graph_input_value(node, "c", incoming, nodes, context, None, depth, env),
+            ];
+            Some(call_group_value(group_id, &args, result_type, context, depth, env)
+                .unwrap_or_else(|| coerce_function_value(result_type, None)))
+        }
+        // Внутри группы граница подставляет аргумент, привязанный вызовом.
+        "group.input" => env.bindings.get(endpoint.0.as_str()).cloned(),
         // Ссылка на числовой узел этого же графа (или группы): значение цели в том же контексте.
         // Цепочку ref→ref ведём явно, чтобы не зациклиться на испорченной записи.
         "data.ref" => {
@@ -979,7 +1119,7 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
                 if !seen.insert(target.clone()) || seen.len() > MAX_VALUE_DEPTH { return None; }
                 let target_node = nodes.get(&target)?;
                 if target_node["type"] != "data.ref" {
-                    return graph_output_value(&(target, "value".to_string()), nodes, incoming, context, depth + 1);
+                    return graph_output_value(&(target, "value".to_string()), nodes, incoming, context, depth + 1, env);
                 }
                 let local = target_node["params"]["node"].as_str()?;
                 target = ref_node_id(&target, local);
@@ -987,26 +1127,26 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         }
         // Математика одного числа и диапазона (та же таблица, что mathfunValue на клиенте).
         "data.mathfun" => {
-            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth)?.as_f64()?;
-            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
-            let c = graph_input_value(node, "c", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
+            let a = graph_input_value(node, "a", incoming, nodes, context, None, depth, env)?.as_f64()?;
+            let b = graph_input_value(node, "b", incoming, nodes, context, None, depth, env).and_then(|value| value.as_f64());
+            let c = graph_input_value(node, "c", incoming, nodes, context, None, depth, env).and_then(|value| value.as_f64());
             mathfun_value(params["op"].as_str()?, a, b, c).map(|value| json!(value))
         }
         // Строки: значения входов читаются проводами, поэтому литерал не нужен. Неподключённый вход —
         // пустая строка (как на клиенте), поэтому предпросмотр и рантайм совпадают.
         "data.text" => {
-            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
-            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth));
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth, env));
+            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth, env));
             text_value(params["op"].as_str()?, &a, &b).map(|value| json!(value))
         }
         // Длина строки — в символах Unicode (кодовых точках), а не в единицах UTF-16.
         "data.textlen" => {
-            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth, env));
             Some(json!(text_length(&a)))
         }
         "data.textcheck" => {
-            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
-            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth));
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth, env));
+            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth, env));
             let case_sensitive = params["case"].as_bool().unwrap_or(false);
             text_check_value(params["op"].as_str()?, &a, &b, case_sensitive).map(|value| json!(value))
         }
@@ -1014,25 +1154,25 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         "data.list" => Some(Value::Array(list_items(params))),
         // Элемент списка: индекс с нуля, вне диапазона и без проводов — пустая строка.
         "data.listget" => {
-            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().cloned()).unwrap_or_default();
-            let index = graph_input_value(node, "index", incoming, nodes, context, None, depth).and_then(|value| value.as_f64()).map(|value| value.trunc()).unwrap_or(-1.0);
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth, env).and_then(|value| value.as_array().cloned()).unwrap_or_default();
+            let index = graph_input_value(node, "index", incoming, nodes, context, None, depth, env).and_then(|value| value.as_f64()).map(|value| value.trunc()).unwrap_or(-1.0);
             let item = if index >= 0.0 && index < items.len() as f64 { items[index as usize].as_str().unwrap_or("") } else { "" };
             Some(json!(item))
         }
         "data.listlen" => {
-            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().map(Vec::len)).unwrap_or(0);
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth, env).and_then(|value| value.as_array().map(Vec::len)).unwrap_or(0);
             Some(json!(items))
         }
         // Склейка списка в строку: разделитель — параметр (по умолчанию «, », как на клиенте).
         "data.listjoin" => {
-            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().cloned()).unwrap_or_default();
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth, env).and_then(|value| value.as_array().cloned()).unwrap_or_default();
             let separator = params["separator"].as_str().unwrap_or(", ");
             let parts: Vec<&str> = items.iter().map(|item| item.as_str().unwrap_or("")).collect();
             Some(json!(parts.join(separator)))
         }
         // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
         // Неизвестный вход даёт None, кроме случаев, где значение уже определено одним входом.
-        "logic.op" => logic_value(params, node, incoming, nodes, context, depth),
+        "logic.op" => logic_value(params, node, incoming, nodes, context, depth, env),
         // Условия листа: читают runtime-лист (context["runtime"]["sheet"]). Без листа — false.
         "condition.status" => {
             let name = params["name"].as_str()?;
@@ -1093,15 +1233,16 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
         _ => None,
     }
 }
-fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>, depth: usize) -> Option<Value> {
+fn graph_input_value(node: &Value, socket: &str, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, fallback: Option<Value>, depth: usize, env: &ValueEnv) -> Option<Value> {
     let key = (node["id"].as_str().unwrap_or("").to_string(), socket.to_string());
-    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context, depth + 1) } else { fallback }
+    if let Some(source) = incoming.get(&key) { graph_output_value(source, nodes, incoming, context, depth + 1, env) } else { fallback }
 }
 pub fn to_v1(mechanics: &Value) -> Value { to_v1_with_context(mechanics, &Value::Null) }
 pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
     if mechanics["version"] != 2 { return mechanics.clone(); }
     let graph = &mechanics["graph"];
     let groups = graph["groups"].as_array().cloned().unwrap_or_default();
+    let env = ValueEnv::root(&groups);
     let (expanded_nodes, links) = expand_graph(graph, &groups);
     let nodes: HashMap<String, &Value> = expanded_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
     let mut outgoing: HashMap<(String, String), Vec<Endpoint>> = HashMap::new();
@@ -1128,7 +1269,7 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             let Some(current) = nodes.get(&node_id).copied() else { continue; };
             if current["type"] == "flow.if" {
                 let hit_gate = incoming.get(&(node_id.clone(), "condition".to_string())).and_then(|source| nodes.get(&source.0).copied()).is_some_and(|source| source["type"] == "condition.hit");
-                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None, 0).and_then(|value| value.as_bool()) };
+                let condition = if hit_gate { None } else { graph_input_value(current, "condition", &incoming, &nodes, context, None, 0, &env).and_then(|value| value.as_bool()) };
                 let sockets: &[&str] = match condition { Some(true) => &["then"], Some(false) => &["else"], None => &["then", "else"] };
                 for socket in sockets.iter().rev() {
                     let branch: Option<String> = if hit_gate { Some(if *socket == "then" { "hit".to_string() } else { "miss".to_string() }) } else { gate.clone() };
@@ -1171,20 +1312,20 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             if !ACTIONS.contains(&kind.as_str()) { continue; }
             if let Some(g) = &gate { if block.get("when").map_or(true, |w| *w == "always") { block.insert("when".into(), json!(g)); } }
             // Кость, поданная проводом на вход «dice», заменяет поле блока (как в v2ToV1 клиента).
-            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None, 0) { block.insert("dice".into(), value); }
+            if let Some(value) = graph_input_value(current, "dice", &incoming, &nodes, context, None, 0, &env) { block.insert("dice".into(), value); }
             // Записать переменную: имя и область остаются в блоке, значение — с провода value.
             // Исполнитель считает провод в рантайме по value_src (как condition_src); рядом
             // лежит статическая оценка для предпросмотра.
             if kind == "setvar" {
                 match incoming.get(&(node_id.clone(), "value".to_string())).cloned() {
                     Some((source, _)) => {
-                        if let Some(value) = graph_input_value(current, "value", &incoming, &nodes, context, None, 0) { block.insert("value".into(), value); }
+                        if let Some(value) = graph_input_value(current, "value", &incoming, &nodes, context, None, 0, &env) { block.insert("value".into(), value); }
                         block.insert("value_src".into(), json!(source));
                     }
                     None => { if block.get("value").is_none() { block.insert("value".into(), json!(0)); } }
                 }
             }
-            let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned(), 0);
+            let enabled = graph_input_value(current, "enabled", &incoming, &nodes, context, block.get("enabled").cloned(), 0, &env);
             if enabled.as_ref().is_some_and(|value| value == &json!(false)) {
                 let key = (node_id.clone(), "exec".to_string());
                 for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
@@ -1196,7 +1337,7 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             // узла-источника (condition_src); статическая проверка остаётся только без провода.
             match incoming.get(&(node_id.clone(), "condition".to_string())).cloned() {
                 Some((source, _)) => { block.insert("condition_src".into(), json!(source)); }
-                None => if graph_input_value(current, "condition", &incoming, &nodes, context, None, 0).and_then(|value| value.as_bool()) == Some(false) {
+                None => if graph_input_value(current, "condition", &incoming, &nodes, context, None, 0, &env).and_then(|value| value.as_bool()) == Some(false) {
                     let key = (node_id.clone(), "exec".to_string());
                     for target in outgoing.get(&key).cloned().unwrap_or_default().into_iter().rev() { pending.push((target, None)); }
                     continue;
@@ -1223,6 +1364,7 @@ fn from_endpoint(link: &Value) -> Endpoint { (link["from"]["node"].as_str().unwr
 /// Неизвестный узел — ошибка; невычислимое значение — `null` (исполнитель не пропускает блок).
 pub fn node_value(graph: &Value, node_id: &str, context: &Value) -> ApiResult<Value> {
     let groups = graph["groups"].as_array().cloned().unwrap_or_default();
+    let env = ValueEnv::root(&groups);
     let (expanded_nodes, links) = expand_graph(graph, &groups);
     let nodes: HashMap<String, &Value> = expanded_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
     if !nodes.contains_key(node_id) { return Err(bad("Узел условия не найден в графе.")); }
@@ -1232,7 +1374,7 @@ pub fn node_value(graph: &Value, node_id: &str, context: &Value) -> ApiResult<Va
         incoming.insert(to, from_endpoint(link));
     }
     let endpoint = (node_id.to_string(), "value".to_string());
-    Ok(graph_output_value(&endpoint, &nodes, &incoming, context, 0).unwrap_or(Value::Null))
+    Ok(graph_output_value(&endpoint, &nodes, &incoming, context, 0, &env).unwrap_or(Value::Null))
 }
 
 #[cfg(test)]
@@ -1263,6 +1405,48 @@ mod tests {
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
         assert_eq!(blocks[0]["value"].as_f64(), Some(9.0));
+    }
+    /// data.call: числовые аргументы по порядку — сумма x + y = 5.
+    #[test]
+    fn data_call_sums_positional_arguments() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-simple-function").unwrap();
+        assert!(validate(&case["mechanics"]).is_ok());
+        assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(5.0));
+    }
+    /// Вложенный вызов: внешняя группа вызывает внутреннюю без циклов (5 + 10 + 10 = 25).
+    #[test]
+    fn data_call_nests_function_groups() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-nested-function").unwrap();
+        assert!(validate(&case["mechanics"]).is_ok());
+        assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(25.0));
+    }
+    /// Рекурсивный вызов A → B → A отклоняется сохранением с отдельным сообщением.
+    #[test]
+    fn data_call_rejects_recursive_groups() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-recursive").unwrap();
+        let error = validate(&case["mechanics"]).unwrap_err().1;
+        assert!(error.contains("Рекурсивный вызов группы"), "{error}");
+    }
+    /// Группа-функция не может содержать действий: только value-узлы и границы группы.
+    #[test]
+    fn data_call_function_group_is_value_only() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-simple-function").unwrap();
+        let mut mechanics = case["mechanics"].clone();
+        mechanics["graph"]["groups"][0]["nodes"].as_array_mut().unwrap().push(json!({"id": "act", "type": "action.manual", "params": {"block_id": "act", "text": "Шаг"}}));
+        let error = validate(&mechanics).unwrap_err().1;
+        assert!(error.contains("Группа-функция не может содержать блоки действий"), "{error}");
+    }
+    /// Результат bool из data.textcheck внутри группы: «Огонь» = «огонь» без учёта регистра.
+    #[test]
+    fn data_call_returns_bool_from_textcheck_inside_a_group() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-bool-result").unwrap();
+        assert!(validate(&case["mechanics"]).is_ok());
+        assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(true));
     }
 }
 

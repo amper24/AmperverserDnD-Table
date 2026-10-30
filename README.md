@@ -160,11 +160,11 @@ logging:  { level: "info,sqlx=warn" }
 (`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.grant_item`, `action.manual`,
 `action.setvar`, `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`,
 `data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
-`data.var`, `data.ref`, `data.mathfun`, `dice.combine`, `data.text`, `data.textlen`,
+`data.var`, `data.ref`, `data.call`, `data.mathfun`, `dice.combine`, `data.text`, `data.textlen`,
 `data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`) → **Условия**
 (`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
 `condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 42 типа; ещё два
+`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 43 типа; ещё два
 внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
 узла есть подсказка, у настраиваемых — единый параметр `kind`.
 
@@ -176,6 +176,10 @@ logging:  { level: "info,sqlx=warn" }
 `data.textcheck` (содержит / начинается / заканчивается / равно / не равно, с флагом
 регистра), `data.list` (литерал до 100 строк по 200 символов), `data.listget` (элемент по
 индексу), `data.listlen` и `data.listjoin` (склейка через разделитель до 10 символов).
+Функции-группы: группа с value-границами (`group.input`/`group.output`, ровно один выход,
+до трёх входов) и только value-узлами вызывается узлом `data.call`; числовые аргументы
+`a`, `b`, `c` привязываются к входам по порядку, результат приводится к `number`, `text`,
+`bool` или `list`. Вложенные вызовы разрешены, рекурсия и действия внутри функции — нет.
 Подробности — [docs/node-system-v3.md](docs/node-system-v3.md).
 
 ПКМ по узлу предлагает быстрые подключения: **«Подключить к этой ноде»** — типы, чей выход
