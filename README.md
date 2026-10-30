@@ -160,18 +160,23 @@ logging:  { level: "info,sqlx=warn" }
 (`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.grant_item`, `action.manual`,
 `action.setvar`, `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`,
 `data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
-`data.var`, `data.ref`, `data.mathfun`, `dice.combine`) → **Условия**
+`data.var`, `data.ref`, `data.mathfun`, `dice.combine`, `data.text`, `data.textlen`,
+`data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`) → **Условия**
 (`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
 `condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 35 типов; ещё два
+`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 42 типа; ещё два
 внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
 узла есть подсказка, у настраиваемых — единый параметр `kind`.
 
 Переменные и ссылки: `action.setvar` пишет число (`scope: action` — до конца выполнения,
 `scope: sheet` — в `sheet.vars` листа), `data.var` читает его, `data.ref` подставляет
 значение числового узла этого же графа (себя и циклы ссылок граф отклоняет), а `data.mathfun`
-считает `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sign`. Подробности —
-[docs/node-system-v3.md](docs/node-system-v3.md).
+считает `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sign`. Строки и списки:
+`data.text` (склейка, регистр, `trim`), `data.textlen` (длина в символах Unicode),
+`data.textcheck` (содержит / начинается / заканчивается / равно / не равно, с флагом
+регистра), `data.list` (литерал до 100 строк по 200 символов), `data.listget` (элемент по
+индексу), `data.listlen` и `data.listjoin` (склейка через разделитель до 10 символов).
+Подробности — [docs/node-system-v3.md](docs/node-system-v3.md).
 
 ПКМ по узлу предлагает быстрые подключения: **«Подключить к этой ноде»** — типы, чей выход
 совместим с любым входом текущего узла (новый узел подключается к текущему), и

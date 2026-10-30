@@ -23,6 +23,10 @@ const ACTION_NODES: &[&str] = &["roll", "field", "spend", "slot", "grant_item", 
 const VAR_SCOPES: &[&str] = &["action", "sheet"];
 // Операции узла «Математика» (data.mathfun) — как MATHFUN_OPS в static/node-registry.js.
 const MATHFUN_OPS: &[&str] = &["min", "max", "clamp", "abs", "round", "floor", "ceil", "sign"];
+// Операции строкового узла (data.text) и сравнения строк (data.textcheck) —
+// как TEXT_OPS и TEXT_CHECK_OPS в static/node-registry.js.
+const TEXT_OPS: &[&str] = &["concat", "upper", "lower", "trim"];
+const TEXT_CHECK_OPS: &[&str] = &["contains", "starts", "ends", "eq", "ne"];
 /// Имя переменной: 1–32 символа из [a-z0-9_] (та же проверка на клиенте).
 pub(crate) fn valid_var_name(value: &str) -> bool {
     !value.is_empty() && utf16_len(value) <= 32 && value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
@@ -48,6 +52,37 @@ fn mathfun_value(op: &str, a: f64, b: Option<f64>, c: Option<f64>) -> Option<f64
 // Виды узла «Изменить поле» и их блоки плана — как FIELD_KINDS / FIELD_BLOCKS в static/node-registry.js.
 const FIELD_KINDS: &[&str] = &["status", "value", "formula"];
 const FIELD_BLOCKS: &[(&str, &str)] = &[("status", "condition"), ("value", "adjust"), ("formula", "passive")];
+// Строки и списки: чистая таблица операций data.text (как textValue в static/node-registry.js).
+/// Значение строкового входа: не строка (вход не подключён) — пустая строка, как на клиенте.
+fn text_of(value: Option<Value>) -> String { value.and_then(|value| value.as_str().map(str::to_string)).unwrap_or_default() }
+/// Операции data.text. `concat` склеивает a и b, остальные читают только a. Неизвестная операция — None.
+fn text_value(op: &str, a: &str, b: &str) -> Option<String> {
+    Some(match op {
+        "concat" => format!("{a}{b}"),
+        "upper" => a.to_uppercase(),
+        "lower" => a.to_lowercase(),
+        "trim" => a.trim().to_string(),
+        _ => return None,
+    })
+}
+/// Сравнение строк (как textCheckValue в static/node-registry.js): case=false — без учёта регистра.
+fn text_check_value(op: &str, a: &str, b: &str, case_sensitive: bool) -> Option<bool> {
+    let (left, right) = if case_sensitive { (a.to_string(), b.to_string()) } else { (a.to_lowercase(), b.to_lowercase()) };
+    Some(match op {
+        "contains" => left.contains(&right),
+        "starts" => left.starts_with(&right),
+        "ends" => left.ends_with(&right),
+        "eq" => left == right,
+        "ne" => left != right,
+        _ => return None,
+    })
+}
+/// Литерал списка data.list: только строки, не-строки дают пустой элемент (как listItems на клиенте).
+fn list_items(params: &Value) -> Vec<Value> {
+    params["items"].as_array().map(|items| items.iter().map(|item| json!(item.as_str().unwrap_or(""))).collect()).unwrap_or_default()
+}
+/// Длина строки в символах Unicode (кодовых точках), как textLength на клиенте: «𝄞» — один символ.
+fn text_length(value: &str) -> usize { value.chars().count() }
 // Допустимые поля листа: те же списки, что в static/node-registry.js (FIELD_VALUE_FIELDS / FIELD_FORMULA_FIELDS).
 const VALUE_FIELDS: &[&str] = &["speed", "initiative_bonus", "currency.gp", "currency.sp", "hp.max", "abilities.str", "abilities.dex", "abilities.con", "abilities.int", "abilities.wis", "abilities.cha"];
 const FORMULA_FIELDS: &[&str] = &["speed", "hit_die", "spellcasting", "saves", "skills", "languages", "armor", "weapons", "unarmored_defense", "asi.str", "asi.dex", "asi.con", "asi.int", "asi.wis", "asi.cha"];
@@ -96,6 +131,22 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
             inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); inputs.insert("c".into(), "number".into());
             outputs.insert("value".into(), "number".into());
         }
+        // Строки: text склеивает a и b (b читает только concat), textlen считает символы,
+        // textcheck сравнивает a и b. Значения читаются из проводов, как у data.mathfun.
+        "data.text" => {
+            inputs.insert("a".into(), "text".into()); inputs.insert("b".into(), "text".into());
+            outputs.insert("value".into(), "text".into());
+        }
+        "data.textlen" => { inputs.insert("a".into(), "text".into()); outputs.insert("value".into(), "number".into()); }
+        "data.textcheck" => {
+            inputs.insert("a".into(), "text".into()); inputs.insert("b".into(), "text".into());
+            outputs.insert("value".into(), "bool".into());
+        }
+        // Списки: литерал data.list без входов и его чтение — элемент, длина, склейка разделителем.
+        "data.list" => { outputs.insert("value".into(), "list".into()); }
+        "data.listget" => { inputs.insert("list".into(), "list".into()); inputs.insert("index".into(), "number".into()); outputs.insert("value".into(), "text".into()); }
+        "data.listlen" => { inputs.insert("list".into(), "list".into()); outputs.insert("value".into(), "number".into()); }
+        "data.listjoin" => { inputs.insert("list".into(), "list".into()); outputs.insert("value".into(), "text".into()); }
         "data.boolean" => { outputs.insert("value".into(), "bool".into()); }
         "data.math" => { inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); outputs.insert("value".into(), "number".into()); }
         "dice.combine" => { inputs.insert("a".into(), "dice".into()); inputs.insert("b".into(), "dice".into()); outputs.insert("value".into(), "dice".into()); }
@@ -224,6 +275,24 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value]) 
         "data.mathfun" if !MATHFUN_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
             return Err(bad("Математика: допустимы min, max, clamp, abs, round, floor, ceil и sign."));
         }
+        // Строки: закрытые списки операций, флаг регистра, литерал списка и разделитель склейки.
+        "data.text" if !TEXT_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
+            return Err(bad("Текст: допустимы concat, upper, lower и trim."));
+        }
+        "data.textcheck" => {
+            if !TEXT_CHECK_OPS.contains(&p["op"].as_str().unwrap_or("")) {
+                return Err(bad("Сравнение строк: допустимы contains, starts, ends, eq и ne."));
+            }
+            if !p["case"].is_boolean() { return Err(bad("Сравнение строк: параметр case — true или false.")); }
+        }
+        "data.list" if !valid_string_list(&p["items"], 100, 200) => {
+            return Err(bad("Список: items — массив до 100 строк по 200 символов."));
+        }
+        "data.listjoin" => match p.get("separator") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(text)) if utf16_len(text) <= 10 => {}
+            Some(_) => return Err(bad("Склейка: разделитель — строка до 10 символов.")),
+        },
         "data.boolean" if !p["value"].is_boolean() => return Err(bad("Логическая константа: значение true или false.")),
         "data.math" if !["add", "sub", "mul", "div", "min", "max"].contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Вычисление: неизвестная операция.")),
         "data.number" if !p["value"].as_f64().map(|number| number.is_finite()).unwrap_or(false) => return Err(bad("Числовой узел должен содержать конечное число.")),
@@ -586,6 +655,7 @@ fn gated_hit_nesting(nodes: &[Value], links: &[Value]) -> bool {
 const NODE_TYPES: &[&str] = &[
     "data.number", "data.dice", "data.boolean", "data.math", "data.stat", "data.compare", "dice.combine", "data.result", "data.sheet", "data.cast",
     "data.var", "data.ref", "data.mathfun",
+    "data.text", "data.textlen", "data.textcheck", "data.list", "data.listget", "data.listlen", "data.listjoin",
     "condition.context", "condition.hit", "condition.status", "condition.item", "condition.hp", "condition.slot",
     "logic.op", "flow.if", "flow.end",
     "rule.value", "rule.list", "rule.class", "rule.manual",
@@ -921,6 +991,44 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let b = graph_input_value(node, "b", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
             let c = graph_input_value(node, "c", incoming, nodes, context, None, depth).and_then(|value| value.as_f64());
             mathfun_value(params["op"].as_str()?, a, b, c).map(|value| json!(value))
+        }
+        // Строки: значения входов читаются проводами, поэтому литерал не нужен. Неподключённый вход —
+        // пустая строка (как на клиенте), поэтому предпросмотр и рантайм совпадают.
+        "data.text" => {
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
+            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth));
+            text_value(params["op"].as_str()?, &a, &b).map(|value| json!(value))
+        }
+        // Длина строки — в символах Unicode (кодовых точках), а не в единицах UTF-16.
+        "data.textlen" => {
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
+            Some(json!(text_length(&a)))
+        }
+        "data.textcheck" => {
+            let a = text_of(graph_input_value(node, "a", incoming, nodes, context, None, depth));
+            let b = text_of(graph_input_value(node, "b", incoming, nodes, context, None, depth));
+            let case_sensitive = params["case"].as_bool().unwrap_or(false);
+            text_check_value(params["op"].as_str()?, &a, &b, case_sensitive).map(|value| json!(value))
+        }
+        // Литерал списка доступен без состояния выполнения: значение — параметр items.
+        "data.list" => Some(Value::Array(list_items(params))),
+        // Элемент списка: индекс с нуля, вне диапазона и без проводов — пустая строка.
+        "data.listget" => {
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().cloned()).unwrap_or_default();
+            let index = graph_input_value(node, "index", incoming, nodes, context, None, depth).and_then(|value| value.as_f64()).map(|value| value.trunc()).unwrap_or(-1.0);
+            let item = if index >= 0.0 && index < items.len() as f64 { items[index as usize].as_str().unwrap_or("") } else { "" };
+            Some(json!(item))
+        }
+        "data.listlen" => {
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().map(Vec::len)).unwrap_or(0);
+            Some(json!(items))
+        }
+        // Склейка списка в строку: разделитель — параметр (по умолчанию «, », как на клиенте).
+        "data.listjoin" => {
+            let items = graph_input_value(node, "list", incoming, nodes, context, None, depth).and_then(|value| value.as_array().cloned()).unwrap_or_default();
+            let separator = params["separator"].as_str().unwrap_or(", ");
+            let parts: Vec<&str> = items.iter().map(|item| item.as_str().unwrap_or("")).collect();
+            Some(json!(parts.join(separator)))
         }
         // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
         // Неизвестный вход даёт None, кроме случаев, где значение уже определено одним входом.
@@ -1738,5 +1846,249 @@ mod condition_node_tests {
         let armed = node_value(&graph["graph"], "c", &json!({"runtime": {"sheet": {"inventory": [{"name": "Кинжал", "equipped": true}]}}})).unwrap();
         let disarmed = node_value(&graph["graph"], "c", &json!({"runtime": {"sheet": {"inventory": [{"name": "Кинжал", "equipped": false}]}}})).unwrap();
         assert_eq!((armed, disarmed), (json!(true), json!(false)));
+    }
+}
+
+#[cfg(test)]
+mod text_and_list_node_tests {
+    use super::*;
+
+    fn node(id: &str, kind: &str, params: Value) -> Value { json!({"id": id, "type": kind, "params": params}) }
+    fn graph_of(nodes: Vec<Value>, links: Vec<Value>) -> Value {
+        json!({"version": 2, "graph": {"nodes": nodes, "links": links, "frames": [], "groups": []}})
+    }
+    fn link(from: &str, from_socket: &str, to: &str, to_socket: &str) -> Value {
+        json!({"from": {"node": from, "socket": from_socket}, "to": {"node": to, "socket": to_socket}})
+    }
+    /// Значение выхода узла без состояния выполнения (литералы и провода).
+    fn value_of(graph: &Value, id: &str) -> Value { node_value(&graph["graph"], id, &Value::Null).unwrap() }
+    /// Список строк и его чтение: элемент, длина и склейка (UX «данные без рантайма»).
+    fn list_graph() -> Value {
+        graph_of(
+            vec![
+                node("l", "data.list", json!({"items": ["Огонь", "Лёд"]})),
+                node("zero", "data.number", json!({"value": 0})),
+                node("one", "data.number", json!({"value": 1})),
+                node("far", "data.number", json!({"value": 9})),
+                node("join", "data.listjoin", json!({"separator": " и "})),
+                node("first", "data.listget", json!({})),
+                node("second", "data.listget", json!({})),
+                node("outside", "data.listget", json!({})),
+                node("count", "data.listlen", json!({})),
+            ],
+            vec![
+                link("l", "value", "join", "list"),
+                link("l", "value", "count", "list"),
+                link("l", "value", "first", "list"),
+                link("zero", "value", "first", "index"),
+                link("l", "value", "second", "list"),
+                link("one", "value", "second", "index"),
+                link("l", "value", "outside", "list"),
+                link("far", "value", "outside", "index"),
+            ],
+        )
+    }
+
+    /// Узлы строк и списков объявлены в NODE_TYPES и в портах так же, как в static/node-registry.js.
+    #[test]
+    fn text_and_list_nodes_declare_their_ports() {
+        for kind in ["data.text", "data.textlen", "data.textcheck", "data.list", "data.listget", "data.listlen", "data.listjoin"] {
+            assert!(NODE_TYPES.contains(&kind), "{kind}: тип узла объявлен");
+        }
+        let (inputs, outputs) = ports_for("data.text", &json!({"op": "concat"}), &[], None);
+        assert_eq!((inputs.get("a").map(String::as_str), inputs.get("b").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("text"), Some("text"), Some("text")));
+        let (inputs, outputs) = ports_for("data.textlen", &json!({}), &[], None);
+        assert_eq!((inputs.get("a").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("text"), Some("number")));
+        let (inputs, outputs) = ports_for("data.textcheck", &json!({}), &[], None);
+        assert_eq!((inputs.get("a").map(String::as_str), inputs.get("b").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("text"), Some("text"), Some("bool")));
+        let (inputs, outputs) = ports_for("data.list", &json!({}), &[], None);
+        assert!(inputs.is_empty(), "у литерала списка нет входов");
+        assert_eq!(outputs.get("value").map(String::as_str), Some("list"));
+        let (inputs, outputs) = ports_for("data.listget", &json!({}), &[], None);
+        assert_eq!((inputs.get("list").map(String::as_str), inputs.get("index").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("list"), Some("number"), Some("text")));
+        let (inputs, outputs) = ports_for("data.listlen", &json!({}), &[], None);
+        assert_eq!((inputs.get("list").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("list"), Some("number")));
+        let (inputs, outputs) = ports_for("data.listjoin", &json!({}), &[], None);
+        assert_eq!((inputs.get("list").map(String::as_str), outputs.get("value").map(String::as_str)), (Some("list"), Some("text")));
+    }
+
+    /// Литерал списка читается без рантайма: элемент по индексу, длина и склейка разделителем.
+    #[test]
+    fn list_nodes_compute_from_the_literal_and_wires() {
+        let graph = list_graph();
+        assert!(validate(&graph).is_ok());
+        assert!(problems(&graph).unwrap().is_empty(), "узлы значений не ломают граф");
+        assert_eq!(value_of(&graph, "l"), json!(["Огонь", "Лёд"]), "литерал списка доступен без рантайма");
+        assert_eq!(value_of(&graph, "join"), json!("Огонь и Лёд"));
+        assert_eq!(value_of(&graph, "count"), json!(2));
+        assert_eq!(value_of(&graph, "first"), json!("Огонь"), "индекс 0");
+        assert_eq!(value_of(&graph, "second"), json!("Лёд"), "индекс 1");
+        assert_eq!(value_of(&graph, "outside"), json!(""), "индекс вне диапазона — пустая строка");
+        // Пустой список и разделитель по умолчанию: узел без проводов даёт пустую строку и 0.
+        let empty = graph_of(
+            vec![node("l", "data.list", json!({"items": []})), node("join", "data.listjoin", json!({})), node("count", "data.listlen", json!({}))],
+            vec![link("l", "value", "join", "list"), link("l", "value", "count", "list")],
+        );
+        assert_eq!(value_of(&empty, "join"), json!(""));
+        assert_eq!(value_of(&empty, "count"), json!(0));
+        let bare = graph_of(vec![node("join", "data.listjoin", json!({})), node("first", "data.listget", json!({}))], vec![]);
+        assert_eq!(value_of(&bare, "join"), json!(""), "без списка — пустая строка");
+        assert_eq!(value_of(&bare, "first"), json!(""), "без списка и индекса — пустая строка");
+    }
+
+    /// Строки: склейка, регистр, trim и длина в символах Unicode; сравнение с флагом регистра.
+    #[test]
+    fn text_nodes_compute_from_wires_and_ignore_the_missing_input() {
+        // Источник строки — список: listjoin даёт «огонь», text меняет регистр и обрезает пробелы.
+        let graph = graph_of(
+            vec![
+                node("l", "data.list", json!({"items": ["  огонь  "]})),
+                node("join", "data.listjoin", json!({})),
+                node("trim", "data.text", json!({"op": "trim"})),
+                node("upper", "data.text", json!({"op": "upper"})),
+                node("lower", "data.text", json!({"op": "lower"})),
+                node("concat", "data.text", json!({"op": "concat"})),
+                node("length", "data.textlen", json!({})),
+            ],
+            vec![
+                link("l", "value", "join", "list"),
+                link("join", "value", "trim", "a"),
+                link("trim", "value", "upper", "a"),
+                link("upper", "value", "lower", "a"),
+                link("trim", "value", "concat", "a"),
+                link("trim", "value", "length", "a"),
+            ],
+        );
+        assert!(problems(&graph).unwrap().is_empty());
+        assert_eq!(value_of(&graph, "trim"), json!("огонь"), "trim убирает пробелы по краям");
+        assert_eq!(value_of(&graph, "upper"), json!("ОГОНЬ"));
+        assert_eq!(value_of(&graph, "lower"), json!("огонь"));
+        assert_eq!(value_of(&graph, "concat"), json!("огонь"), "без второго входа concat равен a");
+        assert_eq!(value_of(&graph, "lower"), value_of(&graph, "concat"), "регистр и склейка дают одно значение");
+        assert_eq!(value_of(&graph, "length"), json!(5), "«огонь» — пять символов");
+        // Длина считается в символах Unicode, а не в единицах UTF-16: «𝄞» — один символ.
+        let astral = graph_of(
+            vec![node("l", "data.list", json!({"items": ["𝄞"]})), node("join", "data.listjoin", json!({})), node("length", "data.textlen", json!({}))],
+            vec![link("l", "value", "join", "list"), link("join", "value", "length", "a")],
+        );
+        assert_eq!(utf16_len("𝄞"), 2, "в UTF-16 символ занимает два элемента");
+        assert_eq!(value_of(&astral, "length"), json!(1), "длина — в символах Unicode");
+        // Без проводов строковые входы пусты: длина 0, concat — пустая строка.
+        let bare = graph_of(vec![node("length", "data.textlen", json!({})), node("concat", "data.text", json!({"op": "concat"}))], vec![]);
+        assert_eq!(value_of(&bare, "length"), json!(0));
+        assert_eq!(value_of(&bare, "concat"), json!(""));
+    }
+
+    /// data.textcheck: пять операций и флаг case (по умолчанию регистр не важен).
+    #[test]
+    fn text_check_compares_strings_with_or_without_case() {
+        let check = |id: &str, op: &str, case: bool| node(id, "data.textcheck", json!({"op": op, "case": case}));
+        let graph = graph_of(
+            vec![
+                node("l", "data.list", json!({"items": ["огонь"]})),
+                node("join", "data.listjoin", json!({})),
+                node("upper", "data.text", json!({"op": "upper"})),
+                check("eq_any", "eq", false),
+                check("eq_case", "eq", true),
+                check("ne_case", "ne", true),
+                check("starts", "starts", false),
+                check("ends", "ends", false),
+                check("contains_any", "contains", false),
+                check("contains_case", "contains", true),
+            ],
+            vec![
+                link("l", "value", "join", "list"),
+                link("join", "value", "upper", "a"),
+                link("upper", "value", "eq_any", "a"), link("join", "value", "eq_any", "b"),
+                link("upper", "value", "eq_case", "a"), link("join", "value", "eq_case", "b"),
+                link("upper", "value", "ne_case", "a"), link("join", "value", "ne_case", "b"),
+                link("upper", "value", "starts", "a"), link("join", "value", "starts", "b"),
+                link("upper", "value", "ends", "a"), link("join", "value", "ends", "b"),
+                link("upper", "value", "contains_any", "a"), link("join", "value", "contains_any", "b"),
+                link("upper", "value", "contains_case", "a"), link("join", "value", "contains_case", "b"),
+            ],
+        );
+        assert!(problems(&graph).unwrap().is_empty());
+        assert_eq!(value_of(&graph, "eq_any"), json!(true), "case=false: регистр не важен");
+        assert_eq!(value_of(&graph, "eq_case"), json!(false), "case=true: регистр важен");
+        assert_eq!(value_of(&graph, "ne_case"), json!(true));
+        assert_eq!(value_of(&graph, "starts"), json!(true));
+        assert_eq!(value_of(&graph, "ends"), json!(true));
+        assert_eq!(value_of(&graph, "contains_any"), json!(true));
+        assert_eq!(value_of(&graph, "contains_case"), json!(false));
+        // По умолчанию case=false: флаг не указан — сравнение без учёта регистра.
+        let default_case = graph_of(
+            vec![
+                node("l1", "data.list", json!({"items": ["Огонь"]})),
+                node("l2", "data.list", json!({"items": ["огонь"]})),
+                node("j1", "data.listjoin", json!({})), node("j2", "data.listjoin", json!({})),
+                node("c", "data.textcheck", json!({"op": "eq"})),
+            ],
+            vec![link("l1", "value", "j1", "list"), link("l2", "value", "j2", "list"), link("j1", "value", "c", "a"), link("j2", "value", "c", "b")],
+        );
+        assert_eq!(value_of(&default_case, "c"), json!(true));
+    }
+
+    /// Параметры новых узлов проверяются при сохранении: операции, items и разделитель.
+    #[test]
+    fn text_and_list_parameters_are_validated() {
+        let single = |item: Value| graph_of(vec![item], vec![]);
+        assert!(validate(&single(node("t", "data.text", json!({"op": "concat"})))).is_ok());
+        assert!(validate(&single(node("t", "data.text", json!({"op": "reverse"})))).is_err(), "неизвестная операция строки");
+        assert!(validate(&single(node("c", "data.textcheck", json!({"op": "eq", "case": false})))).is_ok());
+        assert!(validate(&single(node("c", "data.textcheck", json!({"op": "eq", "case": "no"})))).is_err(), "case — логическое значение");
+        assert!(validate(&single(node("c", "data.textcheck", json!({"op": "match", "case": false})))).is_err(), "неизвестная операция сравнения");
+        assert!(validate(&single(node("l", "data.list", json!({"items": ["Огонь"]})))).is_ok());
+        assert!(validate(&single(node("l", "data.list", json!({"items": []})))).is_ok(), "пустой список допустим");
+        assert!(validate(&single(node("l", "data.list", json!({"items": "Огонь"})))).is_err(), "items — массив");
+        assert!(validate(&single(node("l", "data.list", json!({"items": ["x".repeat(201)]})))).is_err(), "строка списка до 200 символов");
+        assert!(validate(&single(node("l", "data.list", json!({"items": vec!["x"; 101]})))).is_err(), "до 100 элементов");
+        assert!(validate(&single(node("j", "data.listjoin", json!({"separator": ", "})))).is_ok());
+        assert!(validate(&single(node("j", "data.listjoin", json!({})))).is_ok(), "разделитель необязателен");
+        assert!(validate(&single(node("j", "data.listjoin", json!({"separator": "x".repeat(11)})))).is_err(), "разделитель до 10 символов");
+        assert!(validate(&single(node("j", "data.listjoin", json!({"separator": 5})))).is_err(), "разделитель — строка");
+    }
+
+    /// Условие блока через condition_src: textcheck (bool) и textlen + data.compare (число).
+    #[test]
+    fn text_checks_gate_a_block_through_condition_src() {
+        let with_condition = |sensor: Value, sources: Vec<Value>, wires: Vec<Value>| {
+            let mut nodes = vec![
+                node("p", "action.program", json!({"program_id": "use", "name": "Тест", "trigger": "use"})),
+                sensor,
+                node("m", "action.manual", json!({"block_id": "m", "text": "Правило", "when": "always"})),
+                node("e", "flow.end", json!({})),
+            ];
+            nodes.extend(sources);
+            let mut links = vec![
+                link("p", "exec", "m", "exec"),
+                link("m", "exec", "e", "exec"),
+            ];
+            links.extend(wires);
+            graph_of(nodes, links)
+        };
+        // Сравнение строк управляет блоком: в план попадает condition_src узла сравнения.
+        let graph = with_condition(
+            node("c", "data.textcheck", json!({"op": "starts", "case": false})),
+            vec![node("l", "data.list", json!({"items": ["Огонь"]})), node("join", "data.listjoin", json!({}))],
+            vec![link("l", "value", "join", "list"), link("join", "value", "c", "a"), link("join", "value", "c", "b"), link("c", "value", "m", "condition")],
+        );
+        assert!(problems(&graph).unwrap().is_empty(), "{:?}", problems(&graph));
+        assert_eq!(to_v1(&graph)["programs"][0]["blocks"][0]["condition_src"], "c");
+        assert_eq!(node_value(&graph["graph"], "c", &Value::Null).unwrap(), json!(true));
+        // Длина строки + сравнение чисел: число переводится в bool узлом data.compare.
+        let len_graph = with_condition(
+            node("cmp", "data.compare", json!({"op": ">"})),
+            vec![node("l", "data.list", json!({"items": ["Огонь"]})), node("join", "data.listjoin", json!({})), node("len", "data.textlen", json!({})), node("n", "data.number", json!({"value": 4}))],
+            vec![
+                link("l", "value", "join", "list"), link("join", "value", "len", "a"),
+                link("len", "value", "cmp", "a"), link("n", "value", "cmp", "b"),
+                link("cmp", "value", "m", "condition"),
+            ],
+        );
+        assert!(problems(&len_graph).unwrap().is_empty(), "{:?}", problems(&len_graph));
+        assert_eq!(to_v1(&len_graph)["programs"][0]["blocks"][0]["condition_src"], "cmp");
+        assert_eq!(node_value(&len_graph["graph"], "len", &Value::Null).unwrap(), json!(5), "«Огонь» — пять символов");
+        assert_eq!(node_value(&len_graph["graph"], "cmp", &Value::Null).unwrap(), json!(true), "5 > 4");
     }
 }

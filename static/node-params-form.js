@@ -64,6 +64,15 @@
       { value: 'round', label: 'Округлить (от 0,5 вверх)' }, { value: 'floor', label: 'Округлить вниз' },
       { value: 'ceil', label: 'Округлить вверх' }, { value: 'sign', label: 'Знак: −1, 0 или 1' },
     ] },
+    // Строки: операция одного узла выбирается списком, сравнение — операцией и флагом регистра.
+    'data.text': { op: [
+      { value: 'concat', label: 'Склеить a и b' }, { value: 'upper', label: 'Верхний регистр' },
+      { value: 'lower', label: 'Нижний регистр' }, { value: 'trim', label: 'Убрать пробелы по краям' },
+    ] },
+    'data.textcheck': { op: [
+      { value: 'contains', label: 'Содержит' }, { value: 'starts', label: 'Начинается с' },
+      { value: 'ends', label: 'Заканчивается на' }, { value: 'eq', label: 'Равно' }, { value: 'ne', label: 'Не равно' },
+    ] },
     // Переменная действия или листа: область задаётся списком.
     'action.setvar': { scope: [{ value: 'action', label: 'Действие — до конца выполнения' }, { value: 'sheet', label: 'Лист — сохранить в sheet.vars' }] },
     'data.var': { scope: [{ value: 'action', label: 'Действие — до конца выполнения' }, { value: 'sheet', label: 'Лист — из sheet.vars' }] },
@@ -132,7 +141,10 @@
     levels: 'Уровни', slots: 'Ячейки', columns: 'Колонки', pb: 'Бонус мастерства', requirements: 'Требования',
     caster: 'Заклинатель', multiclass: 'Мультикласс', no_shield: 'Запрет щита', label: 'Метка вида',
     percent: 'Процент от максимума', scope: 'Область', node: 'Узел',
+    separator: 'Разделитель', case: 'Учитывать регистр',
   };
+  // Подписи полей, которые зависят от типа узла: у data.list items — строки списка, а не «Предметы».
+  const TYPE_LABELS = { 'data.list': { items: 'Строки списка' } };
   const labelOf = key => LABELS[key] || key;
 
   // ---- чистые помощники -------------------------------------------------
@@ -169,6 +181,9 @@
   function mount(initial, options = {}) {
     let current = clone(initial ?? {});
     const enums = { ...ENUMS, ...(options.enums || {}) };
+    // Подписи полей: общие (LABELS) и уточнённые типом узла (options.labels).
+    const labels = options.labels || {};
+    const labelFor = key => labels[key] || labelOf(key);
     if (options.groups) enums.group_id = options.groups;
     const root = el('div', { class: 'param-form', role: 'group', 'aria-label': options.ariaLabel || 'Параметры' });
 
@@ -179,7 +194,7 @@
     function paint() {
       const rows = isPlainObject(current) ? Object.entries(current)
         .filter(([key, value]) => !(options.hide && options.hide.has(key)) && shownField(key, value, !!options.inline))
-        .map(([key, value]) => field(labelOf(key), value, [key], key, false, false)) : [];
+        .map(([key, value]) => field(labelFor(key), value, [key], key, false, false)) : [];
       // Строка «новый ключ» только для таблиц; null в replaceChildren стал бы текстом «null» на карточке.
       root.replaceChildren(...rows, ...(isPlainObject(current) && options.map ? [addKeyRow([])] : []));
     }
@@ -255,7 +270,7 @@
       const map = isMap(value, key, forceMap);
       const rows = Object.entries(value).map(([childKey, childValue]) => {
         const childPath = [...path, childKey];
-        if (!map) return field(labelOf(childKey), childValue, childPath, childKey, false, false);
+        if (!map) return field(labelFor(childKey), childValue, childPath, childKey, false, false);
         return el('div', { class: 'param-item' }, el('div', { class: 'param-item-head' }, el('span', { class: 'param-label' }, childKey),
           el('button', { class: 'small danger', type: 'button', title: 'Удалить строку', onclick: () => removeValue(childPath) }, '×')),
           field(childKey, childValue, childPath, childKey, false, false));
@@ -277,7 +292,7 @@
   }
 
   const API = {
-    getAt, setAt, removeAt, emptyLike, isMap, LABELS, ENUMS, TYPE_ENUMS,
+    getAt, setAt, removeAt, emptyLike, isMap, LABELS, ENUMS, TYPE_ENUMS, TYPE_LABELS,
     // Форма параметров узла графа. node.params меняется только после нажатия на поле (onchange).
     nodeParams(node, options = {}) {
       const enums = { ...(TYPE_ENUMS[node?.type] || {}), ...(node?.type === 'data.stat' ? { id: statIdOptions() } : {}) };
@@ -289,7 +304,8 @@
       const fields = node?.type === 'action.field' ? fieldOptions(node?.params) : null;
       if (fields) enums.field = fields;
       const hide = node?.type === 'action.field' ? fieldKindHidden(node?.params) : null;
-      return mount(node?.params || {}, { ...options, enums, hide, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
+      const labels = TYPE_LABELS[node?.type] || null;
+      return mount(node?.params || {}, { ...options, enums, hide, labels, ariaLabel: options.inline ? 'Параметры на карточке' : 'Параметры узла' });
     },
     // Редактор произвольного значения (например, выборы для предпросмотра).
     valueEditor(value, options = {}) {

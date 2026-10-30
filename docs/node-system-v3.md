@@ -61,6 +61,13 @@
 | `data.var` | Переменная действия или листа | — → `value` (number) | `name` (1–32 символа `[a-z0-9_]`), `scope` = action/sheet |
 | `data.ref` | Ссылка на числовой узел этого же графа | — → `value` (number) | `node` — ID числового узла того же графа (в группе — её узла) |
 | `data.mathfun` | Математика одного числа и диапазона | `a`, `b`, `c` (number) → `value` (number) | `op` = min/max/clamp/abs/round/floor/ceil/sign; `a` обязателен, `b` — min/max, `b` и `c` — clamp |
+| `data.text` | Строка: склейка, регистр, обрезка пробелов | `a`, `b` (text) → `value` (text) | `op` = concat/upper/lower/trim; `b` читает только `concat` |
+| `data.textlen` | Длина строки в символах Unicode | `a` (text) → `value` (number) | нет |
+| `data.textcheck` | Сравнение строк | `a`, `b` (text) → `value` (bool) | `op` = contains/starts/ends/eq/ne, `case` = true/false (по умолчанию false — регистр не важен) |
+| `data.list` | Литерал списка строк | — → `value` (list) | `items` — массив до 100 строк по 200 символов |
+| `data.listget` | Элемент списка по индексу | `list` (list), `index` (number) → `value` (text) | нет |
+| `data.listlen` | Длина списка | `list` (list) → `value` (number) | нет |
+| `data.listjoin` | Склейка списка в строку | `list` (list) → `value` (text) | `separator` — строка до 10 символов (по умолчанию «, ») |
 | `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
 | `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
 | `condition.status` | Есть ли на листе состояние с таким названием | — → `value` (bool) | `name`, `mode` = present/absent |
@@ -278,6 +285,35 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
   предпросмотре, `null` в рантайме); условие считается неизвестным и блок не пропускается.
 - `round` считает половину вверх и для отрицательных чисел: `round(-2.5) = -2`.
 
+### Строки и списки
+
+Семь узлов категории «Данные» дают визуальному программированию текст и списки: строку можно
+собрать, обрезать, измерить и сравнить, а список — задать литералом, прочитать по индексу и
+склеить. Значения читаются из проводов, как у `data.mathfun`; на лист эти узлы ничего не
+пишут, а в блоки плана попадает только вычисленный результат — число для `action.setvar`
+или `condition_src` для условия блока: `bool` из `data.textcheck` (или `data.compare`
+поверх `data.textlen`) идёт на вход `condition`, и сервер считает условие в рантайме.
+
+| Узел | Что делает | Особенности |
+|---|---|---|
+| `data.text` | `concat` склеивает `a` и `b`, `upper`/`lower` меняют регистр, `trim` убирает пробелы по краям | `b` читает только `concat`; вход, к которому не подведён провод, считается пустой строкой |
+| `data.textlen` | длина строки в символах Unicode (кодовых точках) | «𝄞» — один символ, хотя в UTF-16 занимает две единицы; без провода — `0` |
+| `data.textcheck` | `contains`, `starts`, `ends`, `eq`, `ne` | `case: false` (по умолчанию) — без учёта регистра; `case: true` — регистр важен |
+| `data.list` | литерал списка из параметра `items` | входов нет, значение доступно без состояния выполнения: до 100 строк по 200 символов |
+| `data.listget` | элемент по индексу (с нуля) | дробный индекс усекается; индекс вне диапазона и пустой список дают пустую строку |
+| `data.listlen` | число элементов списка | без провода или с пустым списком — `0` |
+| `data.listjoin` | склейка списка через `separator` | разделитель до 10 символов, по умолчанию «, »; пустой список — пустая строка |
+
+- Таблицы операций и сравнений одни на клиенте (`NodeRegistry.textValue` /
+  `textCheckValue`) и на сервере (`text_value` / `text_check_value`); `TEXT_OPS` и
+  `TEXT_CHECK_OPS` сверяет `node tools/srd/integrity.cjs`.
+- Неизвестная операция, `items` не массив, строка списка длиннее 200 символов, больше
+  100 элементов и разделитель длиннее 10 символов отклоняются при сохранении.
+- Предпросмотр считает значения по литералам и проводам: `data.list` → `data.listjoin` →
+  `data.textlen` → `action.setvar` показывает число без исполнения графа. Неизвестная
+  операция даёт неизвестное значение (`undefined`); подключённый к нему узел считает по
+  своим правилам — например, `data.textlen` вернёт `0`.
+
 ## Заклинания
 
 Каст — программа `action.program` → `action.slot` → броски и правила. `action.slot.level = 0`
@@ -369,4 +405,6 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
 6. Переменные и ссылки: `action.setvar`/`data.var` (области action и sheet), `data.ref`
    на числовой узел графа и `data.mathfun`; переменные выполнения в контексте
    `runtime.vars`, значение `setvar` с провода считается в рантайме — сделано.
-   Типов в палитре 37 (35 видимых + два внутренних узла групп).
+   Типов в палитре 44 (42 видимых + два внутренних узла групп); строки и списки —
+   `data.text`, `data.textlen`, `data.textcheck`, `data.list`, `data.listget`,
+   `data.listlen`, `data.listjoin`.

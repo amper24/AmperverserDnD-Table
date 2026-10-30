@@ -61,7 +61,8 @@
   // Список обязан совпадать с классами, объявившими compute; это проверяет tests/node-registry.test.cjs.
   // Условия листа (condition.status/item/hp/slot) без листа дают false.
   const COMPUTED = new Set(['data.stat', 'dice.combine', 'data.compare', 'logic.op', 'data.math', 'data.boolean', 'data.result', 'data.sheet', 'data.cast',
-    'data.var', 'data.ref', 'data.mathfun', 'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
+    'data.var', 'data.ref', 'data.mathfun', 'data.text', 'data.textlen', 'data.textcheck', 'data.list', 'data.listget', 'data.listlen', 'data.listjoin',
+    'condition.status', 'condition.item', 'condition.hp', 'condition.slot']);
   const STAT_MODES = ['bonus', 'score'];
   const RULE_VALUE_KINDS = { ability: 'Характеристика', speed: 'Скорость', hp: 'Хиты', hit_die: 'Кость хитов', asi: 'Повышение характеристик', armor_formula: 'Защита без доспехов' };
   const RULE_LIST_KINDS = { languages: 'Языки', proficiencies: 'Владения', skill_proficiency: 'Владение навыком', saving_throws: 'Спасброски', skills: 'Выбор навыков', spell_list: 'Список заклинаний', feature: 'Умение', class_features: 'Умения класса', equipment: 'Снаряжение', equipment_choice: 'Выбор снаряжения' };
@@ -77,6 +78,38 @@
     min: 'Минимум', max: 'Максимум', clamp: 'Ограничить диапазоном', abs: 'Модуль',
     round: 'Округлить (от 0,5 вверх)', floor: 'Округлить вниз', ceil: 'Округлить вверх', sign: 'Знак',
   };
+  // Строковые узлы: операции data.text и сравнения data.textcheck — один список на клиенте
+  // (NodeRegistry) и на сервере (TEXT_OPS / TEXT_CHECK_OPS в src/mechanics_graph.rs).
+  const TEXT_OPS = ['concat', 'upper', 'lower', 'trim'];
+  const TEXT_OP_LABELS = { concat: 'Склеить a и b', upper: 'Верхний регистр', lower: 'Нижний регистр', trim: 'Убрать пробелы по краям' };
+  const TEXT_CHECK_OPS = ['contains', 'starts', 'ends', 'eq', 'ne'];
+  const TEXT_CHECK_OP_LABELS = { contains: 'Содержит', starts: 'Начинается с', ends: 'Заканчивается на', eq: 'Равно', ne: 'Не равно' };
+  // Значение строкового входа: не строка (вход не подключён) — пустая строка, как на сервере.
+  const textOf = value => typeof value === 'string' ? value : '';
+  // Чистая функция data.text: одна таблица для узла, предпросмотра и сервера (text_value).
+  function textValue(op, a, b) {
+    const left = textOf(a);
+    if (op === 'concat') return left + textOf(b);
+    if (op === 'upper') return left.toUpperCase();
+    if (op === 'lower') return left.toLowerCase();
+    if (op === 'trim') return left.trim();
+    return undefined;
+  }
+  // Сравнение строк: case=false — без учёта регистра. Неизвестная операция — undefined.
+  function textCheckValue(op, a, b, caseSensitive) {
+    const fold = value => caseSensitive === true ? textOf(value) : textOf(value).toLowerCase();
+    const left = fold(a), right = fold(b);
+    if (op === 'contains') return left.includes(right);
+    if (op === 'starts') return left.startsWith(right);
+    if (op === 'ends') return left.endsWith(right);
+    if (op === 'eq') return left === right;
+    if (op === 'ne') return left !== right;
+    return undefined;
+  }
+  // Длина строки в символах Unicode (кодовых точках), а не в единицах UTF-16: «𝄞» — один символ.
+  const textLength = value => [...textOf(value)].length;
+  // Литерал списка data.list: только строки; не-массив и не-строки дают пустые значения.
+  const listItems = value => Array.isArray(value) ? value.map(item => textOf(item)) : [];
   // Области переменных: действие живёт до конца выполнения, лист сохраняет значение в sheet.vars.
   const VAR_SCOPES = ['action', 'sheet'];
   const VAR_SCOPE_LABELS = { action: 'Действие', sheet: 'Лист' };
@@ -249,6 +282,7 @@
     STATUS_MODES, ITEM_MODES, HP_OPS, SLOT_OPS, SHEET_CONDITIONS,
     FIELD_KINDS, FIELD_KIND_LABELS, FIELD_BLOCKS, FIELD_VALUE_FIELDS, FIELD_FORMULA_FIELDS, blockKindOf, blockKindsOf, blockParamsOf,
     COMPUTED, STAT_MODES, COMPARE_OPS, MATH_OPS, MATHFUN_OPS, MATHFUN_OP_LABELS, mathfunValue, VAR_SCOPES, VAR_SCOPE_LABELS, varName,
+    TEXT_OPS, TEXT_OP_LABELS, TEXT_CHECK_OPS, TEXT_CHECK_OP_LABELS, textValue, textCheckValue, textLength, listItems,
     RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
     NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
