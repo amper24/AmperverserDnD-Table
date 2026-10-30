@@ -1118,10 +1118,31 @@
     function insertStarter(starter) {
       const anchor = nodeById(activeAction);
       const ids = new Map(), origin = anchor?.position ? { x: anchor.position.x + 280, y: anchor.position.y } : { x: 60, y: 70 };
+      // Группы-функции шаблона (необязательное поле groups): копируем определение и переносим
+      // ссылки data.call на новые ID групп, чтобы вставка не делила группу с прежним графом.
+      const groupIds = new Map();
+      for (const group of starter.groups || []) if (group?.id) groupIds.set(String(group.id), mkId('group'));
+      for (const group of starter.groups || []) {
+        const nodes = clone(group.nodes || []).map(node => {
+          const params = clone(node.params || {});
+          if (node.type === 'data.call' && groupIds.has(String(params.group || ''))) params.group = groupIds.get(String(params.group || ''));
+          return { ...node, params };
+        });
+        graph.groups.push({
+          id: groupIds.get(String(group.id || '')) || mkId('group'),
+          name: String(group.name || 'Функция'),
+          inputs: clone(group.inputs || []),
+          outputs: clone(group.outputs || []),
+          nodes,
+          links: clone(group.links || []),
+          frames: [],
+        });
+      }
       for (const n of starter.nodes) {
         const id = mkId('node'); ids.set(n.key, id);
         // Значения по умолчанию реестра + отличия из пресета; block_id действия создаётся заново (уникален в графе).
         const params = { ...clone(defOf(n.type)?.defaults || {}), ...clone(n.params || {}) };
+        if (n.type === 'data.call' && groupIds.has(String(params.group || ''))) params.group = groupIds.get(String(params.group || ''));
         if (actionType(n.type)) params.block_id = mkId('b');
         const inserted = { id, type: n.type, params, position: { x: origin.x + n.x, y: origin.y + n.y }, action: activeAction };
         graph.nodes.push(inserted);

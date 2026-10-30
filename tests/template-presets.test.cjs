@@ -57,7 +57,7 @@ function danglingFlowOutputs(graph) {
 
 test('mechanic templates are executable v3 graphs with a completed flow and no dangling exec', () => {
   const templates = read('static/presets/mechanic-templates.json');
-  assert.equal(templates.items.length, 40, `шаблонов ${templates.items.length}`);
+  assert.equal(templates.items.length, 46, `шаблонов ${templates.items.length}`);
   for (const item of templates.items) {
     const graph = item.table.graph;
     const mechanics = { version: 2, origin: item.table.origin || 'template', graph };
@@ -75,11 +75,37 @@ test('mechanic templates are executable v3 graphs with a completed flow and no d
   }
 });
 
-test('eight new templates cover the requested mechanics', () => {
+test('fourteen new templates cover the requested mechanics', () => {
   const ids = new Set(read('static/presets/mechanic-templates.json').items.map(item => item.id));
-  for (const id of ['attack_damage_result', 'heal_when_hurt', 'save_dc_damage', 'multiattack_two', 'staff_charges', 'smite_extra', 'aura_buff', 'sneak_attack']) {
+  for (const id of ['attack_damage_result', 'heal_when_hurt', 'save_dc_damage', 'multiattack_two', 'staff_charges', 'smite_extra', 'aura_buff', 'sneak_attack',
+    'third_hand', 'sum_function', 'remember_roll', 'dragon_mark', 'bloodied_heal', 'extra_hand_attack']) {
     assert.ok(ids.has(id), id);
   }
+});
+
+test('the six new templates are present by names', () => {
+  const templates = read('static/presets/mechanic-templates.json').items;
+  const byId = new Map(templates.map(item => [item.id, item.table.name]));
+  const expected = {
+    third_hand: 'Третья рука',
+    sum_function: 'Сумма через функцию',
+    remember_roll: 'Запомнить бросок',
+    dragon_mark: 'Метка дракона',
+    bloodied_heal: 'Хиты ниже половины',
+    extra_hand_attack: 'Доп. рука в бою',
+  };
+  for (const [id, name] of Object.entries(expected)) assert.equal(byId.get(id), name, id);
+  const starters = read('static/presets/graph-starters.json').items;
+  const starterById = new Map(starters.map(item => [item.id, item.name]));
+  const starterNames = {
+    'third-hand': 'Третья рука',
+    'sum-function': 'Сумма через функцию',
+    'remember-roll': 'Запомнить бросок',
+    'dragon-mark': 'Метка дракона',
+    'bloodied-heal': 'Хиты ниже половины',
+    'extra-hand-attack': 'Доп. рука в бою',
+  };
+  for (const [id, name] of Object.entries(starterNames)) assert.equal(starterById.get(id), name, id);
 });
 
 test('creation starters are executable v3 graphs with a completed flow', () => {
@@ -100,7 +126,7 @@ test('creation starters are executable v3 graphs with a completed flow', () => {
 function attachStarter(item) {
   const program = { id: 'p', type: 'action.program', params: { program_id: 'prog', name: 'Проверка', trigger: 'use' } };
   const end = { id: 'e', type: 'flow.end', params: {} };
-  const graph = { nodes: [program, end], links: [{ from: { node: 'p', socket: 'exec' }, to: { node: 'e', socket: 'exec' } }], frames: [], groups: [] };
+  const graph = { nodes: [program, end], links: [{ from: { node: 'p', socket: 'exec' }, to: { node: 'e', socket: 'exec' } }], frames: [], groups: plain(item.groups || []) };
   const ids = new Map();
   item.nodes.forEach((node, index) => {
     const id = `n${index}`;
@@ -131,15 +157,16 @@ function attachStarter(item) {
   return { version: 2, origin: 'test', graph };
 }
 
-test('13 стартовых графов: 5 старых и 8 новых, 10 вставляются в пустое действие', () => {
+test('19 стартовых графов: 5 старых и 14 новых, 16 вставляются в пустое действие', () => {
   const starters = read('static/presets/graph-starters.json').items;
-  assert.equal(starters.length, 13);
-  const eight = ['attack-damage-result', 'heal-when-hurt', 'save-dc-damage', 'multiattack-two', 'staff-charges', 'smite-extra', 'aura-buff', 'sneak-attack'];
+  assert.equal(starters.length, 19);
+  const fourteen = ['attack-damage-result', 'heal-when-hurt', 'save-dc-damage', 'multiattack-two', 'staff-charges', 'smite-extra', 'aura-buff', 'sneak-attack',
+    'third-hand', 'sum-function', 'remember-roll', 'dragon-mark', 'bloodied-heal', 'extra-hand-attack'];
   const old = ['speed-level', 'hp-bonus', 'hp-bonus-level', 'attack-only', 'damage-only'];
-  assert.deepEqual(starters.filter(item => eight.includes(item.id)).map(item => item.id), eight);
+  assert.deepEqual(starters.filter(item => fourteen.includes(item.id)).map(item => item.id), fourteen);
   assert.deepEqual(starters.filter(item => old.includes(item.id)).map(item => item.id), old);
   const attaching = starters.filter(item => item.attach);
-  assert.equal(attaching.length, 10, 'два старых действия и все восемь новых вставляются в действие');
+  assert.equal(attaching.length, 16, 'два старых действия и все четырнадцать новых вставляются в действие');
   // Три старых правила не имеют exec: они вставляются в пассивную программу, а не в действие.
   for (const item of starters.filter(item => !item.attach)) {
     assert.ok(item.nodes.every(node => !flowInputs(node.type).includes('exec')), `${item.id}: правило без exec`);

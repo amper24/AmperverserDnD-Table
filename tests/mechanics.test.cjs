@@ -227,7 +227,7 @@ test('template library builds valid programs and keeps creation templates apart'
       assert.ok(p.name&&p.blocks.length,cat+' / '+t.id);
       assert.ok(t.hint&&t.chain.length,cat+' / '+t.id);
       const graph=ctx.window.Presets.item('mechanic_templates',t.id).table.graph;
-      assert.equal(M.validate(graphOf(graph.nodes,graph.links)),'',cat+' / '+t.id);
+      assert.equal(M.validate({version:2,graph:{nodes:graph.nodes,links:graph.links,frames:[],groups:graph.groups||[]}}),'',cat+' / '+t.id);
       const again=t.build();assert.notEqual(again.blocks[0].id,p.blocks[0].id,'each template build gets fresh ids');
     }
   }

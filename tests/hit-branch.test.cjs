@@ -126,7 +126,7 @@ test('starter presets are data: every starter saves, the attached ones execute',
     for (const [from, out, to, into] of starter.links) links.push({ from: { node: ids2.get(from), socket: out }, to: { node: ids2.get(to), socket: into } });
     const head = starter.nodes.find(n => !starter.links.some(([, , to, into]) => to === n.key && into === 'exec'));
     if (starter.attach && head) links.push({ from: { node: 'program', socket: 'exec' }, to: { node: ids2.get(head.key), socket: 'exec' } });
-    const graph = withEnds({ version: 2, graph: { nodes, links, frames: [], groups: [] } });
+    const graph = withEnds({ version: 2, graph: { nodes, links, frames: [], groups: plain(starter.groups || []) } });
     assert.equal(M.validate(graph), '', `${starter.id}: saves`);
     if (starter.attach) assert.equal(M.problems(graph).length, 0, `${starter.id}: executes`);
   }

@@ -105,6 +105,12 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
       ['smite-extra', 'Кара: дополнительный урон'],
       ['aura-buff', 'Аура: усиление по уровню'],
       ['sneak-attack', 'Скрытая атака'],
+      ['third-hand', 'Третья рука'],
+      ['sum-function', 'Сумма через функцию'],
+      ['remember-roll', 'Запомнить бросок'],
+      ['dragon-mark', 'Метка дракона'],
+      ['bloodied-heal', 'Хиты ниже половины'],
+      ['extra-hand-attack', 'Доп. рука в бою'],
     ];
     for (const [id, name] of newTemplates) {
       await page.locator('.node-toolbar button.node-add[title="action.program"]').click();
@@ -126,7 +132,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal(flowCounts.ends, flowCounts.programs, 'у каждого действия ровно один «Конец»');
 
     assert.deepEqual(errors, [], 'страница без ошибок');
-    console.log('PASS graph templates: end node on the quick panel, single end per action, save/insert/delete own template, 8 new starters attach');
+    console.log('PASS graph templates: end node on the quick panel, single end per action, save/insert/delete own template, 14 new starters attach');
   } finally {
     await browser.close();
   }
