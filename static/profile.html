@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Профиль Edge Tablet: имя, аватар, почта, пароль и управление аккаунтом.">
+<title>Профиль — Edge Tablet</title>
+<script>try{var t=localStorage.getItem("et-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/profile-page.css">
+</head>
+<body>
+<div id="app"></div>
+<!-- Слой 1 — фундамент: DOM-утилиты (el, modal, toast), API-клиент, тема, иконки, assetURL. -->
+<script src="/static/common.js"></script>
+<!-- Реестр типов ассетов: для аватара берём kind=portrait через AssetKinds.forUsage('avatar'). -->
+<script src="/static/asset-kinds.js"></script>
+<script src="/static/profile-page.js"></script>
+</body>
+</html>
