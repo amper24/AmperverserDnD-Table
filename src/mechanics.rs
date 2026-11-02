@@ -232,6 +232,89 @@ fn set_concentration(s: &mut Value, name: &str) -> ApiResult<()> {
     list.push(json!(value));
     Ok(())
 }
+/// Круг каста: базовый из записи, выбранный из операции, разница для upcast и объект cast.
+/// Без узла ячейки в графе старые записи считают ячейку на клиенте, поэтому строгие проверки
+/// круга к ним не применяются.
+fn cast_state(s: &Value, doc: &Value, category: &str, slot_level: i64) -> ApiResult<(i64, i64, i64, Value)> {
+    if category != "spell" { return Ok((0, 0, 0, json!({"level": 0, "base": 0, "extra": 0}))); }
+    let base = spell_i64(doc, "level");
+    if slot_level < 0 { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+    let own_slot = has_slot_node(&doc["mechanics"]);
+    let slot_choice = own_slot && has_slot_choice_node(&doc["mechanics"]);
+    // 0 в slot_level — ритуал (ячейка не тратится) или старый клиент, который считает ячейку
+    // на листе. Новый клиент всегда присылает выбранный круг для обычного каста.
+    let chosen = if !own_slot { base }
+        else if slot_level > 0 { slot_level }
+        else if base == 0 { 0 }
+        else if spell_true(doc, "ritual") { 0 }
+        else if !slot_choice { base }
+        else { return Err(AppError::bad("Укажите круг ячейки")); };
+    if !(0..=9).contains(&chosen) || (chosen > 0 && chosen < base) { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+    if own_slot && chosen > 0 && !slot_free(s, chosen) { return Err(AppError::bad("Недостаточно ячеек. Цепочка отменена")); }
+    let cast = json!({"level": chosen, "base": base, "extra": chosen - base});
+    Ok((base, chosen, chosen - base, cast))
+}
+/// Итог выполнения для листа: total последнего броска, hit (0/1), применённое лечение/хиты,
+/// израсходованное и число бросков. Другие действия читают его через data.result.
+fn action_result(last_total: Option<i64>, hit: Option<bool>, effects: &[Value], spent: &[Value], rolls: &[Value]) -> Value {
+    let applied: i64 = effects.iter().filter(|effect| matches!(text(effect, "kind"), "heal" | "temp_hp" | "damage")).map(|effect| num(effect, "amount")).sum();
+    let spent_total: i64 = spent.iter().map(|entry| num(entry, "amount")).sum();
+    json!({
+        "total": last_total.unwrap_or(0),
+        "hit": hit.map(Value::Bool).unwrap_or(Value::Null),
+        "applied": applied,
+        "spent": spent_total,
+        "rolls": rolls.len(),
+        "at": chrono::Utc::now().timestamp(),
+    })
+}
+/// Применение эффекта блока к листу: лечение/временные хиты, выдача предмета, руки,
+/// состояния и числовые показатели. Эффекты добавляются в общий список выполнения.
+fn apply_block(recipient: &mut Value, doc: &Value, b: &Value, kind: &str, total: i64, effects: &mut Vec<Value>, concentration_set: &mut bool) -> ApiResult<()> {
+    match kind {
+        "heal"|"temp_hp" => {
+            let hp=recipient["hp"].as_object_mut().ok_or_else(||AppError::bad("У цели не настроены хиты"))?;
+            let cur=hp.get("current").and_then(Value::as_i64).unwrap_or(0);let max=hp.get("max").and_then(Value::as_i64).unwrap_or(0);let tmp=hp.get("temp").and_then(Value::as_i64).unwrap_or(0);let n=total.max(0);
+            if kind=="heal" {hp.insert("current".into(),json!(cur.saturating_add(n).min(max).max(0)));}else if kind=="temp_hp"{hp.insert("temp".into(),json!(tmp.max(n)));}else{hp.insert("temp".into(),json!((tmp-n).max(0)));hp.insert("current".into(),json!((cur-(n-tmp).max(0)).max(0)));}
+            effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
+        }
+        "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":"self"}));}
+        // Руки: extra_hands — это дополнительные руки после main/off. add/remove меняют их на count,
+        // set задаёт общее число рук: 2 — обычные две, 3 — одна дополнительная и т. д.
+        "hands"=>{
+            let operation=text(b,"operation");
+            let count=bounded(b,"count",1,6)?;
+            let current=inventory::extra_hands(recipient);
+            let next=match operation {
+                "add"=>current.saturating_add(count).min(inventory::MAX_EXTRA_HANDS),
+                "remove"=>current.saturating_sub(count).max(0),
+                "set"=>(count-2).clamp(0,inventory::MAX_EXTRA_HANDS),
+                _=>return Err(AppError::bad("Руки: операция add, remove или set")),
+            };
+            recipient["extra_hands"]=json!(next);
+            // Предметы с исчезнувших дополнительных рук уходят в рюкзак и попадают в отчёт эффекта.
+            let removed=inventory::drop_extra_hands(recipient,next);
+            effects.push(json!({"kind":kind,"operation":operation,"count":count,"extra_hands":next,"removed":removed,"target":"self"}));
+        }
+        "condition"=>{
+            let operation=text(b,"operation");
+            if operation=="concentration" {
+                // Название подставляет сервер: condition у узла пустой.
+                set_concentration(recipient,text(doc,"name"))?;
+                *concentration_set=true;
+                effects.push(json!({"kind":"condition","condition":format!("Концентрация: {}",text(doc,"name")),"target":"self"}));
+            } else {
+                if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}
+                let a=recipient["conditions"].as_array_mut().ok_or_else(||AppError::bad("Неверный список состояний"))?;
+                if operation=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}
+                effects.push(b.clone());
+            }
+        }
+        "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||AppError::bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||AppError::bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(AppError::bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
+        _=>{}
+    }
+    Ok(())
+}
 /// Эффекты применяются только владельцу листа: урон, состояния и спасброски по другим персонажам —
 /// задача ДМ, действие даёт бросок и правило. Лист не меняется ни на йоту при ЛЮБОЙ ошибке цепочки.
 pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool) -> ApiResult<Value> {
@@ -243,26 +326,8 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
     let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(AppError::bad("Неизвестный источник механики"))};
     let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||AppError::bad("Источник не найден"))?;
     validate(&doc["mechanics"])?;
-    // Контекст каста: базовый круг из записи, выбранный — из операции. Без узла ячейки в графе
-    // старые записи считают ячейку на клиенте, поэтому строгие проверки круга к ним не применяются.
-    let (base_level, chosen, extra_levels) = if category=="spell" {
-        let base=spell_i64(&doc,"level");
-        if slot_level<0 { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
-        let own_slot=has_slot_node(&doc["mechanics"]);
-        let slot_choice=own_slot&&has_slot_choice_node(&doc["mechanics"]);
-        // 0 в slot_level — ритуал (ячейка не тратится) или старый клиент, который считает ячейку
-        // на листе. Новый клиент всегда присылает выбранный круг для обычного каста.
-        let chosen=if !own_slot {base}
-            else if slot_level>0 {slot_level}
-            else if base==0 {0}
-            else if spell_true(&doc,"ritual") {0}
-            else if !slot_choice {base}
-            else { return Err(AppError::bad("Укажите круг ячейки")); };
-        if !(0..=9).contains(&chosen)||(chosen>0&&chosen<base) { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
-        if own_slot&&chosen>0&&!slot_free(&s,chosen) { return Err(AppError::bad("Недостаточно ячеек. Цепочка отменена")); }
-        (base,chosen,chosen-base)
-    } else { (0,0,0) };
-    let cast=json!({"level":chosen,"base":base_level,"extra":extra_levels});
+    // Контекст каста: базовый круг из записи, выбранный — из операции.
+    let (base_level, chosen, extra_levels, cast) = cast_state(&s, &doc, category, slot_level)?;
     let mut graph_context = json!({
         "edition": s.get("edition").and_then(Value::as_str).unwrap_or("2014"),
         "level": s.get("level").and_then(Value::as_i64).unwrap_or(1),
@@ -349,49 +414,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             last_total=Some(total);
             r["name"]=json!(if text(b,"name").is_empty(){text(p,"name")}else{text(b,"name")});r["kind"]=json!(kind);r["dtype"]=b["damage_type"].clone();r["doubled"]=json!(doubled);r["base_expr"]=json!(base);r["crit"]=json!(n20&&kind=="attack");r["fumble"]=json!(n1&&kind=="attack");rolls.push(r);
         }
-        let recipient=&mut s;
-        match kind {
-            "heal"|"temp_hp" => {
-                let hp=recipient["hp"].as_object_mut().ok_or_else(||AppError::bad("У цели не настроены хиты"))?;
-                let cur=hp.get("current").and_then(Value::as_i64).unwrap_or(0);let max=hp.get("max").and_then(Value::as_i64).unwrap_or(0);let tmp=hp.get("temp").and_then(Value::as_i64).unwrap_or(0);let n=total.max(0);
-                if kind=="heal" {hp.insert("current".into(),json!(cur.saturating_add(n).min(max).max(0)));}else if kind=="temp_hp"{hp.insert("temp".into(),json!(tmp.max(n)));}else{hp.insert("temp".into(),json!((tmp-n).max(0)));hp.insert("current".into(),json!((cur-(n-tmp).max(0)).max(0)));}
-                effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
-            }
-            "grant_item"=>{grant(recipient,b)?;effects.push(json!({"kind":kind,"name":b["item"]["name"],"amount":b["amount"],"target":"self"}));}
-            // Руки: extra_hands — это дополнительные руки после main/off. add/remove меняют их на count,
-            // set задаёт общее число рук: 2 — обычные две, 3 — одна дополнительная и т. д.
-            "hands"=>{
-                let operation=text(b,"operation");
-                let count=bounded(b,"count",1,6)?;
-                let current=inventory::extra_hands(recipient);
-                let next=match operation {
-                    "add"=>current.saturating_add(count).min(inventory::MAX_EXTRA_HANDS),
-                    "remove"=>current.saturating_sub(count).max(0),
-                    "set"=>(count-2).clamp(0,inventory::MAX_EXTRA_HANDS),
-                    _=>return Err(AppError::bad("Руки: операция add, remove или set")),
-                };
-                recipient["extra_hands"]=json!(next);
-                // Предметы с исчезнувших дополнительных рук уходят в рюкзак и попадают в отчёт эффекта.
-                let removed=inventory::drop_extra_hands(recipient,next);
-                effects.push(json!({"kind":kind,"operation":operation,"count":count,"extra_hands":next,"removed":removed,"target":"self"}));
-            }
-            "condition"=>{
-                let operation=text(b,"operation");
-                if operation=="concentration" {
-                    // Название подставляет сервер: condition у узла пустой.
-                    set_concentration(recipient,text(&doc,"name"))?;
-                    concentration_set=true;
-                    effects.push(json!({"kind":"condition","condition":format!("Концентрация: {}",text(&doc,"name")),"target":"self"}));
-                } else {
-                    if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}
-                    let a=recipient["conditions"].as_array_mut().ok_or_else(||AppError::bad("Неверный список состояний"))?;
-                    if operation=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}
-                    effects.push(b.clone());
-                }
-            }
-            "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||AppError::bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||AppError::bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(AppError::bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
-            _=>{}
-        }
+        apply_block(&mut s, &doc, b, kind, total, &mut effects, &mut concentration_set)?;
     }
     // Концентрация и ритуал — свойства заклинания, а не блоков: даже запись без узлов
     // получает состояние и эффект. Концентрация заменяет прежнюю, а не копится.
@@ -408,16 +431,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
     }
     // Итог действия — в лист: total последнего броска, hit (0/1), применённое лечение/хиты,
     // израсходованное и число бросков. Так другие действия читают его через data.result.
-    let applied: i64 = effects.iter().filter(|effect| matches!(text(effect,"kind"), "heal"|"temp_hp"|"damage")).map(|effect| num(effect,"amount")).sum();
-    let spent_total: i64 = spent.iter().map(|entry| num(entry,"amount")).sum();
-    let result = json!({
-        "total": last_total.unwrap_or(0),
-        "hit": hit.map(Value::Bool).unwrap_or(Value::Null),
-        "applied": applied,
-        "spent": spent_total,
-        "rolls": rolls.len(),
-        "at": chrono::Utc::now().timestamp(),
-    });
+    let result = action_result(last_total, hit, &effects, &spent, &rolls);
     results["last"] = result.clone();
     results["by_program"][program] = result;
     s["action_results"] = results.clone();
