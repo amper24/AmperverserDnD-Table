@@ -11,3 +11,5 @@ __pycache__/
 /config.yml.bak
 # Готовая сборка для переноса (exe, config.yml рядом с ним, zip) — собирается локально
 /dist/
+server.log
+smoke.out
