@@ -81,8 +81,12 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Cam
 }
 
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
-    let m = get_member(&st, &cid, &user.id).await?;
-    let row = fetch_campaign(&st, &cid).await?;
+    // Кампания и роль участника — одним запросом (было: get_member + fetch_campaign).
+    // Нет строки — пользователь не участник (как и раньше: сначала проверялся участник).
+    let row = sqlx::query("SELECT c.*, m.role AS member_role FROM campaigns c JOIN campaign_members m ON m.campaign_id = c.id AND m.user_id = ? WHERE c.id = ?")
+        .bind(&user.id).bind(&cid).fetch_optional(&st.db).await?
+        .ok_or_else(|| AppError::forbidden("Вы не участник этой кампании"))?;
+    let m = Member { role: row.get("member_role") };
     let members = sqlx::query("SELECT m.user_id, m.role, u.name, u.email, u.avatar_asset_id FROM campaign_members m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? ORDER BY m.joined_at")
         .bind(&cid).fetch_all(&st.db).await?;
     let mut out = campaign_json(&row, Some(&m.role));

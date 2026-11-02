@@ -402,6 +402,7 @@ deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run
 cargo run                       # SQLite в data/dnd.db, http://localhost:8080
 DATABASE_URL=mysql://dnd:dnd@localhost/dnd cargo run
 bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (нужны python3, websockets)
+# индексы, EXPLAIN QUERY PLAN и замеры запросов — docs/db.md
 ```
 
 ## Сборки и релизы

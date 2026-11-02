@@ -248,6 +248,18 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX idx_packs_owner ON packs(owner_id)",
     "CREATE INDEX idx_packs_share ON packs(share_code)",
     "CREATE INDEX idx_packsub_user ON pack_subscriptions(user_id)",
+    // Составные индексы под конкретные ORDER BY: снимают TEMP B-TREE у списков.
+    // Ключи короткие (id — VARCHAR(32), время — VARCHAR(40)), поэтому одинаково годятся для
+    // SQLite и для MySQL (предел ключа InnoDB — 3072 байта, здесь максимум ~1100 в utf8mb4).
+    "CREATE INDEX idx_chars_campaign_updated ON characters(campaign_id, updated_at)",
+    "CREATE INDEX idx_chars_owner_updated ON characters(owner_id, updated_at)",
+    "CREATE INDEX idx_scenes_campaign_created ON scenes(campaign_id, created_at)",
+    "CREATE INDEX idx_items_scene_z ON scene_items(scene_id, z)",
+    "CREATE INDEX idx_comp_category_name ON compendium(category, name)",
+    "CREATE INDEX idx_comp_pack_cat_name ON compendium(pack_id, category, name)",
+    // Обратные выборки, которых не покрывал UNIQUE(campaign_id|pack_id, …):
+    "CREATE INDEX idx_pack_editors_user ON pack_editors(user_id)",
+    "CREATE INDEX idx_campaign_packs_pack ON campaign_packs(pack_id)",
 ];
 
 pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {

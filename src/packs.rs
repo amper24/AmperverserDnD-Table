@@ -126,14 +126,15 @@ pub async fn touch(st: &AppState, pid: &str) -> ApiResult<()> {
 }
 
 /// Чтение: свои, публичные, подписки, соавторство, подключённые к кампании пользователя.
-pub async fn can_read(st: &AppState, pid: &str, uid: &str) -> ApiResult<()> {
+/// Возвращает саму строку набора: вызывающему почти всегда она нужна, и второй `fetch` не нужен.
+pub async fn can_read(st: &AppState, pid: &str, uid: &str) -> ApiResult<sqlx::any::AnyRow> {
     let r = fetch(st, pid).await?;
     if r.get::<String, _>("owner_id") == uid || r.get::<i64, _>("is_public") != 0 {
-        return Ok(());
+        return Ok(r);
     }
     let n: i64 = sqlx::query("SELECT (SELECT COUNT(*) FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?) + (SELECT COUNT(*) FROM pack_editors WHERE pack_id = ? AND user_id = ?) + (SELECT COUNT(*) FROM campaign_packs cp JOIN campaign_members m ON m.campaign_id = cp.campaign_id WHERE cp.pack_id = ? AND m.user_id = ?) AS n")
         .bind(pid).bind(uid).bind(pid).bind(uid).bind(pid).bind(uid).fetch_one(&st.db).await?.get("n");
-    if n > 0 { Ok(()) } else { Err(AppError::forbidden("Нет доступа к набору")) }
+    if n > 0 { Ok(r) } else { Err(AppError::forbidden("Нет доступа к набору")) }
 }
 
 /// Сводка по набору: число записей, подписчиков, разбивка по категориям, роль пользователя.
@@ -142,10 +143,11 @@ async fn stats(st: &AppState, pid: &str, uid: &str) -> ApiResult<Value> {
     let mut by_cat = serde_json::Map::new();
     let mut total = 0i64;
     for r in &rows { let n: i64 = r.get("n"); total += n; by_cat.insert(r.get::<String, _>("category"), json!(n)); }
-    let subs: i64 = sqlx::query("SELECT COUNT(*) AS n FROM pack_subscriptions WHERE pack_id = ?").bind(pid).fetch_one(&st.db).await?.get("n");
-    let subscribed: i64 = sqlx::query("SELECT COUNT(*) AS n FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?").bind(pid).bind(uid).fetch_one(&st.db).await?.get("n");
-    let editor: i64 = sqlx::query("SELECT COUNT(*) AS n FROM pack_editors WHERE pack_id = ? AND user_id = ?").bind(pid).bind(uid).fetch_one(&st.db).await?.get("n");
-    Ok(json!({ "entries": total, "by_category": by_cat, "subscribers": subs, "subscribed": subscribed > 0, "editor": editor > 0 }))
+    // Три счётчика одним запросом вместо трёх обращений к БД (было: subscribers, subscribed, editor).
+    let r = sqlx::query("SELECT (SELECT COUNT(*) FROM pack_subscriptions WHERE pack_id = ?) AS subs, (SELECT COUNT(*) FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?) AS subscribed, (SELECT COUNT(*) FROM pack_editors WHERE pack_id = ? AND user_id = ?) AS editor")
+        .bind(pid).bind(pid).bind(uid).bind(pid).bind(uid).fetch_one(&st.db).await?;
+    let subs: i64 = r.get("subs");
+    Ok(json!({ "entries": total, "by_category": by_cat, "subscribers": subs, "subscribed": r.get::<i64, _>("subscribed") > 0, "editor": r.get::<i64, _>("editor") > 0 }))
 }
 
 #[derive(Deserialize)]
@@ -154,8 +156,11 @@ pub struct ListQuery { pub scope: Option<String>, pub q: Option<String>, pub tag
 /// scope: mine (свои + соавторство) | subscribed | public (каталог) | all (всё доступное для подключения)
 async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQuery>) -> ApiResult<Json<Value>> {
     let scope = q.scope.as_deref().unwrap_or("all");
-    let mut sql = String::from("SELECT p.*, (SELECT COUNT(*) FROM compendium c WHERE c.pack_id = p.id) AS entries, (SELECT COUNT(*) FROM pack_subscriptions s WHERE s.pack_id = p.id) AS subscribers, u.name AS owner_name FROM packs p JOIN users u ON u.id = p.owner_id WHERE ");
-    let mut binds: Vec<String> = Vec::new();
+    // «Подписан» и «соавтор» — подзапросами в той же выборке: раньше на каждый набор шло
+    // ещё два COUNT-запроса (N+1: при 500 наборах — 1001 запрос на один HTTP-запрос).
+    let mut sql = String::from("SELECT p.*, (SELECT COUNT(*) FROM compendium c WHERE c.pack_id = p.id) AS entries, (SELECT COUNT(*) FROM pack_subscriptions s WHERE s.pack_id = p.id) AS subscribers, u.name AS owner_name, (SELECT COUNT(*) FROM pack_subscriptions s2 WHERE s2.pack_id = p.id AND s2.user_id = ?) AS subscribed, (SELECT COUNT(*) FROM pack_editors e2 WHERE e2.pack_id = p.id AND e2.user_id = ?) AS editor FROM packs p JOIN users u ON u.id = p.owner_id WHERE ");
+    // Два первых `?` — из подзапросов в списке колонок, они идут до условий WHERE.
+    let mut binds: Vec<String> = vec![user.id.clone(), user.id.clone()];
     match scope {
         "mine" => { sql.push_str("(p.owner_id = ? OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); binds.push(user.id.clone()); binds.push(user.id.clone()); }
         "subscribed" => { sql.push_str("p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?)"); binds.push(user.id.clone()); }
@@ -169,13 +174,8 @@ async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQu
     let mut query = sqlx::query(&sql);
     for b in &binds { query = query.bind(b); }
     let rows = query.fetch_all(&st.db).await?;
-    let mut out = Vec::new();
-    for r in &rows {
-        let subscribed: i64 = sqlx::query("SELECT COUNT(*) AS n FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?").bind(r.get::<String, _>("id")).bind(&user.id).fetch_one(&st.db).await?.get("n");
-        let editor: i64 = sqlx::query("SELECT COUNT(*) AS n FROM pack_editors WHERE pack_id = ? AND user_id = ?").bind(r.get::<String, _>("id")).bind(&user.id).fetch_one(&st.db).await?.get("n");
-        out.push(pack_json(r, json!({ "entries": r.get::<i64, _>("entries"), "subscribers": r.get::<i64, _>("subscribers"), "owner_name": r.get::<String, _>("owner_name"),
-            "mine": r.get::<String, _>("owner_id") == user.id, "editor": editor > 0, "subscribed": subscribed > 0 })));
-    }
+    let out: Vec<Value> = rows.iter().map(|r| pack_json(r, json!({ "entries": r.get::<i64, _>("entries"), "subscribers": r.get::<i64, _>("subscribers"), "owner_name": r.get::<String, _>("owner_name"),
+        "mine": r.get::<String, _>("owner_id") == user.id, "editor": r.get::<i64, _>("editor") > 0, "subscribed": r.get::<i64, _>("subscribed") > 0 }))).collect();
     Ok(Json(json!(out)))
 }
 
@@ -199,8 +199,8 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Pac
 }
 
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
-    can_read(&st, &pid, &user.id).await?;
-    let r = fetch(&st, &pid).await?;
+    // can_read уже прочитал строку набора — второй SELECT на неё не нужен.
+    let r = can_read(&st, &pid, &user.id).await?;
     let mut extra = stats(&st, &pid, &user.id).await?;
     let owner = sqlx::query("SELECT name FROM users WHERE id = ?").bind(r.get::<String, _>("owner_id")).fetch_optional(&st.db).await?;
     extra["owner_name"] = json!(owner.map(|o| o.get::<String, _>("name")).unwrap_or_default());
@@ -342,8 +342,7 @@ async fn entries_of(st: &AppState, pid: &str) -> ApiResult<Vec<Value>> {
 
 /// Экспорт набора в переносимый JSON.
 async fn export(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
-    can_read(&st, &pid, &user.id).await?;
-    let p = fetch(&st, &pid).await?;
+    let p = can_read(&st, &pid, &user.id).await?;
     Ok(Json(json!({
         "format": "amperverser-pack/2",
         "name": p.get::<String, _>("name"), "description": util::text(&p, "description"),
@@ -409,8 +408,7 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
 
 /// Клонировать доступный набор к себе (получается свой редактируемый экземпляр).
 async fn clone_pack(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
-    can_read(&st, &pid, &user.id).await?;
-    let p = fetch(&st, &pid).await?;
+    let p = can_read(&st, &pid, &user.id).await?;
     let id = util::uid();
     let name = util::truncate(&format!("{} (копия)", p.get::<String, _>("name")), 128);
     sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, cover_asset_id, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")

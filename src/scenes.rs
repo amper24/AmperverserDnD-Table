@@ -240,11 +240,23 @@ async fn create(State(st): State<AppState>, user: AuthUser, Path(cid): Path<Stri
 }
 
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    let m = get_member(&st, &cid, &user.id).await?;
-    let s = fetch_scene(&st, &cid, &sid).await?;
+    // Сцена вместе с ролью участника — одним запросом (было: get_member + fetch_scene).
+    // Роль берём подзапросом: если строка сцены нашлась, а роли нет, пользователь не участник —
+    // get_member вернёт 403; если сцены нет, участник получит 404 (как и раньше).
+    let row = sqlx::query("SELECT s.*, (SELECT m.role FROM campaign_members m WHERE m.campaign_id = s.campaign_id AND m.user_id = ?) AS member_role FROM scenes s WHERE s.id = ? AND s.campaign_id = ?")
+        .bind(&user.id).bind(&sid).bind(&cid).fetch_optional(&st.db).await?;
+    let Some(s) = row else {
+        get_member(&st, &cid, &user.id).await?; // не участник — 403 (иначе сцены правда нет)
+        return Err(AppError::not_found("Сцена не найдена"));
+    };
+    let role = match s.try_get::<Option<String>, _>("member_role") {
+        Ok(Some(role)) => role,
+        _ => get_member(&st, &cid, &user.id).await?.role, // чужой участник кампании — 403
+    };
+    let is_gm = role == "gm";
     let rows = sqlx::query("SELECT * FROM scene_items WHERE scene_id = ? ORDER BY z").bind(&sid).fetch_all(&st.db).await?;
     let items: Vec<Value> = rows.iter().map(item_json)
-        .filter(|it| m.is_gm() || !it["data"]["hidden"].as_bool().unwrap_or(false))
+        .filter(|it| is_gm || !it["data"]["hidden"].as_bool().unwrap_or(false))
         .collect();
     let mut out = scene_json(&s);
     out["items"] = Value::Array(items);
