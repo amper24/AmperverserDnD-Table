@@ -183,7 +183,7 @@
         el('b', {}, m.name, m.user_id === me.id ? el('span', { class: 'muted small' }, ' (вы)') : null),
         el('div', { class: 'muted small' }, [m.email || null, A.label(m.role), onlineText(m.user_id)].filter(Boolean).join(' · ')),
         charChips.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:4px' }, ...charChips) : null),
-      badge);
+      can(A.CAP.manageMembers) ? null : badge);
 
     if (can(A.CAP.manageMembers)) {
       // Владельца кампании нельзя ни разжаловать, ни исключить — сервер это тоже запрещает.
