@@ -129,17 +129,17 @@ const SCRIPTS = ['common', 'asset-kinds', 'table-model', 'table'];
     await page.mouse.down();
     await page.mouse.move(canvasBox.x + 281, canvasBox.y + 349, { steps: 4 });
     const snapped = await page.evaluate(() => Table.state().temp.points.map(p => p.slice()));
-    assert.deepEqual(snapped, [[70, 70], [280, 350]], 'без Ctrl концы линейки притянуты к сетке');
+    assert.deepEqual(snapped, [[105, 105], [315, 315]], 'без Ctrl концы линейки притянуты к центрам клеток');
 
     await page.keyboard.down('Control');
     const free = await page.evaluate(() => Table.state().temp.points.map(p => p.slice()));
     assert.deepEqual(free, [[100, 100], [281, 349]], 'с зажатым Ctrl линейка свободная (пересчёт без движения мыши)');
     await page.keyboard.up('Control');
     const resnapped = await page.evaluate(() => Table.state().temp.points.map(p => p.slice()));
-    assert.deepEqual(resnapped, [[70, 70], [280, 350]], 'после отпускания Ctrl линия снова привязана');
+    assert.deepEqual(resnapped, [[105, 105], [315, 315]], 'после отпускания Ctrl линия снова привязана к центрам');
 
     const label = await page.evaluate(() => TableModel.rulerLabel(Table.state().temp.points, Table.getScene().grid, Table.state().gridScaleFt));
-    assert.equal(label, '20 фт (4 кл.)', 'подпись линейки показывает футы и клетки');
+    assert.equal(label, '15 фт (3 кл.)', 'подпись линейки показывает футы и клетки');
 
     await page.mouse.up();
     await page.waitForTimeout(100);

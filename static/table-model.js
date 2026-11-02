@@ -223,13 +223,20 @@ window.TableModel = (() => {
     return { x: Math.round(x / g) * g, y: Math.round(y / g) * g };
   }
 
+  /// Привязка к центру клетки/гекса (линейка): край клетки не используется.
+  function snapCenter(x, y, grid) {
+    if (isHex(grid)) { const c = hexAt(x, y, grid); const p = hexCenter(c.q, c.r, grid); return { x: p.x, y: p.y }; }
+    const g = gridSize(grid);
+    return { x: Math.round((x - g / 2) / g) * g + g / 2, y: Math.round((y - g / 2) / g) * g + g / 2 };
+  }
+
   // ---------- линейка ----------
-  /// Привязка точек линейки к сетке: квадраты — к узлам (углам клеток), гексы — к центрам.
+  /// Привязка точек линейки к центрам клеток (квадраты и гексы).
   /// ctrl === true — свободный режим без привязки.
   function snapRuler(points, grid, ctrl) {
     const raw = (points || []).map(p => [Number(p?.[0]) || 0, Number(p?.[1]) || 0]);
     if (ctrl) return raw;
-    return raw.map(([x, y]) => { const p = snapCorner(x, y, grid); return [p.x, p.y]; });
+    return raw.map(([x, y]) => { const p = snapCenter(x, y, grid); return [p.x, p.y]; });
   }
   /// Длина линейки в клетках (как считается расстояние в D&D: по осям/гексам, без диагоналей).
   function rulerCells(points, grid) {
@@ -543,7 +550,7 @@ window.TableModel = (() => {
     defaultLayers, normalize, find, resolve, orderOf, addLayer, removeLayer, renameLayer, moveLayer, setLayerFlag,
     countItems, sortItems,
     isMap, mapItems, findMap, activeMapId, activeMap, boundsOf, unionBounds, boardBounds, fitView,
-    gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner,
+    gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner, snapCenter,
     snapRuler, rulerCells, scaleFt, rulerLabel,
     // туман войны: маска на карту (scene.fog.by_map)
     FOG_MAX_SHAPES, FOG_UNDO_MAX, FOG_BRUSH_MIN, FOG_BRUSH_MAX, FOG_SHAPES, FOG_MODES,

@@ -151,10 +151,10 @@ test('snapPos: центр клетки для мелкого, угол для к
 
 test('snapRuler: без Ctrl — к сетке, с Ctrl — свободно (и пересчёт при движении)', () => {
   const g = grid(70);
-  assert.deepEqual(plain(M.snapRuler([[103, 97], [281, 349]], g, false)), [[70, 70], [280, 350]], 'квадраты: к углам клеток');
+  assert.deepEqual(plain(M.snapRuler([[103, 97], [281, 349]], g, false)), [[105, 105], [315, 315]], 'квадраты: к центрам клеток');
   assert.deepEqual(plain(M.snapRuler([[103, 97], [281, 349]], g, true)), [[103, 97], [281, 349]], 'Ctrl — свободный режим');
   // Привязка идемпотентна: повторный снап уже привязанных точек ничего не двигает.
-  assert.deepEqual(plain(M.snapRuler(M.snapRuler([[103, 97], [281, 349]], g, false), g, false)), [[70, 70], [280, 350]]);
+  assert.deepEqual(plain(M.snapRuler(M.snapRuler([[103, 97], [281, 349]], g, false), g, false)), [[105, 105], [315, 315]]);
   const hex = grid(70, 'hex');
   const raw = [[10, 10], [300, 220]];
   const hexSnap = M.snapRuler(raw, hex, false);
