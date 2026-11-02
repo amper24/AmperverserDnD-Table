@@ -130,6 +130,9 @@
     try { const fresh = await API.get('/api/characters/' + id); if (inventoryBusy || saving || (dirty && !force) || fresh.revision < (s._revision || 0)) return; clearTimeout(saveTimer); ch = fresh; s = fresh.sheet; dirty = false; migrate(); render(); } catch { }
   }
   window.addEventListener('message', e => { if (e.origin === location.origin && e.data?.type === 'character_update' && (!e.data.id || e.data.id === id) && (!e.data.revision || e.data.revision > (s._revision || 0))) reload(); });
+  // Живое обновление: лист мог измениться с другого устройства/стола (передача предмета,
+  // правка HP) — раз в 5 секунд сверяем ревизию; свои несохранённые правки не трогаем.
+  setInterval(() => { if (document.visibilityState === 'visible' && !dirty && !saving && !inventoryBusy) reload(); }, 5000);
   // ---------- Операции инвентаря и механики умений ----------
   async function inventoryOp(operation, retry = false, note = '') {
     if (readonly || inventoryBusy) return;
