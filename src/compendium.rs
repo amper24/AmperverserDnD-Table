@@ -157,11 +157,16 @@ fn strip_map_token(body: &mut EntryIn) {
     }
 }
 
-async fn create(State(st): State<AppState>, user: AuthUser, Json(mut body): Json<EntryIn>) -> ApiResult<Json<Value>> {
-    strip_map_token(&mut body);
+/// Проверка записи перед записью: механики, выборы и слои перевода.
+fn validate_entry(body: &mut EntryIn) -> ApiResult<()> {
+    strip_map_token(body);
     if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
     if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
-    i18n::validate(&body.data).map_err(AppError::bad)?;
+    i18n::validate(&body.data).map_err(AppError::bad)
+}
+
+async fn create(State(st): State<AppState>, user: AuthUser, Json(mut body): Json<EntryIn>) -> ApiResult<Json<Value>> {
+    validate_entry(&mut body)?;
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));
     }
@@ -197,10 +202,7 @@ async fn editable(st: &AppState, id: &str, user: &AuthUser) -> ApiResult<()> {
 }
 
 async fn update(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>, Json(mut body): Json<EntryIn>) -> ApiResult<Json<Value>> {
-    strip_map_token(&mut body);
-    if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
-    if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
-    i18n::validate(&body.data).map_err(AppError::bad)?;
+    validate_entry(&mut body)?;
     editable(&st, &id, &user).await?;
     if !CATEGORIES.contains(&body.category.as_str()) {
         return Err(AppError::bad("Неизвестная категория"));

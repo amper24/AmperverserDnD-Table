@@ -5,6 +5,12 @@ pub fn uid() -> String { uuid::Uuid::new_v4().simple().to_string() }
 pub fn now() -> String { chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true) }
 pub fn token(n: usize) -> String { rand::thread_rng().sample_iter(&Alphanumeric).take(n).map(char::from).collect() }
 
+/// Предел длины строкового идентификатора: все id в схеме — VARCHAR(32).
+pub const ID_MAX: usize = 32;
+
+/// Идентификатор из запроса (элемент стола, карта, слой): непустой, не длиннее ID_MAX.
+pub fn short_id(value: &str) -> bool { !value.is_empty() && value.len() <= ID_MAX }
+
 /// Чтение текстовой колонки: MySQL отдаёт TEXT/LONGTEXT через драйвер Any как BLOB — читаем байты.
 pub fn text(row: &sqlx::any::AnyRow, col: &str) -> String {
     use sqlx::Row;
@@ -37,3 +43,6 @@ pub fn bearer(headers: &HeaderMap) -> Option<String> {
 }
 
 pub fn truncate(s: &str, n: usize) -> String { s.chars().take(n).collect() }
+
+/// Поле для записи в БД: пробелы по краям отброшены, длина ограничена в символах.
+pub fn trim_to(s: &str, n: usize) -> String { truncate(s.trim(), n) }

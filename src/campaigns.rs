@@ -69,7 +69,7 @@ async fn list(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Valu
 async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<CampaignIn>) -> ApiResult<Json<Value>> {
     let cid = util::uid();
     let sid = util::uid();
-    let name = { let n = util::truncate(body.name.trim(), 128); if n.is_empty() { "Новая кампания".to_string() } else { n } };
+    let name = { let n = util::trim_to(&body.name, 128); if n.is_empty() { "Новая кампания".to_string() } else { n } };
     let now = util::now();
     sqlx::query("INSERT INTO campaigns (id, name, description, owner_id, active_scene_id, created_at) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(&cid).bind(&name).bind(&body.description).bind(&user.id).bind(&sid).bind(&now).execute(&st.db).await?;
@@ -105,7 +105,7 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<Str
 async fn update(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Json(body): Json<CampaignIn>) -> ApiResult<Json<Value>> {
     require_gm(&st, &cid, &user.id).await?;
     sqlx::query("UPDATE campaigns SET name = ?, description = ? WHERE id = ?")
-        .bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(&cid).execute(&st.db).await?;
+        .bind(util::trim_to(&body.name, 128)).bind(&body.description).bind(&cid).execute(&st.db).await?;
     let row = fetch_campaign(&st, &cid).await?;
     Ok(Json(campaign_json(&row, Some("gm"))))
 }

@@ -61,7 +61,7 @@ async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<Str
         return Err(AppError::forbidden("Получатель должен быть в той же кампании"));
     }
     let request_id = body.request_id.clone().unwrap_or_else(util::uid);
-    if request_id.is_empty() || request_id.len() > 64 { return Err(AppError::bad("Неверный идентификатор передачи")); }
+    check_request_id(&request_id, "Неверный идентификатор передачи")?;
     if let Some(r) = sqlx::query("SELECT result FROM character_operations WHERE character_id = ? AND request_id = ?").bind(&id).bind(&request_id).fetch_optional(&st.db).await? {
         let result = util::json_value(&util::text(&r, "result"));
         if result["target"] != body.to_character_id { return Err(AppError::bad("ID операции уже использован")); }
@@ -84,8 +84,7 @@ async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<Str
         crate::inventory::partition_charges(&mut new_inv[pos], &mut item, qty, have);
     }
     item["uid"] = json!(util::uid());
-    crate::inventory::unequip(&mut item);
-    item["attuned"] = json!(false); item["favorite"] = json!(false);
+    crate::inventory::reset_state(&mut item);
     src_sheet["inventory"] = json!(new_inv);
     let mut dst_inv = dst_sheet["inventory"].as_array().cloned().unwrap_or_default();
     dst_inv.push(item.clone());
@@ -251,6 +250,13 @@ async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(id): Path<S
 }
 
 fn conflict() -> AppError { AppError(axum::http::StatusCode::CONFLICT, "Лист изменён в другом окне. Обновите его; устаревшие данные не сохранены.".into()) }
+/// request_id операции: непустой и не длиннее 64 символов (по нему отсекаются повторы).
+fn check_request_id(request_id: &str, message: &str) -> ApiResult<()> {
+    if request_id.is_empty() || request_id.len() > 64 {
+        return Err(AppError::bad(message));
+    }
+    Ok(())
+}
 async fn cas_sheet(tx: &mut sqlx::Transaction<'_, sqlx::Any>, id: &str, revision: i64, sheet: &Value) -> ApiResult<()> {
     let mut stored = sheet.clone(); stored.as_object_mut().ok_or_else(|| AppError::bad("Неверный лист"))?.remove("_revision");
     let result = sqlx::query("UPDATE characters SET sheet = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?")
@@ -280,7 +286,7 @@ struct InventoryOp {
 fn loot_size() -> f64 { 50.0 }
 async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id): Path<String>, Json(body): Json<InventoryOp>) -> ApiResult<Json<Value>> {
     let c = load_checked(&st, &id, &user, true).await?;
-    if body.request_id.is_empty() || body.request_id.len() > 64 { return Err(AppError::bad("Нужен идентификатор операции")); }
+    check_request_id(&body.request_id, "Нужен идентификатор операции")?;
     let cid = c["campaign_id"].as_str();
     let is_gm = if let Some(cid) = cid { access::is_gm(&get_member(&st, cid, &user.id).await?.role) } else { false };
     if cid.is_some() && body.gm_only && !is_gm { return Err(AppError::forbidden("Скрытое использование доступно только мастеру")); }
@@ -313,7 +319,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             let inv = sheet["inventory"].as_array_mut().unwrap();
             let pos = inv.iter().position(|i| i["uid"] == body.item_uid).ok_or_else(|| AppError::not_found("Предмет уже отсутствует"))?;
             let mut item = inv.remove(pos); if item["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Пустую стопку нельзя выложить")); }
-            crate::inventory::unequip(&mut item); item["attuned"] = json!(false); item["favorite"] = json!(false);
+            crate::inventory::reset_state(&mut item);
             let loot_id = util::uid(); let data = json!({ "type": "loot", "loot": true, "managed_loot": true, "item": item, "x": body.x, "y": body.y, "w": body.size.clamp(10.0, 1000.0), "h": body.size.clamp(10.0, 1000.0), "name": item["name"], "owner_id": user.id });
             sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, 'prop', 5, ?, ?)")
                 .bind(&loot_id).bind(&body.scene_id).bind(data.to_string()).bind(util::now()).execute(&mut *tx).await?;
@@ -325,7 +331,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             if data["loot"] != true || !data["item"].is_object() { return Err(AppError::bad("Это не предмет на столе")); }
             let deleted = sqlx::query("DELETE FROM scene_items WHERE id = ? AND scene_id = ? AND data = ?").bind(&body.loot_id).bind(&body.scene_id).bind(raw).execute(&mut *tx).await?;
             if deleted.rows_affected() != 1 { return Err(conflict()); }
-            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::inventory::unequip(&mut item); item["attuned"] = json!(false); item["favorite"] = json!(false);
+            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::inventory::reset_state(&mut item);
             sheet["inventory"].as_array_mut().unwrap().push(item); crate::inventory::normalize(&mut sheet)?;
             scene_event = Some(json!({ "type": "item_delete", "scene_id": body.scene_id, "id": body.loot_id }));
         }

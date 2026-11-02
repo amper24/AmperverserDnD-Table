@@ -4,7 +4,6 @@ use crate::{error::ApiResult, AppError};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-fn bad(message: &str) -> AppError { AppError::bad(message) }
 fn utf16_len(value: &str) -> usize { value.encode_utf16().count() }
 fn json_integer(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| value.as_f64().filter(|number| number.is_finite() && number.fract() == 0.0 && *number >= i64::MIN as f64 && *number <= i64::MAX as f64).map(|number| number as i64))
@@ -247,7 +246,7 @@ fn valid_equipment_choice(value: &Value) -> bool {
     id_ok && title_ok && options_ok
 }
 fn check_interface(value: &Value) -> ApiResult<()> {
-    let items = value.as_array().filter(|xs| xs.len() <= 16).ok_or_else(|| bad("Интерфейс группы: не более 16 сокетов."))?;
+    let items = value.as_array().filter(|xs| xs.len() <= 16).ok_or_else(|| AppError::bad("Интерфейс группы: не более 16 сокетов."))?;
     let mut ids = HashSet::new();
     for s in items {
         let id = s["id"].as_str().unwrap_or("");
@@ -255,7 +254,7 @@ fn check_interface(value: &Value) -> ApiResult<()> {
         // Имя — необязательная подпись: у параметров функции оно может быть пустым.
         let name = s["name"].as_str().unwrap_or("");
         if id.is_empty() || utf16_len(id) > 64 || !ids.insert(id.to_string()) || utf16_len(name) > 100 || !SOCKET_TYPES.contains(&kind) {
-            return Err(bad("Некорректный типизированный сокет группы."));
+            return Err(AppError::bad("Некорректный типизированный сокет группы."));
         }
     }
     Ok(())
@@ -272,20 +271,20 @@ fn valid_function_param_name(value: &str) -> bool { value.is_empty() || valid_va
 /// Проверка группы, на которую ссылается data.call: ровно один value-выход, ≤3 value-входов,
 /// допустимые имена параметров и только value-узлы внутри. Тип результата сверяется с выходом.
 fn function_group_check(group: &Value, result: &str) -> ApiResult<()> {
-    let inputs = group["inputs"].as_array().ok_or_else(|| bad("Узел вызова: у группы нет интерфейса входов."))?;
-    let outputs = group["outputs"].as_array().ok_or_else(|| bad("Узел вызова: у группы нет интерфейса выходов."))?;
-    if outputs.len() != 1 { return Err(bad("Узел вызова: у группы-функции должен быть ровно один выход.")); }
+    let inputs = group["inputs"].as_array().ok_or_else(|| AppError::bad("Узел вызова: у группы нет интерфейса входов."))?;
+    let outputs = group["outputs"].as_array().ok_or_else(|| AppError::bad("Узел вызова: у группы нет интерфейса выходов."))?;
+    if outputs.len() != 1 { return Err(AppError::bad("Узел вызова: у группы-функции должен быть ровно один выход.")); }
     let output_type = outputs[0]["type"].as_str().unwrap_or("");
-    if !FUNCTION_TYPES.contains(&output_type) { return Err(bad("Узел вызова: выход группы-функции должен быть number, text, bool или list.")); }
-    if output_type != result { return Err(bad("Узел вызова: результат не совпадает с типом выхода группы.")); }
-    if inputs.len() > 3 { return Err(bad("Узел вызова: у группы-функции не может быть больше 3 входов.")); }
+    if !FUNCTION_TYPES.contains(&output_type) { return Err(AppError::bad("Узел вызова: выход группы-функции должен быть number, text, bool или list.")); }
+    if output_type != result { return Err(AppError::bad("Узел вызова: результат не совпадает с типом выхода группы.")); }
+    if inputs.len() > 3 { return Err(AppError::bad("Узел вызова: у группы-функции не может быть больше 3 входов.")); }
     for socket in inputs {
         let kind = socket["type"].as_str().unwrap_or("");
-        if !FUNCTION_TYPES.contains(&kind) { return Err(bad("Узел вызова: вход группы-функции должен быть number, text, bool или list.")); }
-        if !valid_function_param_name(socket["name"].as_str().unwrap_or("")) { return Err(bad("Узел вызова: имя входа группы — 1–32 символа [a-z0-9_] или пусто.")); }
+        if !FUNCTION_TYPES.contains(&kind) { return Err(AppError::bad("Узел вызова: вход группы-функции должен быть number, text, bool или list.")); }
+        if !valid_function_param_name(socket["name"].as_str().unwrap_or("")) { return Err(AppError::bad("Узел вызова: имя входа группы — 1–32 символа [a-z0-9_] или пусто.")); }
     }
     if group["nodes"].as_array().into_iter().flatten().any(|node| !is_function_value_node(node["type"].as_str().unwrap_or(""))) {
-        return Err(bad("Группа-функция не может содержать блоки действий"));
+        return Err(AppError::bad("Группа-функция не может содержать блоки действий"));
     }
     Ok(())
 }
@@ -307,36 +306,66 @@ fn group_call_cycle(groups: &[Value]) -> bool {
     let mut visiting = HashSet::new(); let mut done = HashSet::new();
     !refs.keys().all(|id| visit(id, &refs, &mut visiting, &mut done))
 }
+/// Проверка параметров узла: каждый вид узла проверяется своей группой.
 fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], groups: &[Value]) -> ApiResult<()> {
-    let p = &n["params"];
     let kind = n["type"].as_str().unwrap_or("");
-    match kind {
-        // Переменная: имя из [a-z0-9_] (1–32) и область action или sheet. У action.setvar и data.var
-        // один контракт параметров — как в static/nodes/actions/setvar.js и static/nodes/data/var.js.
-        "action.setvar" | "data.var" => {
-            if !valid_var_name(p["name"].as_str().unwrap_or("")) { return Err(bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
-            if !VAR_SCOPES.contains(&p["scope"].as_str().unwrap_or("")) { return Err(bad("Переменная: область action или sheet.")); }
+    if kind.starts_with("data.") {
+        validate_value_params(n, programs, nodes, groups)?;
+    } else if kind.starts_with("condition.") {
+        validate_condition_params(n)?;
+    } else if kind.starts_with("action.") {
+        validate_action_params(n)?;
+    } else if kind.starts_with("rule.") {
+        validate_rule_params(n)?;
+    } else if kind.starts_with("group.") {
+        validate_group_params(n)?;
+    } else if kind == "logic.op" {
+        let p = &n["params"];
+        if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) {
+            return Err(AppError::bad("Логический узел: операция and, or, not, xor, nand, nor, xnor или implies."));
         }
+    } else if kind == "flow.if" && n["params"].as_object().map(|object| object.len() > 8).unwrap_or(false) {
+        return Err(AppError::bad("Условный узел содержит лишние параметры."));
+    }
+    if kind.starts_with("action.") && kind != "action.program" {
+        if !valid_id(&n["params"]["block_id"], 100) { return Err(AppError::bad("Узел действия должен иметь стабильный block_id.")); }
+    }
+    Ok(())
+}
+
+/// Переменная: имя из [a-z0-9_] (1–32) и область action или sheet. У action.setvar и data.var
+/// один контракт параметров — как в static/nodes/actions/setvar.js и static/nodes/data/var.js.
+fn validate_var_params(p: &Value) -> ApiResult<()> {
+    if !valid_var_name(p["name"].as_str().unwrap_or("")) { return Err(AppError::bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
+    if !VAR_SCOPES.contains(&p["scope"].as_str().unwrap_or("")) { return Err(AppError::bad("Переменная: область action или sheet.")); }
+    Ok(())
+}
+
+/// Узлы значений (data.*): литералы, кости, ссылки, вызовы групп, строки и списки.
+fn validate_value_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], groups: &[Value]) -> ApiResult<()> {
+    let p = &n["params"];
+    match n["type"].as_str().unwrap_or("") {
+        "data.var" => validate_var_params(p)?,
         // Ссылка: цель — числовой узел этого же графа; себя и циклы ссылок граф запрещает.
         "data.ref" => {
             let target_id = p["node"].as_str().unwrap_or("");
-            if target_id.is_empty() || utf16_len(target_id) > 100 { return Err(bad("Ссылка: выберите узел графа.")); }
-            if target_id == n["id"].as_str().unwrap_or("") { return Err(bad("Ссылка: узел не может ссылаться на себя.")); }
+            if target_id.is_empty() || utf16_len(target_id) > 100 { return Err(AppError::bad("Ссылка: выберите узел графа.")); }
+            if target_id == n["id"].as_str().unwrap_or("") { return Err(AppError::bad("Ссылка: узел не может ссылаться на себя.")); }
             let mut current = match nodes.iter().find(|item| item["id"].as_str() == Some(target_id)) {
                 Some(target) => target,
-                None => return Err(bad("Ссылка: узел не найден в этом графе.")),
+                None => return Err(AppError::bad("Ссылка: узел не найден в этом графе.")),
             };
             let (_, outs) = ports_for(current["type"].as_str().unwrap_or(""), &current["params"], &[], None);
-            if outs.get("value").map(String::as_str) != Some("number") { return Err(bad("Ссылка: выберите числовой узел графа.")); }
+            if outs.get("value").map(String::as_str) != Some("number") { return Err(AppError::bad("Ссылка: выберите числовой узел графа.")); }
             let mut seen: HashSet<String> = HashSet::new();
             seen.insert(n["id"].as_str().unwrap_or("").to_string());
             while current["type"] == "data.ref" {
                 let id = current["id"].as_str().unwrap_or("");
-                if !seen.insert(id.to_string()) { return Err(bad("Циклическая ссылка")); }
+                if !seen.insert(id.to_string()) { return Err(AppError::bad("Циклическая ссылка")); }
                 let next_id = current["params"]["node"].as_str().unwrap_or("");
                 current = match nodes.iter().find(|item| item["id"].as_str() == Some(next_id)) {
                     Some(next) => next,
-                    None => return Err(bad("Ссылка: узел не найден в этом графе.")),
+                    None => return Err(AppError::bad("Ссылка: узел не найден в этом графе.")),
                 };
             }
         }
@@ -345,138 +374,155 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], 
         "data.call" => {
             let group_id = p["group"].as_str().unwrap_or("");
             let result = p["result"].as_str().unwrap_or("");
-            if group_id.is_empty() || utf16_len(group_id) > 64 { return Err(bad("Узел вызова: выберите группу.")); }
-            if !FUNCTION_TYPES.contains(&result) { return Err(bad("Узел вызова: тип результата number, text, bool или list.")); }
-            let Some(group) = groups.iter().find(|g| g["id"].as_str() == Some(group_id)) else { return Err(bad("Узел вызова: группа не найдена.")); };
+            if group_id.is_empty() || utf16_len(group_id) > 64 { return Err(AppError::bad("Узел вызова: выберите группу.")); }
+            if !FUNCTION_TYPES.contains(&result) { return Err(AppError::bad("Узел вызова: тип результата number, text, bool или list.")); }
+            let Some(group) = groups.iter().find(|g| g["id"].as_str() == Some(group_id)) else { return Err(AppError::bad("Узел вызова: группа не найдена.")); };
             function_group_check(group, result)?;
             // Снимок подписи (params.args) должен совпадать с фактическими входами группы:
             // иначе подпись изменили, а вызов не пересобрали — граф не исполняется.
             if let Some(args) = p["args"].as_array() {
                 let expected = group["inputs"].as_array().cloned().unwrap_or_default();
-                if args.len() != expected.len() { return Err(bad("Узел вызова: подпись группы изменилась — обновите аргументы.")); }
+                if args.len() != expected.len() { return Err(AppError::bad("Узел вызова: подпись группы изменилась — обновите аргументы.")); }
                 for (index, kind) in args.iter().enumerate() {
-                    let Some(kind) = kind.as_str().filter(|kind| FUNCTION_TYPES.contains(kind)) else { return Err(bad("Узел вызова: недопустимый тип аргумента.")); };
-                    if kind != expected[index]["type"].as_str().unwrap_or("") { return Err(bad("Узел вызова: тип аргумента не совпадает с подписью группы.")); }
+                    let Some(kind) = kind.as_str().filter(|kind| FUNCTION_TYPES.contains(kind)) else { return Err(AppError::bad("Узел вызова: недопустимый тип аргумента.")); };
+                    if kind != expected[index]["type"].as_str().unwrap_or("") { return Err(AppError::bad("Узел вызова: тип аргумента не совпадает с подписью группы.")); }
                 }
             }
         }
         // Математика: закрытый список операций; clamp без входов b и c не считается (провод — в validate_graph).
         "data.mathfun" if !MATHFUN_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
-            return Err(bad("Математика: допустимы min, max, clamp, abs, round, floor, ceil и sign."));
+            return Err(AppError::bad("Математика: допустимы min, max, clamp, abs, round, floor, ceil и sign."));
         }
         // Строки: закрытые списки операций, флаг регистра, литерал списка и разделитель склейки.
         "data.text" if !TEXT_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
-            return Err(bad("Текст: допустимы concat, upper, lower и trim."));
+            return Err(AppError::bad("Текст: допустимы concat, upper, lower и trim."));
         }
         "data.textcheck" => {
             if !TEXT_CHECK_OPS.contains(&p["op"].as_str().unwrap_or("")) {
-                return Err(bad("Сравнение строк: допустимы contains, starts, ends, eq и ne."));
+                return Err(AppError::bad("Сравнение строк: допустимы contains, starts, ends, eq и ne."));
             }
-            if !p["case"].is_boolean() { return Err(bad("Сравнение строк: параметр case — true или false.")); }
+            if !p["case"].is_boolean() { return Err(AppError::bad("Сравнение строк: параметр case — true или false.")); }
         }
         "data.list" if !valid_string_list(&p["items"], 100, 200) => {
-            return Err(bad("Список: items — массив до 100 строк по 200 символов."));
+            return Err(AppError::bad("Список: items — массив до 100 строк по 200 символов."));
         }
         "data.listjoin" => match p.get("separator") {
             None | Some(Value::Null) => {}
             Some(Value::String(text)) if utf16_len(text) <= 10 => {}
-            Some(_) => return Err(bad("Склейка: разделитель — строка до 10 символов.")),
+            Some(_) => return Err(AppError::bad("Склейка: разделитель — строка до 10 символов.")),
         },
-        "data.boolean" if !p["value"].is_boolean() => return Err(bad("Логическая константа: значение true или false.")),
-        "data.math" if !["add", "sub", "mul", "div", "min", "max"].contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Вычисление: неизвестная операция.")),
-        "data.number" if !p["value"].as_f64().map(|number| number.is_finite()).unwrap_or(false) => return Err(bad("Числовой узел должен содержать конечное число.")),
+        "data.boolean" if !p["value"].is_boolean() => return Err(AppError::bad("Логическая константа: значение true или false.")),
+        "data.math" if !["add", "sub", "mul", "div", "min", "max"].contains(&p["op"].as_str().unwrap_or("")) => return Err(AppError::bad("Вычисление: неизвестная операция.")),
+        "data.number" if !p["value"].as_f64().map(|number| number.is_finite()).unwrap_or(false) => return Err(AppError::bad("Числовой узел должен содержать конечное число.")),
         "data.dice" => {
             let value = &p["value"];
             let count = json_integer(&value["count"]).unwrap_or(-1); let sides = json_integer(&value["sides"]).unwrap_or(-1);
             let bonus = match value.get("bonus") { None | Some(Value::Null) => 0, Some(value) => json_integer(value).unwrap_or(i64::MAX) };
             let stat = match value.get("stat") { None | Some(Value::Null) => "", Some(value) => value.as_str().unwrap_or("\0") };
-            if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(bad("Узел кости должен содержать количество и грани.")); }
+            if !value.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) || !(-1_000_000..=1_000_000).contains(&bonus) || !["", "str", "dex", "con", "int", "wis", "cha", "best", "prof", "atk", "atk_str", "atk_dex", "spell", "spell_mod", "level", "dc"].contains(&stat) { return Err(AppError::bad("Узел кости должен содержать количество и грани.")); }
         }
+        "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(AppError::bad("Выберите характеристику или навык и режим: бонус или значение.")),
+        "data.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(AppError::bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
+        // Результат действия читается из листа в рантайме: источник — «последнее действие» или программа графа.
+        "data.result" => {
+            let source = p["source"].as_str().unwrap_or("");
+            if source != "last" && !programs.contains(source) { return Err(AppError::bad("Результат: выберите последнее действие или программу этого графа.")); }
+            if !RESULT_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(AppError::bad("Результат действия: поле total, hit, applied или spent.")); }
+        }
+        // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
+        "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(AppError::bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
+        // Круг каста: уровень выбранной ячейки, базовый круг заклинания и число лишних кругов.
+        "data.cast" if !["level", "base", "extra"].contains(&p["field"].as_str().unwrap_or("")) => return Err(AppError::bad("Круг каста: поле level, base или extra.")),
+        _ => {}
+    }
+    Ok(())
+}
 
+/// Узлы условий листа (condition.*): состояние, предмет, хиты, ячейки, контекст.
+fn validate_condition_params(n: &Value) -> ApiResult<()> {
+    let p = &n["params"];
+    match n["type"].as_str().unwrap_or("") {
         "condition.context" => {
             match p["kind"].as_str().unwrap_or("") {
                 "edition" => {
-                    let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| bad("Условие редакции: один или несколько допустимых SRD."))?;
-                    if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(bad("Условие редакции: один или несколько допустимых SRD.")); }
+                    let editions = p["editions"].as_array().filter(|a| !a.is_empty()).ok_or_else(|| AppError::bad("Условие редакции: один или несколько допустимых SRD."))?;
+                    if editions.iter().any(|x| !["2014", "2024"].contains(&x.as_str().unwrap_or(""))) { return Err(AppError::bad("Условие редакции: один или несколько допустимых SRD.")); }
                 }
                 "level" => {
                     let min = json_integer(&p["min"]).unwrap_or(0); let max = json_integer(&p["max"]).unwrap_or(0);
-                    if min < 1 || max > 20 || min > max { return Err(bad("Условие уровня: диапазон 1–20.")); }
+                    if min < 1 || max > 20 || min > max { return Err(AppError::bad("Условие уровня: диапазон 1–20.")); }
                 }
-                "subclass" => { if !valid_id(&p["id"], 100) { return Err(bad("Укажите ID подкласса в условии.")); } }
-                "choice" => { if !valid_id(&p["id"], 100) || p.get("value").is_none() { return Err(bad("Укажите ID группы и сравниваемый выбор.")); } }
-                _ => return Err(bad("Условие: неизвестный вид.")),
+                "subclass" => { if !valid_id(&p["id"], 100) { return Err(AppError::bad("Укажите ID подкласса в условии.")); } }
+                "choice" => { if !valid_id(&p["id"], 100) || p.get("value").is_none() { return Err(AppError::bad("Укажите ID группы и сравниваемый выбор.")); } }
+                _ => return Err(AppError::bad("Условие: неизвестный вид.")),
             }
         }
         // Условие состояния: название состояния листа и режим «наложено / не наложено».
         "condition.status" => {
             let name = p["name"].as_str().unwrap_or("");
-            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(bad("Состояние: название от 1 до 120 символов.")); }
-            if !STATUS_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(bad("Состояние: режим present или absent.")); }
+            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(AppError::bad("Состояние: название от 1 до 120 символов.")); }
+            if !STATUS_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(AppError::bad("Состояние: режим present или absent.")); }
         }
         // Условие предмета: имя в снаряжении листа и режим «в сумке / надето».
         "condition.item" => {
             let name = p["name"].as_str().unwrap_or("");
-            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(bad("Предмет: название от 1 до 120 символов.")); }
-            if !ITEM_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(bad("Предмет: режим owned или equipped.")); }
+            if name.trim().is_empty() || utf16_len(name) > 120 { return Err(AppError::bad("Предмет: название от 1 до 120 символов.")); }
+            if !ITEM_MODES.contains(&p["mode"].as_str().unwrap_or("")) { return Err(AppError::bad("Предмет: режим owned или equipped.")); }
         }
         // Условие хитов: текущие хиты или процент от максимума (0–100) против числа.
         "condition.hp" => {
-            if !HP_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(bad("Хиты: операция lt, le, gt или ge.")); }
+            if !HP_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(AppError::bad("Хиты: операция lt, le, gt или ge.")); }
             let percent = p["percent"].as_bool().unwrap_or(false);
             let limit = if percent { 100 } else { 1_000_000 };
             match json_integer(&p["value"]) {
                 Some(value) if (0..=limit).contains(&value) => {}
-                _ => return Err(bad(if percent { "Хиты: процент от 0 до 100." } else { "Хиты: целое число от 0 до 1000000." })),
+                _ => return Err(AppError::bad(if percent { "Хиты: процент от 0 до 100." } else { "Хиты: целое число от 0 до 1000000." })),
             }
         }
         // Условие ячеек: круг 1–9, остаток ячеек (с учётом пула Договора) и сравнение с числом 0–20.
         "condition.slot" => {
-            match json_integer(&p["level"]) { Some(level) if (1..=9).contains(&level) => {} _ => return Err(bad("Ячейки: круг от 1 до 9.")) }
-            if !SLOT_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(bad("Ячейки: операция gte или lt.")); }
-            match json_integer(&p["value"]) { Some(value) if (0..=20).contains(&value) => {} _ => return Err(bad("Ячейки: значение от 0 до 20.")) }
+            match json_integer(&p["level"]) { Some(level) if (1..=9).contains(&level) => {} _ => return Err(AppError::bad("Ячейки: круг от 1 до 9.")) }
+            if !SLOT_OPS.contains(&p["op"].as_str().unwrap_or("")) { return Err(AppError::bad("Ячейки: операция gte или lt.")); }
+            match json_integer(&p["value"]) { Some(value) if (0..=20).contains(&value) => {} _ => return Err(AppError::bad("Ячейки: значение от 0 до 20.")) }
         }
-        "data.stat" if !(ABILITIES.contains(&p["id"].as_str().unwrap_or("")) || SKILL_IDS.contains(&p["id"].as_str().unwrap_or(""))) || !(["bonus", "score"].contains(&p["mode"].as_str().unwrap_or(""))) => return Err(bad("Выберите характеристику или навык и режим: бонус или значение.")),
-        "data.compare" if !([">=", "<=", ">", "<", "=", "!="].contains(&p["op"].as_str().unwrap_or(""))) => return Err(bad("Сравнение: допустимы >=, <=, >, <, = и !=.")),
-        // Результат действия читается из листа в рантайме: источник — «последнее действие» или программа графа.
-        "data.result" => {
-            let source = p["source"].as_str().unwrap_or("");
-            if source != "last" && !programs.contains(source) { return Err(bad("Результат: выберите последнее действие или программу этого графа.")); }
-            if !RESULT_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Результат действия: поле total, hit, applied или spent.")); }
-        }
-        // Поле листа: путь по вложенным ключам листа (hp.current, level, abilities.str).
-        "data.sheet" if !valid_sheet_field(p["field"].as_str().unwrap_or("")) => return Err(bad("Поле листа: непустой путь из латинских букв, цифр, «_» и «.».")),
-        // Круг каста: уровень выбранной ячейки, базовый круг заклинания и число лишних кругов.
-        "data.cast" if !["level", "base", "extra"].contains(&p["field"].as_str().unwrap_or("")) => return Err(bad("Круг каста: поле level, base или extra.")),
-        "logic.op" if p.get("op").is_some() && !LOGIC_OPS.contains(&p["op"].as_str().unwrap_or("")) => return Err(bad("Логический узел: операция and, or, not, xor, nand, nor, xnor или implies.")),
-        "action.roll" if p.get("kind").is_some() && !ROLL_KINDS.contains(&p["kind"].as_str().unwrap_or("")) => return Err(bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Узлы действий (action.*): бросок, изменение поля, расход, ячейка, руки, программа.
+fn validate_action_params(n: &Value) -> ApiResult<()> {
+    let p = &n["params"];
+    match n["type"].as_str().unwrap_or("") {
+        "action.setvar" => validate_var_params(p)?,
+        "action.roll" if p.get("kind").is_some() && !ROLL_KINDS.contains(&p["kind"].as_str().unwrap_or("")) => return Err(AppError::bad("Настраиваемый бросок: тип roll, attack, damage, heal или temp_hp.")),
         // Повышение круга: сколько костей добавляется за каждый круг выше базового (только урон и лечение).
         "action.roll" if p.get("upcast").is_some() => {
             let upcast = &p["upcast"];
             let count = json_integer(&upcast["count"]).unwrap_or(-1);
             let sides = json_integer(&upcast["sides"]).unwrap_or(-1);
             if !upcast.is_object() || !(0..=100).contains(&count) || !(1..=1000).contains(&sides) {
-                return Err(bad("Повышение круга: количество костей 0–100 и грани 1–1000."));
+                return Err(AppError::bad("Повышение круга: количество костей 0–100 и грани 1–1000."));
             }
         }
         "action.field" => {
             let field_kind = p["kind"].as_str().unwrap_or("");
-            if !FIELD_KINDS.contains(&field_kind) { return Err(bad("Изменить поле: вид status, value или formula.")); }
+            if !FIELD_KINDS.contains(&field_kind) { return Err(AppError::bad("Изменить поле: вид status, value или formula.")); }
             if field_kind == "status" {
                 let name = p["condition"].as_str().unwrap_or("");
                 let operation = p["operation"].as_str().unwrap_or("");
                 // «Концентрация» не задаёт название вручную: сервер подставляет имя заклинания.
-                if !["add", "remove", "concentration"].contains(&operation) { return Err(bad("Состояние: операция add, remove или concentration.")); }
-                if operation != "concentration" && (name.trim().is_empty() || utf16_len(name) > 200) { return Err(bad("Состояние: название до 200 символов.")); }
-                if operation == "concentration" && utf16_len(name) > 200 { return Err(bad("Состояние: название до 200 символов.")); }
+                if !["add", "remove", "concentration"].contains(&operation) { return Err(AppError::bad("Состояние: операция add, remove или concentration.")); }
+                if operation != "concentration" && (name.trim().is_empty() || utf16_len(name) > 200) { return Err(AppError::bad("Состояние: название до 200 символов.")); }
+                if operation == "concentration" && utf16_len(name) > 200 { return Err(AppError::bad("Состояние: название до 200 символов.")); }
             }
             if field_kind == "value" {
-                if !VALUE_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Недоступный показатель.")); }
-                if json_integer(&p["amount"]).map(|number| !(-10_000..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Показатель: целое от −10000 до 10000.")); }
+                if !VALUE_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(AppError::bad("Недоступный показатель.")); }
+                if json_integer(&p["amount"]).map(|number| !(-10_000..=10_000).contains(&number)).unwrap_or(true) { return Err(AppError::bad("Показатель: целое от −10000 до 10000.")); }
             }
             if field_kind == "formula" {
-                if !FORMULA_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(bad("Параметр доступен только в пассивной программе.")); }
-                if p.get("value").is_none() || utf16_len(&p["value"].to_string()) > 100_000 { return Err(bad("Значение параметра: ограниченное JSON-значение.")); }
+                if !FORMULA_FIELDS.contains(&p["field"].as_str().unwrap_or("")) { return Err(AppError::bad("Параметр доступен только в пассивной программе.")); }
+                if p.get("value").is_none() || utf16_len(&p["value"].to_string()) > 100_000 { return Err(AppError::bad("Значение параметра: ограниченное JSON-значение.")); }
             }
         }
         "action.spend" => {
@@ -485,73 +531,87 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], 
             let resource = p["resource"].as_str().unwrap_or("");
             let source = p["source"].as_str().unwrap_or("");
             if !["quantity", "charges", "uses"].contains(&resource) || !["self", "item", "tag"].contains(&source) || !["use", "attack"].contains(&p["trigger"].as_str().unwrap_or("")) {
-                return Err(bad("Неизвестный способ расхода."));
+                return Err(AppError::bad("Неизвестный способ расхода."));
             }
-            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество расхода: целое от 1 до 10000.")); }
-            if source == "item" && p["item_uid"].as_str().unwrap_or("").is_empty() { return Err(bad("Не задан источник расхода.")); }
-            if source == "tag" && p["tag"].as_str().unwrap_or("").trim().is_empty() { return Err(bad("Не задан источник расхода.")); }
+            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(AppError::bad("Количество расхода: целое от 1 до 10000.")); }
+            if source == "item" && p["item_uid"].as_str().unwrap_or("").is_empty() { return Err(AppError::bad("Не задан источник расхода.")); }
+            if source == "tag" && p["tag"].as_str().unwrap_or("").trim().is_empty() { return Err(AppError::bad("Не задан источник расхода.")); }
         }
         // Расход ячейки заклинания: level 0 — круг, выбранный при касте, 1–9 — фиксированный.
         "action.slot" => {
-            if json_integer(&p["level"]).map(|number| !(0..=9).contains(&number)).unwrap_or(true) { return Err(bad("Круг ячейки: целое от 0 до 9.")); }
-            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(bad("Количество ячеек: целое от 1 до 10000.")); }
+            if json_integer(&p["level"]).map(|number| !(0..=9).contains(&number)).unwrap_or(true) { return Err(AppError::bad("Круг ячейки: целое от 0 до 9.")); }
+            if json_integer(&p["amount"]).map(|number| !(1..=10_000).contains(&number)).unwrap_or(true) { return Err(AppError::bad("Количество ячеек: целое от 1 до 10000.")); }
         }
         // Руки: add/remove меняют extra_hands на count, set задаёт общее число рук (2 = main+off).
         "action.hands" => {
-            if !["add", "remove", "set"].contains(&p["operation"].as_str().unwrap_or("")) { return Err(bad("Руки: операция add, remove или set.")); }
-            if json_integer(&p["count"]).map(|number| !(1..=6).contains(&number)).unwrap_or(true) { return Err(bad("Руки: целое число от 1 до 6.")); }
+            if !["add", "remove", "set"].contains(&p["operation"].as_str().unwrap_or("")) { return Err(AppError::bad("Руки: операция add, remove или set.")); }
+            if json_integer(&p["count"]).map(|number| !(1..=6).contains(&number)).unwrap_or(true) { return Err(AppError::bad("Руки: целое число от 1 до 6.")); }
         }
-        "flow.if" if p.as_object().map(|object| object.len() > 8).unwrap_or(false) => return Err(bad("Условный узел содержит лишние параметры.")),
         "action.program" => {
             if !valid_id(&p["program_id"], 100) || p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || !["use", "passive"].contains(&p["trigger"].as_str().unwrap_or("")) {
-                return Err(bad("Программе нужны ID, название и допустимый триггер."));
+                return Err(AppError::bad("Программе нужны ID, название и допустимый триггер."));
             }
             if let Some(style) = p.get("style") {
                 if !BUTTON_STYLES.contains(&style.as_str().unwrap_or("")) {
-                    return Err(bad("Неизвестный стиль кнопки."));
+                    return Err(AppError::bad("Неизвестный стиль кнопки."));
                 }
             }
         }
-        "group.instance" if !valid_id(&p["group_id"], 64) => return Err(bad("Узел группы требует ID группы.")),
-        "group.input" | "group.output" if !valid_id(&p["socket_id"], 64) => return Err(bad("Узел границы группы должен ссылаться на сокет интерфейса.")),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Узлы-границы повторно используемой группы: экземпляр и вход/выход интерфейса.
+fn validate_group_params(n: &Value) -> ApiResult<()> {
+    let p = &n["params"];
+    match n["type"].as_str().unwrap_or("") {
+        "group.instance" if !valid_id(&p["group_id"], 64) => return Err(AppError::bad("Узел группы требует ID группы.")),
+        "group.input" | "group.output" if !valid_id(&p["socket_id"], 64) => return Err(AppError::bad("Узел границы группы должен ссылаться на сокет интерфейса.")),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Узлы правил (rule.*): списки, классы и значения из справочника.
+fn validate_rule_params(n: &Value) -> ApiResult<()> {
+    let p = &n["params"];
+    match n["type"].as_str().unwrap_or("") {
         "rule.list" => {
             match p["kind"].as_str().unwrap_or("") {
-                "languages" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200) { return Err(bad("Языки должны быть списком текстовых значений.")); } }
-                "proficiencies" => { if (p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200)) || (p.get("label").is_some() && (p["label"].as_str().is_none() || utf16_len(p["label"].as_str().unwrap_or("")) > 120)) { return Err(bad("Владения должны быть списком и иметь короткую метку.")); } }
-                "skill_proficiency" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 18, 200) { return Err(bad("Владение навыком: список названий (до 18).")); } }
-                "saving_throws" => { if p.get("value").is_some() && !p["value"].as_array().map(|values| values.len() <= 6 && values.iter().all(|value| ABILITIES.contains(&value.as_str().unwrap_or("")))).unwrap_or(false) { return Err(bad("Спасброски должны быть списком характеристик.")); } }
-                "skills" => { if !valid_id(&p["id"], 100) || json_integer(&p["count"]).map(|n| !(0..=18).contains(&n)).unwrap_or(true) || !valid_string_list(&p["options"], 18, 200) { return Err(bad("Выбор навыков: ID, список до 18 и количество от 0 до 18.")); } }
-                "spell_list" => { if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); } }
-                "feature" => { if p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || (p.get("text").is_some() && (p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000)) { return Err(bad("Умение: название до 120 и текст до 4000 символов.")); } }
-                "class_features" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
-                "equipment" => { if !valid_equipment_items(&p["items"]) { return Err(bad("Снаряжение: список предметов с названием (до 120) и количеством (1–1000).")); } }
-                "equipment_choice" => { if !valid_equipment_choice(&p) { return Err(bad("Выбор снаряжения: ID, название и варианты со списком предметов.")); } }
-                _ => return Err(bad("Список: неизвестный вид.")),
+                "languages" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200) { return Err(AppError::bad("Языки должны быть списком текстовых значений.")); } }
+                "proficiencies" => { if (p.get("value").is_some() && !valid_string_list(&p["value"], 100, 200)) || (p.get("label").is_some() && (p["label"].as_str().is_none() || utf16_len(p["label"].as_str().unwrap_or("")) > 120)) { return Err(AppError::bad("Владения должны быть списком и иметь короткую метку.")); } }
+                "skill_proficiency" => { if p.get("value").is_some() && !valid_string_list(&p["value"], 18, 200) { return Err(AppError::bad("Владение навыком: список названий (до 18).")); } }
+                "saving_throws" => { if p.get("value").is_some() && !p["value"].as_array().map(|values| values.len() <= 6 && values.iter().all(|value| ABILITIES.contains(&value.as_str().unwrap_or("")))).unwrap_or(false) { return Err(AppError::bad("Спасброски должны быть списком характеристик.")); } }
+                "skills" => { if !valid_id(&p["id"], 100) || json_integer(&p["count"]).map(|n| !(0..=18).contains(&n)).unwrap_or(true) || !valid_string_list(&p["options"], 18, 200) { return Err(AppError::bad("Выбор навыков: ID, список до 18 и количество от 0 до 18.")); } }
+                "spell_list" => { if !["known", "prepared", "book"].contains(&p["mode"].as_str().unwrap_or("")) || (p.get("ability").is_some() && !ABILITIES.contains(&p["ability"].as_str().unwrap_or(""))) || !valid_string_list(&p["spells"], 100, 200) { return Err(AppError::bad("Список заклинаний: режим, список и характеристика должны быть допустимы.")); } }
+                "feature" => { if p["name"].as_str().unwrap_or("").trim().is_empty() || utf16_len(p["name"].as_str().unwrap_or("")) > 120 || (p.get("text").is_some() && (p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000)) { return Err(AppError::bad("Умение: название до 120 и текст до 4000 символов.")); } }
+                "class_features" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(AppError::bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
+                "equipment" => { if !valid_equipment_items(&p["items"]) { return Err(AppError::bad("Снаряжение: список предметов с названием (до 120) и количеством (1–1000).")); } }
+                "equipment_choice" => { if !valid_equipment_choice(&p) { return Err(AppError::bad("Выбор снаряжения: ID, название и варианты со списком предметов.")); } }
+                _ => return Err(AppError::bad("Список: неизвестный вид.")),
             }
         }
         "rule.class" => {
             match p["kind"].as_str().unwrap_or("") {
-                "class_progression" | "class_rules" | "spell_slots" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
-                "spellcasting" => { if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) { return Err(bad("Выберите заклинательную характеристику из закрытого списка.")); } }
-                _ => return Err(bad("Класс: неизвестный вид.")),
+                "class_progression" | "class_rules" | "spell_slots" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(AppError::bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
+                "spellcasting" => { if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) { return Err(AppError::bad("Выберите заклинательную характеристику из закрытого списка.")); } }
+                _ => return Err(AppError::bad("Класс: неизвестный вид.")),
             }
         }
         "rule.value" => {
             match p["kind"].as_str().unwrap_or("") {
-                "ability" => { if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) || p.get("amount").map(|value| value.as_f64().map(|number| number.is_finite() && number.abs() <= 1000.0).unwrap_or(false) == false).unwrap_or(false) { return Err(bad("Бонус характеристики требует существующий ключ характеристики и конечную величину.")); } }
-                "speed" => { if p.get("amount").is_some() && json_integer(&p["amount"]).map(|value| !(0..=1000).contains(&value)).unwrap_or(true) { return Err(bad("Скорость должна быть целым числом от 0 до 1000.")); } }
-                "hp" => { if p.get("amount").is_some() && json_integer(&p["amount"]).map(|n| n < -1000 || n > 1000).unwrap_or(true) { return Err(bad("Бонус хитов: целое от −1000 до 1000.")); } }
-                "hit_die" => { if p.get("value").is_some() && !["d6", "d8", "d10", "d12"].contains(&p["value"].as_str().unwrap_or("")) { return Err(bad("Кость хитов: d6, d8, d10 или d12.")); } }
-                "asi" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
-                "armor_formula" => { let formula = p["formula"].as_str().unwrap_or(""); if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); } if p.get("name").is_some() && (p["name"].as_str().is_none() || utf16_len(p["name"].as_str().unwrap_or("")) > 120) { return Err(bad("Название защиты без доспехов: строка до 120 символов.")); } if p.get("no_shield").is_some() && !p["no_shield"].is_boolean() { return Err(bad("Запрет щита: логическое значение.")); } }
-                _ => return Err(bad("Правило-значение: неизвестный вид.")),
+                "ability" => { if !ABILITIES.contains(&p["ability"].as_str().unwrap_or("")) || p.get("amount").map(|value| value.as_f64().map(|number| number.is_finite() && number.abs() <= 1000.0).unwrap_or(false) == false).unwrap_or(false) { return Err(AppError::bad("Бонус характеристики требует существующий ключ характеристики и конечную величину.")); } }
+                "speed" => { if p.get("amount").is_some() && json_integer(&p["amount"]).map(|value| !(0..=1000).contains(&value)).unwrap_or(true) { return Err(AppError::bad("Скорость должна быть целым числом от 0 до 1000.")); } }
+                "hp" => { if p.get("amount").is_some() && json_integer(&p["amount"]).map(|n| n < -1000 || n > 1000).unwrap_or(true) { return Err(AppError::bad("Бонус хитов: целое от −1000 до 1000.")); } }
+                "hit_die" => { if p.get("value").is_some() && !["d6", "d8", "d10", "d12"].contains(&p["value"].as_str().unwrap_or("")) { return Err(AppError::bad("Кость хитов: d6, d8, d10 или d12.")); } }
+                "asi" => { if p.get("table").is_some() && !valid_json_object(&p["table"], 100_000) { return Err(AppError::bad("Табличное правило должно содержать ограниченный JSON-объект.")); } }
+                "armor_formula" => { let formula = p["formula"].as_str().unwrap_or(""); if formula.is_empty() || utf16_len(formula) > 100 || !formula.chars().all(|c| c.is_ascii_alphanumeric() || "+-*@_(), . \t\r\n".contains(c)) { return Err(AppError::bad("Формула защиты без доспехов содержит только числа, характеристики, min/max и арифметические символы.")); } if p.get("name").is_some() && (p["name"].as_str().is_none() || utf16_len(p["name"].as_str().unwrap_or("")) > 120) { return Err(AppError::bad("Название защиты без доспехов: строка до 120 символов.")); } if p.get("no_shield").is_some() && !p["no_shield"].is_boolean() { return Err(AppError::bad("Запрет щита: логическое значение.")); } }
+                _ => return Err(AppError::bad("Правило-значение: неизвестный вид.")),
             }
         }
-        "rule.manual" if p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000 => return Err(bad("Ручное правило: до 4000 символов.")),
+        "rule.manual" if p["text"].as_str().is_none() || utf16_len(p["text"].as_str().unwrap_or("")) > 4000 => return Err(AppError::bad("Ручное правило: до 4000 символов.")),
         _ => {}
-    }
-    if kind.starts_with("action.") && kind != "action.program" {
-        if !valid_id(&p["block_id"], 100) { return Err(bad("Узел действия должен иметь стабильный block_id.")); }
     }
     Ok(())
 }
@@ -645,29 +705,29 @@ fn flow_problems(nodes: &[Value], links: &[Value], groups: &[Value], owner_group
     problems.append(&mut ctx.problems);
 }
 fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Option<&Value>, problems: &mut Vec<String>, programs: &HashSet<String>) -> ApiResult<()> {
-    if !graph.is_object() { return Err(bad("Граф должен быть объектом.")); }
-    let nodes = graph["nodes"].as_array().filter(|a| a.len() <= 500).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
-    let links = graph["links"].as_array().filter(|a| a.len() <= 2000).ok_or_else(|| bad("Размер графа вне допустимых пределов."))?;
+    if !graph.is_object() { return Err(AppError::bad("Граф должен быть объектом.")); }
+    let nodes = graph["nodes"].as_array().filter(|a| a.len() <= 500).ok_or_else(|| AppError::bad("Размер графа вне допустимых пределов."))?;
+    let links = graph["links"].as_array().filter(|a| a.len() <= 2000).ok_or_else(|| AppError::bad("Размер графа вне допустимых пределов."))?;
     let frames = match graph.get("frames") {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Vec::new(),
         Some(Value::Number(number)) if number.as_f64() == Some(0.0) => Vec::new(),
         Some(Value::String(value)) if value.is_empty() => Vec::new(),
         Some(Value::Array(values)) => values.clone(),
-        Some(_) => return Err(bad("Размер графа вне допустимых пределов.")),
+        Some(_) => return Err(AppError::bad("Размер графа вне допустимых пределов.")),
     };
-    if frames.len() > 100 { return Err(bad("Размер графа вне допустимых пределов.")); }
+    if frames.len() > 100 { return Err(AppError::bad("Размер графа вне допустимых пределов.")); }
     let mut node_ids = HashSet::new();
     for n in nodes {
         let id = n["id"].as_str().unwrap_or(""); let kind = n["type"].as_str().unwrap_or("");
-        if id.is_empty() || utf16_len(id) > 100 || !node_ids.insert(id.to_string()) || !NODE_TYPES.contains(&kind) { return Err(bad("Неизвестный узел или повторяющийся ID.")); }
+        if id.is_empty() || utf16_len(id) > 100 || !node_ids.insert(id.to_string()) || !NODE_TYPES.contains(&kind) { return Err(AppError::bad("Неизвестный узел или повторяющийся ID.")); }
     }
     // Параметры проверяются после сбора ID: ссылка data.ref может указывать на узел, объявленный ниже.
     for n in nodes {
         let kind = n["type"].as_str().unwrap_or("");
-        if let Some(p) = n.get("params") { if !p.is_object() || utf16_len(&p.to_string()) > 100_000 { return Err(bad("Параметры узла должны быть ограниченным JSON-объектом.")); } }
-        if let Some(pos) = n.get("position") { if !pos["x"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) || !pos["y"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) { return Err(bad("Координаты узла вне допустимых пределов.")); } }
-        if kind == "group.instance" && !groups.iter().any(|g| g["id"] == n["params"]["group_id"]) { return Err(bad("Узел ссылается на отсутствующую группу.")); }
-        if ["group.input", "group.output"].contains(&kind) && (!nested || owner_group.is_none()) { return Err(bad("Узлы интерфейса группы разрешены только внутри повторно используемой группы.")); }
+        if let Some(p) = n.get("params") { if !valid_json_object(p, 100_000) { return Err(AppError::bad("Параметры узла должны быть ограниченным JSON-объектом.")); } }
+        if let Some(pos) = n.get("position") { if !pos["x"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) || !pos["y"].as_f64().map(|x| x.is_finite() && x.abs() <= 100_000.0).unwrap_or(false) { return Err(AppError::bad("Координаты узла вне допустимых пределов.")); } }
+        if kind == "group.instance" && !groups.iter().any(|g| g["id"] == n["params"]["group_id"]) { return Err(AppError::bad("Узел ссылается на отсутствующую группу.")); }
+        if ["group.input", "group.output"].contains(&kind) && (!nested || owner_group.is_none()) { return Err(AppError::bad("Узлы интерфейса группы разрешены только внутри повторно используемой группы.")); }
         validate_node_params(n, programs, nodes, groups)?;
     }
     let mut indegree: HashMap<String, usize> = node_ids.iter().map(|x| (x.clone(), 0)).collect();
@@ -714,9 +774,9 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
     let mut frame_ids = HashSet::new(); let mut framed_nodes = HashSet::new();
     for frame in frames {
         let id = frame["id"].as_str().unwrap_or(""); let title = frame["title"].as_str().unwrap_or("");
-        let members = frame["nodes"].as_array().filter(|a| a.len() <= 100).ok_or_else(|| bad("Некорректная рамка графа."))?;
-        if id.is_empty() || utf16_len(id) > 64 || !frame_ids.insert(id.to_string()) || title.trim().is_empty() || utf16_len(title) > 120 { return Err(bad("Некорректная рамка графа."));}
-        for member in members { let node = member.as_str().unwrap_or(""); if !node_ids.contains(node) || !framed_nodes.insert(node.to_string()) { return Err(bad("Рамка содержит отсутствующий или повторный узел.")); } }
+        let members = frame["nodes"].as_array().filter(|a| a.len() <= 100).ok_or_else(|| AppError::bad("Некорректная рамка графа."))?;
+        if id.is_empty() || utf16_len(id) > 64 || !frame_ids.insert(id.to_string()) || title.trim().is_empty() || utf16_len(title) > 120 { return Err(AppError::bad("Некорректная рамка графа."));}
+        for member in members { let node = member.as_str().unwrap_or(""); if !node_ids.contains(node) || !framed_nodes.insert(node.to_string()) { return Err(AppError::bad("Рамка содержит отсутствующий или повторный узел.")); } }
     }
     Ok(())
 }
@@ -802,9 +862,9 @@ pub fn plan_checks_apply(mechanics: &Value) -> bool {
     matches!(problems(mechanics), Ok(list) if list.iter().all(|message| is_completion_problem(message)))
 }
 fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
-    if mechanics["version"] != 2 || utf16_len(&mechanics.to_string()) > 1_000_000 { return Err(bad("Неподдерживаемая или слишком большая схема механик.")); }
+    if mechanics["version"] != 2 || utf16_len(&mechanics.to_string()) > 1_000_000 { return Err(AppError::bad("Неподдерживаемая или слишком большая схема механик.")); }
     let graph = &mechanics["graph"];
-    let groups = graph["groups"].as_array().filter(|a| a.len() <= 50).ok_or_else(|| bad("Не более 50 групп повторного использования."))?;
+    let groups = graph["groups"].as_array().filter(|a| a.len() <= 50).ok_or_else(|| AppError::bad("Не более 50 групп повторного использования."))?;
     // Программы всего графа (в том числе внутри групп): на них ссылается источник data.result.
     let mut programs = HashSet::new();
     for node in graph["nodes"].as_array().into_iter().flatten().chain(groups.iter().flat_map(|group| group["nodes"].as_array().into_iter().flatten())) {
@@ -814,16 +874,16 @@ fn check(mechanics: &Value, problems: &mut Vec<String>) -> ApiResult<()> {
     let mut group_ids = HashSet::new();
     for g in groups {
         let id = g["id"].as_str().unwrap_or(""); let name = g["name"].as_str().unwrap_or("");
-        if id.is_empty() || utf16_len(id) > 64 || !group_ids.insert(id.to_string()) || name.trim().is_empty() || utf16_len(name) > 120 { return Err(bad("Некорректная группа повторного использования.")); }
+        if id.is_empty() || utf16_len(id) > 64 || !group_ids.insert(id.to_string()) || name.trim().is_empty() || utf16_len(name) > 120 { return Err(AppError::bad("Некорректная группа повторного использования.")); }
         check_interface(&g["inputs"])?; check_interface(&g["outputs"])?;
-        if !g["nodes"].is_array() || !g["links"].is_array() { return Err(bad("У группы должны быть свои nodes и links.")); }
+        if !g["nodes"].is_array() || !g["links"].is_array() { return Err(AppError::bad("У группы должны быть свои nodes и links.")); }
         let mut inner = json!({"nodes":g["nodes"],"links":g["links"],"frames":g.get("frames").cloned().unwrap_or(json!([]))});
         if inner["frames"].is_null() { inner["frames"] = json!([]); }
         validate_graph(&inner, groups, true, Some(g), problems, &programs)?;
-        if !group_boundaries_match(g) { return Err(bad("Порты группы должны иметь по одному соответствующему узлу входа/выхода.")); }
+        if !group_boundaries_match(g) { return Err(AppError::bad("Порты группы должны иметь по одному соответствующему узлу входа/выхода.")); }
     }
-    if group_call_cycle(groups) { return Err(bad("Рекурсивный вызов группы")); }
-    if !group_cycle(groups) { return Err(bad("Рекурсивная ссылка или цикл между группами запрещён.")); }
+    if group_call_cycle(groups) { return Err(AppError::bad("Рекурсивный вызов группы")); }
+    if !group_cycle(groups) { return Err(AppError::bad("Рекурсивная ссылка или цикл между группами запрещён.")); }
     validate_graph(graph, groups, false, None, problems, &programs)
 }
 
@@ -931,6 +991,16 @@ fn expand_graph(graph: &Value, groups: &[Value]) -> (Vec<Value>, Vec<Value>) {
     collect_context(&root, &[&root], &mut nodes, &mut links);
     (nodes, links)
 }
+/// Индекс развёрнутого графа: узлы по id и провод по каждому входному сокету.
+fn node_index<'a>(expanded: &'a [Value], links: &[Value]) -> (HashMap<String, &'a Value>, HashMap<(String, String), Endpoint>) {
+    let nodes = expanded.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
+    let mut incoming: HashMap<(String, String), Endpoint> = HashMap::new();
+    for link in links {
+        let to = (link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string());
+        incoming.insert(to, from_endpoint(link));
+    }
+    (nodes, incoming)
+}
 
 // Характеристика / навык: bonus — модификатор (навык — с владением), score — показатель (навык — пассивное 10 + бонус).
 // Формулы те же, что в statDice (static/mechanics-graph.js); переменные *_score считает inventory::resolve.
@@ -941,15 +1011,19 @@ fn stat_dice(params: &Value) -> Value {
     json!({"count": 0, "sides": 6, "bonus": 0, "stat": "", "advanced": term})
 }
 // Текст формулы кости: как NodeRegistry.diceTerm → Mechanics.expression на клиенте (нулевой бонус не пишется).
+// Тот же вид формулы собирает план блоков (src/mechanics.rs) — поэтому правило вынесено сюда.
+pub(crate) fn dice_formula_text(count: i64, sides: i64, bonus: i64, stat: &str) -> String {
+    let mut out = if count > 0 { format!("{count}d{sides}") } else { String::new() };
+    if bonus != 0 { out.push_str(&if out.is_empty() { bonus.to_string() } else { format!("{bonus:+}") }); }
+    if !stat.is_empty() { if out.is_empty() { out.push('@'); out.push_str(stat); } else { out.push_str(&format!("+@{stat}")); } }
+    if out.is_empty() { out = "0".into(); }
+    out
+}
 fn dice_term(d: &Value) -> Option<String> {
     if let Some(s) = d["advanced"].as_str().filter(|s| !s.is_empty()) { return Some(s.to_string()); }
     let count = json_integer(&d["count"])?; let sides = json_integer(&d["sides"])?;
     let bonus = json_integer(&d["bonus"]).unwrap_or(0); let stat = d["stat"].as_str().unwrap_or("");
-    let mut out = if count > 0 { format!("{count}d{sides}") } else { String::new() };
-    if bonus != 0 { out.push_str(&if out.is_empty() { bonus.to_string() } else { format!("{bonus:+}") }); }
-    if !stat.is_empty() { if out.is_empty() { out.push('@'); out.push_str(&stat); } else { out.push_str(&format!("+@{stat}")); } }
-    if out.is_empty() { out = "0".into(); }
-    Some(out)
+    Some(dice_formula_text(count, sides, bonus, stat))
 }
 /// Окружение вычисления значений: группы доступны узлу data.call, bindings подставляет
 /// аргументы на границы group.input, stack хранит цепочку вызовов (рекурсия и глубина 16).
@@ -1048,9 +1122,24 @@ const MAX_VALUE_DEPTH: usize = 64;
 fn ref_node_id(current: &str, local: &str) -> String {
     match current.rfind('/') { Some(index) => format!("{}{}", &current[..=index], local), None => local.to_string() }
 }
+/// Значение value-сокета узла: условия листа и логика считаются отдельно, остальное — узлы data.*.
 fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, incoming: &HashMap<(String, String), Endpoint>, context: &Value, depth: usize, env: &ValueEnv) -> Option<Value> {
     if depth > MAX_VALUE_DEPTH { return None; }
-    let node = nodes.get(&endpoint.0)?; let params = &node["params"];
+    let node = nodes.get(&endpoint.0)?;
+    let params = &node["params"];
+    match node["type"].as_str().unwrap_or("") {
+        "condition.status" | "condition.item" | "condition.hp" | "condition.slot" => condition_value(node, params, context),
+        "condition.context" => context_value(params, context),
+        // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
+        "logic.op" => logic_value(params, node, incoming, nodes, context, depth, env),
+        // Внутри группы граница подставляет аргумент, привязанный вызовом.
+        "group.input" => env.bindings.get(endpoint.0.as_str()).cloned(),
+        _ => data_value(node, params, incoming, nodes, context, depth, env),
+    }
+}
+
+/// Узлы значений (data.*, кости): литералы, математика, ссылки, вызовы групп, строки и списки.
+fn data_value(node: &Value, params: &Value, incoming: &HashMap<(String, String), Endpoint>, nodes: &HashMap<String, &Value>, context: &Value, depth: usize, env: &ValueEnv) -> Option<Value> {
     match node["type"].as_str().unwrap_or("") {
         "data.boolean" => params.get("value").and_then(Value::as_bool).map(|value| json!(value)),
         "data.math" => {
@@ -1131,8 +1220,6 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             Some(call_group_value(group_id, &args, result_type, context, depth, env)
                 .unwrap_or_else(|| coerce_function_value(result_type, None)))
         }
-        // Внутри группы граница подставляет аргумент, привязанный вызовом.
-        "group.input" => env.bindings.get(endpoint.0.as_str()).cloned(),
         // Ссылка на числовой узел этого же графа (или группы): значение цели в том же контексте.
         // Цепочку ref→ref ведём явно, чтобы не зациклиться на испорченной записи.
         "data.ref" => {
@@ -1194,10 +1281,14 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let parts: Vec<&str> = items.iter().map(|item| item.as_str().unwrap_or("")).collect();
             Some(json!(parts.join(separator)))
         }
-        // Логика: таблица истинности всех восьми операций (как compute в static/nodes/logic/op.js).
-        // Неизвестный вход даёт None, кроме случаев, где значение уже определено одним входом.
-        "logic.op" => logic_value(params, node, incoming, nodes, context, depth, env),
-        // Условия листа: читают runtime-лист (context["runtime"]["sheet"]). Без листа — false.
+        kind if kind.starts_with("data.") => params.get("value").cloned(),
+        _ => None,
+    }
+}
+
+/// Условия листа (состояние, предмет, хиты, ячейки): читаются в рантайме, без листа — false.
+fn condition_value(node: &Value, params: &Value, context: &Value) -> Option<Value> {
+    match node["type"].as_str().unwrap_or("") {
         "condition.status" => {
             let name = params["name"].as_str()?;
             let present = runtime_sheet(context).and_then(|sheet| sheet.get("conditions")).and_then(Value::as_array)
@@ -1235,25 +1326,27 @@ fn graph_output_value(endpoint: &Endpoint, nodes: &HashMap<String, &Value>, inco
             let matched = remaining.map(|remaining| if op == "lt" { remaining < value } else { remaining >= value }).unwrap_or(false);
             Some(json!(matched))
         }
-        kind if kind.starts_with("data.") => params.get("value").cloned(),
+        _ => None,
+    }
+}
 
-        "condition.context" => match params["kind"].as_str()? {
-            "edition" => {
-                let edition = context.get("edition")?.as_str()?;
-                Some(json!(params["editions"].as_array().into_iter().flatten().any(|item| item.as_str() == Some(edition))))
-            }
-            "level" => {
-                let level = context.get("level")?.as_i64()?;
-                Some(json!(level >= params["min"].as_i64()? && level <= params["max"].as_i64()?))
-            }
-            "subclass" => Some(json!(context.get("subclass")? == &params["id"])),
-            "choice" => {
-                let choices = context.get("choices")?.as_object()?;
-                let id = params["id"].as_str()?;
-                Some(json!(choices.get(id).map(|value| value == &params["value"]).unwrap_or(false)))
-            }
-            _ => None,
-        },
+/// Условие контекста (редакция, уровень, подкласс, выбор): считается по переданному контексту.
+fn context_value(params: &Value, context: &Value) -> Option<Value> {
+    match params["kind"].as_str()? {
+        "edition" => {
+            let edition = context.get("edition")?.as_str()?;
+            Some(json!(params["editions"].as_array().into_iter().flatten().any(|item| item.as_str() == Some(edition))))
+        }
+        "level" => {
+            let level = context.get("level")?.as_i64()?;
+            Some(json!(level >= params["min"].as_i64()? && level <= params["max"].as_i64()?))
+        }
+        "subclass" => Some(json!(context.get("subclass")? == &params["id"])),
+        "choice" => {
+            let choices = context.get("choices")?.as_object()?;
+            let id = params["id"].as_str()?;
+            Some(json!(choices.get(id).map(|value| value == &params["value"]).unwrap_or(false)))
+        }
         _ => None,
     }
 }
@@ -1268,13 +1361,11 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
     let groups = graph["groups"].as_array().cloned().unwrap_or_default();
     let env = ValueEnv::root(&groups);
     let (expanded_nodes, links) = expand_graph(graph, &groups);
-    let nodes: HashMap<String, &Value> = expanded_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
+    let (nodes, incoming) = node_index(&expanded_nodes, &links);
     let mut outgoing: HashMap<(String, String), Vec<Endpoint>> = HashMap::new();
-    let mut incoming: HashMap<(String, String), Endpoint> = HashMap::new();
     for link in &links {
         let from = (link["from"]["node"].as_str().unwrap_or("").to_string(), link["from"]["socket"].as_str().unwrap_or("").to_string());
-        let to = (link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string());
-        outgoing.entry(from).or_default().push(to.clone()); incoming.insert(to, from_endpoint(link));
+        outgoing.entry(from).or_default().push((link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string()));
     }
     let mut programs = Vec::new();
     for node in expanded_nodes.iter().filter(|node| node["type"] == "action.program") {
@@ -1395,13 +1486,8 @@ pub fn node_value(graph: &Value, node_id: &str, context: &Value) -> ApiResult<Va
     let groups = graph["groups"].as_array().cloned().unwrap_or_default();
     let env = ValueEnv::root(&groups);
     let (expanded_nodes, links) = expand_graph(graph, &groups);
-    let nodes: HashMap<String, &Value> = expanded_nodes.iter().filter_map(|node| node["id"].as_str().map(|id| (id.to_string(), node))).collect();
-    if !nodes.contains_key(node_id) { return Err(bad("Узел условия не найден в графе.")); }
-    let mut incoming: HashMap<(String, String), Endpoint> = HashMap::new();
-    for link in &links {
-        let to = (link["to"]["node"].as_str().unwrap_or("").to_string(), link["to"]["socket"].as_str().unwrap_or("").to_string());
-        incoming.insert(to, from_endpoint(link));
-    }
+    let (nodes, incoming) = node_index(&expanded_nodes, &links);
+    if !nodes.contains_key(node_id) { return Err(AppError::bad("Узел условия не найден в графе.")); }
     let endpoint = (node_id.to_string(), "value".to_string());
     Ok(graph_output_value(&endpoint, &nodes, &incoming, context, 0, &env).unwrap_or(Value::Null))
 }

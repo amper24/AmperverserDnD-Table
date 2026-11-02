@@ -128,7 +128,7 @@ pub fn normalize_layers(v: &Value) -> Option<Value> {
     let mut out: Vec<(i64, Value)> = Vec::new();
     for (i, e) in arr.iter().enumerate() {
         let id = e.get("id")?.as_str()?.trim().to_lowercase();
-        if id.is_empty() || id.len() > 32 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        if !util::short_id(&id) || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
             return None;
         }
         if !seen.insert(id.clone()) {
@@ -214,7 +214,7 @@ impl SceneIn {
         match self.active_map_id.as_ref() {
             None => None,
             Some(None) => Some(None),
-            Some(Some(v)) => v.as_str().filter(|s| !s.is_empty() && s.len() <= 32).map(|s| Some(s.to_string())),
+            Some(Some(v)) => v.as_str().filter(|s| util::short_id(s)).map(|s| Some(s.to_string())),
         }
     }
 }

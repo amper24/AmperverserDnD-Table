@@ -157,6 +157,12 @@ pub fn drop_extra_hands(sheet: &mut Value, extra: i64) -> Vec<Value> {
     removed
 }
 pub fn unequip(it: &mut Value) { it["equipped"] = json!(false); it["hand_slot"] = Value::Null; it["worn_slot"] = Value::Null; }
+/// Предмет передают, выкладывают или копируют: снимаем экипировку и личные отметки.
+pub fn reset_state(it: &mut Value) {
+    unequip(it);
+    it["attuned"] = json!(false);
+    it["favorite"] = json!(false);
+}
 pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
     if !sheet.is_object() { return Err(AppError::bad("Лист должен быть объектом")); }
     if sheet.get("inventory").is_none() { sheet["inventory"] = json!([]); }
@@ -279,7 +285,7 @@ pub fn split(sheet: &mut Value, uid: &str, qty: i64) -> ApiResult<String> {
     let have = it["qty"].as_i64().unwrap();
     if qty <= 0 || qty >= have { return Err(AppError::bad("Отделите целое количество меньше размера стопки")); }
     it["qty"] = json!(have - qty);
-    let mut copy = it.clone(); let new_uid = util::uid(); copy["uid"] = json!(new_uid); copy["qty"] = json!(qty); unequip(&mut copy); copy["attuned"] = json!(false); copy["favorite"] = json!(false);
+    let mut copy = it.clone(); let new_uid = util::uid(); copy["uid"] = json!(new_uid); copy["qty"] = json!(qty); reset_state(&mut copy);
     partition_charges(it, &mut copy, qty, have);
     inv.push(copy); Ok(new_uid)
 }

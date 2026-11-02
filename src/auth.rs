@@ -276,6 +276,12 @@ async fn start_session(st: &AppState, headers: &HeaderMap, user_id: &str, email:
 
 const REGISTRATION_OFF: &str = "Регистрация на этом сервере отключена — попросите администратора создать вам аккаунт";
 
+/// Имя нового аккаунта: из запроса (без пробелов по краям) или левая часть почты.
+fn display_name(name: Option<&str>, email: &str) -> String {
+    name.map(str::trim).filter(|name| !name.is_empty()).map(|name| util::truncate(name, 64))
+        .unwrap_or_else(|| email.split('@').next().unwrap_or("Игрок").to_string())
+}
+
 #[derive(Deserialize)]
 pub struct RegisterIn { pub email: String, pub password: String, pub name: Option<String> }
 
@@ -286,7 +292,7 @@ async fn register(State(st): State<AppState>, Json(body): Json<RegisterIn>) -> A
     }
     let email = norm_email(&body.email)?;
     check_password(&body.password, st.cfg.auth.password_min_length)?;
-    let name = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| util::truncate(s, 64)).unwrap_or_else(|| email.split('@').next().unwrap_or("Игрок").to_string());
+    let name = display_name(body.name.as_deref(), &email);
     let hash = hash_password(&body.password)?;
     let existing = sqlx::query("SELECT id, verified, password_hash FROM users WHERE email = ?").bind(&email).fetch_optional(&st.db).await?;
     match existing {
@@ -348,7 +354,7 @@ async fn verify(State(st): State<AppState>, headers: HeaderMap, Json(body): Json
         None => {
             // вход только по коду (без регистрации) — оставлен для совместимости
             let uid = util::uid();
-            let nm = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(|s| util::truncate(s, 64)).unwrap_or_else(|| email.split('@').next().unwrap_or("Игрок").to_string());
+            let nm = display_name(body.name.as_deref(), &email);
             sqlx::query("INSERT INTO users (id, email, name, created_at, verified) VALUES (?, ?, ?, ?, 1)").bind(&uid).bind(&email).bind(&nm).bind(util::now()).execute(&st.db).await?;
             (uid, nm)
         }
@@ -471,13 +477,19 @@ async fn require_current_password(st: &AppState, user: &AuthUser, password: Opti
 #[derive(Deserialize)]
 pub struct ChangeEmailRequestIn { pub email: String }
 
-/// Шаг 1 смены почты: проверить, что адрес свободен, и отправить на него код.
-async fn change_email_request_code(State(st): State<AppState>, user: AuthUser, Json(body): Json<ChangeEmailRequestIn>) -> ApiResult<Json<serde_json::Value>> {
-    let email = norm_email(&body.email)?;
+/// Новая почта профиля: нормализована, отличается от текущей и не занята другим аккаунтом.
+async fn checked_new_email(st: &AppState, user: &AuthUser, raw: &str) -> ApiResult<String> {
+    let email = norm_email(raw)?;
     if email == user.email.to_lowercase() {
         return Err(AppError::bad("Это уже ваша почта"));
     }
-    ensure_email_free(&st, &user.id, &email).await?;
+    ensure_email_free(st, &user.id, &email).await?;
+    Ok(email)
+}
+
+/// Шаг 1 смены почты: проверить, что адрес свободен, и отправить на него код.
+async fn change_email_request_code(State(st): State<AppState>, user: AuthUser, Json(body): Json<ChangeEmailRequestIn>) -> ApiResult<Json<serde_json::Value>> {
+    let email = checked_new_email(&st, &user, &body.email).await?;
     let mut out = issue_code(&st, &email).await?;
     out["email"] = json!(email);
     Ok(Json(out))
@@ -488,11 +500,7 @@ pub struct ChangeEmailIn { pub email: String, pub code: String, pub password: Op
 
 /// Шаг 2 смены почты: код обязателен, почта уникальна, при заданном пароле нужен текущий пароль.
 async fn change_email(State(st): State<AppState>, user: AuthUser, Json(body): Json<ChangeEmailIn>) -> ApiResult<Json<serde_json::Value>> {
-    let email = norm_email(&body.email)?;
-    if email == user.email.to_lowercase() {
-        return Err(AppError::bad("Это уже ваша почта"));
-    }
-    ensure_email_free(&st, &user.id, &email).await?;
+    let email = checked_new_email(&st, &user, &body.email).await?;
     require_current_password(&st, &user, body.password.as_deref()).await?;
     consume_code(&st, &email, &body.code).await?;
     // Повторная проверка после проверки кода: между шагами адрес мог занять другой аккаунт.

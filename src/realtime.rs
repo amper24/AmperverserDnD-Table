@@ -35,51 +35,40 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub async fn broadcast(&self, cid: &str, msg: &Value, exclude: Option<u64>) {
+    /// Разослать сообщение клиентам комнаты, отобранным предикатом (id соединения, клиент).
+    async fn send_where(&self, cid: &str, msg: &Value, keep: impl Fn(u64, &Client) -> bool) {
         let text = msg.to_string();
         let rooms = self.rooms.read().await;
         if let Some(room) = rooms.get(cid) {
-            for (id, c) in room {
-                if Some(*id) != exclude {
-                    let _ = c.tx.send(text.clone());
+            for (id, client) in room {
+                if keep(*id, client) {
+                    let _ = client.tx.send(text.clone());
                 }
             }
         }
+    }
+    pub async fn broadcast(&self, cid: &str, msg: &Value, exclude: Option<u64>) {
+        self.send_where(cid, msg, |id, _| Some(id) != exclude).await;
     }
     pub(crate) async fn send_to_role(&self, cid: &str, role: &str, msg: &Value) {
-        let text = msg.to_string();
-        let rooms = self.rooms.read().await;
-        if let Some(room) = rooms.get(cid) {
-            for c in room.values() {
-                if c.role == role {
-                    let _ = c.tx.send(text.clone());
-                }
-            }
-        }
+        self.send_where(cid, msg, |_, client| client.role == role).await;
     }
     async fn send_to_user(&self, cid: &str, user_id: &str, msg: &Value) {
-        let text = msg.to_string();
+        self.send_where(cid, msg, |_, client| client.user_id == user_id).await;
+    }
+    /// Сообщение одному соединению комнаты (ответ на его сообщение).
+    async fn send_to_connection(&self, cid: &str, conn_id: u64, msg: Value) {
         let rooms = self.rooms.read().await;
-        if let Some(room) = rooms.get(cid) {
-            for c in room.values() {
-                if c.user_id == user_id {
-                    let _ = c.tx.send(text.clone());
-                }
-            }
+        if let Some(client) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
+            let _ = client.tx.send(msg.to_string());
         }
     }
     async fn roll_error(&self, cid: &str, conn_id: u64, request_id: &Value, message: &str) {
-        let rooms = self.rooms.read().await;
-        if let Some(c) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
-            let _ = c.tx.send(json!({ "type": "roll_error", "request_id": request_id, "message": message }).to_string());
-        }
+        self.send_to_connection(cid, conn_id, json!({ "type": "roll_error", "request_id": request_id, "message": message })).await;
     }
     /// Отказ по правам — только тому соединению, которое нарушило правило.
     async fn forbidden(&self, cid: &str, conn_id: u64, message: &str) {
-        let rooms = self.rooms.read().await;
-        if let Some(c) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
-            let _ = c.tx.send(json!({ "type": "error", "code": "forbidden", "message": message }).to_string());
-        }
+        self.send_to_connection(cid, conn_id, json!({ "type": "error", "code": "forbidden", "message": message })).await;
     }
     /// Присутствие: один участник — одна запись, даже если у него открыто несколько
     /// вкладок (счётчик `connections`). Порядок стабилен — по времени подключения.
@@ -176,8 +165,18 @@ async fn handle_socket(socket: WebSocket, st: AppState, cid: String, user: auth:
 }
 
 // ---------- броски кубиков ----------
+/// Те же замены без удаления пробелов: удвоение костей не переписывает разметку выражения.
+fn fold_expr_chars(expr: &str) -> String {
+    expr.to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-")
+}
+
+/// Выражение броска в каноничном виде: без пробелов, «к» → «d», типографские минусы → «-».
+fn normalize_expr(expr: &str) -> String {
+    fold_expr_chars(&expr.chars().filter(|c| !c.is_whitespace()).collect::<String>())
+}
+
 pub fn roll_expression(expr: &str) -> Option<Value> {
-    let expr: String = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
+    let expr = normalize_expr(expr);
     // Match the WHOLE expression: the old token scan silently accepted d20++5 or trailing signs.
     let grammar = Regex::new(r"^[+-]?(?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+)(?:[+-](?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+))*$").ok()?;
     if expr.is_empty() || expr.len() > 64 || !grammar.is_match(&expr) { return None; }
@@ -225,8 +224,7 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
 /// 2dSkh1/kl1 formulas can switch modes without adding dice a second time.
 pub(crate) fn with_dice_mode(expr: &str, mode: &str) -> String {
     if !["adv", "dis"].contains(&mode) { return expr.to_string(); }
-    let expr = expr.chars().filter(|c| !c.is_whitespace()).collect::<String>()
-        .to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
+    let expr = normalize_expr(expr);
     let terms = Regex::new(r"([+-]?)([^+\-]+)").unwrap();
     let die = Regex::new(r"^([+-]?)([0-9]*)d([0-9]+)(?:k([hl])([0-9]+))?$").unwrap();
     let matches: Vec<_> = terms.captures_iter(&expr).filter_map(|c| {
@@ -262,7 +260,7 @@ pub(crate) fn with_dice_mode(expr: &str, mode: &str) -> String {
 
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
 pub(crate) fn double_dice(expr: &str) -> String {
-    let expr = expr.to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-");
+    let expr = fold_expr_chars(expr);
     let re = Regex::new(r"(\d*)(d)(\d+)(?:k([hl])(\d+))?").unwrap();
     re.replace_all(&expr, |c: &regex::Captures| {
         let n: i64 = if c[1].is_empty() { 1 } else {
@@ -317,97 +315,10 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
         return;
     }
     match t {
-        "chat" => {
-            let text: String = msg["text"].as_str().unwrap_or("").chars().take(2000).collect::<String>().trim().to_string();
-            if text.is_empty() {
-                return;
-            }
-            let (kind, payload) = if let Some(rest) = text.strip_prefix("/r ").or_else(|| text.strip_prefix("/roll ")) {
-                match roll_expression(rest) {
-                    Some(mut r) => { r["label"] = msg["label"].clone(); ("roll", r) }
-                    None => ("text", json!({ "text": "Неверное выражение броска" })),
-                }
-            } else {
-                ("text", json!({ "text": text, "whisper": msg["whisper"] }))
-            };
-            if let Some(out) = save_chat(st, cid, user, kind, &payload).await {
-                st.hub.broadcast(cid, &out, None).await;
-            }
-        }
-        "card" => {
-            // карточка предмета/заклинания в чат (с кнопками бросков на стороне клиента)
-            let mut card = msg["card"].clone();
-            if !card.is_object() { return; }
-            if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner", "item_ref"].contains(&k.as_str())); }
-            if let Some(out) = save_chat(st, cid, user, "card", &card).await {
-                st.hub.broadcast(cid, &out, None).await;
-            }
-        }
-        "roll" => {
-            let Some(mut r) = roll_expression(msg["expr"].as_str().unwrap_or("d20")) else {
-                st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула или превышен лимит кубиков.").await; return;
-            };
-            let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
-            let private = !gm_only && msg["visibility"].as_str() == Some("private");
-            let color = msg["dice_color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or("#a881e8");
-            r["label"] = msg["label"].clone();
-            r["gm_only"] = json!(gm_only);
-            r["visibility"] = json!(if private { "private" } else { "campaign" });
-            r["dice_color"] = json!(color);
-            r["request_id"] = json!(msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>());
-            r["kind"] = msg["kind"].clone();
-            let storage_kind = if private { "private_roll" } else { "roll" };
-            if let Some(mut out) = save_chat(st, cid, user, storage_kind, &r).await {
-                // В базе приватные броски хранятся отдельным видом и никогда не попадут в
-                // общий чат; подключённым вкладкам владельца отдаём обычный формат roll.
-                out["kind"] = json!("roll");
-                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; }
-                else if private { st.hub.send_to_user(cid, &user.id, &out).await; }
-                else { st.hub.broadcast(cid, &out, None).await; }
-            }
-        }
-        // связка бросков одним сообщением: атака + урон (+ что угодно). Крит по атаке удваивает кости урона.
-        "multi" => {
-            let Some(list) = msg["rolls"].as_array().filter(|l| !l.is_empty() && l.len() <= 8) else {
-                st.hub.roll_error(cid, conn_id, &msg["request_id"], "Связка должна содержать 1–8 бросков.").await; return;
-            };
-            let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
-            let private = !gm_only && msg["visibility"].as_str() == Some("private");
-            let color = msg["dice_color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or("#a881e8");
-            let mut out_rolls = Vec::new();
-            let mut crit = false;
-            for r in list.iter().take(8) {
-                let kind = r["kind"].as_str().unwrap_or("other").to_string();
-                let mut expr = r["expr"].as_str().unwrap_or("").to_string();
-                let mut doubled = false;
-                if crit && kind == "damage" {
-                    expr = double_dice(&expr);
-                    doubled = true;
-                }
-                let Some(mut rolled) = roll_expression(&expr) else {
-                    st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула в связке. Вся связка отменена.").await; return;
-                };
-                let (nat20, nat1) = nat_d20(&rolled);
-                if kind == "attack" { crit = nat20; }
-                rolled["name"] = r["name"].clone();
-                rolled["kind"] = json!(kind);
-                rolled["dtype"] = r["dtype"].clone();
-                rolled["crit"] = json!(nat20 && kind != "damage" && kind != "heal");
-                rolled["fumble"] = json!(nat1 && kind != "damage" && kind != "heal");
-                rolled["doubled"] = json!(doubled);
-                rolled["base_expr"] = r["expr"].clone();
-                out_rolls.push(rolled);
-            }
-            if out_rolls.is_empty() { return; }
-            let payload = json!({ "label": msg["label"], "gm_only": gm_only, "visibility": if private { "private" } else { "campaign" }, "dice_color": color, "request_id": msg["request_id"].as_str().unwrap_or("").chars().take(64).collect::<String>(), "rolls": out_rolls });
-            let storage_kind = if private { "private_multi" } else { "multi" };
-            if let Some(mut out) = save_chat(st, cid, user, storage_kind, &payload).await {
-                out["kind"] = json!("multi");
-                if gm_only { st.hub.send_to_role(cid, "gm", &out).await; }
-                else if private { st.hub.send_to_user(cid, &user.id, &out).await; }
-                else { st.hub.broadcast(cid, &out, None).await; }
-            }
-        }
+        "chat" => handle_chat(st, cid, user, &msg).await,
+        "card" => handle_card(st, cid, user, &msg).await,
+        "roll" => handle_roll(st, cid, conn_id, user, is_gm, &msg).await,
+        "multi" => handle_multi_roll(st, cid, conn_id, user, is_gm, &msg).await,
         // эфемерные события стола
         "pointer" | "ruler" | "cursor" | "ping" => {
             let mut out = msg.clone();
@@ -415,106 +326,8 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             out["name"] = json!(user.name);
             st.hub.broadcast(cid, &out, Some(conn_id)).await;
         }
-        "item_upsert" | "item_delete" | "items_bulk" => {
-            let Some(scene_id) = msg["scene_id"].as_str() else { return };
-            let ok = sqlx::query("SELECT id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten().is_some();
-            if !ok {
-                return;
-            }
-            match t {
-                "item_upsert" => item_upsert(st, cid, conn_id, scene_id, user, role, &msg["item"]).await,
-                "item_delete" => {
-                    let Some(id) = msg["id"].as_str() else { return };
-                    let row = sqlx::query("SELECT data, layer FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
-                    if let Some(row) = row {
-                        let data = util::json_value(&util::text(&row, "data"));
-                        if access::item_write(role, &data, &user.id) == access::ItemWrite::Deny {
-                            st.hub.forbidden(cid, conn_id, "Нет прав удалять этот элемент стола").await;
-                            return;
-                        }
-                        let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
-                        // Удалённая карта больше не активная: клиенты выберут оставшуюся (или ни одну).
-                        if row.get::<String, _>("layer") == "map" {
-                            let _ = sqlx::query("UPDATE scenes SET active_map_id = NULL WHERE id = ? AND active_map_id = ?").bind(scene_id).bind(id).execute(&st.db).await;
-                        }
-                        st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
-                    }
-                }
-                _ => {
-                    if !access::allows(role, access::TABLE_MOVE_ANY_TOKEN) {
-                        st.hub.forbidden(cid, conn_id, "Раскладку слоёв меняет только мастер").await;
-                        return;
-                    }
-                    let items = msg["items"].as_array().cloned().unwrap_or_default();
-                    for it in &items {
-                        let Some(id) = it["id"].as_str() else { continue };
-                        let row = sqlx::query("SELECT layer, z, data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
-                        let Some(row) = row else { continue };
-                        let mut data = util::json_value(&util::text(&row, "data"));
-                        if let (Some(dst), Some(src)) = (data.as_object_mut(), it["data"].as_object()) {
-                            for (k, v) in src { if dst.get("managed_loot") != Some(&json!(true)) || PLAYER_FIELDS.contains(&k.as_str()) { dst.insert(k.clone(), v.clone()); } }
-                        }
-                        let z = it["z"].as_i64().unwrap_or_else(|| row.get::<i64, _>("z"));
-                        let layer = it["layer"].as_str().map(|s| s.to_string()).unwrap_or_else(|| row.get::<String, _>("layer"));
-                        let _ = sqlx::query("UPDATE scene_items SET data = ?, z = ?, layer = ?, updated_at = ? WHERE id = ?")
-                            .bind(data.to_string()).bind(z).bind(&layer).bind(util::now()).bind(id).execute(&st.db).await;
-                    }
-                    st.hub.broadcast(cid, &json!({ "type": "items_bulk", "scene_id": scene_id, "items": items }), None).await;
-                }
-            }
-        }
-        "scene_update" => {
-            if !access::allows(role, access::TABLE_MANAGE_SCENE) {
-                st.hub.forbidden(cid, conn_id, "Сцены, сетку и слои меняет только мастер").await;
-                return;
-            }
-            let Some(scene_id) = msg["scene_id"].as_str() else { return };
-            let row = sqlx::query("SELECT grid, fog, name, layers, active_map_id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
-            let Some(row) = row else { return };
-            let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { util::text(&row, "grid") };
-            // Туман — маска на карту (scene.fog.by_map): валидируем, оставляем только существующие карты.
-            // Старый глобальный shapes сервер не принимает — клиент переносит его при загрузке.
-            let fog_out = if msg["fog"].is_object() {
-                // Туман войны — отдельная возможность: без неё поле просто игнорируется.
-                if !access::allows(role, access::TABLE_MANAGE_FOG) {
-                    st.hub.forbidden(cid, conn_id, "Туман войны меняет только мастер").await;
-                    None
-                } else {
-                    let map_ids: Vec<String> = sqlx::query("SELECT id FROM scene_items WHERE scene_id = ? AND layer = 'map'")
-                        .bind(scene_id).fetch_all(&st.db).await.ok()
-                        .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
-                        .unwrap_or_default();
-                    crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
-                }
-            } else {
-                None
-            };
-            let fog = fog_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "fog"));
-            let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
-            // Слои — часть сцены: валидный массив заменяет список, битый игнорируется.
-            let layers_out = msg.get("layers").and_then(crate::scenes::normalize_layers);
-            let layers = layers_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "layers"));
-            // Активная карта: null очищает, строка (до 32 символов) задаёт, иначе — без изменений.
-            let current_map = util::text(&row, "active_map_id");
-            let active_map_id: Option<String> = match msg.get("active_map_id") {
-                Some(v) if v.is_null() => None,
-                Some(v) => v.as_str().filter(|s| !s.is_empty() && s.len() <= 32).map(|s| s.to_string())
-                    .or_else(|| if current_map.is_empty() { None } else { Some(current_map.clone()) }),
-                None => if current_map.is_empty() { None } else { Some(current_map.clone()) },
-            };
-            let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ?, layers = ?, active_map_id = ? WHERE id = ?")
-                .bind(&grid).bind(&fog).bind(&name).bind(&layers).bind(&active_map_id).bind(scene_id).execute(&st.db).await;
-            let mut out = json!({ "type": "scene_update", "scene_id": scene_id });
-            for key in ["grid", "name"] {
-                if msg.get(key).is_some() { out[key] = msg[key].clone(); }
-            }
-            // Туман отдаём всегда — текущий из сцены, чтобы клиенты не теряли маску,
-            // когда scene_update приходит без поля fog (имя, сетка, слои).
-            out["fog"] = serde_json::from_str::<Value>(&fog).unwrap_or_else(|_| crate::scenes::default_fog());
-            if let Some(v) = layers_out { out["layers"] = v; }
-            if msg.get("active_map_id").is_some() { out["active_map_id"] = json!(active_map_id); }
-            st.hub.broadcast(cid, &out, None).await;
-        }
+        "item_upsert" | "item_delete" | "items_bulk" => handle_scene_items(st, cid, conn_id, user, role, t, &msg).await,
+        "scene_update" => handle_scene_update(st, cid, conn_id, role, &msg).await,
         "initiative" => {
             if is_gm {
                 st.hub.broadcast(cid, &msg, None).await;
@@ -522,6 +335,219 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
         }
         _ => {}
     }
+}
+
+/// Цвет костей по умолчанию — как на клиенте.
+const DEFAULT_DICE_COLOR: &str = "#a881e8";
+/// Цвет костей из сообщения: только #rrggbb, иначе цвет по умолчанию.
+fn dice_color(msg: &Value) -> &str {
+    msg["dice_color"].as_str().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())).unwrap_or(DEFAULT_DICE_COLOR)
+}
+
+/// request_id клиента (до 64 символов): по нему клиент сопоставляет ответ и ошибку броска.
+fn request_id_of(msg: &Value) -> String { msg["request_id"].as_str().unwrap_or("").chars().take(64).collect() }
+
+/// Видимость броска: скрытый (только мастера), приватный (только автор) или общий.
+/// Скрытым бросок считается, только если его запросил мастер.
+fn roll_visibility(msg: &Value, is_gm: bool) -> (bool, bool) {
+    let gm_only = msg["gm_only"].as_bool().unwrap_or(false) && is_gm;
+    let private = !gm_only && msg["visibility"].as_str() == Some("private");
+    (gm_only, private)
+}
+
+/// Сохранить сообщение в историю и разослать его адресатам. В базе приватные броски хранятся
+/// отдельным видом (private_roll/private_multi) и в общий чат не попадают, а подключённым вкладкам
+/// владельца уходит обычный вид (roll/multi).
+async fn save_chat_and_send(
+    st: &AppState, cid: &str, user: &auth::AuthUser,
+    visible_kind: &str, storage_kind: &str, payload: &Value, gm_only: bool, private: bool,
+) {
+    let Some(mut out) = save_chat(st, cid, user, storage_kind, payload).await else { return };
+    out["kind"] = json!(visible_kind);
+    if gm_only { st.hub.send_to_role(cid, "gm", &out).await; }
+    else if private { st.hub.send_to_user(cid, &user.id, &out).await; }
+    else { st.hub.broadcast(cid, &out, None).await; }
+}
+
+/// Чат: текст или бросок, начатый командой «/r ».
+async fn handle_chat(st: &AppState, cid: &str, user: &auth::AuthUser, msg: &Value) {
+    let text: String = msg["text"].as_str().unwrap_or("").chars().take(2000).collect::<String>().trim().to_string();
+    if text.is_empty() { return; }
+    let (kind, payload) = if let Some(rest) = text.strip_prefix("/r ").or_else(|| text.strip_prefix("/roll ")) {
+        match roll_expression(rest) {
+            Some(mut r) => { r["label"] = msg["label"].clone(); ("roll", r) }
+            None => ("text", json!({ "text": "Неверное выражение броска" })),
+        }
+    } else {
+        ("text", json!({ "text": text, "whisper": msg["whisper"] }))
+    };
+    if let Some(out) = save_chat(st, cid, user, kind, &payload).await {
+        st.hub.broadcast(cid, &out, None).await;
+    }
+}
+
+/// Карточка предмета/заклинания в чат (кнопки бросков рисует клиент).
+async fn handle_card(st: &AppState, cid: &str, user: &auth::AuthUser, msg: &Value) {
+    let mut card = msg["card"].clone();
+    if !card.is_object() { return; }
+    if let Some(o) = card.as_object_mut() { o.retain(|k, _| ["name", "kind", "desc", "actions", "meta", "icon", "asset_id", "owner", "item_ref"].contains(&k.as_str())); }
+    if let Some(out) = save_chat(st, cid, user, "card", &card).await {
+        st.hub.broadcast(cid, &out, None).await;
+    }
+}
+
+/// Один бросок: формула, ярлык, цвет и видимость.
+async fn handle_roll(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, is_gm: bool, msg: &Value) {
+    let Some(mut r) = roll_expression(msg["expr"].as_str().unwrap_or("d20")) else {
+        st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула или превышен лимит кубиков.").await; return;
+    };
+    let (gm_only, private) = roll_visibility(msg, is_gm);
+    r["label"] = msg["label"].clone();
+    r["gm_only"] = json!(gm_only);
+    r["visibility"] = json!(if private { "private" } else { "campaign" });
+    r["dice_color"] = json!(dice_color(msg));
+    r["request_id"] = json!(request_id_of(msg));
+    r["kind"] = msg["kind"].clone();
+    save_chat_and_send(st, cid, user, "roll", if private { "private_roll" } else { "roll" }, &r, gm_only, private).await;
+}
+
+/// Связка бросков одним сообщением: атака + урон (+ что угодно). Крит по атаке удваивает кости урона.
+async fn handle_multi_roll(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, is_gm: bool, msg: &Value) {
+    let Some(list) = msg["rolls"].as_array().filter(|l| !l.is_empty() && l.len() <= 8) else {
+        st.hub.roll_error(cid, conn_id, &msg["request_id"], "Связка должна содержать 1–8 бросков.").await; return;
+    };
+    let (gm_only, private) = roll_visibility(msg, is_gm);
+    let mut out_rolls = Vec::new();
+    let mut crit = false;
+    for r in list.iter().take(8) {
+        let kind = r["kind"].as_str().unwrap_or("other").to_string();
+        let mut expr = r["expr"].as_str().unwrap_or("").to_string();
+        let mut doubled = false;
+        if crit && kind == "damage" {
+            expr = double_dice(&expr);
+            doubled = true;
+        }
+        let Some(mut rolled) = roll_expression(&expr) else {
+            st.hub.roll_error(cid, conn_id, &msg["request_id"], "Неверная формула в связке. Вся связка отменена.").await; return;
+        };
+        let (nat20, nat1) = nat_d20(&rolled);
+        if kind == "attack" { crit = nat20; }
+        rolled["name"] = r["name"].clone();
+        rolled["kind"] = json!(kind);
+        rolled["dtype"] = r["dtype"].clone();
+        rolled["crit"] = json!(nat20 && kind != "damage" && kind != "heal");
+        rolled["fumble"] = json!(nat1 && kind != "damage" && kind != "heal");
+        rolled["doubled"] = json!(doubled);
+        rolled["base_expr"] = r["expr"].clone();
+        out_rolls.push(rolled);
+    }
+    if out_rolls.is_empty() { return; }
+    let payload = json!({ "label": msg["label"], "gm_only": gm_only, "visibility": if private { "private" } else { "campaign" }, "dice_color": dice_color(msg), "request_id": request_id_of(msg), "rolls": out_rolls });
+    save_chat_and_send(st, cid, user, "multi", if private { "private_multi" } else { "multi" }, &payload, gm_only, private).await;
+}
+
+/// Элементы сцены по WS: создание/правка (item_upsert), удаление (item_delete), раскладка (items_bulk).
+async fn handle_scene_items(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, role: &str, kind: &str, msg: &Value) {
+    let Some(scene_id) = msg["scene_id"].as_str() else { return };
+    let ok = sqlx::query("SELECT id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten().is_some();
+    if !ok {
+        return;
+    }
+    match kind {
+        "item_upsert" => item_upsert(st, cid, conn_id, scene_id, user, role, &msg["item"]).await,
+        "item_delete" => {
+            let Some(id) = msg["id"].as_str() else { return };
+            let row = sqlx::query("SELECT data, layer FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
+            if let Some(row) = row {
+                let data = util::json_value(&util::text(&row, "data"));
+                if access::item_write(role, &data, &user.id) == access::ItemWrite::Deny {
+                    st.hub.forbidden(cid, conn_id, "Нет прав удалять этот элемент стола").await;
+                    return;
+                }
+                let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
+                // Удалённая карта больше не активная: клиенты выберут оставшуюся (или ни одну).
+                if row.get::<String, _>("layer") == "map" {
+                    let _ = sqlx::query("UPDATE scenes SET active_map_id = NULL WHERE id = ? AND active_map_id = ?").bind(scene_id).bind(id).execute(&st.db).await;
+                }
+                st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
+            }
+        }
+        _ => {
+            if !access::allows(role, access::TABLE_MOVE_ANY_TOKEN) {
+                st.hub.forbidden(cid, conn_id, "Раскладку слоёв меняет только мастер").await;
+                return;
+            }
+            let items = msg["items"].as_array().cloned().unwrap_or_default();
+            for it in &items {
+                let Some(id) = it["id"].as_str() else { continue };
+                let row = sqlx::query("SELECT layer, z, data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
+                let Some(row) = row else { continue };
+                let mut data = util::json_value(&util::text(&row, "data"));
+                if let (Some(dst), Some(src)) = (data.as_object_mut(), it["data"].as_object()) {
+                    for (k, v) in src { if dst.get("managed_loot") != Some(&json!(true)) || PLAYER_FIELDS.contains(&k.as_str()) { dst.insert(k.clone(), v.clone()); } }
+                }
+                let z = it["z"].as_i64().unwrap_or_else(|| row.get::<i64, _>("z"));
+                let layer = it["layer"].as_str().map(|s| s.to_string()).unwrap_or_else(|| row.get::<String, _>("layer"));
+                let _ = sqlx::query("UPDATE scene_items SET data = ?, z = ?, layer = ?, updated_at = ? WHERE id = ?")
+                    .bind(data.to_string()).bind(z).bind(&layer).bind(util::now()).bind(id).execute(&st.db).await;
+            }
+            st.hub.broadcast(cid, &json!({ "type": "items_bulk", "scene_id": scene_id, "items": items }), None).await;
+        }
+    }
+}
+
+/// Сцена по WS: сетка, имя, туман войны, слои и активная карта.
+async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str, msg: &Value) {
+    if !access::allows(role, access::TABLE_MANAGE_SCENE) {
+        st.hub.forbidden(cid, conn_id, "Сцены, сетку и слои меняет только мастер").await;
+        return;
+    }
+    let Some(scene_id) = msg["scene_id"].as_str() else { return };
+    let row = sqlx::query("SELECT grid, fog, name, layers, active_map_id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
+    let Some(row) = row else { return };
+    let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { util::text(&row, "grid") };
+    // Туман — маска на карту (scene.fog.by_map): валидируем, оставляем только существующие карты.
+    // Старый глобальный shapes сервер не принимает — клиент переносит его при загрузке.
+    let fog_out = if msg["fog"].is_object() {
+        // Туман войны — отдельная возможность: без неё поле просто игнорируется.
+        if !access::allows(role, access::TABLE_MANAGE_FOG) {
+            st.hub.forbidden(cid, conn_id, "Туман войны меняет только мастер").await;
+            None
+        } else {
+            let map_ids: Vec<String> = sqlx::query("SELECT id FROM scene_items WHERE scene_id = ? AND layer = 'map'")
+                .bind(scene_id).fetch_all(&st.db).await.ok()
+                .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
+                .unwrap_or_default();
+            crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
+        }
+    } else {
+        None
+    };
+    let fog = fog_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "fog"));
+    let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
+    // Слои — часть сцены: валидный массив заменяет список, битый игнорируется.
+    let layers_out = msg.get("layers").and_then(crate::scenes::normalize_layers);
+    let layers = layers_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "layers"));
+    // Активная карта: null очищает, строка (до 32 символов) задаёт, иначе — без изменений.
+    let current_map = util::text(&row, "active_map_id");
+    let active_map_id: Option<String> = match msg.get("active_map_id") {
+        Some(v) if v.is_null() => None,
+        Some(v) => v.as_str().filter(|s| util::short_id(s)).map(|s| s.to_string())
+            .or_else(|| if current_map.is_empty() { None } else { Some(current_map.clone()) }),
+        None => if current_map.is_empty() { None } else { Some(current_map.clone()) },
+    };
+    let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ?, layers = ?, active_map_id = ? WHERE id = ?")
+        .bind(&grid).bind(&fog).bind(&name).bind(&layers).bind(&active_map_id).bind(scene_id).execute(&st.db).await;
+    let mut out = json!({ "type": "scene_update", "scene_id": scene_id });
+    for key in ["grid", "name"] {
+        if msg.get(key).is_some() { out[key] = msg[key].clone(); }
+    }
+    // Туман отдаём всегда — текущий из сцены, чтобы клиенты не теряли маску,
+    // когда scene_update приходит без поля fog (имя, сетка, слои).
+    out["fog"] = serde_json::from_str::<Value>(&fog).unwrap_or_else(|_| crate::scenes::default_fog());
+    if let Some(v) = layers_out { out["layers"] = v; }
+    if msg.get("active_map_id").is_some() { out["active_map_id"] = json!(active_map_id); }
+    st.hub.broadcast(cid, &out, None).await;
 }
 
 const PLAYER_FIELDS: &[&str] = &["x", "y", "rotation", "hp", "conditions", "attachments", "dead"];
@@ -586,7 +612,7 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
             if data.get("owner_id").map(|v| v.is_null()).unwrap_or(true) {
                 data["owner_id"] = json!(user.id);
             }
-            let id = id.filter(|s| !s.is_empty() && s.len() <= 32).unwrap_or_else(util::uid);
+            let id = id.filter(|s| util::short_id(s)).unwrap_or_else(util::uid);
             let z = z_in.unwrap_or(0);
             let _ = sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
                 .bind(&id).bind(scene_id).bind(&layer).bind(z).bind(data.to_string()).bind(util::now()).execute(&st.db).await;

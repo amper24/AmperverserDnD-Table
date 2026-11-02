@@ -70,8 +70,8 @@ fn clean_pack_i18n(v: &Value, locale: &str) -> ApiResult<Option<String>> {
             for (lang, t) in m {
                 let Some(l) = i18n::norm_lang(lang) else { return Err(AppError::bad(format!("Язык «{lang}» не поддерживается (доступны: ru, en)"))) };
                 if l == locale { continue; }
-                let name = util::truncate(t.get("name").and_then(|x| x.as_str()).unwrap_or("").trim(), 128);
-                let description = util::truncate(t.get("description").and_then(|x| x.as_str()).unwrap_or("").trim(), 4000);
+                let name = util::trim_to(t.get("name").and_then(|x| x.as_str()).unwrap_or(""), 128);
+                let description = util::trim_to(t.get("description").and_then(|x| x.as_str()).unwrap_or(""), 4000);
                 if name.is_empty() && description.is_empty() { continue; }
                 out.insert(l.to_string(), json!({ "name": name, "description": description }));
             }
@@ -150,6 +150,15 @@ async fn stats(st: &AppState, pid: &str, uid: &str) -> ApiResult<Value> {
     Ok(json!({ "entries": total, "by_category": by_cat, "subscribers": subs, "subscribed": r.get::<i64, _>("subscribed") > 0, "editor": r.get::<i64, _>("editor") > 0 }))
 }
 
+/// Сводка набора для карточки: счётчики, имя владельца и роль пользователя.
+async fn stats_with_owner(st: &AppState, pid: &str, owner_id: &str, uid: &str) -> ApiResult<Value> {
+    let mut extra = stats(st, pid, uid).await?;
+    let owner = sqlx::query("SELECT name FROM users WHERE id = ?").bind(owner_id).fetch_optional(&st.db).await?;
+    extra["owner_name"] = json!(owner.map(|o| o.get::<String, _>("name")).unwrap_or_default());
+    extra["mine"] = json!(owner_id == uid);
+    Ok(extra)
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery { pub scope: Option<String>, pub q: Option<String>, pub tag: Option<String>, pub sort: Option<String> }
 
@@ -193,7 +202,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Pac
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
     sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, cover_asset_id, tags, edition, folders, locale, i18n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)")
-        .bind(&id).bind(&user.id).bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(util::now()).bind(util::now())
+        .bind(&id).bind(&user.id).bind(util::trim_to(&body.name, 128)).bind(&body.description).bind(body.is_public as i64).bind(util::now()).bind(util::now())
         .bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr).execute(&st.db).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": 0, "mine": true, "subscribers": 0 }))))
 }
@@ -201,10 +210,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Pac
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
     // can_read уже прочитал строку набора — второй SELECT на неё не нужен.
     let r = can_read(&st, &pid, &user.id).await?;
-    let mut extra = stats(&st, &pid, &user.id).await?;
-    let owner = sqlx::query("SELECT name FROM users WHERE id = ?").bind(r.get::<String, _>("owner_id")).fetch_optional(&st.db).await?;
-    extra["owner_name"] = json!(owner.map(|o| o.get::<String, _>("name")).unwrap_or_default());
-    extra["mine"] = json!(r.get::<String, _>("owner_id") == user.id);
+    let extra = stats_with_owner(&st, &pid, &r.get::<String, _>("owner_id"), &user.id).await?;
     Ok(Json(pack_json(&r, extra)))
 }
 
@@ -218,7 +224,7 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path(pid): Path<Stri
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
     sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ?, cover_asset_id = ?, tags = ?, edition = ?, updated_at = ?, locale = ?, i18n = ? WHERE id = ?")
-        .bind(util::truncate(body.name.trim(), 128)).bind(&body.description).bind(body.is_public as i64).bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(util::now())
+        .bind(util::trim_to(&body.name, 128)).bind(&body.description).bind(body.is_public as i64).bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(util::now())
         .bind(locale).bind(&tr).bind(&pid).execute(&st.db).await?;
     if body.is_public && !was_public {
         sqlx::query("UPDATE packs SET published_at = ? WHERE id = ?").bind(util::now()).bind(&pid).execute(&st.db).await?;
@@ -243,7 +249,7 @@ pub struct FoldersIn { pub folders: Vec<String> }
 
 async fn set_folders(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>, Json(body): Json<FoldersIn>) -> ApiResult<Json<Value>> {
     require_editor(&st, &pid, &user).await?;
-    let folders: Vec<String> = body.folders.iter().map(|f| util::truncate(f.trim(), 48)).filter(|f| !f.is_empty()).take(64).collect();
+    let folders: Vec<String> = body.folders.iter().map(|f| util::trim_to(f, 48)).filter(|f| !f.is_empty()).take(64).collect();
     sqlx::query("UPDATE packs SET folders = ?, updated_at = ? WHERE id = ?").bind(json!(folders).to_string()).bind(util::now()).bind(&pid).execute(&st.db).await?;
     Ok(Json(json!({ "ok": true, "folders": folders })))
 }
@@ -276,21 +282,24 @@ async fn by_code(st: &AppState, code: &str) -> ApiResult<sqlx::any::AnyRow> {
 async fn preview_by_code(State(st): State<AppState>, user: AuthUser, Path(code): Path<String>) -> ApiResult<Json<Value>> {
     let r = by_code(&st, &code).await?;
     let pid = r.get::<String, _>("id");
-    let mut extra = stats(&st, &pid, &user.id).await?;
-    let owner = sqlx::query("SELECT name FROM users WHERE id = ?").bind(r.get::<String, _>("owner_id")).fetch_optional(&st.db).await?;
-    extra["owner_name"] = json!(owner.map(|o| o.get::<String, _>("name")).unwrap_or_default());
-    extra["mine"] = json!(r.get::<String, _>("owner_id") == user.id);
+    let extra = stats_with_owner(&st, &pid, &r.get::<String, _>("owner_id"), &user.id).await?;
     let mut v = pack_json(&r, extra);
     v["share_code"] = Value::Null;
     Ok(Json(v))
+}
+
+/// Подписка на набор: строка уникальна, поэтому прежняя запись заменяется.
+async fn upsert_subscription(st: &AppState, pid: &str, uid: &str) -> ApiResult<()> {
+    sqlx::query("DELETE FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?").bind(pid).bind(uid).execute(&st.db).await?;
+    sqlx::query("INSERT INTO pack_subscriptions (pack_id, user_id, created_at) VALUES (?, ?, ?)").bind(pid).bind(uid).bind(util::now()).execute(&st.db).await?;
+    Ok(())
 }
 
 async fn join_by_code(State(st): State<AppState>, user: AuthUser, Path(code): Path<String>) -> ApiResult<Json<Value>> {
     let r = by_code(&st, &code).await?;
     let pid = r.get::<String, _>("id");
     if r.get::<String, _>("owner_id") != user.id {
-        sqlx::query("DELETE FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?").bind(&pid).bind(&user.id).execute(&st.db).await?;
-        sqlx::query("INSERT INTO pack_subscriptions (pack_id, user_id, created_at) VALUES (?, ?, ?)").bind(&pid).bind(&user.id).bind(util::now()).execute(&st.db).await?;
+        upsert_subscription(&st, &pid, &user.id).await?;
     }
     Ok(Json(json!({ "ok": true, "id": pid, "name": r.get::<String, _>("name") })))
 }
@@ -298,8 +307,7 @@ async fn join_by_code(State(st): State<AppState>, user: AuthUser, Path(code): Pa
 // ---- подписка на публичный набор ----
 async fn subscribe(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
     can_read(&st, &pid, &user.id).await?;
-    sqlx::query("DELETE FROM pack_subscriptions WHERE pack_id = ? AND user_id = ?").bind(&pid).bind(&user.id).execute(&st.db).await?;
-    sqlx::query("INSERT INTO pack_subscriptions (pack_id, user_id, created_at) VALUES (?, ?, ?)").bind(&pid).bind(&user.id).bind(util::now()).execute(&st.db).await?;
+    upsert_subscription(&st, &pid, &user.id).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -397,7 +405,7 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
         return Ok(Json(json!({ "ok": true, "id": pid, "added": n })));
     }
     let id = util::uid();
-    let name = util::truncate(body.name.as_deref().unwrap_or("Импортированный набор").trim(), 128);
+    let name = util::trim_to(body.name.as_deref().unwrap_or("Импортированный набор"), 128);
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
     sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)")

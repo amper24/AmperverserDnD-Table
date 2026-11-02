@@ -4,15 +4,14 @@ use std::collections::HashSet;
 use crate::{AppError, error::ApiResult, inventory, util};
 // `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
 const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive","setvar","hands"];
-fn bad(s: &str) -> AppError { AppError::bad(s) }
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
 fn num(v: &Value, k: &str) -> i64 { v[k].as_i64().unwrap_or(0) }
-fn bounded(v: &Value, k: &str, low: i64, high: i64) -> ApiResult<i64> { v[k].as_i64().filter(|n| (low..=high).contains(n)).ok_or_else(|| bad("Некорректное число в блоке")) }
+fn bounded(v: &Value, k: &str, low: i64, high: i64) -> ApiResult<i64> { v[k].as_i64().filter(|n| (low..=high).contains(n)).ok_or_else(|| AppError::bad("Некорректное число в блоке")) }
 fn field_ok(s: &str) -> bool { ["speed","initiative_bonus","currency.gp","currency.sp","hp.max","abilities.str","abilities.dex","abilities.con","abilities.int","abilities.wis","abilities.cha"].contains(&s) }
 fn pointer(s: &str) -> String { format!("/{}", s.replace('.', "/")) }
 pub fn validate(m: &Value) -> ApiResult<()> { validate_nested(m, 0) }
 fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
-    if depth > 4 { return Err(bad("Слишком глубокая вложенность механик")); }
+    if depth > 4 { return Err(AppError::bad("Слишком глубокая вложенность механик")); }
     match m["version"].as_i64() {
         Some(2) => {
             crate::mechanics_graph::validate(m)?;
@@ -21,7 +20,7 @@ fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
             if !crate::mechanics_graph::plan_checks_apply(m) { return Ok(()); }
             validate_plan(&crate::mechanics_graph::to_v1(m), depth)
         }
-        _ => Err(bad("Механики должны быть графом версии 2")),
+        _ => Err(AppError::bad("Механики должны быть графом версии 2")),
     }
 }
 /// Выбор «либо / либо» при создании персонажа: `data.choices` расы, класса или предыстории.
@@ -29,43 +28,43 @@ fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
 const CHOICE_TYPES: &[&str] = &["ability","skill","language","feature","proficiency"];
 const ABILITIES: &[&str] = &["str","dex","con","int","wis","cha"];
 pub fn validate_choices(v: &Value) -> ApiResult<()> {
-    let groups = v.as_array().filter(|a| a.len() <= 12).ok_or_else(|| bad("Некорректные варианты выбора"))?;
+    let groups = v.as_array().filter(|a| a.len() <= 12).ok_or_else(|| AppError::bad("Некорректные варианты выбора"))?;
     let mut gids = HashSet::new();
     for g in groups {
         let gid = text(g, "id");
-        if gid.is_empty() || gid.len() > 64 || !gids.insert(gid) { return Err(bad("У каждой группы выбора должен быть свой код")); }
-        if text(g, "name").trim().is_empty() || text(g, "name").chars().count() > 120 { return Err(bad("Название группы выбора: до 120 символов")); }
+        if gid.is_empty() || gid.len() > 64 || !gids.insert(gid) { return Err(AppError::bad("У каждой группы выбора должен быть свой код")); }
+        if text(g, "name").trim().is_empty() || text(g, "name").chars().count() > 120 { return Err(AppError::bad("Название группы выбора: до 120 символов")); }
         let kind = text(g, "type");
-        if !CHOICE_TYPES.contains(&kind) { return Err(bad("Неизвестный тип варианта выбора")); }
-        let opts = g["options"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("В группе выбора от 1 до 18 вариантов"))?;
+        if !CHOICE_TYPES.contains(&kind) { return Err(AppError::bad("Неизвестный тип варианта выбора")); }
+        let opts = g["options"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| AppError::bad("В группе выбора от 1 до 18 вариантов"))?;
         let count = g["count"].as_i64().unwrap_or(1);
-        if !(0..=(opts.len() as i64)).contains(&count) { return Err(bad("Сколько вариантов выбрать: от 0 до числа вариантов")); }
+        if !(0..=(opts.len() as i64)).contains(&count) { return Err(AppError::bad("Сколько вариантов выбрать: от 0 до числа вариантов")); }
         let mut oids = HashSet::new();
         for o in opts {
             let oid = text(o, "id");
-            if oid.is_empty() || oid.len() > 64 || !oids.insert(oid) { return Err(bad("У каждого варианта должен быть свой код")); }
-            if text(o, "name").trim().is_empty() || text(o, "name").chars().count() > 120 { return Err(bad("Название варианта: до 120 символов")); }
+            if oid.is_empty() || oid.len() > 64 || !oids.insert(oid) { return Err(AppError::bad("У каждого варианта должен быть свой код")); }
+            if text(o, "name").trim().is_empty() || text(o, "name").chars().count() > 120 { return Err(AppError::bad("Название варианта: до 120 символов")); }
             match kind {
                 "ability" => {
-                    let bonus = o["value"].as_object().filter(|m| !m.is_empty() && m.len() <= 6).ok_or_else(|| bad("Бонус характеристики задаётся объектом"))?;
-                    for (k, n) in bonus { if !ABILITIES.contains(&k.as_str()) || n.as_i64().filter(|n| (-5..=5).contains(n)).is_none() { return Err(bad("Бонус характеристики: целое от -5 до +5")); } }
+                    let bonus = o["value"].as_object().filter(|m| !m.is_empty() && m.len() <= 6).ok_or_else(|| AppError::bad("Бонус характеристики задаётся объектом"))?;
+                    for (k, n) in bonus { if !ABILITIES.contains(&k.as_str()) || n.as_i64().filter(|n| (-5..=5).contains(n)).is_none() { return Err(AppError::bad("Бонус характеристики: целое от -5 до +5")); } }
                 }
                 "skill" => {
-                    let skills = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("Навыки варианта задаются списком"))?;
-                    if !skills.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 40)) { return Err(bad("Некорректный навык в варианте выбора")); }
+                    let skills = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| AppError::bad("Навыки варианта задаются списком"))?;
+                    if !skills.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 40)) { return Err(AppError::bad("Некорректный навык в варианте выбора")); }
                 }
                 "language" => {
-                    let langs = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| bad("Языки варианта задаются списком"))?;
-                    if !langs.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 80)) { return Err(bad("Некорректный язык в варианте выбора")); }
+                    let langs = o["value"].as_array().filter(|a| !a.is_empty() && a.len() <= 18).ok_or_else(|| AppError::bad("Языки варианта задаются списком"))?;
+                    if !langs.iter().all(|s| s.as_str().is_some_and(|s| !s.is_empty() && s.chars().count() <= 80)) { return Err(AppError::bad("Некорректный язык в варианте выбора")); }
                 }
                 "feature" => {
                     let t = text(&o["value"], "text");
-                    if t.trim().is_empty() || t.chars().count() > 4000 { return Err(bad("Описание умения варианта: до 4000 символов")); }
+                    if t.trim().is_empty() || t.chars().count() > 4000 { return Err(AppError::bad("Описание умения варианта: до 4000 символов")); }
                     if !o["value"]["mechanics"].is_null() { validate_nested(&o["value"]["mechanics"], 1)?; }
                 }
                 _ => {
                     let s = o["value"].as_str().unwrap_or("");
-                    if s.trim().is_empty() || s.chars().count() > 200 { return Err(bad("Описание владения: до 200 символов")); }
+                    if s.trim().is_empty() || s.chars().count() > 200 { return Err(AppError::bad("Описание владения: до 200 символов")); }
                 }
             }
         }
@@ -73,71 +72,68 @@ pub fn validate_choices(v: &Value) -> ApiResult<()> {
     Ok(())
 }
 fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
-    if depth>4 || m.to_string().len()>1_000_000 || m["version"]!=1 { return Err(bad("Внутренний план механики некорректен")); }
-    let ps=m["programs"].as_array().filter(|a|a.len()<=256).ok_or_else(||bad("Некорректные действия"))?;
+    if depth>4 || m.to_string().len()>1_000_000 || m["version"]!=1 { return Err(AppError::bad("Внутренний план механики некорректен")); }
+    let ps=m["programs"].as_array().filter(|a|a.len()<=256).ok_or_else(||AppError::bad("Некорректные действия"))?;
     let mut ids=HashSet::new();
     for p in ps {
-        if text(p,"id").is_empty()||text(p,"id").len()>100||!ids.insert(text(p,"id"))||text(p,"name").trim().is_empty()||!["use","passive"].contains(&text(p,"trigger")) { return Err(bad("Некорректное имя, ID или триггер действия")); }
-        let bs=p["blocks"].as_array().filter(|a|a.len()<=32).ok_or_else(||bad("В действии не более 32 блоков"))?;
-        for (i,b) in bs.iter().enumerate() {if b["kind"]=="consume"&&b["enabled"]!=false&&b["trigger"]=="attack"&&!bs[i+1..].iter().any(|x|x["kind"]=="attack"&&x["enabled"]!=false){return Err(bad("Поставьте расход за атаку перед блоком атаки"));}}
+        if text(p,"id").is_empty()||text(p,"id").len()>100||!ids.insert(text(p,"id"))||text(p,"name").trim().is_empty()||!["use","passive"].contains(&text(p,"trigger")) { return Err(AppError::bad("Некорректное имя, ID или триггер действия")); }
+        let bs=p["blocks"].as_array().filter(|a|a.len()<=32).ok_or_else(||AppError::bad("В действии не более 32 блоков"))?;
+        for (i,b) in bs.iter().enumerate() {if b["kind"]=="consume"&&b["enabled"]!=false&&b["trigger"]=="attack"&&!bs[i+1..].iter().any(|x|x["kind"]=="attack"&&x["enabled"]!=false){return Err(AppError::bad("Поставьте расход за атаку перед блоком атаки"));}}
         let mut bids=HashSet::new(); let mut gate=false;
         for b in bs {
             let kind=text(b,"kind");
-            if !KINDS.contains(&kind)||text(b,"id").is_empty()||!bids.insert(text(b,"id")) { return Err(bad("Неизвестный блок или повторяющийся ID")); }
+            if !KINDS.contains(&kind)||text(b,"id").is_empty()||!bids.insert(text(b,"id")) { return Err(AppError::bad("Неизвестный блок или повторяющийся ID")); }
             if b["enabled"]==false { continue; }
-            if !["","always","hit","miss"].contains(&text(b,"when")) || (["hit","miss"].contains(&text(b,"when"))&&!gate) { return Err(bad("Условному блоку нужна предшествующая атака или спасбросок")); }
+            if !["","always","hit","miss"].contains(&text(b,"when")) || (["hit","miss"].contains(&text(b,"when"))&&!gate) { return Err(AppError::bad("Условному блоку нужна предшествующая атака или спасбросок")); }
             if ["attack"].contains(&kind) { gate=true; }
-            if !["","self","target"].contains(&text(b,"target")) { return Err(bad("Неизвестная цель")); }
+            if !["","self","target"].contains(&text(b,"target")) { return Err(AppError::bad("Неизвестная цель")); }
             if ["attack","damage","heal","temp_hp","roll"].contains(&kind) { formula(b)?; }
             if ["damage","heal"].contains(&kind) && b.get("upcast").is_some() {
                 let upcast=&b["upcast"];
-                if !upcast.is_object() || bounded(upcast,"count",0,100).is_err() || bounded(upcast,"sides",1,1000).is_err() { return Err(bad("Повышение круга: количество костей 0–100 и грани 1–1000")); }
+                if !upcast.is_object() || bounded(upcast,"count",0,100).is_err() || bounded(upcast,"sides",1,1000).is_err() { return Err(AppError::bad("Повышение круга: количество костей 0–100 и грани 1–1000")); }
             }
             match kind {
-                "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",0,9)?; } }
-                "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_nested(&b["item"]["mechanics"], depth + 1)?; } }
-                "adjust" => { if !field_ok(text(b,"field")) { return Err(bad("Недоступный показатель")); } bounded(b,"amount",-10000,10000)?; }
-                "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
-                "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(bad("КД цели: целое от 1 до 40")); } } }
-                "condition" => { let operation=text(b,"operation"); if !["add","remove","concentration"].contains(&operation)||(operation!="concentration"&&text(b,"condition").trim().is_empty())||text(b,"condition").len()>200 { return Err(bad("Неверное состояние")); } }
-                "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(bad("Параметр доступен только в пассивной программе")); } }
+                "consume" => { bounded(b,"amount",1,10000)?; if !["quantity","charges","slot","uses"].contains(&text(b,"resource"))||!["self","item","tag"].contains(&text(b,"source"))||!["use","attack"].contains(&text(b,"trigger")) { return Err(AppError::bad("Неизвестный способ расхода")); } if b["source"]=="item"&&text(b,"item_uid").is_empty()||b["source"]=="tag"&&text(b,"tag").is_empty() { return Err(AppError::bad("Не задан источник расхода")); } if b["resource"]=="slot" { bounded(b,"slot_level",0,9)?; } }
+                "grant_item" => { bounded(b,"amount",1,10000)?; if !b["item"].is_object()||text(&b["item"],"name").trim().is_empty() { return Err(AppError::bad("Нет шаблона выдаваемого предмета")); } if !b["item"]["mechanics"].is_null() { validate_nested(&b["item"]["mechanics"], depth + 1)?; } }
+                "adjust" => { if !field_ok(text(b,"field")) { return Err(AppError::bad("Недоступный показатель")); } bounded(b,"amount",-10000,10000)?; }
+                "require" => { if !field_ok(text(b,"field"))&&b["field"]!="hp.current" { return Err(AppError::bad("Недоступное условие")); } bounded(b,"minimum",-1000000,1000000)?; }
+                "attack" => { if let Some(dc)=b["dc"].as_i64() { if !(0..=40).contains(&dc) { return Err(AppError::bad("КД цели: целое от 1 до 40")); } } }
+                "condition" => { let operation=text(b,"operation"); if !["add","remove","concentration"].contains(&operation)||(operation!="concentration"&&text(b,"condition").trim().is_empty())||text(b,"condition").len()>200 { return Err(AppError::bad("Неверное состояние")); } }
+                "passive" => { if text(p,"trigger")!="passive"||!["speed","hit_die","spellcasting","saves","skills","languages","armor","weapons","unarmored_defense","asi.str","asi.dex","asi.con","asi.int","asi.wis","asi.cha"].contains(&text(b,"field")) { return Err(AppError::bad("Параметр доступен только в пассивной программе")); } }
                 // Руки: add/remove — на столько extra_hands, set — общее число рук (2 = main+off).
                 "hands" => {
-                    if !["add", "remove", "set"].contains(&text(b,"operation")) { return Err(bad("Руки: операция add, remove или set")); }
+                    if !["add", "remove", "set"].contains(&text(b,"operation")) { return Err(AppError::bad("Руки: операция add, remove или set")); }
                     bounded(b,"count",1,6)?;
                 }
                 // Переменная: имя и область те же, что у узлов action.setvar/data.var; значение —
                 // число или (в рантайме) провод value_src.
                 "setvar" => {
-                    if !crate::mechanics_graph::valid_var_name(text(b,"name")) { return Err(bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
-                    if !crate::mechanics_graph::valid_var_scope(text(b,"scope")) { return Err(bad("Переменная: область action или sheet.")); }
-                    if let Some(value) = b.get("value") { if !value.as_f64().is_some_and(f64::is_finite) { return Err(bad("Переменная: значение должно быть конечным числом.")); } }
-                    if let Some(source) = b.get("value_src") { if !source.as_str().is_some_and(|source| !source.is_empty() && source.chars().count() <= 100) { return Err(bad("Переменная: некорректный источник значения.")); } }
+                    if !crate::mechanics_graph::valid_var_name(text(b,"name")) { return Err(AppError::bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
+                    if !crate::mechanics_graph::valid_var_scope(text(b,"scope")) { return Err(AppError::bad("Переменная: область action или sheet.")); }
+                    if let Some(value) = b.get("value") { if !value.as_f64().is_some_and(f64::is_finite) { return Err(AppError::bad("Переменная: значение должно быть конечным числом.")); } }
+                    if let Some(source) = b.get("value_src") { if !source.as_str().is_some_and(|source| !source.is_empty() && source.chars().count() <= 100) { return Err(AppError::bad("Переменная: некорректный источник значения.")); } }
                 }
                 _ => {}
             }
-            if text(p,"trigger")=="passive"&&!["passive","manual"].contains(&kind) { return Err(bad("Пассивная программа не может расходовать или выдавать ресурсы")); }
+            if text(p,"trigger")=="passive"&&!["passive","manual"].contains(&kind) { return Err(AppError::bad("Пассивная программа не может расходовать или выдавать ресурсы")); }
         }
     }
     Ok(())
 }
 fn formula(b: &Value) -> ApiResult<String> {
     let d=&b["dice"];
-    if let Some(s)=d["advanced"].as_str().filter(|s|!s.is_empty()) { if s.len()>128 { return Err(bad("Формула слишком длинная")); } return Ok(s.into()); }
+    if let Some(s)=d["advanced"].as_str().filter(|s|!s.is_empty()) { if s.len()>128 { return Err(AppError::bad("Формула слишком длинная")); } return Ok(s.into()); }
     let count=bounded(d,"count",0,100)?; let sides=bounded(d,"sides",1,1000)?; let bonus=bounded(d,"bonus",-1_000_000,1_000_000)?;
-    let stat=text(d,"stat"); if !["","str","dex","con","int","wis","cha","best","prof","atk","atk_str","atk_dex","spell","spell_mod","level","dc"].contains(&stat) { return Err(bad("Неизвестный модификатор")); }
+    let stat=text(d,"stat"); if !["","str","dex","con","int","wis","cha","best","prof","atk","atk_str","atk_dex","spell","spell_mod","level","dc"].contains(&stat) { return Err(AppError::bad("Неизвестный модификатор")); }
     // Каноничный вид формулы — как Mechanics.expression: нулевой бонус не пишется, «1d20+@atk_str»,
     // «2d8+@spell_mod», «@dex», «5». Иначе игрок видел «1d20+0+@atk_str».
-    let mut out=if count>0{format!("{count}d{sides}")}else{String::new()};
-    if bonus!=0 { out.push_str(&if out.is_empty(){bonus.to_string()}else{format!("{bonus:+}")}); }
-    if !stat.is_empty() { if out.is_empty() { out.push('@'); out.push_str(&stat); } else { out.push_str(&format!("+@{stat}")); } }
-    if out.is_empty() { out="0".into(); }
-    Ok(out)
+    // Сборка общая с узлом «Бросок» графа (mechanics_graph::dice_formula_text).
+    Ok(crate::mechanics_graph::dice_formula_text(count, sides, bonus, stat))
 }
 /// Ячейка нужного круга: обычная, а если её нет — ячейка Договора того же круга.
 /// Возвращает `(имя для ответа, остаток)`.
 fn take_slot(s: &mut Value, level: i64, need: i64) -> ApiResult<(String, i64)> {
-    if !(1..=9).contains(&level) { return Err(bad("Укажите круг ячейки")); }
+    if !(1..=9).contains(&level) { return Err(AppError::bad("Укажите круг ячейки")); }
     let key = level.to_string();
     let max = s["spells"]["slots"][&key]["max"].as_i64().unwrap_or(0);
     let used = s["spells"]["slots"][&key]["used"].as_i64().unwrap_or(0);
@@ -154,7 +150,7 @@ fn take_slot(s: &mut Value, level: i64, need: i64) -> ApiResult<(String, i64)> {
             return Ok((format!("Ячейки Договора {level} круга"), pact_max - pact_used - need));
         }
     }
-    Err(bad("Недостаточно ячеек. Цепочка отменена"))
+    Err(AppError::bad("Недостаточно ячеек. Цепочка отменена"))
 }
 fn slot_free(s: &Value, level: i64) -> bool {
     let key = level.to_string();
@@ -178,11 +174,11 @@ fn spend(s: &mut Value, doc: &Value, category: &str, b: &Value, times: i64, spen
             let (name,remaining)=take_slot(s,level,need)?;
             spent.push(json!({"name":name,"amount":need,"remaining":remaining,"resource":resource,"slot_level":level}));return Ok(());
         }
-        if category!="feature" { return Err(bad("Использования доступны только умению")); }
-        let idx=s["features"].as_array().and_then(|a|a.iter().position(|v|v["uid"]==doc["uid"])).ok_or_else(||bad("Умение не найдено"))?; let path=format!("/features/{idx}/uses/cur");
-        let v=s.pointer_mut(&path).ok_or_else(||bad("Ресурс не настроен"))?; let have=v.as_i64().filter(|v|(0..=10000).contains(v)).ok_or_else(||bad("Неверный запас использований"))?; if have<need { return Err(bad("Недостаточно ресурса. Цепочка отменена")); } *v=json!(have-need);spent.push(json!({"name":if resource=="slot"{"Ячейки"}else{"Использования"},"amount":need,"remaining":have-need,"resource":resource}));return Ok(());
+        if category!="feature" { return Err(AppError::bad("Использования доступны только умению")); }
+        let idx=s["features"].as_array().and_then(|a|a.iter().position(|v|v["uid"]==doc["uid"])).ok_or_else(||AppError::bad("Умение не найдено"))?; let path=format!("/features/{idx}/uses/cur");
+        let v=s.pointer_mut(&path).ok_or_else(||AppError::bad("Ресурс не настроен"))?; let have=v.as_i64().filter(|v|(0..=10000).contains(v)).ok_or_else(||AppError::bad("Неверный запас использований"))?; if have<need { return Err(AppError::bad("Недостаточно ресурса. Цепочка отменена")); } *v=json!(have-need);spent.push(json!({"name":if resource=="slot"{"Ячейки"}else{"Использования"},"amount":need,"remaining":have-need,"resource":resource}));return Ok(());
     }
-    let inv=s["inventory"].as_array_mut().ok_or_else(||bad("Нет инвентаря"))?;
+    let inv=s["inventory"].as_array_mut().ok_or_else(||AppError::bad("Нет инвентаря"))?;
     for it in inv {
         let matches=match text(b,"source") { "self"=>category=="item"&&it["uid"]==doc["uid"],"item"=>it["uid"]==b["item_uid"],"tag"=>it["ammo_tag"]==b["tag"]||it["tags"].as_array().is_some_and(|t|t.contains(&b["tag"])),_=>false };
         if !matches||num(it,"qty")<=0||need==0 { continue; }
@@ -190,17 +186,17 @@ fn spend(s: &mut Value, doc: &Value, category: &str, b: &Value, times: i64, spen
         if resource=="charges" {it["charges"]["cur"]=json!(have-n);}else{it["qty"]=json!(have-n);if have==n{inventory::unequip(it);}}
         spent.push(json!({"uid":it["uid"],"name":it["name"],"amount":n,"remaining":have-n,"resource":resource}));need-=n;
     }
-    if need>0 { return Err(bad("Недостаточно предметов / зарядов. Цепочка отменена")); } Ok(())
+    if need>0 { return Err(AppError::bad("Недостаточно предметов / зарядов. Цепочка отменена")); } Ok(())
 }
 fn signature(it: &Value) -> Value { let mut v=it.clone();if let Some(o)=v.as_object_mut(){for k in ["uid","qty","equipped","hand_slot","attuned"] {o.remove(k);}}v }
 fn grant(s: &mut Value, b: &Value) -> ApiResult<()> {
     let mut it=b["item"].clone(); it["uid"]=json!(util::uid());it["qty"]=b["amount"].clone();inventory::unequip(&mut it);it["attuned"]=json!(false);
     let mut tmp=json!({"inventory":[it]});inventory::normalize(&mut tmp)?;let it=tmp["inventory"][0].clone();let sig=signature(&it);
-    let inv=s["inventory"].as_array_mut().ok_or_else(||bad("Нет инвентаря у получателя"))?;
+    let inv=s["inventory"].as_array_mut().ok_or_else(||AppError::bad("Нет инвентаря у получателя"))?;
     if !it["charges"].is_object() && it["attunement"]!=true && (it["stackable"]==true||["gear","ammo","consumable"].contains(&text(&it,"type"))) {
-        if let Some(existing)=inv.iter_mut().find(|x|x["equipped"]!=true&&x["attuned"]!=true&&signature(x)==sig) { let n=num(existing,"qty")+num(&it,"qty");if n>1_000_000 {return Err(bad("Переполнение стопки"));}existing["qty"]=json!(n);return Ok(()); }
+        if let Some(existing)=inv.iter_mut().find(|x|x["equipped"]!=true&&x["attuned"]!=true&&signature(x)==sig) { let n=num(existing,"qty")+num(&it,"qty");if n>1_000_000 {return Err(AppError::bad("Переполнение стопки"));}existing["qty"]=json!(n);return Ok(()); }
     }
-    if inv.len()>=2000 {return Err(bad("Инвентарь получателя заполнен"));}inv.push(it);Ok(())
+    if inv.len()>=2000 {return Err(AppError::bad("Инвентарь получателя заполнен"));}inv.push(it);Ok(())
 }
 /// Поле заклинания на листе: модуль хранит `level`/`ritual`/`concentration` на верхнем уровне,
 /// а запись справочника — в `data`. Поддерживаем оба вида.
@@ -209,26 +205,29 @@ fn spell_field(doc: &Value, key: &str) -> Value {
 }
 fn spell_i64(doc: &Value, key: &str) -> i64 { spell_field(doc, key).as_i64().unwrap_or(0) }
 fn spell_true(doc: &Value, key: &str) -> bool { spell_field(doc, key) == json!(true) }
+/// Узлы механики вместе с узлами внутри групп: узел расхода ячейки может жить в группе.
+fn graph_nodes(mechanics: &Value) -> impl Iterator<Item = &Value> + '_ {
+    let graph = &mechanics["graph"];
+    let nodes = graph["nodes"].as_array().into_iter().flatten();
+    let group_nodes = graph["groups"].as_array().into_iter().flatten().flat_map(|group| group["nodes"].as_array().into_iter().flatten());
+    nodes.chain(group_nodes)
+}
 /// Есть ли в графе заклинания узел, который сам списывает ячейку. Старые записи без него
 /// считают ячейку на листе: сервер не требует круг и не трогает ресурс.
 fn has_slot_node(mechanics: &Value) -> bool {
-    let nodes = || mechanics["graph"]["nodes"].as_array().into_iter().flatten();
-    let groups = || mechanics["graph"]["groups"].as_array().into_iter().flatten().flat_map(|group| group["nodes"].as_array().into_iter().flatten());
-    nodes().chain(groups()).any(|node| node["type"] == "action.slot" || (node["type"] == "action.spend" && node["params"]["resource"] == "slot"))
+    graph_nodes(mechanics).any(|node| node["type"] == "action.slot" || (node["type"] == "action.spend" && node["params"]["resource"] == "slot"))
 }
 /// Есть ли узел, который оставляет круг на выбор игрока (level 0). Старый фиксированный
 /// блок расхода такого выбора не даёт и не требует `slot_level` в операции.
 fn has_slot_choice_node(mechanics: &Value) -> bool {
-    let nodes = || mechanics["graph"]["nodes"].as_array().into_iter().flatten();
-    let groups = || mechanics["graph"]["groups"].as_array().into_iter().flatten().flat_map(|group| group["nodes"].as_array().into_iter().flatten());
-    nodes().chain(groups()).any(|node| (node["type"] == "action.slot" && node["params"]["level"].as_i64().unwrap_or(0) == 0)
+    graph_nodes(mechanics).any(|node| (node["type"] == "action.slot" && node["params"]["level"].as_i64().unwrap_or(0) == 0)
         || (node["type"] == "action.spend" && node["params"]["resource"] == "slot" && node["params"]["slot_level"].as_i64().unwrap_or(0) == 0))
 }
 /// Концентрация — состояние листа «Концентрация: <имя>»: прежняя запись заменяется, чужие не трогаются.
 fn set_concentration(s: &mut Value, name: &str) -> ApiResult<()> {
     let value = format!("Концентрация: {name}");
     if s["conditions"].is_null() { s["conditions"] = json!([]); }
-    let list = s["conditions"].as_array_mut().ok_or_else(|| bad("Неверный список состояний"))?;
+    let list = s["conditions"].as_array_mut().ok_or_else(|| AppError::bad("Неверный список состояний"))?;
     list.retain(|item| !item.as_str().is_some_and(|text| text.starts_with("Концентрация:")));
     list.push(json!(value));
     Ok(())
@@ -241,14 +240,14 @@ pub fn execute(sheet: &mut Value, category: &str, uid: &str, program: &str, mode
 /// То же, но для заклинания: `slot_level` — выбранный игроком круг ячейки (0 — базовый/ритуал).
 pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: &str, mode: &str, acknowledged: bool, slot_level: i64) -> ApiResult<Value> {
     let mut s=sheet.clone();inventory::normalize(&mut s)?;
-    let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(bad("Неизвестный источник механики"))};
-    let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||bad("Источник не найден"))?;
+    let list=match category {"item"=>&s["inventory"],"spell"=>&s["spells"]["known"],"feature"=>&s["features"],_=>return Err(AppError::bad("Неизвестный источник механики"))};
+    let doc=list.as_array().and_then(|a|a.iter().find(|d|d["uid"]==uid)).cloned().ok_or_else(||AppError::bad("Источник не найден"))?;
     validate(&doc["mechanics"])?;
     // Контекст каста: базовый круг из записи, выбранный — из операции. Без узла ячейки в графе
     // старые записи считают ячейку на клиенте, поэтому строгие проверки круга к ним не применяются.
     let (base_level, chosen, extra_levels) = if category=="spell" {
         let base=spell_i64(&doc,"level");
-        if slot_level<0 { return Err(bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+        if slot_level<0 { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
         let own_slot=has_slot_node(&doc["mechanics"]);
         let slot_choice=own_slot&&has_slot_choice_node(&doc["mechanics"]);
         // 0 в slot_level — ритуал (ячейка не тратится) или старый клиент, который считает ячейку
@@ -258,9 +257,9 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             else if base==0 {0}
             else if spell_true(&doc,"ritual") {0}
             else if !slot_choice {base}
-            else { return Err(bad("Укажите круг ячейки")); };
-        if !(0..=9).contains(&chosen)||(chosen>0&&chosen<base) { return Err(bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
-        if own_slot&&chosen>0&&!slot_free(&s,chosen) { return Err(bad("Недостаточно ячеек. Цепочка отменена")); }
+            else { return Err(AppError::bad("Укажите круг ячейки")); };
+        if !(0..=9).contains(&chosen)||(chosen>0&&chosen<base) { return Err(AppError::bad("Круг ячейки должен быть не ниже круга заклинания (1–9)")); }
+        if own_slot&&chosen>0&&!slot_free(&s,chosen) { return Err(AppError::bad("Недостаточно ячеек. Цепочка отменена")); }
         (base,chosen,chosen-base)
     } else { (0,0,0) };
     let cast=json!({"level":chosen,"base":base_level,"extra":extra_levels});
@@ -275,15 +274,15 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         // Формулы и data.sheet видят круг только на время выполнения: лист его не хранит.
         s["cast"]=cast.clone();
     }
-    if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
+    if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(AppError::bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
     let m = crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
     validate_plan(&m, 0)?;
     // Граф нужен для condition_src: условие блока считается в рантайме по листу и результатам.
     let graph = m["graph"].clone();
-    let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||bad("Действие не найдено"))?;
+    let p=m["programs"].as_array().unwrap().iter().find(|p|p["id"]==program&&p["trigger"]=="use").ok_or_else(||AppError::bad("Действие не найдено"))?;
     if category=="item" { inventory::validate_use(&doc)?; }
     let blocks: Vec<&Value>=p["blocks"].as_array().unwrap().iter().filter(|b|b["enabled"]!=false).filter(|b|text(b,"grip").is_empty()||text(b,"grip")==if doc["hand_slot"]=="both"{"two"}else{"one"}).collect();
-    if blocks.iter().any(|b|b["kind"]=="manual")&&!acknowledged {return Err(bad("Подтвердите ручные правила"));}
+    if blocks.iter().any(|b|b["kind"]=="manual")&&!acknowledged {return Err(AppError::bad("Подтвердите ручные правила"));}
     let mut attack_costs: Vec<&Value>=Vec::new();
     let mut spent=Vec::new();let mut rolls=Vec::new();let mut effects=Vec::new();let mut hit=None;let mut crit=false;
     let mut concentration_set=false;
@@ -308,14 +307,14 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             if skip { continue; }
         }
         let kind=text(b,"kind");let when=text(b,"when");
-        if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||bad("Ветвление доступно только после блока атаки"))?;if h!=(when=="hit"){continue;} }
+        if ["hit","miss"].contains(&when) { let h=hit.ok_or_else(||AppError::bad("Ветвление доступно только после блока атаки"))?;if h!=(when=="hit"){continue;} }
         // Записать переменную: значение с провода value считается в рантайме, без провода — 0.
         if kind=="setvar" {
             let raw = match b["value_src"].as_str() {
                 Some(source) => crate::mechanics_graph::node_value(&graph, source, &context)?,
                 None => b["value"].clone(),
             };
-            let value = raw.as_f64().filter(|value| value.is_finite()).ok_or_else(||bad("Переменная: значение входа value должно быть конечным числом"))?;
+            let value = raw.as_f64().filter(|value| value.is_finite()).ok_or_else(||AppError::bad("Переменная: значение входа value должно быть конечным числом"))?;
             let name=text(b,"name");
             if text(b,"scope")=="sheet" {
                 if !s["vars"].is_object() { s["vars"]=json!({}); }
@@ -326,9 +325,9 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         }
         if kind=="consume" {if b["trigger"]=="attack"{attack_costs.push(b);}else{spend(&mut s,&doc,category,b,1,&mut spent)?;}continue;}
         if kind=="attack"{for cost in &attack_costs{spend(&mut s,&doc,category,cost,1,&mut spent)?;}}
-        if kind=="require" {if s.pointer(&pointer(text(b,"field"))).and_then(Value::as_i64).unwrap_or(0)<num(b,"minimum"){return Err(bad("Условие действия не выполнено"));}continue;}
+        if kind=="require" {if s.pointer(&pointer(text(b,"field"))).and_then(Value::as_i64).unwrap_or(0)<num(b,"minimum"){return Err(AppError::bad("Условие действия не выполнено"));}continue;}
         if kind=="manual" {effects.push(json!({"kind":"manual","text":b["text"]}));continue;}
-        if kind=="passive" {return Err(bad("Пассивный блок нельзя выполнить повторно"));}
+        if kind=="passive" {return Err(AppError::bad("Пассивный блок нельзя выполнить повторно"));}
         let mut total=0;
         if ["attack","damage","heal","temp_hp","roll"].contains(&kind) {
             let mut raw=formula(b)?;
@@ -344,7 +343,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             let roll_mode=if kind=="attack" {inventory::attack_mode(mode,category=="item"&&inventory::one_hand_penalty(&doc))} else {mode.to_string()};
             expr=crate::realtime::with_dice_mode(&expr,&roll_mode);
             let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::realtime::double_dice(&expr);}
-            let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
+            let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||AppError::bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
             // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.
             if kind=="attack" {crit=n20;let dc=num(b,"dc");hit=Some(n20||(!n1&&(dc<=0||total>=dc)));}
             last_total=Some(total);
@@ -353,7 +352,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         let recipient=&mut s;
         match kind {
             "heal"|"temp_hp" => {
-                let hp=recipient["hp"].as_object_mut().ok_or_else(||bad("У цели не настроены хиты"))?;
+                let hp=recipient["hp"].as_object_mut().ok_or_else(||AppError::bad("У цели не настроены хиты"))?;
                 let cur=hp.get("current").and_then(Value::as_i64).unwrap_or(0);let max=hp.get("max").and_then(Value::as_i64).unwrap_or(0);let tmp=hp.get("temp").and_then(Value::as_i64).unwrap_or(0);let n=total.max(0);
                 if kind=="heal" {hp.insert("current".into(),json!(cur.saturating_add(n).min(max).max(0)));}else if kind=="temp_hp"{hp.insert("temp".into(),json!(tmp.max(n)));}else{hp.insert("temp".into(),json!((tmp-n).max(0)));hp.insert("current".into(),json!((cur-(n-tmp).max(0)).max(0)));}
                 effects.push(json!({"kind":kind,"amount":n,"target":"self","hp":recipient["hp"]}));
@@ -369,7 +368,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
                     "add"=>current.saturating_add(count).min(inventory::MAX_EXTRA_HANDS),
                     "remove"=>current.saturating_sub(count).max(0),
                     "set"=>(count-2).clamp(0,inventory::MAX_EXTRA_HANDS),
-                    _=>return Err(bad("Руки: операция add, remove или set")),
+                    _=>return Err(AppError::bad("Руки: операция add, remove или set")),
                 };
                 recipient["extra_hands"]=json!(next);
                 // Предметы с исчезнувших дополнительных рук уходят в рюкзак и попадают в отчёт эффекта.
@@ -385,12 +384,12 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
                     effects.push(json!({"kind":"condition","condition":format!("Концентрация: {}",text(&doc,"name")),"target":"self"}));
                 } else {
                     if recipient["conditions"].is_null(){recipient["conditions"]=json!([]);}
-                    let a=recipient["conditions"].as_array_mut().ok_or_else(||bad("Неверный список состояний"))?;
+                    let a=recipient["conditions"].as_array_mut().ok_or_else(||AppError::bad("Неверный список состояний"))?;
                     if operation=="remove"{a.retain(|v|v!=&b["condition"]);}else if !a.contains(&b["condition"]){a.push(b["condition"].clone());}
                     effects.push(b.clone());
                 }
             }
-            "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
+            "adjust"=>{let field=text(b,"field");let ptr=pointer(field);let v=recipient.pointer_mut(&ptr).ok_or_else(||AppError::bad("Показатель цели не задан"))?;let n=v.as_i64().and_then(|v|v.checked_add(num(b,"amount"))).ok_or_else(||AppError::bad("Показатель не числовой или переполнен"))?;let(low,high)=if field.starts_with("abilities."){(1,30)}else if field=="initiative_bonus"{(-1000,1000)}else{(0,1_000_000)};if !(low..=high).contains(&n){return Err(AppError::bad("Показатель вышел за допустимые пределы"));}*v=json!(n);if field=="hp.max"&&num(&recipient["hp"],"current")>n{recipient["hp"]["current"]=json!(n);}effects.push(b.clone());}
             _=>{}
         }
     }

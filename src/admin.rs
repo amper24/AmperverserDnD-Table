@@ -49,7 +49,7 @@ pub struct UpdateIn { pub name: Option<String>, pub is_root: Option<bool>, pub p
 async fn update_user(State(st): State<AppState>, user: AuthUser, Path(uid): Path<String>, Json(b): Json<UpdateIn>) -> ApiResult<Json<Value>> {
     user.require_root()?;
     if let Some(n) = &b.name {
-        sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(util::truncate(n.trim(), 64)).bind(&uid).execute(&st.db).await?;
+        sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(util::trim_to(n, 64)).bind(&uid).execute(&st.db).await?;
     }
     if let Some(root) = b.is_root {
         if !root && uid == user.id && root_count(&st.db).await? <= 1 {
@@ -131,13 +131,19 @@ async fn root_count(db: &AnyPool) -> ApiResult<i64> {
     Ok(sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(db).await?.get("n"))
 }
 
+/// Общие ограничения пароля для CLI и API: пустой или слишком длинный пароль.
+fn password_shape_error(password: &str) -> Option<&'static str> {
+    if password.is_empty() { return Some("Пароль не может быть пустым"); }
+    if password.chars().count() > 200 { return Some("Слишком длинный пароль (максимум 200 символов)"); }
+    None
+}
+
 /// Создать подтверждённого пользователя (используют API, CLI и автосоздание root при старте).
 /// Минимальную длину пароля проверяет вызывающая сторона: веб-API требует 8 символов,
 /// CLI может создать и более короткий пароль — с предупреждением.
 pub async fn create(db: &AnyPool, email: &str, password: &str, name: Option<&str>, is_root: bool) -> anyhow::Result<String> {
     let email = auth::check_email(email).map_err(|m| anyhow::anyhow!(m))?;
-    if password.is_empty() { anyhow::bail!("Пароль не может быть пустым"); }
-    if password.chars().count() > 200 { anyhow::bail!("Слишком длинный пароль (максимум 200 символов)"); }
+    if let Some(message) = password_shape_error(password) { anyhow::bail!("{message}"); }
     if find_user(db, &email).await?.is_some() { anyhow::bail!("Пользователь {email} уже существует"); }
     let id = util::uid();
     let name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| email.split('@').next().unwrap_or("user").to_string());
@@ -619,10 +625,14 @@ fn print_help(topic: &[String]) -> Result<(), CliError> {
 
 /// Возвращает Ok(true), если аргументы — команда администрирования и она выполнена
 /// (сервер запускать не нужно), и Ok(false), если нужно запускать сервер.
+/// Первое слово команды (в нижнем регистре) и остальные аргументы.
+fn split_command(args: &[String]) -> (String, &[String]) {
+    (args.first().map(|s| s.to_lowercase()).unwrap_or_default(), if args.is_empty() { &[] } else { &args[1..] })
+}
+
 pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &crate::config::ImagesCfg) -> anyhow::Result<bool> {
     let argv = strip_launcher(args);
-    let first = argv.first().map(|s| s.to_lowercase()).unwrap_or_default();
-    let rest: &[String] = if argv.is_empty() { &[] } else { &argv[1..] };
+    let (first, rest) = split_command(&argv);
 
     if first.is_empty() || matches!(first.as_str(), "serve" | "server") {
         if rest.iter().any(|t| matches!(t.as_str(), "--help" | "-h" | "help")) {
@@ -646,8 +656,7 @@ pub async fn run_cli(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &cra
 }
 
 async fn users_cmd(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::Result<()> {
-    let sub = args.first().map(|s| s.to_lowercase()).unwrap_or_default();
-    let rest: &[String] = if args.is_empty() { &[] } else { &args[1..] };
+    let (sub, rest) = split_command(args);
     match sub.as_str() {
         "" | "help" | "--help" | "-h" | "?" => println!("{HELP_USERS}"),
         "list" | "ls" => users_list(db, rest).await?,
@@ -747,8 +756,7 @@ async fn users_create(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::R
         return Err(CliError::usage(format!("Не указан пароль для {email}"))
             .hint(format!("Как создать: {PROG} users create {email} <пароль> [--name <имя>] [--root]")).into());
     };
-    if password.is_empty() { return Err(CliError::usage("Пароль не может быть пустым").into()); }
-    if password.chars().count() > 200 { return Err(CliError::usage("Слишком длинный пароль (максимум 200 символов)").into()); }
+    if let Some(message) = password_shape_error(&password) { return Err(CliError::usage(message).into()); }
 
     let name = p.value("name").map(str::to_string);
     let root = p.has("root");
@@ -789,7 +797,7 @@ async fn users_rename(db: &AnyPool, args: &[String]) -> anyhow::Result<()> {
     let p = parse(args, &[F_NAME, F_HELP])?;
     if p.has("help") { println!("{HELP_RENAME}"); return Ok(()); }
     let email = p.need(0, "почта", format!("{PROG} users rename <email> <имя>"))?;
-    let name = p.flag_or_arg("name", 1).map(|n| util::truncate(n.trim(), 64)).unwrap_or_default();
+    let name = p.flag_or_arg("name", 1).map(|n| util::trim_to(&n, 64)).unwrap_or_default();
     if name.is_empty() { return Err(CliError::usage("Не указано новое имя").hint(format!("Как переименовать: {PROG} users rename {email} Иван")).into()); }
     let id = find_id(db, email).await.map_err(|e| CliError::fail(e.to_string()))?;
     sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(&name).bind(&id).execute(db).await?;
