@@ -38,7 +38,7 @@ test('table layers come from the registry, with the old routing kept', () => {
 
 test('app.js and table.js no longer hard-code asset kind lists or routing', () => {
   const app = fs.readFileSync('static/app.js', 'utf8');
-  const table = fs.readFileSync('static/table.js', 'utf8');
+  const table = fs.readFileSync('static/table/table.js', 'utf8');
   for (const literal of ["['map', 'Карты']", "['token', 'Токены']", "['prop', 'Объекты']", "['portrait', 'Портреты']", "['token', 'Токен']", "{ map: 'карта'"]) {
     assert.ok(!app.includes(literal), `app.js has no literal ${literal}`);
   }
@@ -87,7 +87,7 @@ test('обложка набора — свой вид реестра, а не п
 test('слои стола берутся из реестра слоёв, а table.js не содержит литералов слоёв', () => {
   assert.deepEqual(plain(AK.layerOrder), ['map', 'prop', 'mount', 'character', 'attachment', 'drawing', 'text', 'note']);
   assert.equal(AK.LAYER.character, 'character');
-  const table = fs.readFileSync('static/table.js', 'utf8');
+  const table = fs.readFileSync('static/table/table.js', 'utf8');
   const literal = /(layer|activeLayer)\s*(===|!==|:|=)\s*'(map|prop|mount|character|attachment|drawing|text|note)'/;
   assert.equal(literal.test(table), false, 'нет литералов слоя в table.js');
   assert.equal(table.includes("['drawing', 'text', 'note']"), false);

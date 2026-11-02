@@ -9,7 +9,7 @@ function loadModel() {
   const ctx = { window: {} };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync('static/asset-kinds.js', 'utf8'), ctx);
-  vm.runInContext(fs.readFileSync('static/table-model.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync('static/table/table-model.js', 'utf8'), ctx);
   return ctx.window.TableModel;
 }
 const M = loadModel();
@@ -280,7 +280,7 @@ test('gridCacheCovers: кэш с полями накрывает вьюпорт,
 });
 
 test('table.js/app.js используют модель и больше не ограничивают число карт', () => {
-  const table = fs.readFileSync('static/table.js', 'utf8');
+  const table = fs.readFileSync('static/table/table.js', 'utf8');
   const app = fs.readFileSync('static/app.js', 'utf8');
   assert.ok(table.includes('window.TableModel'), 'table.js берёт слои/карты/линейку из модели');
   assert.equal(table.includes('Заменить текущую карту?'), false, 'карту больше не «заменяют»');
@@ -291,7 +291,7 @@ test('table.js/app.js используют модель и больше не о�
   assert.ok(app.includes('TableModel.addLayer') && app.includes('TableModel.removeLayer'), 'панель слоёв работает через модель');
   assert.ok(app.includes('/table/'), 'со стола есть ссылка на страницу участников');
   const html = fs.readFileSync('static/index.html', 'utf8');
-  assert.ok(html.indexOf('/static/table-model.js') < html.indexOf('/static/table.js'), 'table-model.js загружается до table.js');
+  assert.ok(html.indexOf('/static/table/table-model.js') < html.indexOf('/static/table/table.js'), 'table-model.js загружается до table.js');
 });
 
 // ---------------------------------------------------------------- туман войны
@@ -474,7 +474,7 @@ test('туман: битые фигуры и id карт отбрасывают�
 });
 
 test('table.js работает с маской на карту, а не с глобальным fog.shapes', () => {
-  const table = fs.readFileSync('static/table.js', 'utf8');
+  const table = fs.readFileSync('static/table/table.js', 'utf8');
   assert.ok(table.includes('normalizeFog'), 'старый формат читается только в миграции (table-model.js)');
   assert.equal(table.includes('S.scene.fog?.shapes'), false, 'прямого чтения старого fog.shapes нет');
   assert.equal(table.includes('fogShape'), true, 'туман рисуется инструментами панели');

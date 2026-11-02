@@ -1,4 +1,4 @@
-// Переменные листа: чистые проверки sheet.vars без DOM (static/sheet-vars.js).
+// Переменные листа: чистые проверки sheet.vars без DOM (static/sheet/sheet-vars.js).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {} };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/sheet-vars.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/sheet/sheet-vars.js', 'utf8'), ctx);
 const V = ctx.window.SheetVars;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -61,7 +61,7 @@ test('entries сортирует имена, upsert/remove возвращают 
 test('лист подключает помощники до sheet.js и использует их в панели', () => {
   const html = fs.readFileSync('static/sheet.html', 'utf8');
   assert.match(html, /sheet-vars\.js[\s\S]*sheet\.js/, 'порядок загрузки');
-  const sheet = fs.readFileSync('static/sheet.js', 'utf8');
+  const sheet = fs.readFileSync('static/sheet/sheet.js', 'utf8');
   assert.match(sheet, /Переменные…/, 'кнопка в шапке');
   assert.match(sheet, /window\.SheetVars/, 'панель использует общие проверки');
   assert.match(sheet, /Переменных пока нет — их создаёт действие с узлом «Записать переменную»\./, 'пустое состояние');
