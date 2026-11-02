@@ -143,8 +143,10 @@ function waitRequest(page, method, pathname) {
     assert.equal(await page.locator('#profile-avatar-hero').innerText(), 'А', 'без аватара показывается инициал');
     assert.equal(await page.locator('#profile-dirty').isHidden(), true);
     assert.equal(await page.locator('#profile-save').isDisabled(), true);
-    for (const href of ['/campaigns', '/characters', '/compendium']) {
-      assert.equal(await page.locator(`.mainnav a[href="${href}"]`).count(), 1, `ссылка ${href}`);
+    // Единая навигация: каждый пункт — ровно одна ссылка в общей шапке (Nav),
+    // дублей локальных «Кампании/Персонажи/Справочник» на странице нет.
+    for (const [href, key] of [['/campaigns', 'campaigns'], ['/characters', 'characters'], ['/compendium', 'compendium']]) {
+      assert.equal(await page.locator(`.mainnav a[data-nav="${key}"][href="${href}"]`).count(), 1, `пункт ${key} → ${href}`);
     }
 
     // ---------- имя: dirty, сохранение, пустое имя ----------

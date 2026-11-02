@@ -20,7 +20,7 @@ window.LS = (() => {
     setItem: (k, v) => { if (allowed(k)) real.setItem(k, v); else memStore.setItem(k, v); },
     removeItem: k => { real.removeItem(k); memStore.removeItem(k); },
     persistent,
-    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min', 'et-edition', 'et-lang', 'dice-settings']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
+    purgeFunctional: () => { for (const k of ['et-theme', 'dicetray_min', 'et-edition', 'et-lang', 'dice-settings', 'et-last-campaign']) real.removeItem(k); try { for (let i = real.length - 1; i >= 0; i--) { const k = real.key(i); if (k && k.startsWith('sheet_tab_')) real.removeItem(k); } } catch { } },
   };
 })();
 
@@ -61,7 +61,7 @@ window.Consent = (() => {
       const row = (title, desc, ctrl) => el('div', { class: 'consent-row' }, el('div', { class: 'grow' }, el('b', {}, title), el('div', { class: 'muted small' }, desc)), ctrl);
       const body = el('div', {},
         row('Обязательные', 'Cookie сессии dnd_session / dnd_session_x, токен входа dnd_token, запись о согласии et-consent. Без них вход невозможен. Срок — 30 дней, согласие — 1 год.', el('span', { class: 'badge' }, 'всегда')),
-        row('Функциональные', 'Тема оформления (et-theme), язык справочника (et-lang), последняя вкладка листа персонажа (sheet_tab_*), свёрнутая панель кубиков (dicetray_min), настройки анимации (dice-settings). Хранятся в localStorage браузера, на сервер не передаются.', fn),
+        row('Функциональные', 'Тема оформления (et-theme), язык справочника (et-lang), последняя вкладка листа персонажа (sheet_tab_*), свёрнутая панель кубиков (dicetray_min), настройки анимации (dice-settings), последняя открытая кампания для пункта «Стол» (et-last-campaign). Хранятся в localStorage браузера, на сервер не передаются.', fn),
         row('Аналитика и реклама', 'Не используются. Сторонних скриптов и трекеров на сайте нет.', el('span', { class: 'badge' }, 'нет')),
         el('p', { class: 'muted small', style: 'margin-top:10px' }, 'Изменить выбор можно в любой момент: ссылка «Cookie» внизу главной страницы или в профиле. ', el('a', { href: '/privacy' }, 'Политика конфиденциальности')));
       const ok = await modal('Настройки cookie', body, [{ label: 'Сохранить', cls: 'primary', fn: () => ({ functional: fn.checked }) }, { label: 'Принять все', fn: () => ({ functional: true }) }]);

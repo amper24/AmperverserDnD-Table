@@ -46,14 +46,12 @@
   if (!me) renderLanding(); else renderHome();
 
   // ================= Общее: шапка =================
+  // Шапку рисует общий Nav (static/nav.js): логотип «Главная», пункты, активный
+  // раздел, тема и пользователь. Активный раздел выводится из location.pathname;
+  // необязательный active — только для страниц вне карты путей (например, «Админ»).
   function brand() { return el('a', { href: '/', class: 'brand' }, APP_NAME); }
   function topbar(active) {
-    const nav = el('nav', { class: 'mainnav' }, ...Object.entries({ camps: ['Кампании', '/campaigns'], chars: ['Персонажи', '/characters'], comp: ['Справочник', '/compendium'], library: ['Библиотека', '/library'], packs: ['Наборы', '/packs'] })
-      .map(([k, [t, href]]) => el('a', { href, class: active === k ? 'active' : '' }, t)), me?.is_root ? el('a', { href: '/admin', class: (active === 'admin' ? 'active ' : '') + 'root' }, 'Админ') : null);
-    return el('div', { class: 'topbar' }, brand(), nav, el('span', { class: 'spacer' }), Theme.button(),
-      me ? el('span', { class: 'userbox' }, el('a', { href: '/profile', class: 'userlink', title: 'Профиль' }, avatarEl(me, 26), el('span', {}, me.name)),
-        el('button', { class: 'small', onclick: async () => { await API.post('/api/auth/logout'); go('/'); } }, 'Выйти'))
-        : el('span', {}, el('a', { href: '/login', class: 'btn small' }, 'Войти'), CAN_REGISTER ? ' ' : null, CAN_REGISTER ? el('a', { href: '/register', class: 'btn small primary' }, 'Регистрация') : null));
+    return Nav.header({ me, current: path, active: active || null, canRegister: CAN_REGISTER, admin: me?.is_root });
   }
 
   // ================= Страница входа / регистрации (отдельная) =================
@@ -139,20 +137,168 @@
       el('footer', { class: 'home-foot' }, APP_NAME, ' · самостоятельный хостинг: ', el('code', {}, 'cargo run --release'), ' · Docker · Pterodactyl', el('br'), el('a', { href: '/privacy' }, 'Конфиденциальность и cookie'), el('button', { class: 'link', onclick: () => Consent.settings() }, 'Настройки cookie'))));
   }
   // ================= Главная: панель пользователя =================
+  // Состав: приветствие, быстрые действия, «Мои кампании» (карточки с ролью,
+  // числом участников, последней сценой и переходами) и «Мои персонажи»
+  // (имя, раса/класс/уровень, кампания, «Лист»). Данные — существующие API
+  // (/api/campaigns, /api/characters, детали кампании и её сцены); грузятся
+  // параллельно (Promise.all), пока показываются скелетоны, ошибки — с «Повторить».
+  const HOME_LIMIT = 6;
+  const plural = (n, one, few, many) => {
+    const a = Math.abs(n) % 100, b = a % 10;
+    if (a > 10 && a < 20) return many;
+    if (b > 1 && b < 5) return few;
+    if (b === 1) return one;
+    return many;
+  };
+  const roleLabel = role => (role === 'gm' ? 'мастер' : 'игрок');
   async function renderHome() {
     app.innerHTML = ''; document.title = APP_NAME;
-    const page = el('div', { class: 'page' });
+    const page = el('div', { class: 'page home-page' });
     app.append(topbar(), page);
-    page.append(el('h1', {}, 'Добро пожаловать, ' + me.name), sectionCards());
-    const [camps, chars] = await Promise.all([API.get('/api/campaigns').catch(() => []), API.get('/api/characters').catch(() => [])]);
-    const two = el('div', { class: 'two' });
-    const cl = el('div', { class: 'card' }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, 'Кампании'), el('a', { href: '/campaigns', class: 'btn small' }, 'Все')));
-    if (!camps.length) cl.append(el('p', { class: 'muted' }, 'Пока нет кампаний.'));
-    camps.slice(0, 5).forEach(c => cl.append(el('a', { href: '/c/' + c.id, class: 'item' }, el('span', { class: 'grow' }, c.name), el('span', { class: 'badge ' + c.role }, c.role === 'gm' ? 'мастер' : 'игрок'))));
-    const ch = el('div', { class: 'card' }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, 'Персонажи'), el('a', { href: '/characters', class: 'btn small' }, 'Все')));
-    if (!chars.length) ch.append(el('p', { class: 'muted' }, 'Пока нет персонажей.'));
-    chars.slice(0, 5).forEach(c => ch.append(el('a', { href: '/sheet/' + c.id, target: '_blank', class: 'item' }, el('span', { class: 'grow' }, c.name), el('span', { class: 'muted small' }, [c.sheet?.race, c.sheet?.class, c.sheet?.level && c.sheet.level + ' ур.'].filter(Boolean).join(' · ')))));
-    two.append(cl, ch); page.append(two);
+
+    // ---------- быстрые действия ----------
+    const run = fn => { fn().catch(e => toast(e.message || 'Ошибка', 4000)); };
+    const newCampaign = async () => {
+      const name = await prompt2('Название кампании', 'Затерянные рудники');
+      if (!name) return;
+      const c = await API.post('/api/campaigns', { name });
+      go('/c/' + c.id);
+    };
+    const newCharacter = async () => {
+      const draft = await newCharacterDialog();
+      if (!draft) return;
+      const c = await API.post('/api/characters', draft);
+      window.open(withTok('/sheet/' + c.id), '_blank');
+      reloadPage();
+    };
+    const joinCampaign = async () => {
+      const raw = await prompt2('Код или ссылка приглашения', 'например, /join/abc123');
+      if (!raw) return;
+      const code = String(raw).trim().split(/[\s/]+/).filter(Boolean).pop();
+      if (code) go('/join/' + encodeURIComponent(code));
+    };
+    const quick = (label, ico, cls, fn) => el('button', {
+      class: cls, type: 'button', onclick: () => run(fn),
+    }, icon(ico, 16), ' ', label);
+
+    page.append(el('div', { class: 'home-head' },
+      el('div', { class: 'grow' }, el('h1', {}, 'Добро пожаловать, ' + me.name),
+        el('p', { class: 'muted' }, 'Кампании, персонажи и быстрый старт — всё с главной страницы.')),
+      el('div', { class: 'home-quick' },
+        quick('Новая кампания', 'plus', 'primary', newCampaign),
+        quick('Новый персонаж', 'user', '', newCharacter),
+        quick('Присоединиться по коду', 'link', '', joinCampaign))));
+
+    // ---------- секции и их состояния ----------
+    const campsBox = el('div', { class: 'home-cards', 'data-sec': 'campaigns' });
+    const charsBox = el('div', { class: 'home-cards', 'data-sec': 'characters' });
+    page.append(
+      el('section', { class: 'home-sec' },
+        el('div', { class: 'home-sec-head' }, el('h2', {}, 'Мои кампании'), el('a', { class: 'btn small', href: '/campaigns' }, 'Все кампании')), campsBox),
+      el('section', { class: 'home-sec' },
+        el('div', { class: 'home-sec-head' }, el('h2', {}, 'Мои персонажи'), el('a', { class: 'btn small', href: '/characters' }, 'Все персонажи')), charsBox),
+      el('section', { class: 'home-sec' }, el('h2', {}, 'Разделы'), sectionCards()));
+
+    function skeletonCards(count) {
+      return Array.from({ length: count }, () => el('div', { class: 'card home-card home-skeleton', 'aria-hidden': 'true' },
+        el('span', { class: 'sk sk-title' }), el('span', { class: 'sk sk-line' }), el('span', { class: 'sk sk-line short' }), el('span', { class: 'sk sk-actions' })));
+    }
+    function busy(box, count) {
+      box.setAttribute('aria-busy', 'true');
+      box.replaceChildren(...skeletonCards(count));
+    }
+    function done(box, nodes) {
+      box.removeAttribute('aria-busy');
+      box.replaceChildren(...nodes);
+    }
+    function errorCard(message, retry) {
+      return el('div', { class: 'card home-empty home-error', role: 'alert' },
+        el('h3', {}, 'Не удалось загрузить'),
+        el('p', { class: 'muted' }, message || 'Ошибка сети'),
+        el('div', { class: 'home-empty-actions' }, el('button', { type: 'button', onclick: () => run(load) }, 'Повторить')));
+    }
+    function emptyCard(title, text, actions) {
+      return el('div', { class: 'card home-empty' },
+        el('h3', {}, title), el('p', { class: 'muted' }, text), el('div', { class: 'home-empty-actions' }, ...actions));
+    }
+    function campaignCard(c, info) {
+      const members = info.members;
+      const scene = info.scene;
+      const meta = el('div', { class: 'home-card-meta' },
+        el('span', { title: 'Участники кампании' }, icon('users', 14), ' ',
+          members === null ? 'Участники —' : `${members} ${plural(members, 'участник', 'участника', 'участников')}`),
+        el('span', { title: 'Сцена, на которой идёт игра' }, icon('map', 14), ' ', scene ? 'Сцена: ' + scene : 'Сцена не выбрана'));
+      return el('article', { class: 'card home-card', 'data-campaign': c.id },
+        el('div', { class: 'home-card-head' },
+          el('h3', { class: 'home-card-title', title: c.name }, c.name),
+          el('span', { class: 'badge ' + (c.role || 'player') }, roleLabel(c.role))),
+        el('p', { class: 'muted small home-card-desc' }, c.description || 'Без описания'),
+        meta,
+        el('div', { class: 'home-card-actions' },
+          el('a', { class: 'btn small primary', href: '/c/' + c.id, title: 'Открыть стол кампании' }, 'Открыть'),
+          el('a', { class: 'btn small', href: '/c/' + c.id, target: '_blank', rel: 'noopener', title: 'Открыть стол в новой вкладке' }, icon('map', 14), ' На стол'),
+          el('a', { class: 'btn small', href: '/table/' + c.id, title: 'Участники, персонажи и токены на столе' }, icon('users', 14), ' Участники')));
+    }
+    function characterCard(c, campaignsById) {
+      const s = c.sheet || {};
+      const camp = c.campaign_id ? (campaignsById.get(c.campaign_id) || null) : null;
+      const kind = [s.race, s.class, s.subclass].filter(Boolean).join(' · ');
+      const level = Number(s.level) > 0 ? s.level : null;
+      return el('article', { class: 'card home-card', 'data-character': c.id },
+        el('div', { class: 'home-card-head' },
+          el('h3', { class: 'home-card-title', title: c.name }, c.name),
+          el('span', { class: 'badge' }, level ? level + ' ур.' : 'без уровня')),
+        el('p', { class: 'muted small home-card-desc' }, kind || 'Класс и раса не выбраны'),
+        el('div', { class: 'home-card-meta' },
+          el('span', { title: 'Кампания персонажа' }, icon('shield', 14), ' ',
+            camp ? 'Кампания: ' + camp.name : (c.campaign_id ? 'Кампания недоступна' : 'Вне кампании'))),
+        el('div', { class: 'home-card-actions' },
+          el('a', { class: 'btn small primary', href: '/sheet/' + c.id, target: '_blank', rel: 'noopener', title: 'Открыть лист персонажа' }, icon('sheet', 14), ' Лист')));
+    }
+
+    // ---------- загрузка ----------
+    async function load() {
+      busy(campsBox, 3); busy(charsBox, 3);
+      // Список кампаний и персонажей — параллельно; детали показываем позже, тоже пачкой.
+      const [campsRes, charsRes] = await Promise.allSettled([API.get('/api/campaigns'), API.get('/api/characters')]);
+      const camps = campsRes.status === 'fulfilled' && Array.isArray(campsRes.value) ? campsRes.value : null;
+      const chars = charsRes.status === 'fulfilled' && Array.isArray(charsRes.value) ? charsRes.value : null;
+      const shown = (camps || []).slice(0, HOME_LIMIT);
+      // Участники и сцены: только для показанных карточек, запросы параллельны.
+      const details = await Promise.all(shown.map(c => Promise.all([
+        API.get('/api/campaigns/' + c.id).catch(() => null),
+        API.get('/api/campaigns/' + c.id + '/scenes').catch(() => null),
+      ])));
+      const byId = new Map((camps || []).map(c => [c.id, c]));
+
+      if (!camps) done(campsBox, [errorCard(campsRes.reason?.message, load)]);
+      else if (!camps.length) done(campsBox, [emptyCard('Пока нет кампаний',
+        'Создайте кампанию и отправьте игрокам ссылку-приглашение — или присоединитесь по коду от мастера.',
+        [el('button', { class: 'primary', type: 'button', onclick: () => run(newCampaign) }, icon('plus', 16), ' Создать кампанию'),
+          el('button', { type: 'button', onclick: () => run(joinCampaign) }, 'Присоединиться по коду')])]);
+      else {
+        const cards = shown.map((c, i) => {
+          const [detail, scenes] = details[i] || [];
+          const list = Array.isArray(scenes) ? scenes : [];
+          const activeId = c.active_scene_id || detail?.active_scene_id || null;
+          const scene = (activeId && list.find(s => s.id === activeId)) || list[list.length - 1] || null;
+          return campaignCard(c, { members: Array.isArray(detail?.members) ? detail.members.length : null, scene: scene?.name || '' });
+        });
+        if (camps.length > shown.length) cards.push(el('a', { class: 'btn small home-more', href: '/campaigns' }, `Ещё кампаний: ${camps.length - shown.length}`));
+        done(campsBox, cards);
+      }
+
+      if (!chars) done(charsBox, [errorCard(charsRes.reason?.message, load)]);
+      else if (!chars.length) done(charsBox, [emptyCard('Пока нет персонажей',
+        'Создайте персонажа — мастер из восьми шагов проведёт по правилам; лист и портрет появятся здесь.',
+        [el('button', { class: 'primary', type: 'button', onclick: () => run(newCharacter) }, icon('plus', 16), ' Создать персонажа')])]);
+      else {
+        const cards = chars.slice(0, HOME_LIMIT).map(c => characterCard(c, byId));
+        if (chars.length > HOME_LIMIT) cards.push(el('a', { class: 'btn small home-more', href: '/characters' }, `Ещё персонажей: ${chars.length - HOME_LIMIT}`));
+        done(charsBox, cards);
+      }
+    }
+    await load();
   }
 
   // ================= Диагностика входа =================
@@ -204,6 +350,7 @@
         tr('et-lang', 'localStorage, функциональный', 'Выбранный язык справочника и наборов (русский/английский).', 'бессрочно'),
         tr('sheet_tab_*', 'localStorage, функциональный', 'Последняя открытая вкладка листа персонажа.', 'бессрочно'),
         tr('dicetray_min', 'localStorage, функциональный', 'Свёрнута ли панель кубиков на столе.', 'бессрочно'),
+        tr('et-last-campaign', 'localStorage, функциональный', 'Последняя открытая кампания: на её стол ведёт пункт «Стол» в шапке.', 'бессрочно'),
         tr('dice-settings', 'localStorage, функциональный', 'Цвет кубиков и аудитория бросков; физика анимации работает автоматически.', 'бессрочно')),
       el('p', { class: 'muted small' }, 'Аналитических, рекламных и сторонних cookie нет. Функциональные ключи сохраняются только после вашего согласия; без него они живут до закрытия страницы.'),
       el('div', { class: 'row', style: 'margin:10px 0 20px' }, el('button', { class: 'small', onclick: () => Consent.settings() }, 'Настройки cookie')),
@@ -315,7 +462,7 @@
   async function renderSection(k) {
     app.innerHTML = '';
     const page = el('div', { class: 'page' });
-    app.append(topbar(k), page);
+    app.append(topbar(), page);
     const views = { camps: lobbyCampaigns, chars: lobbyCharacters, comp: () => el('div', { class: 'fill' }, Compendium.widget({})), library: lobbyLibrary, packs: () => Packs.page() };
     const titles = { camps: 'Кампании', chars: 'Персонажи', comp: 'Справочник', library: 'Библиотека ресурсов', packs: 'Наборы' };
     document.title = titles[k] + ' — ' + APP_NAME;
@@ -397,6 +544,8 @@
     const canInvite = can(Access.CAP.invite);
     window.TABLE_CTX = { isGM, canFog, permissions: perms, campaign: camp, user: me, roll: (expr, label, gm_only) => DiceEngine.submit({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
     document.title = camp.name + ' — ' + APP_NAME;
+    // Последняя открытая кампания: по ней общий пункт «Стол» ведёт на стол, а не в список.
+    try { LS.setItem('et-last-campaign', cid); } catch { /* хранилище недоступно — ссылка ведёт в /campaigns */ }
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
     app.append(root);
@@ -417,7 +566,9 @@
       layerSel.value = cur;
     }
     const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
-    const bar = el('div', { class: 'tbar' }, el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
+    // В полноэкранном столе нет места широкой шапке: пункты — в компактном меню
+    // «Разделы» (тот же Nav), активный раздел — «Кампании» (см. Nav.activeKey).
+    const bar = el('div', { class: 'tbar' }, Nav.menu({ current: path }), el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
     if (canScene) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
     const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
     // Отдельная страница «Участники кампании»: аккаунты, персонажи, токены, HP, скрытность.

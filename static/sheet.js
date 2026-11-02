@@ -484,6 +484,9 @@
     root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; LS.setItem('sheet_tab_' + id, k); render(); } }, n))));
     root.append({ main: mainTab, inv: invTab, spells: spellsTab, feats: featsTab, notes: notesTab }[tab]());
     root.append(sheetFooter());
+    // Единая навигация — только у самостоятельной страницы; в embed=1 (поверх стола)
+    // шапку не рисуем: темой и редакцией уже заведует футер листа.
+    if (!embed && window.Nav) app.append(Nav.header({ me, current: location.pathname, theme: false }));
     app.append(root);
     // Кубики — док в левом нижнем углу, журнал бросков — в правом (ставится один раз).
     DiceEngine.dock();

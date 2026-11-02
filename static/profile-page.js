@@ -82,16 +82,11 @@
   }
 
   // ---------- шапка страницы ----------
-  const topbarUserLink = el('a', { href: '/profile', class: 'userlink', 'aria-current': 'page', title: 'Профиль' }, me.name || 'Профиль');
-  app.append(el('header', { class: 'topbar' },
-    el('a', { href: '/', class: 'brand' }, APP_NAME),
-    el('nav', { class: 'mainnav', 'aria-label': 'Основная навигация' },
-      el('a', { href: '/campaigns' }, 'Кампании'),
-      el('a', { href: '/characters' }, 'Персонажи'),
-      el('a', { href: '/compendium' }, 'Справочник')),
-    el('span', { class: 'spacer' }),
-    Theme.button(),
-    el('span', { class: 'userbox' }, topbarUserLink)));
+  // Общая шапка Nav: активный пункт «Профиль» (aria-current) ставит сам Nav по
+  // location.pathname; выход и управление аккаунтом — в блоках страницы ниже.
+  const header = Nav.header({ me, current: location.pathname, logout: false });
+  app.append(header);
+  const topbarUserLink = header.querySelector('.userlink');
 
   const page = el('main', { class: 'page profile-page' });
   app.append(page);

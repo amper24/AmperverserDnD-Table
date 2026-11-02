@@ -1,0 +1,109 @@
+/* ---------------------------------------------------------------------------
+   nav.css — единая навигация (static/nav.js): шапка, пункты меню, компактное
+   меню для плотных панелей. Цвета и радиусы — переменные style.css, поэтому
+   тёмная и светлая темы работают без отдельных правил.
+
+   Подключается после style.css на всех страницах (index/sheet/table/profile).
+   --------------------------------------------------------------------------- */
+
+/* ---------- шапка ---------- */
+.edge-topbar {
+  position: relative;
+  z-index: 40;
+  height: auto;
+  min-height: 52px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 5px 16px;
+}
+.edge-topbar .edge-brand { flex: 0 0 auto; }
+.edge-brand[aria-current="page"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+}
+
+/* ---------- пункты ---------- */
+.edge-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.edge-nav a {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); padding: 6px 10px;
+  border-radius: var(--radius); font-size: 14px; line-height: 1.2;
+  white-space: nowrap;
+}
+.edge-nav a .ico { flex: 0 0 auto; }
+.edge-nav a:hover { color: var(--text); background: var(--panel2); }
+.edge-nav a[aria-current="page"] {
+  color: var(--text);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.edge-nav-admin {
+  display: inline-flex; align-items: center;
+  color: var(--accent); padding: 6px 10px;
+  border-radius: var(--radius); font-size: 14px; white-space: nowrap;
+}
+.edge-nav-admin:hover { background: var(--panel2); }
+.edge-nav-admin.active { background: var(--accent-soft); }
+
+/* ---------- фокус: видимая рамка только с клавиатуры ---------- */
+.edge-brand:focus-visible,
+.edge-nav a:focus-visible,
+.edge-nav-admin:focus-visible,
+.edge-nav-toggle:focus-visible,
+.edge-nav-menu-btn:focus-visible,
+.edge-logout:focus-visible,
+.edge-topbar .userlink:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* ---------- компактное меню в плотных панелях (полноэкранный стол) ---------- */
+.edge-nav-menu { position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; }
+.edge-nav-menu-btn { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.edge-nav-panel {
+  display: none;
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 190px; padding: 6px; z-index: 70;
+  flex-direction: column; align-items: stretch; gap: 1px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow);
+}
+.edge-nav-panel.is-open { display: flex; }
+.edge-nav-panel a { justify-content: flex-start; padding: 8px 10px; font-size: 14px; }
+
+/* ---------- узкий экран: бургер и выпадающее меню ---------- */
+.edge-nav-toggle {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 34px; height: 32px; padding: 0;
+  flex: 0 0 auto;
+}
+@media (max-width: 800px) {
+  .edge-topbar { padding: 5px 10px; gap: 8px; }
+  .edge-nav-toggle { display: inline-flex; }
+  .edge-topbar .edge-nav { display: none; margin: 0; }
+  .edge-topbar .edge-nav.is-open {
+    display: flex;
+    position: absolute; top: calc(100% + 4px); left: 8px; right: 8px;
+    flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 1px;
+    margin: 0; padding: 6px; z-index: 70;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    max-height: calc(100vh - 80px); overflow: auto;
+  }
+  .edge-topbar .edge-nav.is-open a { justify-content: flex-start; padding: 10px 12px; font-size: 15px; }
+  .edge-topbar .edge-nav.is-open a[aria-current="page"] { box-shadow: none; }
+  .edge-topbar .edge-logout-label { display: none; }
+  .edge-topbar .edge-nav-menu-label { display: none; }
+}
+@media (max-width: 560px) {
+  .edge-topbar .userlink { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .edge-topbar .userbox { gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .edge-nav a, .edge-nav-admin, .edge-nav-panel { transition: none; }
+}

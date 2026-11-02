@@ -9,7 +9,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-const SCRIPTS = ['common', 'access', 'asset-kinds', 'table-model', 'table-page'];
+const SCRIPTS = ['common', 'nav', 'access', 'asset-kinds', 'table-model', 'table-page'];
 
 // Права берём из static/access.js — того же модуля, что и страница.
 function accessModule() {
@@ -75,7 +75,7 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
     if (!url.pathname.startsWith('/api/')) {
       return route.fulfill({
         contentType: 'text/html',
-        body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
+        body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/nav.css"><div id="app"></div>' +
           SCRIPTS.map(name => `<script src="/static/${name}.js"></script>`).join(''),
       });
     }

@@ -338,6 +338,44 @@ button.link:hover { color: var(--accent); }
 .steps li { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 14px 14px 48px; position: relative; color: var(--muted); font-size: 14px; }
 .steps li::before { counter-increment: s; content: counter(s); position: absolute; left: 14px; top: 13px; width: 24px; height: 24px; border-radius: var(--radius); background: var(--panel2); color: var(--accent); font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .steps li b { color: var(--text); }
+/* ---- главная: панель пользователя ---- */
+.home-page { max-width: 1100px; }
+.home-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.home-head h1 { margin: 0 0 4px; }
+.home-head p { margin: 0; }
+.home-quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.home-quick button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.home-sec { margin-bottom: 26px; }
+.home-sec > h2, .home-sec-head h2 { font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; margin: 0; }
+.home-sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.home-sec-head h2 { flex: 1; }
+.home-sec-head .btn { flex: 0 0 auto; }
+.home-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+.home-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+.home-card-head { display: flex; align-items: baseline; gap: 8px; }
+.home-card-title { margin: 0; font-size: 16px; color: var(--text); text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-card-head .badge { flex: 0 0 auto; }
+.home-card-desc { margin: 0; min-height: 18px; }
+.home-card-meta { display: flex; flex-direction: column; gap: 3px; margin: 0; color: var(--muted); font-size: 13px; }
+.home-card-meta span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.home-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.home-card-actions .btn { display: inline-flex; align-items: center; gap: 4px; }
+.home-empty { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.home-empty h3 { margin: 0; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.home-empty p { margin: 0; max-width: 620px; }
+.home-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.home-empty-actions button { display: inline-flex; align-items: center; gap: 4px; }
+.home-error { border-color: var(--danger); }
+.home-more { align-self: start; justify-self: start; }
+.home-skeleton { pointer-events: none; }
+.sk { display: block; height: 12px; border-radius: var(--radius); background: var(--panel2); animation: sk-pulse 1.2s ease-in-out infinite; }
+.sk-title { height: 18px; width: 62%; }
+.sk-line { width: 92%; }
+.sk-line.short { width: 48%; }
+.sk-actions { height: 28px; width: 78%; margin-top: 4px; }
+@keyframes sk-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+@media (max-width: 600px) { .home-quick { width: 100%; } .home-quick button { flex: 1 1 100%; justify-content: center; } }
 /* ---- страница входа ---- */
 .authpage { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 30px 16px; }
 .authwrap { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 14px; align-items: center; }

@@ -6,11 +6,14 @@
 <title>Участники стола — Edge Tablet</title>
 <script>try{var t=localStorage.getItem("et-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;}catch(e){}</script>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/nav.css">
 </head>
 <body>
 <div id="app"></div>
 <!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, тема, иконки. -->
 <script src="/static/common.js"></script>
+<!-- Единая навигация (шапка, пункты, активный раздел) — общая для всех страниц. -->
+<script src="/static/nav.js"></script>
 <!-- Права UI: возможности ролей и can() — зеркало src/access.rs. -->
 <script src="/static/access.js"></script>
 <!-- Реестр типов ассетов: слой персонажей и подписи (без него не создаются токены). -->

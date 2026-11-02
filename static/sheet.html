@@ -7,11 +7,14 @@
 <script>try{var t=localStorage.getItem("et-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;}catch(e){}</script>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/sheet-polish.css">
+<link rel="stylesheet" href="/static/nav.css">
 </head>
 <body>
 <div id="app"></div>
 <!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, словари (SKILLS, ABIL), тема. -->
 <script src="/static/common.js"></script>
+<!-- Единая навигация; в embed=1 (лист поверх стола) шапка не рисуется. -->
+<script src="/static/nav.js"></script>
 <script src="/static/presets.js"></script>
 <script src="/static/presets-editor.js"></script>
 <!-- Слой 2 — движки правил: физика/визуализация кубиков, кубики, экипировка, механики. -->

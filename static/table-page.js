@@ -51,16 +51,9 @@
   let search = '';
 
   // ---------- каркас страницы (стиль как у листа персонажа) ----------
-  app.append(el('div', { class: 'topbar' },
-    el('a', { href: '/', class: 'brand' }, APP_NAME),
-    el('nav', { class: 'mainnav' },
-      el('a', { href: '/c/' + cid }, 'К столу'),
-      el('a', { href: '/campaigns' }, 'Кампании'),
-      el('a', { href: '/characters' }, 'Персонажи'),
-      el('a', { href: '/compendium' }, 'Справочник')),
-    el('span', { class: 'spacer' }),
-    Theme.button(),
-    el('span', { class: 'userbox' }, el('a', { href: '/profile', class: 'userlink', title: 'Профиль' }, me.name))));
+  // Шапка общая (Nav): «Стол» ведёт на стол этой кампании (Nav.tableHref → /c/<cid>),
+  // поэтому локальные «К столу/Кампании/Персонажи/Справочник» больше не дублируются.
+  app.append(Nav.header({ me, current: location.pathname }));
 
   const page = el('div', { class: 'page' });
   app.append(page);
