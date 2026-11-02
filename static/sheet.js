@@ -21,7 +21,7 @@
   try { await API.patch('/api/characters/' + id, {}); } catch { readonly = true; }
   document.title = ch.name + ' — лист';
   let tab = LS.getItem('sheet_tab_' + id) || 'main';
-  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', spellLevel: '', onlyPrepared: false, spellFav: false, open: new Set(), headEdit: null, slotsEdit: false };
+  const ui = { invQ: '', invType: '', invFav: false, spellQ: '', spellLevel: '', onlyPrepared: false, spellFav: false, open: new Set(), slotsEdit: false };
 
   // ---- заметки «возле всего»: s.notes_by[key] = текст; кнопка-карандаш у любого блока ----
   function noteBtn(key, title) {
@@ -470,6 +470,7 @@
 
   // ================= РЕНДЕР =================
   function render() {
+    closePopover();
     Equipment.migrate(s.inventory, s.extra_hands);
     s.ac = Equipment.armorClass(s);
     ctx();
@@ -482,6 +483,7 @@
     const tabs = [['main', 'Основное'], ['inv', `Инвентарь (${s.inventory.length})`], ['spells', `Заклинания (${s.spells.known.length})`], ['feats', `Умения (${s.features.length})`], ['notes', 'Заметки']];
     root.append(el('div', { class: 'tabs sheet-tabs' }, ...tabs.map(([k, n]) => el('button', { class: tab === k ? 'active' : '', onclick: () => { tab = k; LS.setItem('sheet_tab_' + id, k); render(); } }, n))));
     root.append({ main: mainTab, inv: invTab, spells: spellsTab, feats: featsTab, notes: notesTab }[tab]());
+    root.append(sheetFooter());
     app.append(root);
     // Кубики — док в левом нижнем углу, журнал бросков — в правом (ставится один раз).
     DiceEngine.dock();
@@ -563,9 +565,71 @@
     toast(`Долгий отдых завершён: хиты восстановлены${restored.slots || restored.pactSlots ? ', ячейки восстановлены' : ''}${restored.features ? `, умения: ${restored.features}` : ''}${restored.spellUses ? `, заряды заклинаний: ${restored.spellUses}` : ''}.`, 4500);
     } finally { restBusy = false; }
   }
+  // ---------- всплывающие панели листа ----------
+  // На листе одновременно открыта не больше одной панели (меню портрета или дропдаун
+  // мировоззрения). Открытие новой закрывает прежнюю; закрытая панель имеет hidden и
+  // display:none из sheet-polish.css, поэтому не остаётся прозрачным слоем над листом.
+  let activePopover = null;
+  function closePopover(focus = false) {
+    const pop = activePopover; activePopover = null;
+    if (pop) pop.close(focus);
+  }
+  /// Панель у кнопки: aria-expanded на кнопке, закрытие по Esc, клику вне, скроллу,
+  /// изменению размера окна и перерисовке листа. Клики внутри/по кнопке не перехватываются.
+  function attachPopover(trigger, panel, opts = {}) {
+    let open = false;
+    const onDocDown = event => { if (!panel.contains(event.target) && !trigger.contains(event.target)) close(false); };
+    const onDocKey = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); } };
+    // Скролл страницы и resize закрывают панель; прокрутка самого списка — нет.
+    const onViewport = event => {
+      const target = event?.target;
+      if (event?.type === 'scroll' && target?.nodeType && panel.contains(target)) return;
+      close(false);
+    };
+    const api = {
+      isOpen: () => open,
+      /// Открывает панель, предварительно закрыв открытую (их не может быть две).
+      open(focusFirst = false) {
+        if (open) return;
+        if (activePopover && activePopover !== api) activePopover.close(false);
+        open = true; activePopover = api;
+        panel.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        document.addEventListener('pointerdown', onDocDown, true);
+        document.addEventListener('keydown', onDocKey, true);
+        window.addEventListener('scroll', onViewport, true);
+        window.addEventListener('resize', onViewport);
+        opts.onOpen?.();
+        if (focusFirst) requestAnimationFrame(() => panel.querySelector('button:not([disabled]), [role="option"]')?.focus());
+      },
+      close,
+      toggle(focusFirst = true) { if (open) close(true); else api.open(focusFirst); },
+    };
+    function close(focus = false) {
+      if (!open) return;
+      open = false;
+      panel.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onDocKey, true);
+      window.removeEventListener('scroll', onViewport, true);
+      window.removeEventListener('resize', onViewport);
+      if (activePopover === api) activePopover = null;
+      opts.onClose?.();
+      if (focus) trigger.focus();
+    }
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    return api;
+  }
+
   function topBar() {
-    const portrait = el('div', { class: 'portrait', title: 'Загрузить портрет' }, icon('user', 40));
-    if (ch.portrait_asset_id) assetURL(ch.portrait_asset_id).then(u => { portrait.innerHTML = ''; portrait.append(el('img', { src: u })); });
+    // Портрет и токен: единственная точка входа — меню у портрета, в верхней строке кнопок нет.
+    const portrait = el('div', { class: 'portrait' + (ch.portrait_asset_id ? ' has-image' : ''), role: readonly ? null : 'button', tabindex: readonly ? null : '0',
+      'aria-haspopup': readonly ? null : 'menu', 'aria-expanded': readonly ? null : 'false',
+      'aria-label': readonly ? 'Портрет персонажа' : 'Портрет персонажа: открыть меню портрета и токена',
+      title: readonly ? 'Портрет персонажа' : 'Портрет: загрузить файл, из библиотеки, убрать; токен на карте' }, icon('user', 40));
+    if (ch.portrait_asset_id) assetURL(ch.portrait_asset_id).then(u => { portrait.innerHTML = ''; portrait.append(el('img', { src: u, alt: 'Портрет: ' + ch.name })); }).catch(() => { });
     const pf = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
     pf.addEventListener('change', async () => {
       if (!pf.files[0] || readonly || inventoryBusy) return;
@@ -574,10 +638,70 @@
         const fd = new FormData(); fd.append('file', pf.files[0]); fd.append('name', ch.name); fd.append('kind', AssetKinds.forUsage('avatar')); if (ch.campaign_id) fd.append('campaign_id', ch.campaign_id);
         const a = await API.upload('/api/assets', fd); await flush();
         ch = await API.patch('/api/characters/' + id, { portrait_asset_id: a.id }); s = ch.sheet; dirty = false; migrate();
-      } catch (e) { toast(e.message); } finally { inventoryBusy = false; render(); }
+      } catch (e) { toast(e.message); } finally { inventoryBusy = false; pf.value = ''; render(); }
     });
-    if (!readonly) portrait.addEventListener('click', () => pf.click());
-    const tokenPick = readonly ? null : M.imagePicker(s, 'token_asset_id', { kind: AssetKinds.forUsage('token'), label: 'Токен на карте', icon: 'user', compact: true, onChange: () => save() });
+    /// Один PATCH portrait_asset_id — то же поведение, что было у кнопок загрузки/удаления.
+    async function setPortrait(assetId) {
+      if (readonly || inventoryBusy) return;
+      inventoryBusy = true; render();
+      try { ch = await API.patch('/api/characters/' + id, { portrait_asset_id: assetId }); s = ch.sheet; dirty = false; migrate(); }
+      catch (e) { toast(e.message); } finally { inventoryBusy = false; render(); }
+    }
+    /// Библиотека ресурсов: только виды, разрешённые для портрета (как в M.imagePicker).
+    async function portraitFromLibrary() {
+      try {
+        const kind = AssetKinds.forUsage('avatar'), allowed = new Set(AssetKinds.pickFor(kind));
+        const list = (await API.get('/api/assets')).filter(a => allowed.has(a.kind));
+        if (!list.length) return toast('В библиотеке нет портретов — загрузите файл.', 3500);
+        let chosen = ch.portrait_asset_id || null;
+        const grid = el('div', { class: 'asset-grid pick portrait-library' });
+        for (const a of list) {
+          const t = el('button', { type: 'button', class: 'asset' + (chosen === a.id ? ' active' : ''), title: a.name, 'aria-label': a.name, 'aria-pressed': chosen === a.id ? 'true' : 'false',
+            onclick: () => { chosen = a.id; grid.querySelectorAll('.asset').forEach(x => { x.classList.remove('active'); x.setAttribute('aria-pressed', 'false'); }); t.classList.add('active'); t.setAttribute('aria-pressed', 'true'); } },
+            el('div', { class: 'thumb' }), el('span', { class: 'small ellipsis' }, a.name));
+          assetURL(a.id).then(u => t.querySelector('.thumb').append(el('img', { src: u, alt: '' }))).catch(() => { });
+          grid.append(t);
+        }
+        const ok = await modal('Портрет из библиотеки', list.length ? grid : el('p', { class: 'muted' }, 'Пусто — загрузите изображение.'), [{ label: 'Выбрать', cls: 'primary', fn: () => chosen || false }], { wide: true });
+        if (ok) await setPortrait(ok);
+      } catch (e) { toast(e.message); }
+    }
+    /// Токен на карте: тот же M.imagePicker, что раньше стоял в шапке, но в окне из меню портрета.
+    async function tokenPicker() {
+      await modal('Токен на карте', el('div', {},
+        M.imagePicker(s, 'token_asset_id', { kind: AssetKinds.forUsage('token'), label: 'Токен на карте', icon: 'user', onChange: () => save() }),
+        el('p', { class: 'muted small' }, 'Токен показывается на столе кампании. Загрузка, выбор из библиотеки и удаление сохраняются сразу.')),
+      [{ label: 'Готово', cls: 'primary', fn: () => true }], { wide: true });
+    }
+    const menu = el('div', { class: 'portrait-menu', role: 'menu', 'aria-label': 'Портрет и токен' });
+    const menuItem = (label, iconName, fn, o = {}) => el('button', { type: 'button', class: 'portrait-menu-item' + (o.danger ? ' danger' : ''), role: 'menuitem', tabindex: '-1',
+      disabled: o.disabled ? '' : null, title: o.title || null,
+      onclick: e => { e.stopPropagation(); pop.close(false); fn(); } }, icon(iconName, 14), el('span', { class: 'portrait-menu-label' }, label));
+    menu.append(
+      el('div', { class: 'portrait-menu-title' }, 'Портрет'),
+      menuItem('Загрузить файл', 'upload', () => pf.click()),
+      menuItem('Из библиотеки', 'image', portraitFromLibrary),
+      menuItem('Убрать', 'trash', () => setPortrait(null), { danger: true, disabled: !ch.portrait_asset_id, title: ch.portrait_asset_id ? 'Убрать портрет' : 'Портрет не задан' }),
+      el('div', { class: 'portrait-menu-sep', role: 'separator' }),
+      el('div', { class: 'portrait-menu-title' }, 'Токен на карте'),
+      menuItem('Выбрать токен…', 'map', tokenPicker));
+    const pop = attachPopover(portrait, menu);
+    const portraitWrap = el('div', { class: 'portrait-wrap' }, portrait, menu, pf);
+    if (!readonly) {
+      portrait.addEventListener('click', () => pop.toggle(true));
+      portrait.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); pop.toggle(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); pop.close(true); }
+      });
+      menu.addEventListener('keydown', e => {
+        const items = [...menu.querySelectorAll('button:not([disabled])')], i = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1 + items.length) % items.length]?.focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+        else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+        else if (e.key === 'End') { e.preventDefault(); items.at(-1)?.focus(); }
+        else if (e.key === 'Tab') pop.close(false);
+      });
+    }
     const inp = (key, ph, type = 'text') => el('input', { value: s[key] ?? '', placeholder: ph, type, disabled: dis(), onchange: e => { s[key] = type === 'number' ? +e.target.value : e.target.value; if (key === 'level') s.proficiency_bonus = Math.ceil(1 + s.level / 4); save(); if (['level', 'name'].includes(key)) render(); } });
     const moduleOf = category => (s.modules || []).slice().reverse().find(m => m.category === category && m.snapshot);
     /// Список или строка → массив строк: языки, инструменты и навыки в записях бывают в обоих видах.
@@ -597,51 +721,78 @@
     const bgSkills = asList(bgData.skills).map(skillLabel), bgTools = asList(bgData.tools);
     const bgFacts = [bgSkills.length ? 'навыки: ' + bgSkills.join(', ') : '', bgTools.length ? '+ инструменты: ' + bgTools.join(', ') : ''].filter(Boolean).join(' · ');
     /// Блоки шапки: раса, класс, подкласс, предыстория и мировоззрение выглядят одинаково —
-    /// компактный блок с текстом, как у «Расы». Клик по тексту открывает правку прямо в блоке.
-    const headText = (key, value, empty) => el(value ? 'strong' : 'span',
-      { class: (value ? 'mod-block-name' : 'mod-block-empty') + (readonly ? '' : ' editable'),
-        title: readonly ? (value || '') : value ? `${value} · клик — изменить` : 'Клик — вписать',
-        onclick: readonly ? null : e => { e.stopPropagation(); ui.headEdit = key; render(); } }, value || empty);
-    const closeEdit = () => { ui.headEdit = null; render(); };
-    const editInput = (key, get, set, placeholder, listId) => {
-      const commit = () => { ui.headEdit = null; render(); };
-      const input = el('input', { class: 'mod-block-input', list: listId || null, value: get(), placeholder, 'aria-label': placeholder, disabled: dis(), onclick: e => e.stopPropagation(),
-        onchange: e => { set(e.target.value); save(); commit(); }, onkeydown: e => { if (e.key === 'Escape') { e.stopPropagation(); commit(); } } });
-      setTimeout(() => { input.focus(); input.select(); }, 0);
-      return input;
-    };
-    const classControl = () => ui.headEdit === 'class' ? editInput('class', () => s.class, v => s.class = v, 'перетащите или впишите') : headText('class', s.class, 'перетащите или кликните');
-    const subclassNames = asList(classData.subclasses), subclassListId = 'subclass-options-' + id;
-    const subclassControl = () => {
-      if (ui.headEdit !== 'subclass') return headText('subclass', s.subclass, 'кликните или повысьте уровень');
-      return el('span', { class: 'mod-block-field' }, editInput('subclass', () => s.subclass, v => s.subclass = v, 'из класса или своё', subclassNames.length ? subclassListId : null),
-        subclassNames.length ? el('datalist', { id: subclassListId }, ...subclassNames.map(n => el('option', { value: n }))) : null);
-    };
-    const backgroundControl = () => ui.headEdit === 'background' ? editInput('background', () => s.background, v => s.background = v, 'перетащите или впишите') : headText('background', s.background, 'перетащите или кликните');
+    /// компактный блок с текстом, как у «Расы». Класс и предыстория — только снимок записи:
+    /// их меняют перетаскиванием из справочника, поэтому клик по тексту ничего не открывает.
+    const headText = (value, empty) => el(value ? 'strong' : 'span', { class: value ? 'mod-block-name' : 'mod-block-empty', title: value || '' }, value || empty);
+    const subclassNames = asList(classData.subclasses);
+    const alignmentLabel = value => value || 'Не указано';
+    /// Мировоззрение: кастомный дропдаун вместо нативного select. Список — те же ALIGNMENTS,
+    /// пустое значение показывается как «Не указано»; значение сохраняется в s.alignment.
     const alignmentControl = () => {
-      if (ui.headEdit !== 'alignment') return headText('alignment', s.alignment, 'кликните — выберите');
-      const sel = el('select', { class: 'mod-block-select', 'aria-label': 'Мировоззрение', disabled: dis(), onclick: e => e.stopPropagation(),
-        onchange: e => { s.alignment = e.target.value; save(); closeEdit(); }, onkeydown: e => { if (e.key === 'Escape') { e.stopPropagation(); closeEdit(); } } },
-        ...(!alignmentOptions.includes(s.alignment || '') ? [el('option', { value: s.alignment, selected: '' }, 'Текущее: ' + s.alignment)] : []),
-        ...alignmentOptions.map(value => el('option', { value, selected: (s.alignment || '') === value ? '' : null }, value || 'Не выбрано')));
-      setTimeout(() => { try { sel.showPicker?.(); } catch { sel.focus(); } }, 0);
-      return sel;
+      const current = s.alignment || '';
+      const values = alignmentOptions.slice();
+      if (current && !values.includes(current)) values.splice(1, 0, current);
+      const listId = 'alignment-list-' + id;
+      const btn = el('button', { type: 'button', class: 'align-picker-btn' + (current ? '' : ' empty'), 'aria-haspopup': 'listbox', 'aria-expanded': 'false', 'aria-controls': listId,
+        'aria-label': 'Мировоззрение: ' + alignmentLabel(current), title: 'Мировоззрение — выберите из списка', disabled: dis() ? '' : null },
+        el('span', { class: 'align-picker-value' }, alignmentLabel(current)),
+        el('span', { class: 'align-picker-caret', 'aria-hidden': 'true' }, '▾'));
+      const list = el('div', { class: 'align-picker-list', id: listId, role: 'listbox', 'aria-label': 'Мировоззрение', tabindex: '-1' });
+      const options = values.map(value => {
+        const selected = current === value;
+        return el('button', { type: 'button', class: 'align-picker-option' + (selected ? ' selected' : ''), role: 'option', tabindex: '-1',
+          'aria-selected': selected ? 'true' : 'false', 'data-value': value, onclick: e => { e.stopPropagation(); pick(value); } },
+          el('span', { class: 'align-picker-option-label' }, alignmentLabel(value)),
+          selected ? el('span', { class: 'align-picker-check', 'aria-hidden': 'true' }, '✓') : null);
+      });
+      list.append(...options);
+      const setActive = opt => { if (!opt) return; list.querySelectorAll('.align-picker-option.active').forEach(x => x.classList.remove('active')); opt.classList.add('active'); };
+      /// Выбор значения: панель закрывается до перерисовки, чтобы не оставить слой поверх листа.
+      const pick = value => {
+        pop.close(false);
+        if ((s.alignment || '') === value) return;
+        s.alignment = value; save(); render();
+      };
+      const pop = attachPopover(btn, list, {
+        onOpen: () => { const opt = list.querySelector('.align-picker-option.selected') || options[0]; setActive(opt); requestAnimationFrame(() => opt?.focus()); },
+        onClose: () => list.querySelectorAll('.align-picker-option.active').forEach(x => x.classList.remove('active')),
+      });
+      btn.addEventListener('click', e => { e.stopPropagation(); pop.toggle(false); });
+      btn.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); pop.open(false); } });
+      list.addEventListener('keydown', e => {
+        const opts = [...list.querySelectorAll('.align-picker-option')], i = opts.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const next = opts[(i + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length];
+          setActive(next); next?.focus();
+        } else if (e.key === 'Home' || e.key === 'End') {
+          e.preventDefault();
+          const next = e.key === 'Home' ? opts[0] : opts.at(-1);
+          setActive(next); next?.focus();
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const opt = document.activeElement?.classList.contains('align-picker-option') ? document.activeElement : list.querySelector('.align-picker-option.active');
+          if (opt) pick(opt.dataset.value || '');
+        } else if (e.key === 'Tab') pop.close(false);
+      });
+      return el('div', { class: 'align-picker' }, btn, list);
     };
     const blocks = el('div', { class: 'sheet-head-blocks' },
       headBlock('race', { label: 'Раса', filled: !!s.race, value: s.race, empty: 'перетащите блок',
         facts: raceFacts, note: raceModule ? '' : s.race ? 'старая запись без связи с модулем' : 'подключается блоком из справочника',
         hint: raceModule ? `Раса — снимок модуля (${raceModule.source || raceModule.snapshot.source || 'справочник'}). Перетащите другой блок расы, чтобы заменить.` : 'Раса подключается блоком из справочника: перетащите запись расы на этот блок.' }),
-      headBlock('class', { label: 'Класс', filled: !!s.class, control: classControl(),
-        facts: classFacts, note: s.class ? '' : 'блок справочника или своё название',
-        hint: classModule ? `Класс — снимок модуля (${classModule.source || 'справочник'}). Перетащите запись, чтобы заменить, или кликните, чтобы вписать своё.` : 'Перетащите блок класса из справочника или кликните, чтобы вписать название.' }),
-      headBlock(null, { label: 'Подкласс', filled: !!s.subclass, control: subclassControl(),
+      headBlock('class', { label: 'Класс', filled: !!s.class, control: headText(s.class, 'перетащите блок'),
+        facts: classFacts, note: s.class ? '' : 'перетащите запись класса из справочника',
+        hint: classModule ? `Класс — снимок модуля (${classModule.source || 'справочник'}). Перетащите запись класса из справочника, чтобы заменить.` : 'Класс подключается перетаскиванием записи из справочника на этот блок.' }),
+      headBlock(null, { label: 'Подкласс', filled: !!s.subclass, control: headText(s.subclass, 'выберите при повышении уровня'),
         facts: subclassNames.length ? `в классе: ${subclassNames.slice(0, 3).join(', ')}${subclassNames.length > 3 ? '…' : ''}` : '',
-        hint: 'Подкласс появляется на 2–3 уровне класса: кликните и выберите из списка класса или впишите свой вариант.' }),
-      headBlock('background', { label: 'Предыстория', filled: !!s.background, control: backgroundControl(),
-        facts: bgFacts, factsTitle: bgFacts, note: s.background ? '' : 'блок справочника или своё название',
-        hint: bgModule ? `Предыстория — снимок модуля (${bgModule.source || 'справочник'}): даёт навыки, инструменты и снаряжение.` : 'Перетащите блок предыстории из справочника или кликните, чтобы вписать название.' }),
-      headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentControl(), hint: 'Мировоззрение влияет только на отыгрыш: кликните и выберите из списка.' }));
-    const head = el('div', { class: 'head' }, portrait, el('div', {},
+        note: s.subclass ? '' : 'из мастера повышения уровня',
+        hint: 'Подкласс выбирается в мастере повышения уровня (кнопка +1) или при создании персонажа — в шапке он не редактируется.' }),
+      headBlock('background', { label: 'Предыстория', filled: !!s.background, control: headText(s.background, 'перетащите блок'),
+        facts: bgFacts, factsTitle: bgFacts, note: s.background ? '' : 'перетащите запись предыстории из справочника',
+        hint: bgModule ? `Предыстория — снимок модуля (${bgModule.source || 'справочник'}): даёт навыки, инструменты и снаряжение. Перетащите запись, чтобы заменить.` : 'Предыстория подключается перетаскиванием записи из справочника на этот блок.' }),
+      headBlock(null, { label: 'Мировоззрение', filled: !!s.alignment, control: alignmentControl(), hint: 'Мировоззрение влияет только на отыгрыш: откройте список и выберите значение.' }));
+    const head = el('div', { class: 'head' }, portraitWrap, el('div', {},
       el('div', { class: 'row', style: 'margin-bottom:6px' },
         el('div', { style: 'flex:2' }, el('label', {}, 'Имя'), inp('name', 'Имя персонажа')),
         el('div', { class: 'level-cell' }, el('label', {}, 'Уровень'), el('div', { class: 'level-value-row' },
@@ -649,16 +800,35 @@
           readonly || (s.level || 1) >= 20 ? null : el('button', { class: 'lvlup-btn', type: 'button', 'aria-label': 'Повысить уровень', title: 'Мастер повышения уровня: здоровье, умения, подкласс, характеристики, заклинания', onclick: levelUp }, '+1'))),
         el('div', {}, el('label', {}, 'Опыт'), inp('xp', '0', 'number'))),
       blocks));
-    const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
+    // Верхняя строка: только имя, статус и действия уровня листа. Тема и редакция — в футере.
+    const bar = el('div', { class: 'row sheet-topbar', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       el('button', { class: 'small', style: 'flex:0', title: 'Переменные листа: числа, которые записывают и читают действия (sheet.vars)', onclick: openVarsDialog }, 'Переменные…'),
-      readonly ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014']) : el('select', { class: 'small', style: 'flex:0;width:auto', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v))),
-      tokenPick,
-      el('button', { class: 'small', onclick: () => { if (!dirty || confirm('Отбросить несохранённые изменения и загрузить актуальный лист?')) reload(true); } }, 'Обновить'),
-      embed ? null : Theme.button(),
+      el('button', { class: 'small', style: 'flex:0', onclick: () => { if (!dirty || confirm('Отбросить несохранённые изменения и загрузить актуальный лист?')) reload(true); } }, 'Обновить'),
       readonly ? el('span', { class: 'badge' }, 'только чтение') : el('label', { style: 'flex:0;white-space:nowrap' }, el('input', { type: 'checkbox', style: 'width:auto', checked: s.shared ? '' : null, onchange: e => { s.shared = e.target.checked; save(); } }), ' виден игрокам'));
     return el('div', {}, bar, head);
+  }
+
+  /// Футер листа: настройки, которым не место в верхней строке, — редакция правил
+  /// (прежнее поведение: пересборка контекста и перерисовка) и маленькая кнопка темы.
+  function sheetFooter() {
+    const editionId = 'sheet-edition-' + id;
+    const edition = readonly
+      ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014'])
+      : el('select', { id: editionId, class: 'sheet-foot-select', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа',
+        'aria-label': 'Редакция правил', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } },
+        ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v)));
+    const themeBtn = Theme.button();
+    themeBtn.type = 'button';
+    themeBtn.classList.add('sheet-theme-btn');
+    themeBtn.setAttribute('aria-label', themeBtn.title);
+    themeBtn.addEventListener('click', () => themeBtn.setAttribute('aria-label', themeBtn.title));
+    return el('footer', { class: 'sheet-foot', 'aria-label': 'Настройки листа' },
+      el('div', { class: 'sheet-foot-group' }, el('label', { class: 'sheet-foot-label', for: readonly ? null : editionId }, 'Редакция правил'), edition),
+      el('div', { class: 'grow' }),
+      el('span', { class: 'sheet-foot-note muted' }, 'Настройки листа'),
+      embed ? null : el('div', { class: 'sheet-foot-group sheet-foot-theme' }, el('span', { class: 'sheet-foot-label' }, 'Тема'), themeBtn));
   }
 
   // ---------- вкладка Основное ----------

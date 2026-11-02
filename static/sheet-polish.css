@@ -1,0 +1,166 @@
+/* ---------------------------------------------------------------------------
+   sheet-polish.css — доводка листа персонажа: футер настроек, меню портрета,
+   кастомный дропдаун мировоззрения и защита от «залипших» слоёв над листом.
+   Подключается в sheet.html после style.css; цвета берёт из переменных темы,
+   поэтому работает и в тёмной, и в светлой теме.
+   --------------------------------------------------------------------------- */
+
+/* ---- Верхняя строка: имя и действия, без темы/редакции/загрузки ---- */
+.sheet .sheet-topbar { align-items: flex-start; gap: 6px 10px; flex-wrap: wrap; }
+.sheet .sheet-topbar h1 { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.sheet .sheet-topbar > .badge,
+.sheet .sheet-topbar > label { flex: 0 0 auto; }
+
+/* Запас снизу: фиксированные док кубиков (слева) и кнопка журнала (справа)
+   больше не перекрывают футер, когда лист прокручен до конца. */
+@media screen { .sheet { padding-bottom: 128px; } }
+
+/* ---- Футер настроек: редакция правил слева, тема справа ---- */
+.sheet .sheet-foot {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  margin-top: 20px; padding-top: 12px;
+  border-top: 1px solid var(--border); color: var(--muted);
+}
+.sheet .sheet-foot-group { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+.sheet .sheet-foot-label {
+  margin: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); opacity: .8;
+}
+.sheet .sheet-foot-select {
+  width: auto; min-width: 0; padding: 3px 8px; font-size: 12px;
+  background: transparent; border-radius: 6px; color: var(--text);
+}
+.sheet .sheet-foot-select:hover { border-color: var(--accent-line); }
+.sheet .sheet-foot-note { margin-left: auto; font-size: 10.5px; opacity: .7; }
+.sheet .sheet-foot-theme .sheet-theme-btn {
+  width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  color: var(--muted); background: transparent; border-color: transparent;
+}
+.sheet .sheet-foot-theme .sheet-theme-btn:hover { color: var(--text); border-color: var(--border); background: var(--panel2); }
+
+/* ---- Портрет: кликабельная область и компактное меню ---- */
+.sheet .portrait-wrap { position: relative; width: 96px; flex: 0 0 auto; }
+.sheet .portrait-wrap .portrait { width: 96px; height: 96px; }
+.sheet .portrait.has-image { border-color: var(--accent-line); }
+.sheet .portrait[role="button"] { position: relative; cursor: pointer; }
+.sheet .portrait[role="button"]:hover { border-color: var(--accent); }
+.sheet .portrait:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Подсказка «здесь меню»: появляется при наведении/фокусе и не ловит клики. */
+.sheet .portrait[role="button"]::after {
+  content: '⋯'; position: absolute; right: 4px; bottom: 4px; width: 20px; height: 20px;
+  display: grid; place-items: center; border-radius: 50%; pointer-events: none;
+  font-size: 14px; line-height: 1; color: #fff; background: var(--overlay);
+  opacity: 0; transition: opacity .15s ease;
+}
+.sheet .portrait[role="button"]:hover::after,
+.sheet .portrait[role="button"]:focus-visible::after { opacity: 1; }
+
+.sheet .portrait-menu {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 60;
+  width: 232px; padding: 5px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+/* Закрытая панель — не слой: без этого display у автора перебивает UA-правило [hidden]. */
+.sheet .portrait-menu[hidden] { display: none !important; pointer-events: none !important; }
+.sheet .portrait-menu-title {
+  padding: 5px 8px 3px; font-size: 9px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); opacity: .75; pointer-events: none;
+}
+.sheet .portrait-menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 8px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--text); font-size: 12.5px; text-align: left;
+}
+.sheet .portrait-menu-item:hover,
+.sheet .portrait-menu-item:focus-visible { background: var(--accent-soft); border-color: transparent; }
+.sheet .portrait-menu-item:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.sheet .portrait-menu-item.danger { color: var(--danger); }
+.sheet .portrait-menu-item:disabled { opacity: .42; cursor: not-allowed; background: transparent; }
+.sheet .portrait-menu-item .ico { flex: 0 0 auto; opacity: .85; }
+.sheet .portrait-menu-item .portrait-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .portrait-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); pointer-events: none; }
+
+/* Библиотека портретов внутри modal: сетка квадратов как у выбора ресурса. */
+.sheet .portrait-library { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.sheet .portrait-library .asset {
+  display: block; padding: 0; cursor: pointer; overflow: hidden;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 7px;
+}
+.sheet .portrait-library .asset .thumb { height: auto; aspect-ratio: 1; margin: 0; border-radius: 0; }
+.sheet .portrait-library .asset .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.sheet .portrait-library .asset span {
+  position: static; display: block; padding: 3px 5px; font-size: 10px;
+  background: var(--panel); color: var(--muted);
+}
+.sheet .portrait-library .asset.active { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ---- Мировоззрение: кнопка + кастомный список ---- */
+.sheet .align-picker { position: relative; min-width: 0; }
+.sheet .align-picker-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
+  color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-align: left;
+}
+.sheet .align-picker-btn:hover { color: var(--accent); border-color: transparent; }
+.sheet .align-picker-btn:focus-visible { outline: none; border-bottom: 1px solid var(--accent); }
+.sheet .align-picker-btn.empty { color: var(--muted); font-weight: 400; }
+.sheet .align-picker-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .align-picker-caret { margin-left: auto; flex: 0 0 auto; font-size: 10px; color: var(--muted); transition: transform .12s ease; }
+.sheet .align-picker-btn[aria-expanded="true"] .align-picker-caret { transform: rotate(180deg); }
+
+.sheet .align-picker-list {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 60;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 214px; max-width: min(280px, calc(100vw - 48px)); max-height: 286px;
+  overflow: auto; padding: 5px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+}
+.sheet .align-picker-list[hidden] { display: none !important; pointer-events: none !important; }
+.sheet-head-blocks .mod-block:last-child .align-picker-list { left: auto; right: 0; }
+.sheet .align-picker-option {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--text); font-size: 12.5px; text-align: left;
+}
+.sheet .align-picker-option:hover,
+.sheet .align-picker-option.active { background: var(--accent-soft); border-color: transparent; }
+.sheet .align-picker-option:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.sheet .align-picker-option.selected { color: var(--accent); font-weight: 600; }
+.sheet .align-picker-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .align-picker-check { margin-left: auto; flex: 0 0 auto; font-size: 11px; color: var(--accent); }
+
+/* ---- Декоративные подписи не должны ловить клики ---- */
+.sheet .mod-block-drop,
+.sheet .mod-block-facts,
+.sheet .mod-block-note,
+.sheet .portrait-menu-title,
+.sheet .portrait-menu-sep { pointer-events: none; }
+
+/* Тост — уведомление, а не кнопка: он всплывает в правом нижнем углу и не должен
+   перехватывать клики по инвентарю, пока висит. */
+.toast { pointer-events: none; }
+
+/* ---- Светлая тема: тень мягче, границы чуть контрастнее ---- */
+[data-theme="light"] .sheet .portrait-menu,
+[data-theme="light"] .sheet .align-picker-list { box-shadow: 0 14px 34px rgba(20, 24, 32, .2); }
+
+/* ---- Узкий лист ---- */
+@media (max-width: 520px) {
+  .sheet .portrait-wrap { margin-inline: auto; }
+  .sheet .portrait-menu { left: 50%; transform: translateX(-50%); width: min(260px, calc(100vw - 40px)); }
+  .sheet .align-picker-list { min-width: min(214px, calc(100vw - 40px)); }
+  .sheet .sheet-foot-note { display: none; }
+}
+@media (max-width: 480px) {
+  .sheet .portrait-menu { left: 0; transform: none; }
+}
+
+/* ---- Печать: интерактивные панели не нужны ---- */
+@media print {
+  .sheet .sheet-foot,
+  .sheet .portrait-menu,
+  .sheet .align-picker-list { display: none !important; }
+}
