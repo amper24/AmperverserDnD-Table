@@ -46,6 +46,18 @@ struct StaticFiles;
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
+    // Паники пишем в файл: без этого случайный выход сервера не оставляет следов.
+    std::panic::set_hook(Box::new(|info| {
+        let text = format!(
+            "[{}] panic: {}\n{}",
+            chrono::Utc::now().to_rfc3339(),
+            info,
+            std::backtrace::Backtrace::force_capture()
+        );
+        let _ = std::fs::write("dnd-panic.log", &text);
+        eprintln!("{text}");
+    }));
+
     // Конфигурация: config.yml (создаётся при первом запуске) + переменные окружения.
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let cfg_path = config::resolve_path(config::take_path_arg(&mut args));
