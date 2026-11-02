@@ -139,7 +139,7 @@ test('logic nodes never take the hit condition; only the if node does', () => {
 });
 
 test('все восемь операций логики считаются по таблице истинности', () => {
-  // Та же таблица на сервере: src/mechanics_graph.rs (тест logic_ops_follow_the_truth_table).
+  // Та же таблица на сервере: src/domain/mechanics_graph.rs (тест logic_ops_follow_the_truth_table).
   const truth = {
     and: (a, b) => a && b, or: (a, b) => a || b, not: a => !a,
     xor: (a, b) => a !== b, nand: (a, b) => !(a && b), nor: (a, b) => !(a || b),

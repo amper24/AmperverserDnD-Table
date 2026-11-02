@@ -10,7 +10,7 @@
 const fs = require('node:fs'), vm = require('node:vm');
 const { loadPresets } = require('../presets/node-loader.cjs');
 
-const MAX_TABLE_BYTES = 100_000; // лимит таблицы в src/mechanics_graph.rs
+const MAX_TABLE_BYTES = 100_000; // лимит таблицы в src/domain/mechanics_graph.rs
 // English-название записи: слой перевода или старое поле data.name_en.
 const nameEnOf = rec => String(rec.data?.i18n?.en?.name || rec.data?.name_en || '');
 // Английский текст владений для мультикласса (SRD 5.1, «Multiclassing»). Русский текст не должен попадать в en-вид.

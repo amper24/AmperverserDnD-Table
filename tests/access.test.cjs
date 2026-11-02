@@ -1,5 +1,5 @@
 // Права UI: матрица роль×возможность в static/access.js и её совпадение с сервером
-// (src/access.rs). access.js не трогает DOM и сеть, поэтому проверяется в vm.
+// (src/domain/access.rs). access.js не трогает DOM и сеть, поэтому проверяется в vm.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,28 +14,28 @@ function loadAccess() {
 const Access = loadAccess();
 const plain = value => JSON.parse(JSON.stringify(value));
 
-// Разбор src/access.rs: имя константы → строка возможности и списки ALL/PLAYER.
+// Разбор src/domain/access.rs: имя константы → строка возможности и списки ALL/PLAYER.
 function rustCapabilities() {
-  const src = fs.readFileSync('src/access.rs', 'utf8');
+  const src = fs.readFileSync('src/domain/access.rs', 'utf8');
   const consts = new Map();
   for (const m of src.matchAll(/pub const ([A-Z_]+): &str = "([^"]+)";/g)) consts.set(m[1], m[2]);
   const list = (name) => {
     const block = src.match(new RegExp(`pub const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
-    assert.ok(block, `в src/access.rs нет списка ${name}`);
+    assert.ok(block, `в src/domain/access.rs нет списка ${name}`);
     return plain([...block[1].matchAll(/\b([A-Z_]+)\b/g)].map(m => consts.get(m[1])).filter(Boolean));
   };
   return { all: list('ALL'), player: list('PLAYER'), consts };
 }
 const rust = rustCapabilities();
 
-test('список возможностей совпадает с сервером (нет дрейфа UI ↔ src/access.rs)', () => {
+test('список возможностей совпадает с сервером (нет дрейфа UI ↔ src/domain/access.rs)', () => {
   assert.deepEqual(plain(Access.ALL), rust.all);
   assert.deepEqual(plain(Access.PLAYER), rust.player);
   // Именованные константы CAP — те же строки, что и в ALL.
   for (const [key, cap] of Object.entries(Access.CAP)) {
     assert.ok(Access.ALL.includes(cap), `CAP.${key} = ${cap} отсутствует в ALL`);
     assert.ok(rust.consts.size > 0);
-    assert.ok([...rust.consts.values()].includes(cap), `CAP.${key} = ${cap} нет в src/access.rs`);
+    assert.ok([...rust.consts.values()].includes(cap), `CAP.${key} = ${cap} нет в src/domain/access.rs`);
   }
   assert.equal(Object.keys(Access.CAP).length, Access.ALL.length, 'у каждой возможности есть константа CAP');
 });

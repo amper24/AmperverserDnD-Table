@@ -6,7 +6,7 @@
     python3 tools/srd/build_skills.py --check    # только проверить, что файл актуален
 
 Ключи и характеристики должны совпадать со списком клиента (SKILLS в static/common.js)
-и списком сервера (SKILL_IDS в src/mechanics_graph.rs) — это проверяет tools/srd/integrity.cjs.
+и списком сервера (SKILL_IDS в src/domain/mechanics_graph.rs) — это проверяет tools/srd/integrity.cjs.
 
 У каждой записи свой граф: узел `rule.list` (kind: skill_proficiency) раздаёт владение этим навыком,
 поэтому запись работает как и остальные объекты справочника — её можно перетащить в

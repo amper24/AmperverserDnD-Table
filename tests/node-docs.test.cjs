@@ -55,6 +55,6 @@ test('входы и выходы в таблице совпадают с рее�
 test('список NODE_TYPES сервера совпадает с таблицей и реестром', () => {
   const server = rustConstants().NODE_TYPES.slice().sort();
   const documented = rowsOf(fs.readFileSync(DOC, 'utf8')).map(row => row.type).sort();
-  assert.deepEqual(server, documented, 'src/mechanics_graph.rs NODE_TYPES = docs/node-system-v3.md');
-  assert.deepEqual(server, Object.keys(R.NODE_DEFS).sort(), 'src/mechanics_graph.rs NODE_TYPES = static/node-registry.js');
+  assert.deepEqual(server, documented, 'src/domain/mechanics_graph.rs NODE_TYPES = docs/node-system-v3.md');
+  assert.deepEqual(server, Object.keys(R.NODE_DEFS).sort(), 'src/domain/mechanics_graph.rs NODE_TYPES = static/node-registry.js');
 });

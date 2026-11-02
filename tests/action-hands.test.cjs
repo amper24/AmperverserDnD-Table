@@ -1,6 +1,6 @@
 // Узел «Руки» (action.hands) и дополнительные слоты рук (extra1..extra4, sheet.extra_hands).
 // Проверяются: реестр и палитра, валидация параметров, форма, проекция в план, а также клиентские
-// правила слотов (Equipment.choices/migrate) — зеркало серверного src/inventory.rs.
+// правила слотов (Equipment.choices/migrate) — зеркало серверного src/domain/inventory.rs.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

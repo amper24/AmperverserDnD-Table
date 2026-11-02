@@ -151,11 +151,11 @@ test('версия в Cargo.toml совпадает с верхней запис
   assert.match(read('docs/node-system-v3-audit.md'), /HEAD 0\.8\.0/);
 });
 
-test('docs/db.md: 27 индексов (19 прежних + 8 новых) совпадают с src/db.rs', () => {
-  const statements = read('src/db.rs').split(/\r?\n/)
+test('docs/db.md: 27 индексов (19 прежних + 8 новых) совпадают с src/store/db.rs', () => {
+  const statements = read('src/store/db.rs').split(/\r?\n/)
     .filter(line => /CREATE (UNIQUE )?INDEX/.test(line) && !/\.replace\(/.test(line));
   const names = statements.map(line => /INDEX(?: IF NOT EXISTS)?\s+(\w+)/.exec(line)[1]);
-  assert.equal(names.length, 27, 'CREATE INDEX в src/db.rs');
+  assert.equal(names.length, 27, 'CREATE INDEX в src/store/db.rs');
   assert.equal(new Set(names).size, 27, 'имена индексов не повторяются');
   const added = ['idx_chars_campaign_updated', 'idx_chars_owner_updated', 'idx_scenes_campaign_created', 'idx_items_scene_z', 'idx_comp_category_name', 'idx_comp_pack_cat_name', 'idx_pack_editors_user', 'idx_campaign_packs_pack'];
   for (const name of added) assert.ok(names.includes(name), `новый индекс ${name}`);

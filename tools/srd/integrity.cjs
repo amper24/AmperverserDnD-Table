@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // integrity.cjs — проверка целостности встроенного справочника SRD
 // (data_seed/srd_2014.json, data_seed/srd_2024.json) и соответствия клиента
-// серверу (static/node-registry.js ↔ src/mechanics_graph.rs).
+// серверу (static/node-registry.js ↔ src/domain/mechanics_graph.rs).
 //
 // Запуск:   node tools/srd/integrity.cjs [--edition 2014,2024] [--json] [--quiet] [--max 20]
 // Библиотека: module.exports = { runAll, checkSeed, checkRuntime, REPO }
@@ -54,10 +54,10 @@ function loadRuntime() {
 
 // Константы сервера (единственный источник списка типов узлов для сохранения записи).
 function rustConstants() {
-  const src = fs.readFileSync(path.join(REPO, 'src/mechanics_graph.rs'), 'utf8');
+  const src = fs.readFileSync(path.join(REPO, 'src/domain/mechanics_graph.rs'), 'utf8');
   const list = name => {
     const m = src.match(new RegExp(`const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
-    if (!m) throw new Error(`не найдена константа ${name} в src/mechanics_graph.rs`);
+    if (!m) throw new Error(`не найдена константа ${name} в src/domain/mechanics_graph.rs`);
     return [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]);
   };
   return {
@@ -192,7 +192,7 @@ function checkSeed(edition, opts = {}) {
   report.stats.records = rows.length;
   report.stats.categories = Object.fromEntries([...byCategory].map(([c, list]) => [c, list.length]));
   for (const category of byCategory.keys()) {
-    if (!CATEGORIES.includes(category)) report.error('category-known', `${category}`, 'category', `категория «${category}» не входит в CATEGORIES (src/compendium.rs)`);
+    if (!CATEGORIES.includes(category)) report.error('category-known', `${category}`, 'category', `категория «${category}» не входит в CATEGORIES (src/api/compendium.rs)`);
   }
   for (const category of SEED_CATEGORIES) {
     if (!byCategory.has(category)) report.warn('category-expected', `${edition}`, 'category', `в наборе нет записей категории «${category}»`);
@@ -229,7 +229,7 @@ function checkSeed(edition, opts = {}) {
     if (isStr(row.slug) && !row.slug.startsWith(`srd${edition.slice(2)}-`)) report.error('edition-consistency', where, 'slug', `слаг не соответствует файлу редакции ${edition}`);
     if (!isStr(row.name) || !row.name.trim()) report.error('record-shape', where, 'name', 'пустое название');
     else {
-      if (row.name.length > 128) report.error('record-shape', where, 'name', 'название длиннее 128 символов (лимит util::truncate в src/compendium.rs)');
+      if (row.name.length > 128) report.error('record-shape', where, 'name', 'название длиннее 128 символов (лимит util::truncate в src/api/compendium.rs)');
       if (LATIN.test(row.name)) report.error('localization', where, 'name', `в русском названии «${row.name}» есть латиница`);
     }
     const dup = seen.get(id);
@@ -550,7 +550,7 @@ function checkSeed(edition, opts = {}) {
       if (ids.has(node.id)) report.error('duplicate-id', where, 'data.mechanics.graph.nodes', `ID узла «${node.id}» повторяется`);
       ids.add(node.id);
       nodesUsed.set(node.type, (nodesUsed.get(node.type) || 0) + 1);
-      if (!rust.NODE_TYPES.includes(node.type)) report.error('unknown-node-type', where, `data.mechanics.graph.nodes[${node.id}]`, `тип узла «${node.type}» не поддерживается сервером (src/mechanics_graph.rs NODE_TYPES)`);
+      if (!rust.NODE_TYPES.includes(node.type)) report.error('unknown-node-type', where, `data.mechanics.graph.nodes[${node.id}]`, `тип узла «${node.type}» не поддерживается сервером (src/domain/mechanics_graph.rs NODE_TYPES)`);
       if (node.type === 'action.roll') {
         const stat = node.params && node.params.dice && node.params.dice.stat;
         const STATS = ['', 'best', 'prof', 'atk', 'atk_str', 'atk_dex', 'spell', 'spell_mod', 'level', 'dc', 'str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -720,11 +720,11 @@ function checkRuntime(opts = {}) {
   const defs = Object.keys(Registry.NODE_DEFS);
   const exposed = defs.filter(t => !Registry.INTERNAL.has(t));
   for (const type of exposed) {
-    if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/mechanics_graph.rs NODE_TYPES)`);
+    if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/domain/mechanics_graph.rs NODE_TYPES)`);
   }
   // Внутренние узлы (group.input/group.output) намеренно вне палитры, но обязаны быть в реестре и на сервере.
   for (const type of rust.NODE_TYPES) {
-    if (!defs.includes(type)) report.error('client-server-parity', `src/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
+    if (!defs.includes(type)) report.error('client-server-parity', `src/domain/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
   }
   for (const type of Registry.INTERNAL) {
     if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);

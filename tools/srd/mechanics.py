@@ -364,7 +364,7 @@ SELF_ONLY = ('heal', 'temp_hp', 'condition', 'adjust', 'grant_item')
 
 def normalise(programs):
     """Никаких чужих целей: эффекты — владельцу листа, ветвление без атаки безусловно.
-    Зеркалит Mechanics.normalize (static/mechanics.js) и mechanics::normalize (src/mechanics.rs)."""
+    Зеркалит Mechanics.normalize (static/mechanics.js) и mechanics::normalize (src/domain/mechanics.rs)."""
     for p in programs:
         gate = False
         for b in p['blocks']:

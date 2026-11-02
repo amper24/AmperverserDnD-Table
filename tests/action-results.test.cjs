@@ -1,6 +1,6 @@
 // Результаты действий (data.result) и поле листа (data.sheet): закрытые узлы палитры,
 // проверка параметров и предпросмотр без состояния выполнения. Серверный рантайм
-// (condition_src, action_results) проверяют Rust-тесты src/mechanics.rs.
+// (condition_src, action_results) проверяют Rust-тесты src/domain/mechanics.rs.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

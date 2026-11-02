@@ -1,6 +1,6 @@
 // Условия листа (condition.status/item/hp/slot): закрытые узлы категории «Условия», проверка
 // параметров и предпросмотр без листа (false -> блок с таким условием пропускается).
-// Серверный рантайм (лист в context["runtime"]["sheet"]) проверяют Rust-тесты src/mechanics_graph.rs.
+// Серверный рантайм (лист в context["runtime"]["sheet"]) проверяют Rust-тесты src/domain/mechanics_graph.rs.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

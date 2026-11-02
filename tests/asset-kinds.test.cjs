@@ -11,7 +11,7 @@ const AK = ctx.window.AssetKinds;
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('server list ASSET_KINDS matches the client registry', () => {
-  const rust = fs.readFileSync('src/assets.rs', 'utf8');
+  const rust = fs.readFileSync('src/api/assets.rs', 'utf8');
   const match = rust.match(/const ASSET_KINDS: &\[&str\] = &\[([^\]]*)\];/);
   assert.ok(match, 'ASSET_KINDS constant exists');
   const serverIds = [...match[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
