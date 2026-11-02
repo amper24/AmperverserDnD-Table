@@ -370,7 +370,7 @@ self / item / tag, `amount` и момент `trigger` = use / attack.
   `result`. Аргументы привязываются к входам группы **по порядку** массива
   `group.inputs`, имена игнорируются; лишние `b`/`c` у группы с одним входом просто не
   используются. `result` обязан совпадать с типом выхода группы.
-- **Вычисление.** Клиент (`groupValue` в `static/mechanics-graph.js`) и сервер
+- **Вычисление.** Клиент (`groupValue` в `static/editor/mechanics-graph.js`) и сервер
   (`call_group_value` в `src/domain/mechanics_graph.rs`) находят группу, подставляют аргументы на
   `group.input`, считают значение, поданное на `group.output`, и приводят его к `result`.
   Без значения (неподключённый вход, отсутствующий runtime, неизвестное значение) —

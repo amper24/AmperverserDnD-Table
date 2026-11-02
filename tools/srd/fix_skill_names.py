@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """Единая терминология навыков в справочнике SRD.
 
-Клиентский словарь навыков — `window.SKILLS` в `static/common.js` («Расследование» для `investigation`).
+Клиентский словарь навыков — `window.SKILLS` в `static/core/common.js` («Расследование» для `investigation`).
 В данных SRD этот навык назывался «Анализ» (маппинг tools/srd/ru_names.py), из-за чего:
 
 * списки `data.skills.from` у классов предлагали название, которого нет в словаре листа
-  (`skillKey()` в static/character-builder.js знает только алиас, а `expertise_from_class`
-  в static/levelup.js вообще сравнивал ключи);
+  (`skillKey()` в static/editors/character-builder.js знает только алиас, а `expertise_from_class`
+  в static/editors/levelup.js вообще сравнивал ключи);
 * в текстах умений, монстров и предметов оставалось второе написание того же навыка.
 
 Скрипт приводит русские данные обеих редакций к названию из словаря и проверяет, что каждый
@@ -29,11 +29,11 @@ OLD, NEW = 'Анализ', 'Расследование'
 
 
 def skills_dictionary():
-    """Названия навыков из static/common.js — единственный словарь листа."""
+    """Названия навыков из static/core/common.js — единственный словарь листа."""
     text = open(os.path.join(ROOT, 'static', 'common.js'), encoding='utf-8').read()
     m = re.search(r'window\.SKILLS\s*=\s*\[([\s\S]*?)\n\];', text)
     if not m:
-        raise SystemExit('не найден window.SKILLS в static/common.js')
+        raise SystemExit('не найден window.SKILLS в static/core/common.js')
     rows = re.findall(r"\[\s*'([^']+)'\s*,\s*'([^']+)'\s*,", m.group(1))
     if len(rows) != 18:
         raise SystemExit(f'в SKILLS ожидалось 18 навыков, найдено {len(rows)}')
@@ -92,7 +92,7 @@ def main():
             if row['category'] == 'class':
                 for name in (data.get('skills') or {}).get('from', []):
                     if name not in names:
-                        problems.append(f'{row["slug"]}: навык «{name}» не найден в SKILLS (static/common.js)')
+                        problems.append(f'{row["slug"]}: навык «{name}» не найден в SKILLS (static/core/common.js)')
             data, changed = rewrite(data)
             replaced += changed
             if changed and not args.check:

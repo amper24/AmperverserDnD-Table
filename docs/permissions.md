@@ -3,7 +3,7 @@
 Один источник правды — `src/domain/access.rs`: возможности (capabilities), роли и проверки.
 Сервер проверяет их на каждом HTTP-эндпоинте и на каждом сообщении WebSocket;
 клиент получает готовый список прав в ответе кампании и только показывает/скрывает
-кнопки (`static/access.js`, `Access.can`).
+кнопки (`static/core/access.js`, `Access.can`).
 
 ## Возможности
 
@@ -73,7 +73,7 @@
 ```
 
 * `role` — для бейджа («Мастер»/«Игрок»), `permissions` — для `Access.can()`.
-* `src/domain/access.rs` — эталон; `static/access.js` — зеркало тех же строк для UI
+* `src/domain/access.rs` — эталон; `static/core/access.js` — зеркало тех же строк для UI
   (тест `tests/access.test.cjs` сверяет списки и ловит расхождение).
 * Сообщение об отказе по WS — `{ "type": "error", "code": "forbidden", "message": "…" }`;
   по HTTP — `403 {"detail": "Недостаточно прав: <возможность>"}`.
@@ -146,7 +146,7 @@
 * `cargo test` — `access::tests` (матрица роль×возможность, `require`,
   `item_write`, `can_create_item`, дубликаты и JSON), `realtime::presence_tests`
   (дедупликация присутствия и счётчик соединений).
-* `node --test tests/access.test.cjs` — `can()`/гейтинг и сверка `static/access.js`
+* `node --test tests/access.test.cjs` — `can()`/гейтинг и сверка `static/core/access.js`
   с `src/domain/access.rs` (нет дрейфа UI и сервера).
 * `tests/table-page.browser.cjs` — участники-аккаунты, «На стол» для чужого
   персонажа у мастера и недоступность у игрока, роль/исключение/приглашение.

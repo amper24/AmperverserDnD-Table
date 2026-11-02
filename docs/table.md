@@ -1,12 +1,12 @@
 # Виртуальный стол: слои, карты, туман войны, линейка, участники
 
-Стол — canvas-приложение в `static/table.js` (сцены, токены, туман, рисование) и
+Стол — canvas-приложение в `static/table/table.js` (сцены, токены, туман, рисование) и
 страница `static/table.html` (участники кампании: аккаунты, персонажи, токены).
-Чистая логика вынесена в `static/table-model.js`: файл не трогает DOM и сеть,
+Чистая логика вынесена в `static/table/table-model.js`: файл не трогает DOM и сеть,
 поэтому проверяется юнит-тестами (`tests/table-model.test.cjs`), а `table.js`,
 `app.js` и `table-page.js` используют его как единственный источник правил.
 Права ролей и проверки — [permissions.md](permissions.md) (`src/domain/access.rs`,
-`static/access.js`).
+`static/core/access.js`).
 
 Порядок загрузки: `common.js → access.js → asset-kinds.js → table-model.js →
 table.js` (`static/index.html`, слой 5). `table-model.js` зависит только от
@@ -81,8 +81,8 @@ asset_id, x, y, w, h } }`. Карт может быть несколько (эт
 
 ## Производительность сетки
 
-Сетка рисуется в `static/table.js` (`drawGrid`), геометрия — в
-`static/table-model.js` (`hexMetrics`, `hexCenter`, `hexAt`, `hexVisibleRange`,
+Сетка рисуется в `static/table/table.js` (`drawGrid`), геометрия — в
+`static/table/table-model.js` (`hexMetrics`, `hexCenter`, `hexAt`, `hexVisibleRange`,
 `gridCacheKey`). На больших картах важны три вещи.
 
 * **Только видимый диапазон.** `TableModel.hexVisibleRange(x0, y0, x1, y1, grid)`
@@ -129,8 +129,8 @@ asset_id, x, y, w, h } }`. Карт может быть несколько (эт
 ## Туман войны
 
 Туман — это маска **на карту**, а не на весь холст. Модель живёт в
-`static/table-model.js` (чистые функции, `tests/table-model.test.cjs`), рисует и
-редактирует её `static/table.js`.
+`static/table/table-model.js` (чистые функции, `tests/table-model.test.cjs`), рисует и
+редактирует её `static/table/table.js`.
 
 ```js
 scene.fog = {
@@ -207,7 +207,7 @@ scene.fog = {
 ### Синхронизация
 
 Маска — часть сцены и ходит тем же каналом, что сетка и слои: `commitFog`
-(`static/table.js`) → `scene_update { fog }`. Сервер (`src/ws/realtime.rs`) валидирует
+(`static/table/table.js`) → `scene_update { fog }`. Сервер (`src/ws/realtime.rs`) валидирует
 её `scenes::normalize_fog`:
 
 * `by_map` — объект; ключ — id карты до 64 символов (маски несуществующих карт
@@ -272,7 +272,7 @@ scene.fog = {
 
 ## Участники кампании
 
-Отдельная страница `static/table.html` + `static/table-page.js`, адрес
+Отдельная страница `static/table.html` + `static/table/table-page.js`, адрес
 `/table/<id кампании>` (маршрут в `src/main.rs`; ссылка «Участники» — в шапке
 стола, «Войти на карту» — обратно на `/c/<id>`). Страница показывает три секции:
 
@@ -294,7 +294,7 @@ scene.fog = {
    (`table.move_own_token`/`table.move_any_token`).
 
 Права приходят с сервера (`role` + `permissions`) и проверяются через
-`Access.can()` из `static/access.js`; сервер — источник правды и отвечает
+`Access.can()` из `static/core/access.js`; сервер — источник правды и отвечает
 `403`/`error`, поэтому скрытые кнопки не являются защитой. Полная модель прав —
 [docs/permissions.md](permissions.md).
 
@@ -342,7 +342,7 @@ id).
   (email, роли, онлайн, смена роли, исключение, приглашение), персонажи и
   «На стол» для чужого персонажа у мастера / для своего у игрока, токены сцены
   (HP, скрытность, владелец) и недоступность мастерских действий игроку.
-* `tests/access.test.cjs` — матрица роль×возможность и сверка `static/access.js`
+* `tests/access.test.cjs` — матрица роль×возможность и сверка `static/core/access.js`
   с `src/domain/access.rs`.
 * `cargo test` — валидация `scene.layers` и тела `scene_update`
   (`src/api/scenes.rs`, модули `layer_tests` и `fog_tests`), права

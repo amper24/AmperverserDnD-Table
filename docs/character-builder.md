@@ -1,9 +1,9 @@
 # Мастер создания персонажа
 
-Правила создания живут в `static/character-builder.js` (модуль
+Правила создания живут в `static/editors/character-builder.js` (модуль
 `CharacterBuilder`: проекции записей справочника, выборы «либо/либо», разбор
 стартового снаряжения, сборка листа), а окно мастера из восьми шагов —
-в `static/builder-dialog.js` (`newCharacterDialog`). Оба файла подключены после
+в `static/editors/builder-dialog.js` (`newCharacterDialog`). Оба файла подключены после
 `modules.js` и `compendium.js` (страница приложения и страница листа персонажа —
 модуль нужен редактору справочника там же; само окно используется только
 в `index.html`). Все три точки создания (личные персонажи, меню стола,
@@ -153,7 +153,7 @@
 
 Снаряжение выдаётся не текстом в заметках, а предметами в `sheet.inventory` —
 с UID, количеством, слотами и хватом (`docs/inventory.md`). Разбор текста
-класса и предыстории живёт в `static/character-builder.js`:
+класса и предыстории живёт в `static/editors/character-builder.js`:
 
 - `parseEquipmentText(text, source)` → блоки `fixed` (выдаётся всегда) и `group`
   (выбор одного варианта). Поддержаны форматы 2014 («- (a) X или (b) Y»,
@@ -232,9 +232,9 @@ node --test tests/character-builder.test.cjs
 node --test tests/character-builder-equipment.test.cjs
 node --test tests/character-builder-dialog.test.cjs
 node --test tests/mechanics.test.cjs
-node --check static/character-builder.js
-node --check static/builder-dialog.js
-node --check static/mechanics.js
+node --check static/editors/character-builder.js
+node --check static/editors/builder-dialog.js
+node --check static/editor/mechanics.js
 ```
 
 `character-builder-dialog.test.cjs` открывает мастер в песочнице с настоящим

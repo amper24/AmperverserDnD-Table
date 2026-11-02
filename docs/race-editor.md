@@ -2,8 +2,8 @@
 
 Отдельный конструктор расы по образу редактора класса: **Справочник → Расы →
 «+ Создать свою запись»** или **«Редактор расы» в карточке расы**. Код —
-`static/race-editor.js` (`window.RaceEditor`), стили — те же `.ced-*`, что у
-редактора класса (`static/style.css`).
+`static/editors/race-editor.js` (`window.RaceEditor`), стили — те же `.ced-*`, что у
+редактора класса (`static/css/style.css`).
 
 ## Разделы
 

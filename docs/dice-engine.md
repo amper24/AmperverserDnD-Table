@@ -1,6 +1,6 @@
 # Единый модуль бросков
 
-`static/dice-physics.js`, `static/dice-visual.js` и `static/dice.js` загружаются после
+`static/core/dice-physics.js`, `static/core/dice-visual.js` и `static/editor/nodes/data/dice.js` загружаются после
 `common.js` в лобби/столе и листе персонажа. Они не требуют CDN, WebGL, Three.js
 или сторонних библиотек. Старый `rollDice` сохранён как совместимый алиас чистого
 `DiceEngine.evaluate`.

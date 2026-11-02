@@ -5,7 +5,7 @@
     python3 tools/srd/build_skills.py            # пересобрать data_seed/skills.json
     python3 tools/srd/build_skills.py --check    # только проверить, что файл актуален
 
-Ключи и характеристики должны совпадать со списком клиента (SKILLS в static/common.js)
+Ключи и характеристики должны совпадать со списком клиента (SKILLS в static/core/common.js)
 и списком сервера (SKILL_IDS в src/domain/mechanics_graph.rs) — это проверяет tools/srd/integrity.cjs.
 
 У каждой записи свой граф: узел `rule.list` (kind: skill_proficiency) раздаёт владение этим навыком,
@@ -111,7 +111,7 @@ def entries():
                 'ability': ability,
                 'name_en': name_en,
                 'desc': desc,
-                'icon': 'target',  # стандартный ассет приложения (static/common.js)
+                'icon': 'target',  # стандартный ассет приложения (static/core/common.js)
                 'mechanics': graph(name),
                 'i18n': {'en': {'name': name_en, 'desc': desc_en}},
             },

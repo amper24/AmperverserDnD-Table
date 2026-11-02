@@ -2,7 +2,7 @@
 
 Отдельный конструктор класса: **Справочник → Классы → «+ Создать свою запись»**
 или **«Редактор класса» в карточке любого класса** (вместо общего редактора записи).
-Код — `static/class-editor.js` (`window.ClassEditor`), стили — `.ced-*` в `static/style.css`.
+Код — `static/editors/class-editor.js` (`window.ClassEditor`), стили — `.ced-*` в `static/css/style.css`.
 
 ## Зачем
 

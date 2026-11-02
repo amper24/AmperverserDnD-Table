@@ -41,7 +41,7 @@ SKILLS_PATH = ROOT / "data_seed" / "skills.json"
 PRESETS = ROOT / "static" / "presets"
 EDITIONS = ("2014", "2024")
 
-# Стандартные иконки приложения (static/common.js).
+# Стандартные иконки приложения (static/core/common.js).
 RACE_ICONS = {
     "dwarf": "helm", "elf": "leaf", "half-elf": "halfleaf", "tiefling": "horns", "dragonborn": "dragon",
     "gnome": "cog", "human": "user", "halfling": "leaf", "half-orc": "horns", "orc": "horns", "goliath": "chest",
