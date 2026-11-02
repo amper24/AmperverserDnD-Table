@@ -279,6 +279,24 @@ test('gridCacheCovers: кэш с полями накрывает вьюпорт,
   assert.equal(M.gridCacheCovers({ x: 0, y: 0, w: 0, h: 0 }, 1000, 800), false);
 });
 
+test('карта: прямоугольник нового объекта — пиксели картинки и привязка угла к сетке', () => {
+  const square = { size: 70, type: 'square' };
+  // Размер карты — пиксели изображения (столько клеток, сколько пикселей при сетке 70).
+  // Центр — в точке броска; левый верхний угол притянут к узлу сетки.
+  assert.deepEqual(
+    plain(M.mapRect({ width: 1400, height: 700 }, { x: 500, y: 500 }, { grid: square, snap: true })),
+    { x: 490, y: 490, w: 1400, h: 700 },
+  );
+  // Привязка выключена или гексы — позиция ровно там, где бросили.
+  assert.deepEqual(plain(M.mapRect({ width: 1400, height: 700 }, { x: 500, y: 500 }, { grid: square, snap: false })), { x: 500, y: 500, w: 1400, h: 700 });
+  assert.deepEqual(plain(M.mapRect({ width: 1400, height: 700 }, { x: 500, y: 500 }, { grid: { size: 70, type: 'hex' }, snap: true, hex: true })), { x: 500, y: 500, w: 1400, h: 700 });
+  // Нет размеров у ассета (старая запись) — карта 10×10 клеток, а не нулевая.
+  assert.deepEqual(plain(M.mapRect({}, { x: 70, y: 70 }, { grid: square, snap: true })), { x: 70, y: 70, w: 700, h: 700 });
+  assert.deepEqual(plain(M.mapRect({ width: 0, height: -5 }, { x: 0, y: 0 }, { grid: square, snap: false })), { x: 0, y: 0, w: 700, h: 700 });
+  // Битые координаты точки — 0, а не NaN (иначе элемент пропадал бы с канвы).
+  assert.deepEqual(plain(M.mapRect({ width: 700, height: 700 }, { x: 'a', y: null }, { grid: square, snap: false })), { x: 0, y: 0, w: 700, h: 700 });
+});
+
 test('table.js/app.js используют модель и больше не ограничивают число карт', () => {
   const table = fs.readFileSync('static/table/table.js', 'utf8');
   const app = fs.readFileSync('static/pages/app.js', 'utf8');
@@ -292,6 +310,22 @@ test('table.js/app.js используют модель и больше не о�
   assert.ok(app.includes('/table/'), 'со стола есть ссылка на страницу участников');
   const html = fs.readFileSync('static/index.html', 'utf8');
   assert.ok(html.indexOf('/static/table/table-model.js') < html.indexOf('/static/table/table.js'), 'table-model.js загружается до table.js');
+});
+
+test('новая карта уходит на сервер как явное создание (иначе он её молча отбрасывал)', () => {
+  const table = fs.readFileSync('static/table/table.js', 'utf8');
+  // Геометрия карты — в модели, а не в placeAsset.
+  assert.ok(table.includes('T.mapRect('), 'placeAsset считает прямоугольник карты через модель');
+  assert.equal(/wdt = \+a\.width/.test(table), false, 'старый расчёт размера карты убран');
+  // id карты известен клиенту сразу, поэтому создание помечается флагом create:true:
+  // без него сервер считает «id есть, строки нет» запоздавшим движением и отбрасывает.
+  assert.ok(/upsert\(item, \{ create: isMap \}\)/.test(table), 'создание карты помечено create');
+  assert.ok(/create: opts\.create \|\| undefined/.test(table), 'upsert передаёт флаг в item_upsert');
+  // Карта видна сразу: новый объект с известным id добавляется локально, а не ждёт рассылки.
+  assert.ok(/S\.scene\.items\.push\(it\)/.test(table), 'upsert добавляет новый объект локально');
+  // Отказ сервера теперь виден, а не «ничего не произошло».
+  assert.ok(/case 'error': rollbackPending\(/.test(table), 'ошибка сервера обрабатывается');
+  assert.ok(/S\.pending/.test(table), 'неподтверждённые объекты отслеживаются');
 });
 
 // ---------------------------------------------------------------- туман войны

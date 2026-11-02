@@ -332,6 +332,73 @@ asyncio.run(main())
 PY
 [ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "len(d['items'])")" = "1" ]   # уборка после [5c]
 
+echo "[5d] WS: карта — обычный объект слоя map (создание с готовым id)"
+python3 - "$B" "$CID" "$SID" "$GM" "$PL" <<'PY'
+import sys, json, asyncio, uuid, urllib.request
+B, CID, SID, GM, PL = sys.argv[1:]
+import websockets
+
+async def drain(ws, t=0.6):
+    out = []
+    try:
+        while True:
+            out.append(json.loads(await asyncio.wait_for(ws.recv(), t)))
+    except asyncio.TimeoutError:
+        return out
+
+def scene_items():
+    req = urllib.request.Request(f"{B}/api/campaigns/{CID}/scenes/{SID}", headers={"Authorization": f"Bearer {GM}"})
+    return json.load(urllib.request.urlopen(req))["items"]
+
+MAP_DATA = {"type": "image", "asset_id": "map-asset", "x": 350, "y": 350, "w": 700, "h": 700, "locked": False}
+
+async def main():
+    W = B.replace("http", "ws")
+    async with websockets.connect(f"{W}/ws/{CID}?token={GM}") as g, websockets.connect(f"{W}/ws/{CID}?token={PL}") as p:
+        await drain(g); await drain(p)
+        # Карта: клиент присылает готовый id (по нему выбирается активная карта для тумана)
+        # и create:true. Без флага сервер считал «id есть, строки нет» запоздавшим движением
+        # удалённого элемента и молча отбрасывал — карты не появлялись ни у кого.
+        map_id = uuid.uuid4().hex
+        await g.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"id": map_id, "create": True, "layer": "map", "z": -100, "data": MAP_DATA}}))
+        u = [m for m in await drain(g) if m["type"] == "item_upsert"]
+        assert u and u[0]["item"]["id"] == map_id and u[0]["item"]["layer"] == "map", f"карта не создалась: {u}"
+        assert "create" not in u[0]["item"]["data"], "служебный флаг create попал в данные элемента"
+        seen = [m for m in await drain(p) if m["type"] == "item_upsert"]
+        assert seen and seen[0]["item"]["id"] == map_id, "игрок не увидел карту"
+        assert any(i["id"] == map_id and i["layer"] == "map" for i in scene_items()), "карты нет в GET сцены"
+
+        # Вторая карта живёт рядом с первой, первая не заменяется.
+        map2 = uuid.uuid4().hex
+        await g.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"id": map2, "create": True, "layer": "map", "z": -100, "data": {**MAP_DATA, "x": 1050}}}))
+        assert [m for m in await drain(g) if m["type"] == "item_upsert"], "вторая карта не создалась"
+        assert {i["id"] for i in scene_items() if i["layer"] == "map"} == {map_id, map2}, "карт в сцене не две"
+
+        # Тот же путь без create:true — запоздавшее движение удалённого элемента: тишина.
+        await g.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"id": uuid.uuid4().hex, "layer": "map", "z": -100, "data": MAP_DATA}}))
+        assert not [m for m in await drain(g) if m["type"] == "item_upsert"], "элемент с неизвестным id создан без create:true"
+
+        # Игрок карту не создаёт (слой map — мастерский) и получает явную ошибку, а не тишину.
+        await p.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"id": uuid.uuid4().hex, "create": True, "layer": "map", "z": -100, "data": MAP_DATA}}))
+        err = [m for m in await drain(p) if m["type"] == "error"]
+        assert err and err[0]["code"] == "forbidden", f"игроку не отказали: {err}"
+
+        # Удаление одной карты не трогает вторую; активная карта снимается вместе с ней.
+        await g.send(json.dumps({"type": "scene_update", "scene_id": SID, "active_map_id": map_id}))
+        await drain(g); await drain(p)
+        await g.send(json.dumps({"type": "item_delete", "scene_id": SID, "id": map_id}))
+        deleted = [m for m in await drain(g) if m["type"] == "item_delete"]
+        assert deleted and deleted[0]["id"] == map_id, "карта не удалилась"
+        await drain(p)
+        assert [i["id"] for i in scene_items() if i["layer"] == "map"] == [map2], "удалили не только выбранную карту"
+        await g.send(json.dumps({"type": "item_delete", "scene_id": SID, "id": map2}))
+        await drain(g); await drain(p)
+        print("ws map ok")
+
+asyncio.run(main())
+PY
+[ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "(len([i for i in d['items'] if i['layer'] == 'map']), d['active_map_id'])")" = "(0, None)" ]   # уборка после [5d]
+
 echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]
 gm -X DELETE "$B/api/campaigns/$CID" | grep -q '"ok":true'

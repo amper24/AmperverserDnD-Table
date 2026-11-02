@@ -84,6 +84,9 @@ window.Table = (function () {
   pingColor: (() => { try { return localStorage.getItem('table.pingColor') || '#ffd54f'; } catch { return '#ffd54f'; } })(),
       // Мультивыделение: sel — «главный» элемент для панели свойств, selSet — все выбранные.
       selSet: new Set(), selBox: null,
+      // Объекты, показанные локально до подтверждения сервером (create с готовым id):
+      // подтверждение снимает id из набора, отказ сервера — убирает объект со стола.
+      pending: new Set(),
       // Туман войны — право table.manage_fog (по умолчанию совпадает с ролью мастера).
       canFog: ctx.canFog !== undefined ? !!ctx.canFog : !!ctx.isGM,
       // dirty — есть ли изменения для кадра; gridCache — offscreen-кэш сетки.
@@ -125,7 +128,7 @@ window.Table = (function () {
   }
 
   function setScene(scene) {
-    S.scene = adoptScene(scene); S.sel = null; S.temp = null; S.fogUndo = {};
+    S.scene = adoptScene(scene); S.sel = null; S.temp = null; S.fogUndo = {}; S.pending = new Set();
     S.layers = T.normalize(scene?.layers);
     // Активный слой мог исчезнуть в новой сцене — фолбэк на prop, как и у элементов.
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
@@ -473,10 +476,13 @@ window.Table = (function () {
     blitGridCache(c, S.gridCache);
   }
   // Кадры идут по требованию: когда картинка догрузилась, просим один кадр,
-  // иначе токен остался бы заглушкой до следующего действия пользователя.
+  // иначе карта/токен остался бы серой заглушкой до следующего действия пользователя.
   const watchedImages = new WeakSet();
   function watchImage(img) {
-    if (!img || img.complete || watchedImages.has(img)) return;
+    // assetImage() отдаёт <img> без src: URL появляется позже, после распаковки base64.
+    // Поэтому «complete» у такой картинки уже true, а naturalWidth ещё 0 — ждём load/error,
+    // иначе первый кадр рисует заглушку и больше никто не просит перерисовку.
+    if (!img || watchedImages.has(img) || (img.complete && img.naturalWidth > 0)) return;
     watchedImages.add(img);
     img.addEventListener('load', () => { watchedImages.delete(img); requestDraw(); }, { once: true });
     img.addEventListener('error', () => { watchedImages.delete(img); }, { once: true });
@@ -1054,24 +1060,38 @@ window.Table = (function () {
     if (!S.isGM && layer !== LAYER.character) layer = LAYER.character;
     // Скрытый или заблокированный слой карты не должен «съедать» новую карту: показываем и снимаем блок.
     if (layer === LAYER.map) {
-      const layers = getLayers();
-      const mapLayer = layers.find(entry => entry.id === LAYER.map);
+      const list = getLayers();
+      const mapLayer = list.find(entry => entry.id === LAYER.map);
       if (mapLayer && (mapLayer.hidden || mapLayer.locked)) {
-        setLayers(layers.map(entry => entry.id === LAYER.map ? { ...entry, hidden: false, locked: false } : entry));
+        setLayers(list.map(entry => entry.id === LAYER.map ? { ...entry, hidden: false, locked: false } : entry));
       }
     }
+    const isMap = layer === LAYER.map;
     let wdt, hgt, x = w.x, y = w.y;
-    if (layer === LAYER.map) {
+    if (isMap) {
       // На слое карт может лежать несколько карт (этажи/области): каждая — обычный объект,
-      // прежнюю карту не трогаем и ничего не подтверждаем.
-      wdt = +a.width || g * 10; hgt = +a.height || g * 10;
-      if (isHex()) { x = w.x; y = w.y; }
-      else if (S.snap) { const c = T.snapCorner(w.x - wdt / 2, w.y - hgt / 2, S.scene.grid); x = c.x + wdt / 2; y = c.y + hgt / 2; }
-    } else { const ratio = a.width / a.height || 1; wdt = g; hgt = g / ratio; if (AssetKinds.get(a.kind).square) { wdt = g; hgt = g; } const p = snapPos(x, y, wdt, hgt); x = p.x; y = p.y; }
-    const id = layer === LAYER.map ? newId() : undefined;
-    upsert({ id, layer, z: layer === LAYER.map ? -100 : 0, data: { type: 'image', asset_id: a.id, x, y, w: wdt, h: hgt, name: layer === LAYER.character ? a.name : undefined, owner_id: S.isGM ? undefined : S.user.id, locked: layer === LAYER.map ? false : undefined } });
+      // прежнюю карту не трогаем и ничего не подтверждаем. Геометрия — в table-model.js.
+      const rect = T.mapRect(a, w, { grid: S.scene.grid, snap: S.snap, hex: isHex() });
+      x = rect.x; y = rect.y; wdt = rect.w; hgt = rect.h;
+    } else {
+      const ratio = a.width / a.height || 1; wdt = g; hgt = g / ratio; if (AssetKinds.get(a.kind).square) { wdt = g; hgt = g; } const p = snapPos(x, y, wdt, hgt); x = p.x; y = p.y;
+    }
+    // Карта создаётся со своим id сразу (по нему мастер выбирает активную карту для тумана)
+    // и потому уходит на сервер как явное создание — иначе он счёл бы это запоздавшим
+    // движением удалённого элемента и молча отбросил (см. src/ws/realtime.rs).
+    const item = { id: isMap ? newId() : undefined, layer, z: isMap ? -100 : 0, data: { type: 'image', asset_id: a.id, x, y, w: wdt, h: hgt, name: isMap || layer === LAYER.character ? a.name : undefined, owner_id: S.isGM ? undefined : S.user.id, locked: isMap ? false : undefined } };
+    upsert(item, { create: isMap });
     // Карта — обычный объект: не делаем её активной и не вписываем вид автоматически.
     // Активную карту (для тумана) мастер выбирает сам, а двигать/выделять её можно на слое «Карта».
+    if (isMap) noticeIfOffscreen(item);
+  }
+  /// Новая карта за пределами видимой области не должна «теряться»: подсказываем, где она.
+  function noticeIfOffscreen(it) {
+    const b = T.boundsOf(it);
+    if (!b || !(S.w > 0) || !(S.h > 0)) return;
+    const tl = toWorld(0, 0), br = toWorld(S.w, S.h);
+    const visible = b.x < br.x && b.x + b.w > tl.x && b.y < br.y && b.y + b.h > tl.y;
+    if (!visible) toast('Карта добавлена за пределами экрана — она в панели «Сцены» → «Карты сцены», кнопка «Вписать» покажет её');
   }
   // ---------- линейка: привязка к сетке (Ctrl/Cmd — свободно) ----------
   /// Свободный режим линейки: зажат Ctrl/Cmd или привязка выключена кнопкой «#».
@@ -1106,10 +1126,28 @@ window.Table = (function () {
   function throttleSend(m) { const n = Date.now(); if (n - _lastSend > 60) { _lastSend = n; S.ws.send(m); } }
 
   // ---------- синхронизация ----------
-  function upsert(it) {
-    if (it.id) { const idx = S.scene.items.findIndex(i => i.id === it.id); if (idx >= 0) S.scene.items[idx] = it; }
-    S.ws.send({ type: 'item_upsert', scene_id: S.scene.id, item: { id: it.id, layer: it.layer, z: it.z, data: it.data } });
+  /// Отправить элемент на сервер и сразу применить локально.
+  /// Новый объект с уже известным id виден немедленно (карты: id нужен сразу, чтобы выбрать
+  /// карту активной), остальные получают id от сервера и появляются по его рассылке.
+  /// opts.create — «создай строку с этим id, если её ещё нет» (см. src/ws/realtime.rs).
+  function upsert(it, opts = {}) {
+    const idx = it.id ? S.scene.items.findIndex(i => i.id === it.id) : -1;
+    if (idx >= 0) S.scene.items[idx] = it;
+    else if (it.id) { S.scene.items.push(it); if (opts.create) S.pending.add(it.id); }
+    // create — служебное поле протокола; undefined в JSON не попадает вовсе.
+    S.ws.send({ type: 'item_upsert', scene_id: S.scene.id, item: { id: it.id, layer: it.layer, z: it.z, data: it.data, create: opts.create || undefined } });
+    if (T.isMap(it)) notifySceneChange();
     requestDraw();
+  }
+  /// Сервер отклонил действие: убираем объекты, которые мы показали, не дождавшись подтверждения.
+  function rollbackPending(message) {
+    if (!S.pending.size) { toast(message || 'Сервер отклонил действие'); return; }
+    const gone = new Set(S.pending);
+    S.scene.items = S.scene.items.filter(i => !gone.has(i.id));
+    S.pending.clear();
+    S.sel = null; S.selSet = new Set();
+    updateProps(); notifySceneChange(); requestDraw();
+    toast(message || 'Сервер отклонил действие');
   }
   /// Локальные настройки сцены (в т.ч. сетка из панели ГМ) применяются сразу,
   /// не дожидаясь ответа сервера: поэтому sendScene тоже просит кадр.
@@ -1123,7 +1161,9 @@ window.Table = (function () {
   function onMessage(m) {
     if (m.scene_id && m.scene_id !== S.scene.id && m.type !== 'active_scene') return;
     switch (m.type) {
-      case 'item_upsert': { const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
+      case 'item_upsert': { S.pending.delete(m.item.id); const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
+      // Отказ сервера (права, запись в базу): без этого сообщения действие просто «исчезало».
+      case 'error': rollbackPending(m.message); break;
       case 'item_delete': {
         const deleted = S.scene.items.find(i => i.id === m.id);
         S.scene.items = S.scene.items.filter(i => i.id !== m.id);

@@ -68,7 +68,12 @@ impl Hub {
     }
     /// Отказ по правам — только тому соединению, которое нарушило правило.
     async fn forbidden(&self, cid: &str, conn_id: u64, message: &str) {
-        self.send_to_connection(cid, conn_id, json!({ "type": "error", "code": "forbidden", "message": message })).await;
+        self.fail(cid, conn_id, "forbidden", message).await;
+    }
+    /// Ошибка действия клиента: без неё отказ выглядит как «ничего не произошло»
+    /// (например, элемент стола не сохранился, и карта молча не появлялась).
+    async fn fail(&self, cid: &str, conn_id: u64, code: &str, message: &str) {
+        self.send_to_connection(cid, conn_id, json!({ "type": "error", "code": code, "message": message })).await;
     }
     /// Присутствие: один участник — одна запись, даже если у него открыто несколько
     /// вкладок (счётчик `connections`). Порядок стабилен — по времени подключения.
@@ -561,11 +566,29 @@ async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str,
 
 const PLAYER_FIELDS: &[&str] = &["x", "y", "rotation", "hp", "conditions", "attachments", "dead"];
 
+/// Можно ли применять входящий item_upsert к строке сцены.
+/// id нет — обычное создание (id выдаст сервер, ответ разошлют всем).
+/// id есть и строка есть — правка.
+/// id есть, строки нет — это либо явное создание с готовым id (`create: true`, так клиент
+/// кладёт карту: id нужен сразу, чтобы выбрать её активной), либо запоздавшее движение
+/// удалённого/подобранного элемента. Второе отбрасываем, иначе токен «воскресал» бы.
+fn may_apply(id: Option<&str>, has_row: bool, create: bool) -> bool {
+    match id {
+        Some(_) => has_row || create,
+        None => true,
+    }
+}
+
 async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, user: &auth::AuthUser, role: &str, item: &Value) {
     let id = item["id"].as_str().map(|s| s.to_string());
     let mut data = if item["data"].is_object() { item["data"].clone() } else { json!({}) };
     let layer_in = item["layer"].as_str().map(|s| s.to_string());
     let z_in = item["z"].as_i64();
+    // Явное создание объекта с готовым id. Клиент присылает id заранее, когда он нужен
+    // сразу после создания (карта: по id выбирается активная карта для тумана).
+    // Без этого флага «id есть, строки нет» считается запоздавшим движением удалённого
+    // токена и отбрасывается — иначе удалённый токен «воскресал» бы.
+    let create = item["create"].as_bool().unwrap_or(false);
 
     let existing = match &id {
         Some(id) => sqlx::query("SELECT layer, z, data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten(),
@@ -573,7 +596,7 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
     };
 
     // A delayed move must never resurrect a picked-up/deleted token.
-    if id.is_some() && existing.is_none() { return; }
+    if !may_apply(id.as_deref(), existing.is_some(), create) { return; }
     if id.is_none() && data["managed_loot"] == true { return; }
     let (final_id, layer, z, data) = match existing {
         Some(row) => {
@@ -623,8 +646,14 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
             }
             let id = id.filter(|s| util::short_id(s)).unwrap_or_else(util::uid);
             let z = z_in.unwrap_or(0);
-            let _ = sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+            let inserted = sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
                 .bind(&id).bind(scene_id).bind(&layer).bind(z).bind(data.to_string()).bind(util::now()).execute(&st.db).await;
+            // Раньше ошибка записи терялась: клиент считал элемент созданным, а его не было
+            // ни в базе, ни у других участников. Теперь отказ виден в интерфейсе.
+            if !inserted.is_ok_and(|r| r.rows_affected() > 0) {
+                st.hub.fail(cid, conn_id, "item_not_saved", "Элемент стола не сохранился").await;
+                return;
+            }
             (id, layer, z, data)
         }
     };
@@ -757,5 +786,38 @@ mod presence_tests {
         let second = users(&hub, "c2");
         assert_eq!(second.len(), 1);
         assert_eq!(second[0]["user_id"], "u2");
+    }
+}
+
+#[cfg(test)]
+mod item_upsert_tests {
+    use super::*;
+
+    #[test]
+    fn client_ids_create_only_with_explicit_flag() {
+        // Карта: клиент присылает готовый id и create: true — строка создаётся.
+        assert!(may_apply(Some("map-id"), false, true), "явное создание с готовым id");
+        // Тот же id без флага — запоздавшее движение удалённого элемента: молча отбрасываем.
+        assert!(!may_apply(Some("gone-id"), false, false), "воскрешение удалённого токена");
+        // Правка существующей строки — всегда можно.
+        assert!(may_apply(Some("row-id"), true, false));
+        assert!(may_apply(Some("row-id"), true, true), "повтор создания — это правка");
+        // Без id — обычное создание, id выдаст сервер.
+        assert!(may_apply(None, false, false));
+        assert!(may_apply(None, true, false));
+    }
+
+    #[test]
+    fn upsert_reads_the_create_flag_and_keeps_it_out_of_data() {
+        let msg = json!({ "type": "item_upsert", "scene_id": "s1", "item": {
+            "id": "0123456789abcdef0123456789abcdef", "layer": "map", "z": -100, "create": true,
+            "data": { "type": "image", "asset_id": "a", "x": 100, "y": 100, "w": 700, "h": 700 }
+        }});
+        let item = &msg["item"];
+        assert_eq!(item["create"].as_bool(), Some(true), "флаг доходит до сервера");
+        // create — служебное поле протокола, а не данные элемента: в базу не попадает.
+        assert!(item["data"].get("create").is_none(), "в data флага нет");
+        assert!(util::short_id(item["id"].as_str().unwrap()), "32-символьный id клиента допустим");
+        assert!(!util::short_id(&"x".repeat(33)), "слишком длинный id не принимается");
     }
 }

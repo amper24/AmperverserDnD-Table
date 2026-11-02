@@ -230,6 +230,22 @@ window.TableModel = (() => {
     return { x: Math.round((x - g / 2) / g) * g + g / 2, y: Math.round((y - g / 2) / g) * g + g / 2 };
   }
 
+  // ---------- размещение ассетов ----------
+  /// Прямоугольник новой карты: размер — пиксели картинки (карта занимает столько клеток,
+  /// сколько у неё пикселей при текущем размере сетки; нет размеров — 10×10 клеток).
+  /// Центр — в точке броска; на квадратах верхний левый угол притягивается к узлу сетки,
+  /// чтобы клетки карты совпали с клетками стола. На гексах/без привязки — как бросили.
+  /// opts: { grid, snap, hex }.
+  function mapRect(asset, point, opts = {}) {
+    const g = gridSize(opts.grid);
+    const w = Number(asset?.width) > 0 ? Number(asset.width) : g * 10;
+    const h = Number(asset?.height) > 0 ? Number(asset.height) : g * 10;
+    const x = Number(point?.x) || 0, y = Number(point?.y) || 0;
+    if (opts.hex || !opts.snap) return { x, y, w, h };
+    const c = snapCorner(x - w / 2, y - h / 2, opts.grid);
+    return { x: c.x + w / 2, y: c.y + h / 2, w, h };
+  }
+
   // ---------- линейка ----------
   /// Привязка точек линейки к центрам клеток (квадраты и гексы).
   /// ctrl === true — свободный режим без привязки.
@@ -551,6 +567,7 @@ window.TableModel = (() => {
     countItems, sortItems,
     isMap, mapItems, findMap, activeMapId, activeMap, boundsOf, unionBounds, boardBounds, fitView,
     gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner, snapCenter,
+    mapRect,
     snapRuler, rulerCells, scaleFt, rulerLabel,
     // туман войны: маска на карту (scene.fog.by_map)
     FOG_MAX_SHAPES, FOG_UNDO_MAX, FOG_BRUSH_MIN, FOG_BRUSH_MAX, FOG_SHAPES, FOG_MODES,

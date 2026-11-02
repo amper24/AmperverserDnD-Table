@@ -87,6 +87,8 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     assert.equal(await page.evaluate(() => Table.setScene({ id: 'old', grid: { size: 70 }, fog: {}, items: [{ id: 'only-map', layer: 'map', data: { x: 100, y: 100, w: 700, h: 700 } }] }) || Table.getActiveMapId()), 'only-map');
 
     // ---- на слой map можно бросить ещё карту: старая не заменяется и не спрашиваем подтверждение ----
+    // Камера 1:1, чтобы бросок в (300,300) экрана попал в известную мировую точку.
+    await page.evaluate(() => { const st = Table.state(); st.cam.x = 0; st.cam.y = 0; st.cam.k = 1; Table.requestDraw(); });
     const dropped = await page.evaluate(() => {
       const st = Table.state();
       const dt = new DataTransfer();
@@ -97,15 +99,110 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
       window.sent = [];
       st.canvas.dispatchEvent(ev);
       const upsert = window.sent.find(m => m.type === 'item_upsert');
-      return { confirmCalled: window.confirmCalled, upsert, deletes: window.sent.filter(m => m.type === 'item_delete').length, maps: Table.getMapItems().length, sceneUpdate: window.sent.find(m => m.type === 'scene_update') };
+      const item = upsert.item;
+      return {
+        confirmCalled: window.confirmCalled, upsert, item,
+        deletes: window.sent.filter(m => m.type === 'item_delete').length,
+        maps: Table.getMapItems().length,
+        inScene: !!Table.getScene().items.find(i => i.id === item.id),
+        name: Table.getScene().items.find(i => i.id === item.id)?.data.name,
+        pending: [...Table.state().pending],
+        sceneUpdate: window.sent.find(m => m.type === 'scene_update'),
+      };
     });
     assert.equal(dropped.confirmCalled, false, 'карту больше не «заменяют» с подтверждением');
     assert.equal(dropped.deletes, 0, 'старые карты не удаляются');
-    assert.equal(dropped.upsert.item.layer, 'map', 'новая карта кладётся на слой map');
-    assert.equal(dropped.upsert.item.data.w, 700);
-    assert.ok(/^[0-9a-f]{32}$/.test(dropped.upsert.item.id), 'у новой карты есть id для выбора активной');
+    assert.equal(dropped.item.layer, 'map', 'новая карта кладётся на слой map');
+    assert.equal(dropped.item.data.w, 700, 'карта занимает пиксели картинки, а не одну клетку');
+    assert.ok(/^[0-9a-f]{32}$/.test(dropped.item.id), 'у новой карты есть id для выбора активной');
+    // Причина, по которой карты не появлялись: клиент присылал готовый id, а сервер считал
+    // «id есть, строки нет» запоздавшим движением удалённого токена и молча отбрасывал.
+    assert.equal(dropped.item.create, true, 'создание карты помечено create:true');
+    assert.equal(dropped.inScene, true, 'карта видна сразу, не дожидаясь рассылки сервера');
+    assert.equal(dropped.name, 'Карта C', 'имя ассета переносится на карту (видно в «Картах сцены»)');
+    assert.deepEqual(dropped.pending, [dropped.item.id], 'карта ждёт подтверждения сервера');
     assert.equal(dropped.sceneUpdate, undefined, 'карта — обычный объект: активной автоматически не становится');
-    assert.equal(dropped.maps, 1, 'локальный список карт не трогаем — ждём рассылку сервера');
+    assert.equal(dropped.maps, 2, 'локальный список карт: новая карта рядом со старой');
+    const mapId = dropped.item.id;
+    assert.notEqual(await page.evaluate(() => Table.getActiveMapId()), mapId, 'активная карта не сменилась сама');
+    assert.equal(await page.evaluate(() => Table.getScene().active_map_id), undefined, 'scene.active_map_id не выставлен');
+
+    // Карта реально рисуется на канве: камера 1:1, точка внутри карты (вне линий сетки) — не пустая.
+    const mapPixels = await page.evaluate(async () => {
+      const st = Table.state();
+      st.cam.x = 0; st.cam.y = 0; st.cam.k = 1;
+      const m = Table.getMapItems().find(i => i.id !== 'only-map');
+      const b = TableModel.boundsOf(m);
+      const read = (wx, wy) => {
+        const d = st.ctx2d.getImageData(Math.round(wx * devicePixelRatio), Math.round(wy * devicePixelRatio), 1, 1).data;
+        return [d[0], d[1], d[2], d[3]];
+      };
+      // Стираем прошлый кадр: иначе пиксель мог бы остаться от прежней камеры и проверка
+      // «внутри/снаружи» ничего не доказывала. Дальше ждём настоящий кадр (rAF).
+      st.ctx2d.save();
+      st.ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+      st.ctx2d.clearRect(0, 0, st.canvas.width, st.canvas.height);
+      st.ctx2d.restore();
+      const insideAt = () => read(b.x + b.w / 2 + 20, b.y + b.h / 2 + 20);
+      let inside = insideAt();
+      for (let i = 0; i < 40 && inside[3] === 0; i++) {
+        Table.requestDraw();
+        await new Promise(r => setTimeout(r, 50));
+        inside = insideAt();
+      }
+      return { bounds: b, inside, outside: read(b.x + b.w + 40, b.y + b.h + 40) };
+    });
+    assert.ok(mapPixels.inside[0] > 30 && mapPixels.inside[0] < 80 && mapPixels.inside[3] > 0,
+      `внутри карты канва не пустая (${mapPixels.inside}) — карта нарисована (без картинки — заглушкой)`);
+    assert.equal(mapPixels.outside[3], 0, 'за пределами карты по-прежнему пусто');
+
+    // ---- карту можно выделить и тащить только на слое «Карта» ----
+    // Точка — в правом нижнем углу новой карты: там её не перекрывает старая карта (у той z=0).
+    const mapCenter = await page.evaluate(() => {
+      const st = Table.state(); st.cam.x = 0; st.cam.y = 0; st.cam.k = 1; st.tool = 'select'; Table.requestDraw();
+      const b = TableModel.boundsOf(Table.getMapItems().find(i => i.id !== 'only-map'));
+      return { x: b.x + b.w - 40, y: b.y + b.h - 40 };
+    });
+    const cb2 = await page.evaluate(() => { const r = Table.state().canvas.getBoundingClientRect(); return { x: r.x, y: r.y }; });
+    await page.evaluate(() => Table.setActiveLayer('character'));
+    await page.mouse.click(cb2.x + mapCenter.x, cb2.y + mapCenter.y);
+    const onOtherLayer = await page.evaluate(id => ({ sel: Table.state().sel, set: [...Table.state().selSet], x: Table.getScene().items.find(i => i.id === id).data.x }), mapId);
+    assert.deepEqual([onOtherLayer.sel, onOtherLayer.set], [null, []], 'на другом слое клик по карте не перехватывается');
+
+    await page.evaluate(() => Table.setActiveLayer('map'));
+    await page.mouse.click(cb2.x + mapCenter.x, cb2.y + mapCenter.y);
+    assert.deepEqual(await page.evaluate(() => [...Table.state().selSet]), [mapId], 'на слое «Карта» карта выделяется');
+
+    const beforeMove = await page.evaluate(id => { const d = Table.getScene().items.find(i => i.id === id).data; return { x: d.x, y: d.y }; }, mapId);
+    await page.evaluate(() => { window.sent = []; });
+    await page.mouse.move(cb2.x + mapCenter.x, cb2.y + mapCenter.y);
+    await page.mouse.down();
+    await page.mouse.move(cb2.x + mapCenter.x + 90, cb2.y + mapCenter.y + 60, { steps: 6 });
+    await page.mouse.up();
+    const movedMap = await page.evaluate(id => {
+      const d = Table.getScene().items.find(i => i.id === id).data;
+      const ups = window.sent.filter(m => m.type === 'item_upsert' && m.item.id === id);
+      return { x: d.x, y: d.y, ups: ups.length, create: ups.some(m => m.item.create === true) };
+    }, mapId);
+    assert.notEqual(movedMap.x, beforeMove.x, 'карта сдвинулась на слое «Карта»');
+    assert.equal(movedMap.ups, 1, 'движение карты уходит на сервер');
+    assert.equal(movedMap.create, false, 'движение не помечается созданием (защита от «воскрешения» удалённого)');
+
+    // ---- удаление одной карты не трогает остальные ----
+    await page.evaluate(() => { window.sent = []; });
+    await page.keyboard.press('Delete');
+    const deleted = await page.evaluate(id => ({
+      ids: window.sent.filter(m => m.type === 'item_delete').map(m => m.id),
+      sel: Table.state().sel,
+    }), mapId);
+    assert.deepEqual(deleted.ids, [mapId], 'Delete удаляет только выбранную карту');
+    assert.equal(deleted.sel, null, 'выделение снято');
+    // Подтверждение сервера: ушла одна карта, вторая на месте.
+    const afterDelete = await page.evaluate(id => {
+      Table.onMessage({ type: 'item_delete', scene_id: Table.getScene().id, id });
+      return Table.getMapItems().map(m => m.id);
+    }, mapId);
+    assert.deepEqual(afterDelete, ['only-map'], 'вторая карта не потерялась');
 
     // ---- слои сцены: добавление уходит на сервер и доступно в селекторе ----
     const layersOut = await page.evaluate(() => {
@@ -532,7 +629,7 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     assert.deepEqual(await page.evaluate(() => window.sent.filter(m => m.type === 'item_delete').map(m => m.id)), ['sel-own'], 'игрок удаляет только своего');
 
     assert.deepEqual(errors, []);
-    console.log('PASS table browser: несколько карт + активная + fitToMap, слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр), соты 200×200 (видимый диапазон, кэш, пан/зум, линейка/hover), размер canvas при панели (камера и масштаб сохранены), мультивыделение рамкой (групповой драг/Delete, права игрока)');
+    console.log('PASS table browser: несколько карт + активная + fitToMap, добавление карты броском (сразу в сцене и на канве, create:true, не активна; клик/драг только на слое «Карта», удаление одной не трогает вторую), слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр), соты 200×200 (видимый диапазон, кэш, пан/зум, линейка/hover), размер canvas при панели (камера и масштаб сохранены), мультивыделение рамкой (групповой драг/Delete, права игрока)');
   } finally {
     await browser.close();
   }
