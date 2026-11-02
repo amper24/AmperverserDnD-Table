@@ -1971,3 +1971,6 @@ body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
 /* Участники: кнопки действий не рвутся на строки, роли не дублируются. */
 .table-page .item button { white-space: nowrap; }
 .table-page .item select { min-width: 110px; }
+/* Карточки справочника: кнопки-броски одной высоты, без переносов, иконка не раздувает строку. */
+.inline-roll { min-height: 26px; white-space: nowrap; }
+.inline-roll svg { width: 12px; height: 12px; flex: 0 0 auto; }
