@@ -1034,6 +1034,14 @@ window.Table = (function () {
     const g = grid();
     let layer = AssetKinds.layerOf(a.kind);
     if (!S.isGM && layer !== LAYER.character) layer = LAYER.character;
+    // Скрытый или заблокированный слой карты не должен «съедать» новую карту: показываем и снимаем блок.
+    if (layer === LAYER.map) {
+      const layers = getLayers();
+      const mapLayer = layers.find(entry => entry.id === LAYER.map);
+      if (mapLayer && (mapLayer.hidden || mapLayer.locked)) {
+        setLayers(layers.map(entry => entry.id === LAYER.map ? { ...entry, hidden: false, locked: false } : entry));
+      }
+    }
     let wdt, hgt, x = w.x, y = w.y;
     if (layer === LAYER.map) {
       // На слое карт может лежать несколько карт (этажи/области): каждая — обычный объект,
