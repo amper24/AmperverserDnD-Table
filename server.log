@@ -1,0 +1,26 @@
+2026-11-02T17:24:23.187006Z  INFO dnd_table: Создан файл конфигурации C:\Users\dimon\Documents\DnD-Tablet\config.yml — в нём можно настроить порт, базу данных, почту, root-аккаунт и остальное. После правки перезапустите сервер.
+2026-11-02T17:24:23.187114Z  INFO dnd_table: Конфигурация: C:\Users\dimon\Documents\DnD-Tablet\config.yml (перекрыто переменными окружения: server.host ← HOST, server.port ← PORT, auth.dev_show_code ← DEV_SHOW_CODE)
+2026-11-02T17:24:23.386841Z  INFO dnd_table::db: Схема БД готова (SQLite)
+2026-11-02T17:24:24.872448Z  INFO dnd_table::seed: Справочник: залито 3123 записей из вшитых файлов
+2026-11-02T17:24:25.315567Z  INFO dnd_table::seed: Ассеты: добавлено 30 встроенных
+2026-11-02T17:24:25.317609Z  INFO dnd_table: Edge Tablet запущен: http://127.0.0.1:8099  (БД: sqlite://data/dnd.db)
+Server listening on http://127.0.0.1:8099
+Консоль: help — список команд. Их можно вводить как есть или с префиксом dnd-table
+         (users list, users create <email> <пароль> --root, stats, config, stop)
+Настройки: C:\Users\dimon\Documents\DnD-Tablet\config.yml — порт, база данных, почта, root-аккаунт и др. (после правки перезапустите сервер)
+[!] В базе нет ни одного администратора (root). Создайте его прямо здесь:
+      users create admin@example.com <пароль> --root
+    или заполните root.email и root.password в C:\Users\dimon\Documents\DnD-Tablet\config.yml и перезапустите сервер.
+2026-11-02T17:24:26.483960Z  WARN dnd_table::auth: SMTP не настроен. Код для gm@test.ru: 927458
+
+===== КОД ПОДТВЕРЖДЕНИЯ для gm@test.ru: 927458 =====
+
+2026-11-02T17:24:26.995883Z  WARN dnd_table::auth: SMTP не настроен. Код для pl@test.ru: 832826
+
+===== КОД ПОДТВЕРЖДЕНИЯ для pl@test.ru: 832826 =====
+
+2026-11-02T17:24:27.824879Z  WARN dnd_table::auth: SMTP не настроен. Код для pl@test.ru: 395366
+
+===== КОД ПОДТВЕРЖДЕНИЯ для pl@test.ru: 395366 =====
+
+2026-11-02T17:25:01.658501Z  INFO dnd_table::seed: Справочник: залито 3123 записей из вшитых файлов

@@ -23,12 +23,16 @@ window.Table = (function () {
     // ctx: {campaign, user, isGM, scene, ws, onSelect, container, onSceneChange}
     S = {
       ...ctx, cam: { x: 0, y: 0, k: 1 }, tool: 'select', sel: null, drag: null, hover: null,
-      drawColor: '#e5484d', drawWidth: 6, drawShape: 'path', fogMode: 'reveal', fogShape: 'rect',
+      drawColor: '#e5484d', drawWidth: 6, drawShape: 'path',
+      // Туман: инструмент (кисть/прямоугольник/круг/ластик), режим, размер кисти в клетках,
+      // стек отмены на карту и положение курсора для предпросмотра.
+      fogMode: 'reveal', fogTool: 'brush', fogCells: 3, fogUndo: {},
       temp: null, remoteRulers: {}, pings: [], cursors: {}, snap: true, gridScaleFt: 5,
       // Слои сцены и активный слой (для клика/загрузки). Активная карта живёт в scene.active_map_id.
       layers: T.normalize(ctx.scene?.layers),
       activeLayer: LAYER.character,
     };
+    S.scene = adoptScene(ctx.scene);
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
     const wrap = ctx.container;
     wrap.innerHTML = '';
@@ -50,12 +54,21 @@ window.Table = (function () {
     requestAnimationFrame(loop);
   }
 
+  /// Сцена при загрузке: старый scene.fog.shapes переезжает в маску активной/единственной карты.
+  /// Дальше код читает только scene.fog.by_map (см. table-model.js).
+  function adoptScene(scene) {
+    if (!scene || typeof scene !== 'object') return scene;
+    if (!Array.isArray(scene.items)) scene.items = [];
+    scene.fog = T.normalizeFog(scene.fog, { activeMapId: T.activeMapId(scene), mapIds: T.mapItems(scene.items).map(m => m.id) });
+    return scene;
+  }
+
   function setScene(scene) {
-    S.scene = scene; S.sel = null; S.temp = null;
+    S.scene = adoptScene(scene); S.sel = null; S.temp = null; S.fogUndo = {};
     S.layers = T.normalize(scene?.layers);
     // Активный слой мог исчезнуть в новой сцене — фолбэк на prop, как и у элементов.
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
-    syncScale(); updateProps(); fitToMap(); notifySceneChange();
+    syncScale(); updateProps(); syncFogPanel(); fitToMap(); notifySceneChange();
   }
   function syncScale() { S.gridScaleFt = parseInt(S.scene.grid?.scale) || 5; }
 
@@ -82,6 +95,8 @@ window.Table = (function () {
     const next = id || null;
     S.scene.active_map_id = next;
     sendScene({ active_map_id: next });
+    // У каждой карты своя маска тумана — панель и оверлей сразу показывают маску новой карты.
+    syncFogPanel();
     updateProps(); notifySceneChange();
   }
   function focusMap(id) { if (id) setActiveMap(id); fitToMap(); }
@@ -166,6 +181,7 @@ window.Table = (function () {
       if (b) { c.strokeStyle = '#ffd54f'; c.lineWidth = 2 / S.cam.k; c.setLineDash([10 / S.cam.k, 6 / S.cam.k]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]); }
     }
     drawFog(c);
+    drawFogPreview(c);
     // временные фигуры
     if (S.temp) drawTemp(c, S.temp, S.user.id);
     for (const r of Object.values(S.remoteRulers)) drawTemp(c, r, r.user_id);
@@ -259,28 +275,96 @@ window.Table = (function () {
       // Длина в футах и клетках: концы привязаны к сетке, если не зажат Ctrl (см. snapRuler).
       const label = T.rulerLabel(t.points, S.scene.grid, S.gridScaleFt, t.name);
       c.strokeText(label, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 12 / S.cam.k); c.fillText(label, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 12 / S.cam.k);
-    } else if (t.kind === 'draw' || t.kind === 'fog') {
-      drawShape(c, { ...t, color: t.kind === 'fog' ? (t.mode === 'reveal' ? '#46a758' : '#e5484d') : t.color, fill: true });
+    } else if (t.kind === 'draw') {
+      drawShape(c, { ...t, color: t.color, fill: true });
+    } else if (t.kind === 'fog') {
+      // Черновик маски: та же фигура, приглушённая и с «режимным» цветом.
+      const color = t.mode === 'reveal' ? '#46a758' : '#e5484d';
+      c.save();
+      c.globalAlpha = 0.55;
+      c.strokeStyle = color; c.fillStyle = color + '66';
+      c.lineWidth = t.shape === 'path' ? t.width : 2 / S.cam.k;
+      c.lineCap = c.lineJoin = 'round';
+      c.beginPath(); fogPath(c, t);
+      if (t.shape === 'path') c.stroke(); else { c.fill(); c.stroke(); }
+      c.restore();
     }
   }
+  /// Путь фигуры тумана в текущем контексте (без beginPath/fill/stroke).
+  function fogPath(c, sh) {
+    const p = sh.points || [];
+    if (!p.length) return;
+    if (sh.shape === 'rect') { c.rect(Math.min(p[0][0], p[1][0]), Math.min(p[0][1], p[1][1]), Math.abs(p[1][0] - p[0][0]), Math.abs(p[1][1] - p[0][1])); }
+    else if (sh.shape === 'circle') { c.arc(p[0][0], p[0][1], Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]), 0, Math.PI * 2); }
+    else if (sh.shape === 'polygon') { c.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) c.lineTo(q[0], q[1]); c.closePath(); }
+    else { c.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) c.lineTo(q[0], q[1]); }
+  }
+  /// Маска тумана активной карты: рисуется только внутри её прямоугольника.
+  /// Мастер видит полупрозрачный оверлей (и контуры фигур) — игроки получают только результат маски,
+  /// причём лишь когда включено «Показать игрокам» (scene.fog.enabled).
   function drawFog(c) {
-    const f = S.scene.fog; if (!f?.enabled) return;
-    const fc = S.fogCanvas; fc.width = S.canvas.width; fc.height = S.canvas.height;
-    const x = fc.getContext('2d'); x.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    x.fillStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e'; x.fillRect(0, 0, S.w, S.h);
+    const fog = S.scene?.fog;
+    const map = activeMap();
+    const b = map ? T.boundsOf(map) : null;
+    if (!b) return;
+    const showPlayers = T.fogEnabled(fog);
+    const editing = S.isGM && S.tool === 'fog';
+    if (!showPlayers && !editing) return;
+    const shapes = T.maskShapes(fog, map.id);
+    const fc = S.fogCanvas;
+    // Пересоздаём буфер только при смене размера: иначе каждый кадр терял бы состояние.
+    if (fc.width !== S.canvas.width || fc.height !== S.canvas.height) { fc.width = S.canvas.width; fc.height = S.canvas.height; }
+    const x = fc.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, fc.width, fc.height);
+    x.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    x.save();
     x.translate(S.cam.x, S.cam.y); x.scale(S.cam.k, S.cam.k);
-    for (const sh of f.shapes || []) {
+    // Обрезка по карте: всё, что нарисовано за её пределами, не darkened и не открывается.
+    x.beginPath(); x.rect(b.x, b.y, b.w, b.h); x.clip();
+    x.fillStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
+    x.fillRect(b.x, b.y, b.w, b.h);
+    for (const sh of shapes) {
       x.globalCompositeOperation = sh.mode === 'reveal' ? 'destination-out' : 'source-over';
-      x.fillStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
-      x.beginPath();
-      const p = sh.points;
-      if (sh.shape === 'rect') x.rect(Math.min(p[0][0], p[1][0]), Math.min(p[0][1], p[1][1]), Math.abs(p[1][0] - p[0][0]), Math.abs(p[1][1] - p[0][1]));
-      else if (sh.shape === 'circle') x.arc(p[0][0], p[0][1], Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]), 0, 7);
-      else { x.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) x.lineTo(q[0], q[1]); x.closePath(); }
-      x.fill();
+      x.fillStyle = x.strokeStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
+      x.lineCap = x.lineJoin = 'round';
+      x.beginPath(); fogPath(x, sh);
+      if (sh.shape === 'path') { x.lineWidth = sh.width; x.stroke(); }
+      else x.fill();
     }
+    x.restore();
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(fc, 0, 0); c.restore();
-    c.translate(0, 0);
+    // GM-оверлей: границы карты и контуры нарисованных фигур — только у мастера и только в режиме тумана.
+    if (editing) {
+      c.save();
+      c.strokeStyle = 'rgba(255,213,79,0.85)'; c.lineWidth = 2 / S.cam.k; c.setLineDash([10 / S.cam.k, 6 / S.cam.k]);
+      c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
+      for (const sh of shapes) {
+        c.strokeStyle = sh.mode === 'reveal' ? 'rgba(70,167,88,0.9)' : 'rgba(229,72,77,0.9)';
+        c.lineWidth = (sh.shape === 'path' ? 1 : 1.5) / S.cam.k; c.setLineDash([8 / S.cam.k, 5 / S.cam.k]);
+        c.beginPath(); fogPath(c, sh); c.stroke(); c.setLineDash([]);
+      }
+      c.restore();
+    }
+  }
+  /// Предпросмотр под курсором: кружок кисти/ластика или точка-затравка для фигур.
+  function drawFogPreview(c) {
+    if (!S.isGM || S.tool !== 'fog' || !S.hover || S.drag) return;
+    const map = activeMap(); const b = T.boundsOf(map); if (!b) return;
+    // Цвет — как у будущего мазка: ластик работает в обратном режиме.
+    const effective = S.fogTool === 'eraser' ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
+    const color = effective === 'reveal' ? '#46a758' : '#e5484d';
+    const w = S.hover;
+    c.save();
+    c.beginPath(); c.rect(b.x, b.y, b.w, b.h); c.clip();
+    if (S.fogTool === 'brush' || S.fogTool === 'eraser') {
+      const r = T.fogBrushWidth(S.fogCells, grid()) / 2;
+      c.beginPath(); c.arc(w.x, w.y, r, 0, Math.PI * 2);
+      c.fillStyle = color + '33'; c.fill();
+      c.strokeStyle = color; c.lineWidth = 1.5 / S.cam.k; c.setLineDash([6 / S.cam.k, 4 / S.cam.k]); c.stroke(); c.setLineDash([]);
+    } else {
+      c.beginPath(); c.arc(w.x, w.y, 4 / S.cam.k, 0, Math.PI * 2); c.fillStyle = color; c.fill();
+    }
+    c.restore();
   }
   // Состояния — из набора conditions (короткое имя и значок на жетоне). Нет в наборе — показываем ключ.
   const condItem = key => window.Presets?.item('conditions', key)?.table || null;
@@ -307,11 +391,13 @@ window.Table = (function () {
     setTool('select');
   }
   function setTool(t) {
-    S.tool = t; S.temp = null;
+    if (t === 'fog' && !S.isGM) t = 'select'; // игрокам туман недоступен
+    S.tool = t; S.temp = null; S.hover = null;
     S.toolbox.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     S.canvas.className = 'tool-' + t;
+    syncFogCursor();
     S.subbox.innerHTML = '';
-    const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить', pan: 'Тяните для панорамирования', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: 'Зелёный — открыть, красный — скрыть. Shift — переключить режим' };
+    const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить', pan: 'Тяните для панорамирования', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: '' };
     S.hint.textContent = hints[t] || '';
     if (t === 'draw') {
       const shapes = [['path', icon('path')], ['line', icon('line')], ['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]];
@@ -322,16 +408,112 @@ window.Table = (function () {
       col.append(srow, crow, wr); S.subbox.append(col);
     }
     if (t === 'fog') {
-      const col = el('div', { style: 'display:flex;flex-direction:column;gap:3px' });
+      // Инструменты 1–4, режим открыть/скрыть, размер кисти, действия и «Показать игрокам».
+      // Маска живёт на активную карту — панель всегда показывает её.
+      const col = el('div', { style: 'display:flex;flex-direction:column;gap:4px;width:190px' });
+      const trow = el('div', { style: 'display:flex;gap:3px;flex-wrap:wrap' },
+        ...[['brush', 'Кисть', '1'], ['rect', 'Прямоуг.', '2'], ['circle', 'Круг', '3'], ['eraser', 'Ластик', '4']].map(([k, label, key]) =>
+          el('button', { class: 'small' + (S.fogTool === k ? ' active' : ''), 'data-fog': 'tool-' + k, style: 'flex:1 1 40%', title: label + ' (' + key + ')', onclick: () => selectFogTool(k) }, label)));
       const mrow = el('div', { style: 'display:flex;gap:3px' },
-        el('button', { class: 'small' + (S.fogMode === 'reveal' ? ' active' : ''), onclick: (e) => { S.fogMode = 'reveal'; mrow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, 'Открыть'),
-        el('button', { class: 'small' + (S.fogMode === 'hide' ? ' active' : ''), onclick: (e) => { S.fogMode = 'hide'; mrow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, 'Скрыть'));
-      const srow = el('div', { style: 'display:flex;gap:3px' }, ...[['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]].map(([s, i]) => el('button', { class: 'icon small' + (S.fogShape === s ? ' active' : ''), style: 'width:30px;height:30px', onclick: (e) => { S.fogShape = s; srow.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.currentTarget.classList.add('active'); } }, i)));
-      const en = el('button', { class: 'small' + (S.scene.fog?.enabled ? ' active' : ''), onclick: (e) => { S.scene.fog = { ...(S.scene.fog || { shapes: [] }), enabled: !S.scene.fog?.enabled }; e.currentTarget.classList.toggle('active', S.scene.fog.enabled); sendScene({ fog: S.scene.fog }); } }, 'Туман вкл/выкл');
-      const clr = el('button', { class: 'small', onclick: () => { S.scene.fog = { ...S.scene.fog, shapes: [] }; sendScene({ fog: S.scene.fog }); } }, 'Скрыть всё');
-      const all = el('button', { class: 'small', onclick: () => { const b = T.boardBounds(S.scene) || { x: -5000, y: -5000, w: 10000, h: 10000 }; S.scene.fog = { ...S.scene.fog, shapes: [{ shape: 'rect', mode: 'reveal', points: [[b.x, b.y], [b.x + b.w, b.y + b.h]] }] }; sendScene({ fog: S.scene.fog }); } }, 'Открыть всё');
-      col.append(mrow, srow, en, el('div', { style: 'display:flex;gap:3px' }, clr, all)); S.subbox.append(col);
+        el('button', { class: 'small' + (S.fogMode === 'reveal' ? ' active' : ''), 'data-fog': 'mode-reveal', style: 'flex:1', title: 'Новые мазки открывают (Shift — наоборот)', onclick: () => setFogMode('reveal') }, 'Открыть'),
+        el('button', { class: 'small' + (S.fogMode === 'hide' ? ' active' : ''), 'data-fog': 'mode-hide', style: 'flex:1', title: 'Новые мазки скрывают (Shift — наоборот)', onclick: () => setFogMode('hide') }, 'Скрыть'));
+      const sizeRow = el('div', { style: 'display:flex;align-items:center;gap:6px' },
+        el('input', { type: 'range', min: T.FOG_BRUSH_MIN, max: T.FOG_BRUSH_MAX, step: 1, value: S.fogCells, 'data-fog': 'size', style: 'flex:1', title: 'Размер кисти, клеток ([ и ])', oninput: e => setFogCells(+e.target.value) }),
+        el('span', { class: 'muted small', 'data-fog': 'size-label' }, S.fogCells + ' кл.'));
+      const arow = el('div', { style: 'display:flex;gap:3px;flex-wrap:wrap' },
+        el('button', { class: 'small', 'data-fog': 'all', style: 'flex:1 1 40%', title: 'Открыть всю активную карту', onclick: openAllFog }, 'Открыть всё'),
+        el('button', { class: 'small', 'data-fog': 'none', style: 'flex:1 1 40%', title: 'Скрыть всю активную карту', onclick: hideAllFog }, 'Скрыть всё'),
+        el('button', { class: 'small', 'data-fog': 'undo', style: 'flex:1 1 100%', title: 'Отменить последний мазок (Ctrl+Z)', onclick: undoFog }, 'Отменить мазок'));
+      const players = el('label', { class: 'small', style: 'display:flex;align-items:center;gap:4px' },
+        el('input', { type: 'checkbox', 'data-fog': 'players', checked: T.fogEnabled(S.scene.fog) ? '' : null, style: 'width:auto', onchange: e => setFogPlayers(e.target.checked) }), 'Показать игрокам');
+      col.append(trow, mrow, sizeRow, arow, players); S.subbox.append(col);
+      updateFogHint();
     }
+  }
+
+  // ---------- туман войны: панель, действия, отмена ----------
+  /// Активная карта и её прямоугольник — туман живёт на карте и обрезается по ней.
+  function fogTarget() {
+    const map = activeMap();
+    if (!map) { toast('Сначала сделайте карту активной'); return null; }
+    return { map, bounds: T.boundsOf(map) };
+  }
+  /// Записать fog в сцену и отправить мастерам/игрокам тем же каналом, что сетку и слои.
+  function commitFog(fog) {
+    S.scene.fog = fog;
+    sendScene({ fog: S.scene.fog });
+    syncFogPanel();
+  }
+  /// Снимок маски карты в стек отмены (до T.FOG_UNDO_MAX шагов на карту).
+  function pushFogUndo(mapId) { S.fogUndo[mapId] = T.pushUndo(S.fogUndo[mapId], T.maskShapes(S.scene.fog, mapId)); }
+  function selectFogTool(k) { S.fogTool = k; S.temp = null; syncFogCursor(); syncFogPanel(); }
+  function setFogMode(m) { S.fogMode = m === 'hide' ? 'hide' : 'reveal'; syncFogPanel(); }
+  function setFogCells(n) { S.fogCells = T.clampBrush(n); syncFogPanel(); }
+  function setFogPlayers(on) { commitFog(T.setFogEnabled(S.scene.fog, on)); }
+  function openAllFog() {
+    const t = fogTarget(); if (!t) return;
+    const shapes = T.revealAllShapes(t.bounds); if (!shapes.length) return;
+    pushFogUndo(t.map.id);
+    commitFog(T.setMaskShapes({ ...S.scene.fog, enabled: true }, t.map.id, shapes));
+  }
+  /** Скрыть всё: маска пустая — карта снова целиком скрыта. */
+  function hideAllFog() {
+    const t = fogTarget(); if (!t) return;
+    pushFogUndo(t.map.id);
+    commitFog(T.setMaskShapes({ ...S.scene.fog, enabled: true }, t.map.id, []));
+  }
+  function undoFog() {
+    const t = fogTarget(); if (!t) return;
+    const step = T.undoStep(S.fogUndo[t.map.id]);
+    if (!step.shapes) { toast('Нечего отменять'); return; }
+    S.fogUndo[t.map.id] = step.stack;
+    commitFog(T.setMaskShapes(S.scene.fog, t.map.id, step.shapes));
+  }
+  /// Включить мазок в маску активной карты (с обрезкой по карте и лимитом фигур).
+  function addFogShape(tool, points, mode) {
+    const target = fogTarget(); if (!target) return;
+    const shape = T.fogShape(tool, points, { mode, cells: S.fogCells, gridSize: grid() });
+    if (!shape) return;
+    const res = T.addMaskShape({ ...S.scene.fog, enabled: true }, target.map.id, shape, target.bounds);
+    if (!res.added) {
+      const cur = T.maskShapes(S.scene.fog, target.map.id).length;
+      toast(cur >= T.FOG_MAX_SHAPES ? `Лимит фигур на карту: ${T.FOG_MAX_SHAPES}` : 'Мазок вне карты — туман обрезается по её границам');
+      return;
+    }
+    pushFogUndo(target.map.id);
+    commitFog(res.fog);
+  }
+  function fogHintText() {
+    const map = activeMap();
+    const shapes = map ? T.maskShapes(S.scene.fog, map.id) : [];
+    const tool = { brush: 'кисть', rect: 'прямоугольник', circle: 'круг', eraser: 'ластик' }[S.fogTool] || S.fogTool;
+    const size = S.fogTool === 'brush' || S.fogTool === 'eraser' ? ` ${S.fogCells} кл.` : '';
+    const effective = S.fogTool === 'eraser' ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
+    const mode = effective === 'reveal' ? 'открывает' : 'скрывает';
+    const mapName = map ? (map.data?.name || 'без имени') : 'нет активной карты';
+    const players = T.fogEnabled(S.scene.fog) ? 'игроки видят туман' : 'игроки тумана не видят';
+    return `Туман: ${tool}${size} ${mode} · карта «${mapName}» · фигур ${shapes.length}/${T.FOG_MAX_SHAPES} · ${players} · 1–4 инструмент, [ ] размер, Shift — наоборот, Ctrl+Z отмена`;
+  }
+  function updateFogHint() { if (S.tool === 'fog' && S.hint) S.hint.textContent = fogHintText(); }
+  /// У кисти/ластика системный курсор прячем: роль курсора играет нарисованный кружок (drawFogPreview).
+  function syncFogCursor() {
+    if (!S.canvas) return;
+    const circle = S.isGM && S.tool === 'fog' && (S.fogTool === 'brush' || S.fogTool === 'eraser');
+    S.canvas.style.cursor = circle ? 'none' : '';
+  }
+  /// Обновить панель тумана без перерисовки (после действия, отмены и scene_update от другого мастера).
+  function syncFogPanel() {
+    if (S.tool !== 'fog' || !S.subbox) return;
+    const players = S.subbox.querySelector('[data-fog="players"]');
+    if (players) players.checked = T.fogEnabled(S.scene.fog);
+    const size = S.subbox.querySelector('[data-fog="size"]');
+    if (size) size.value = S.fogCells;
+    const label = S.subbox.querySelector('[data-fog="size-label"]');
+    if (label) label.textContent = S.fogCells + ' кл.';
+    S.subbox.querySelectorAll('[data-fog^="tool-"]').forEach(b => b.classList.toggle('active', b.dataset.fog === 'tool-' + S.fogTool));
+    S.subbox.querySelectorAll('[data-fog^="mode-"]').forEach(b => b.classList.toggle('active', b.dataset.fog === 'mode-' + S.fogMode));
+    syncFogCursor();
+    updateFogHint();
   }
   function zoomBy(f, cx = S.w / 2, cy = S.h / 2) {
     const k2 = Math.min(6, Math.max(0.08, S.cam.k * f));
@@ -368,13 +550,16 @@ window.Table = (function () {
         }
         S.temp = { kind: 'draw', shape: S.drawShape, points: [[w.x, w.y], [w.x, w.y]], color: S.drawColor, width: S.drawWidth }; S.drag = { kind: 'temp' };
       } else if (S.tool === 'fog') {
-        const mode = e.shiftKey ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
-        if (S.fogShape === 'poly') {
-          if (!S.temp) S.temp = { kind: 'fog', shape: 'poly', mode, points: [[w.x, w.y], [w.x, w.y]], width: 2 };
-          else S.temp.points.splice(-1, 0, [w.x, w.y]);
-          return;
+        // Режим мазка: Shift временно переворачивает; ластик — наоборот к выбранному режиму.
+        const base = e.shiftKey ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
+        const mode = S.fogTool === 'eraser' ? (base === 'reveal' ? 'hide' : 'reveal') : base;
+        if (S.fogTool === 'brush' || S.fogTool === 'eraser') {
+          S.temp = { kind: 'fog', shape: 'path', mode, points: [[w.x, w.y]], width: T.fogBrushWidth(S.fogCells, grid()) };
+          S.drag = { kind: 'temp' };
+        } else {
+          S.temp = { kind: 'fog', shape: S.fogTool === 'circle' ? 'circle' : 'rect', mode, points: [[w.x, w.y], [w.x, w.y]], width: 2 };
+          S.drag = { kind: 'temp' };
         }
-        S.temp = { kind: 'fog', shape: S.fogShape, mode, points: [[w.x, w.y], [w.x, w.y]], width: 2 }; S.drag = { kind: 'temp' };
       } else if (S.tool === 'pointer') {
         S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name }); S.ws.send({ type: 'ping', x: w.x, y: w.y });
       } else if (S.tool === 'text') {
@@ -383,16 +568,22 @@ window.Table = (function () {
     });
     cv.addEventListener('pointermove', e => {
       const w = toWorld(e.offsetX, e.offsetY);
+      S.hover = { x: w.x, y: w.y };
       if (S.temp && (S.temp.shape === 'poly')) { S.temp.points[S.temp.points.length - 1] = [w.x, w.y]; return; }
       if (!S.drag) return;
       if (S.drag.kind === 'pan') { S.cam.x = S.drag.cx + e.clientX - S.drag.sx; S.cam.y = S.drag.cy + e.clientY - S.drag.sy; }
       else if (S.drag.kind === 'move') { const d = S.drag.it.data; d.x = w.x - S.drag.ox; d.y = w.y - S.drag.oy; S.drag.moved = true; }
       else if (S.drag.kind === 'temp' && S.temp) {
         if (S.temp.kind === 'ruler') moveRuler(w, e.ctrlKey || e.metaKey);
-        else if (S.temp.shape === 'path') S.temp.points.push([w.x, w.y]);
+        else if (S.temp.shape === 'path') {
+          // Точки мазка не чаще ~1.5 px — иначе длинный штрих раздувает JSON маски.
+          const last = S.temp.points[S.temp.points.length - 1];
+          if (!last || Math.hypot(w.x - last[0], w.y - last[1]) >= 1.5) S.temp.points.push([w.x, w.y]);
+        }
         else S.temp.points[1] = [w.x, w.y];
       }
     });
+    cv.addEventListener('pointerleave', () => { S.hover = null; });
     cv.addEventListener('pointerup', e => {
       if (S.drag?.kind === 'move' && S.drag.moved) {
         const it = S.drag.it, d = it.data;
@@ -421,6 +612,14 @@ window.Table = (function () {
       if (e.key === 'Enter' && S.temp?.shape === 'poly') { S.temp.points.pop(); finishTemp(); }
       const map = { v: 'select', h: 'pan', r: 'ruler', d: 'draw', p: 'pointer', f: 'fog' };
       if (map[e.key.toLowerCase()] && !e.ctrlKey) { if (map[e.key.toLowerCase()] !== 'fog' || S.isGM) setTool(map[e.key.toLowerCase()]); }
+      // Туман: 1–4 — инструмент, [ ] — размер кисти, Ctrl+Z — отменить последний мазок.
+      if (S.isGM && S.tool === 'fog' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const fogTools = { 1: 'brush', 2: 'rect', 3: 'circle', 4: 'eraser' };
+        if (fogTools[e.key]) { selectFogTool(fogTools[e.key]); return; }
+        if (e.key === '[') { setFogCells(S.fogCells - 1); return; }
+        if (e.key === ']') { setFogCells(S.fogCells + 1); return; }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && S.isGM && S.tool === 'fog') { e.preventDefault(); undoFog(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) { deleteSel(); }
       if (S.sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         const it = S.scene.items.find(i => i.id === S.sel); if (!it || !canEdit(it)) return; e.preventDefault();
@@ -431,7 +630,7 @@ window.Table = (function () {
       if (e.ctrlKey && e.key === 'v' && S.clip) { const it = JSON.parse(JSON.stringify(S.clip)); delete it.id; it.data.x += grid(); it.data.y += grid(); upsert(it); }
     });
     window.addEventListener('keyup', e => {
-      if (e.code === 'Space') { space = false; cv.style.cursor = ''; }
+      if (e.code === 'Space') { space = false; syncFogCursor(); }
       if (e.key === 'Control' || e.key === 'Meta') refreshRulerSnap(!!(e.ctrlKey || e.metaKey));
     });
 
@@ -557,7 +756,8 @@ window.Table = (function () {
     const t = S.temp; S.temp = null;
     if (t.kind === 'ruler') { S.ws.send({ type: 'ruler', points: null }); return; }
     if (t.kind === 'draw') { if (t.points.length < 2) return; upsert({ layer: LAYER.drawing, z: 0, data: { type: 'drawing', shape: t.shape, points: t.points.map(p => [Math.round(p[0]), Math.round(p[1])]), color: t.color, width: t.width, fill: t.shape !== 'path' && t.shape !== 'line' ? !!S.drawFill : false, owner_id: S.user.id } }); }
-    if (t.kind === 'fog') { const shapes = [...(S.scene.fog?.shapes || []), { shape: t.shape, mode: t.mode, points: t.points }]; S.scene.fog = { enabled: true, shapes }; sendScene({ fog: S.scene.fog }); }
+    // Мазок тумана: в маску активной карты, с обрезкой по её границам и записью в стек отмены.
+    if (t.kind === 'fog') addFogShape(t.shape === 'path' ? 'brush' : t.shape, t.points, t.mode);
   }
   // ---------- Реалтайм: отправка изменений и приём сообщений ----------
   let _lastSend = 0;
@@ -578,21 +778,26 @@ window.Table = (function () {
     switch (m.type) {
       case 'item_upsert': { const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.it.id === m.item.id)) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
       case 'item_delete': {
+        const deleted = S.scene.items.find(i => i.id === m.id);
         S.scene.items = S.scene.items.filter(i => i.id !== m.id);
         if (S.sel === m.id) { S.sel = null; updateProps(); }
+        // Удалили карту — её маска тумана больше не нужна (ключ by_map = id карты).
+        if (deleted && T.isMap(deleted) && S.scene.fog?.by_map) delete S.scene.fog.by_map[m.id];
         // Удалили активную карту — активной станет единственная оставшаяся (см. activeMapId).
         if (S.scene.active_map_id === m.id) S.scene.active_map_id = null;
+        syncFogPanel();
         notifySceneChange();
         break;
       }
       case 'items_bulk': for (const u of m.items) { const it = S.scene.items.find(i => i.id === u.id); if (it) { Object.assign(it.data, u.data); if (u.z !== undefined) it.z = u.z; if (u.layer) it.layer = u.layer; } } break;
       case 'scene_update':
         if (m.grid) { S.scene.grid = m.grid; syncScale(); }
-        if (m.fog) S.scene.fog = m.fog;
+        // Туман — маска на карту: сервер присылает валидный by_map, применяем как есть.
+        if (m.fog) { S.scene.fog = T.normalizeFog(m.fog, { activeMapId: activeMapId() }); syncFogPanel(); }
         if (m.name) S.scene.name = m.name;
         // Слои и активная карта — часть сцены: приходят от мастера и применяются у всех.
         if (m.layers !== undefined) S.layers = T.normalize(m.layers);
-        if (m.active_map_id !== undefined) S.scene.active_map_id = m.active_map_id || null;
+        if (m.active_map_id !== undefined) { S.scene.active_map_id = m.active_map_id || null; syncFogPanel(); }
         notifySceneChange();
         break;
       case 'ruler': if (m.points) S.remoteRulers[m.user_id] = { kind: 'ruler', points: m.points, name: m.name, user_id: m.user_id }; else delete S.remoteRulers[m.user_id]; break;
@@ -739,6 +944,12 @@ window.Table = (function () {
     setActiveLayer, getActiveLayer, getLayers, setLayers,
     // карты: активная задаёт fitToMap, «Открыть всё» и туман войны
     setActiveMap, focusMap, fitToMap, getActiveMapId: activeMapId, getActiveMap: activeMap, getMapItems,
+    // туман войны: маска на карту, инструменты и отмена (см. docs/table.md)
+    getFog: () => S.scene?.fog || null,
+    getFogMask: (mapId) => T.maskShapes(S.scene?.fog, mapId || activeMapId()),
+    getFogState: () => ({ tool: S.fogTool, mode: S.fogMode, cells: S.fogCells, enabled: T.fogEnabled(S.scene?.fog) }),
+    selectFogTool, setFogMode, setFogCells, setFogPlayers,
+    openAllFog, hideAllFog, undoFog,
     dropLootAtCenter, placeTokenAtCenter,
   };
 })();

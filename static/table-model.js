@@ -215,6 +215,293 @@ window.TableModel = (() => {
     return `${total} фт (${Math.round(cells * 10) / 10} кл.)` + (name ? ' — ' + name : '');
   }
 
+  // ---------- туман войны ----------
+  // Маска живёт НА КАРТУ: scene.fog = { enabled, by_map: { "<id карты>": { shapes: [...] } } }.
+  // Фигура: { shape: 'rect' | 'circle' | 'polygon' | 'path', mode: 'reveal' | 'hide',
+  //           points: [[x, y], …], width? }. width (мировые px) нужен только мазку-кисти.
+  // Пустая маска (нет записи) = карта полностью скрыта: «открыто» только то, что открыли явно.
+  // Старый scene.fog.shapes читается ТОЛЬКО в normalizeFog — это миграция в маску карты.
+  const FOG_MAX_SHAPES = 200;   // предел фигур на карту (столько же проверяет сервер)
+  const FOG_UNDO_MAX = 20;      // шагов отмены на карту
+  const FOG_BRUSH_MIN = 1;
+  const FOG_BRUSH_MAX = 10;
+  const FOG_MAX_MAP_ID = 64;
+  const FOG_MAX_COORD = 1e7;
+  const FOG_MAX_WIDTH = 10000;
+  const FOG_SHAPES = ['rect', 'circle', 'polygon', 'path'];
+  const FOG_MODES = ['reveal', 'hide'];
+
+  const finite = v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= FOG_MAX_COORD;
+  const clampBrush = n => Math.max(FOG_BRUSH_MIN, Math.min(FOG_BRUSH_MAX, Math.round(Number(n) || FOG_BRUSH_MIN)));
+  /// Ширина мазка кисти в мировых px: размер в клетках × размер клетки.
+  const fogBrushWidth = (cells, gridSize) => clampBrush(cells) * (Number(gridSize) > 0 ? Number(gridSize) : GRID_SIZE);
+
+  /// Одна фигура из произвольного JSON; null — битая (неизвестный вид/режим/точки/ширина).
+  /// 'poly' — старое имя многоугольника: дальше живёт только 'polygon'.
+  function normalizeShape(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const kind = String(raw.shape ?? '').trim().toLowerCase();
+    const shape = kind === 'poly' ? 'polygon' : kind;
+    if (!FOG_SHAPES.includes(shape)) return null;
+    const mode = String(raw.mode ?? '').trim().toLowerCase();
+    if (!FOG_MODES.includes(mode)) return null;
+    if (!Array.isArray(raw.points)) return null;
+    const points = [];
+    for (const p of raw.points) {
+      if (!Array.isArray(p) || p.length < 2 || !finite(p[0]) || !finite(p[1])) return null;
+      points.push([p[0], p[1]]);
+    }
+    const limits = shape === 'rect' || shape === 'circle' ? [2, 2] : shape === 'polygon' ? [3, 256] : [2, 2048];
+    if (points.length < limits[0] || points.length > limits[1]) return null;
+    const out = { shape, mode, points };
+    if (shape === 'path') {
+      const w = raw.width;
+      if (!finite(w) || w <= 0 || w > FOG_MAX_WIDTH) return null;
+      out.width = w;
+    }
+    return out;
+  }
+
+  /// Маска карты из произвольного JSON: до FOG_MAX_SHAPES валидных фигур.
+  function normalizeMask(raw) {
+    const list = raw && Array.isArray(raw.shapes) ? raw.shapes : [];
+    return { shapes: list.map(normalizeShape).filter(Boolean).slice(0, FOG_MAX_SHAPES) };
+  }
+
+  /// Сцена/сеть → валидный scene.fog. opts: { activeMapId, mapIds }.
+  /// Если by_map нет, а есть старый shapes — переносим их в маску активной (или единственной) карты.
+  /// Наличие by_map (даже пустого) отменяет старое поле: маску уже правили в новом формате.
+  function normalizeFog(raw, opts = {}) {
+    const out = { enabled: false, by_map: {} };
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    out.enabled = !!raw.enabled;
+    if (raw.by_map && typeof raw.by_map === 'object' && !Array.isArray(raw.by_map)) {
+      for (const [id, mask] of Object.entries(raw.by_map)) {
+        if (!id || id.length > FOG_MAX_MAP_ID) continue;
+        const { shapes } = normalizeMask(mask);
+        if (shapes.length) out.by_map[id] = { shapes };
+      }
+      return out;
+    }
+    const legacy = normalizeMask(raw).shapes;
+    const single = Array.isArray(opts.mapIds) && opts.mapIds.length === 1 ? opts.mapIds[0] : null;
+    const target = opts.activeMapId || single;
+    if (legacy.length && target) out.by_map[target] = { shapes: legacy };
+    return out;
+  }
+
+  const fogEnabled = fog => !!(fog && fog.enabled);
+  function setFogEnabled(fog, on) { const base = normalizeFog(fog); base.enabled = !!on; return base; }
+  /// Фигуры маски карты (пустой массив — карта вся скрыта).
+  function maskShapes(fog, mapId) {
+    if (!mapId || !fog || typeof fog !== 'object' || !fog.by_map || typeof fog.by_map !== 'object') return [];
+    const mask = fog.by_map[mapId];
+    return mask && Array.isArray(mask.shapes) ? mask.shapes : [];
+  }
+  /// Заменить маску карты; пустая маска удаляет запись (карта без записей = скрыта).
+  function setMaskShapes(fog, mapId, shapes) {
+    const base = normalizeFog(fog);
+    if (!mapId) return base;
+    const { shapes: list } = normalizeMask({ shapes });
+    if (list.length) base.by_map[mapId] = { shapes: list };
+    else delete base.by_map[mapId];
+    return base;
+  }
+
+  // --- геометрия фигур: границы, попадание точки, обрезка по карте ---
+  const shapeRadius = sh => (sh && sh.points && sh.points.length > 1 ? Math.hypot(sh.points[1][0] - sh.points[0][0], sh.points[1][1] - sh.points[0][1]) : 0);
+  function shapeBounds(shape) {
+    const p = shape && Array.isArray(shape.points) ? shape.points : null;
+    if (!p || !p.length) return null;
+    if (shape.shape === 'circle') { const r = shapeRadius(shape); return { x: p[0][0] - r, y: p[0][1] - r, w: 2 * r, h: 2 * r }; }
+    if (shape.shape === 'rect' && p.length > 1) {
+      const x = Math.min(p[0][0], p[1][0]), y = Math.min(p[0][1], p[1][1]);
+      return { x, y, w: Math.abs(p[1][0] - p[0][0]), h: Math.abs(p[1][1] - p[0][1]) };
+    }
+    const half = shape.shape === 'path' ? (Number(shape.width) || 0) / 2 : 0;
+    const xs = p.map(q => q[0]), ys = p.map(q => q[1]);
+    const x = Math.min(...xs) - half, y = Math.min(...ys) - half;
+    return { x, y, w: Math.max(...xs) + half - x, h: Math.max(...ys) + half - y };
+  }
+  function pointInPolygon(points, x, y) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i][0], yi = points[i][1], xj = points[j][0], yj = points[j][1];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function distToSegment(x, y, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+    if (!len) return Math.hypot(x - ax, y - ay);
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len));
+    return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+  }
+  /// Точка внутри фигуры (для path — не дальше половины ширины мазка от линии).
+  function containsShape(shape, x, y) {
+    if (!shape || !finite(x) || !finite(y)) return false;
+    const p = Array.isArray(shape.points) ? shape.points : [];
+    if (shape.shape === 'rect') {
+      if (p.length < 2) return false;
+      return x >= Math.min(p[0][0], p[1][0]) && x <= Math.max(p[0][0], p[1][0])
+        && y >= Math.min(p[0][1], p[1][1]) && y <= Math.max(p[0][1], p[1][1]);
+    }
+    if (shape.shape === 'circle') {
+      if (p.length < 2) return false;
+      return Math.hypot(x - p[0][0], y - p[0][1]) <= shapeRadius(shape);
+    }
+    if (shape.shape === 'polygon') return p.length >= 3 && pointInPolygon(p, x, y);
+    if (shape.shape === 'path') {
+      const half = (Number(shape.width) || 0) / 2;
+      if (p.length === 1) return Math.hypot(x - p[0][0], y - p[0][1]) <= half;
+      for (let i = 1; i < p.length; i++) if (distToSegment(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]) <= half) return true;
+      return false;
+    }
+    return false;
+  }
+  function intersectBounds(a, b) {
+    if (!a || !b) return null;
+    const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y);
+    const x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
+    return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  }
+  const round2 = v => Math.round(v * 100) / 100;
+  /// Многоугольник × прямоугольник (Sutherland–Hodgman, 4 полуплоскости).
+  function clipPolygonPoints(points, b) {
+    let out = (points || []).map(p => [p[0], p[1]]);
+    if (!out.length) return out;
+    const planes = [
+      { axis: 0, value: b.x, keep: v => v >= b.x },
+      { axis: 0, value: b.x + b.w, keep: v => v <= b.x + b.w },
+      { axis: 1, value: b.y, keep: v => v >= b.y },
+      { axis: 1, value: b.y + b.h, keep: v => v <= b.y + b.h },
+    ];
+    for (const pl of planes) {
+      if (!out.length) return out;
+      const input = out; out = [];
+      const other = pl.axis === 0 ? 1 : 0;
+      const cut = (a, c) => {
+        const t = (pl.value - a[pl.axis]) / (c[pl.axis] - a[pl.axis]);
+        const p = [0, 0];
+        p[pl.axis] = pl.value;
+        p[other] = a[other] + t * (c[other] - a[other]);
+        return p;
+      };
+      for (let i = 0; i < input.length; i++) {
+        const cur = input[i], prev = input[(i + input.length - 1) % input.length];
+        const curIn = pl.keep(cur[pl.axis]), prevIn = pl.keep(prev[pl.axis]);
+        if (curIn) { if (!prevIn) out.push(cut(prev, cur)); out.push(cur); }
+        else if (prevIn) out.push(cut(prev, cur));
+      }
+    }
+    return out;
+  }
+  function circleToPolygon(cx, cy, r, segments = 48) {
+    const out = [];
+    for (let i = 0; i < segments; i++) {
+      const a = (Math.PI * 2 * i) / segments;
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+  /// Обрезка фигуры по прямоугольнику карты. null — фигура целиком вне карты.
+  /// Круг, пересекающий границу, превращается в многоугольник (иначе часть маски жила бы вне карты).
+  /// Мазок (path) сохраняет точки и обрезается визуально/при проверке по bounds карты.
+  function clipShape(shape, bounds) {
+    const s = normalizeShape(shape);
+    if (!s) return null;
+    if (!bounds || !(bounds.w > 0) || !(bounds.h > 0)) return s;
+    if (s.shape === 'rect') {
+      const r = shapeBounds(s), inter = intersectBounds(r, bounds);
+      return inter ? { shape: 'rect', mode: s.mode, points: [[inter.x, inter.y], [inter.x + inter.w, inter.y + inter.h]] } : null;
+    }
+    if (s.shape === 'circle') {
+      const r = shapeRadius(s), [cx, cy] = s.points[0];
+      if (cx - r >= bounds.x && cx + r <= bounds.x + bounds.w && cy - r >= bounds.y && cy + r <= bounds.y + bounds.h) return s;
+      const poly = clipPolygonPoints(circleToPolygon(cx, cy, r), bounds);
+      return poly.length >= 3 ? { shape: 'polygon', mode: s.mode, points: poly.map(p => [round2(p[0]), round2(p[1])]) } : null;
+    }
+    if (s.shape === 'polygon') {
+      const poly = clipPolygonPoints(s.points, bounds);
+      return poly.length >= 3 ? { shape: 'polygon', mode: s.mode, points: poly.map(p => [round2(p[0]), round2(p[1])]) } : null;
+    }
+    return intersectBounds(shapeBounds(s), bounds) ? s : null;
+  }
+  /// Открыта ли точка на карте. Вне прямоугольника карты маски нет — там скрыто.
+  /// Порядок фигур важен: последняя фигура, накрывшая точку, задаёт её состояние.
+  function isRevealed(fog, mapId, x, y, bounds) {
+    if (!bounds || !finite(x) || !finite(y)) return false;
+    if (x < bounds.x || x > bounds.x + bounds.w || y < bounds.y || y > bounds.y + bounds.h) return false;
+    let on = false;
+    for (const sh of maskShapes(fog, mapId)) if (containsShape(sh, x, y)) on = sh.mode === 'reveal';
+    return on;
+  }
+
+  // --- инструменты: фигура из протяжки, лимит фигур, «Открыть всё», отмена ---
+  const clampPath = (points, max = 512) => {
+    const list = points || [];
+    if (list.length <= max) return list.map(p => [p[0], p[1]]);
+    const step = (list.length - 1) / (max - 1), out = [];
+    for (let i = 0; i < max; i++) out.push([...list[Math.round(i * step)]]);
+    return out;
+  };
+  /// Фигура тумана из протяжки: tool — brush | rect | circle | eraser (ластик — та же кисть).
+  /// opts: { mode, cells, gridSize }. Вырожденные протяжки (клик без движения) ничего не создают.
+  function fogShape(tool, points, opts = {}) {
+    const mode = opts.mode === 'hide' ? 'hide' : 'reveal';
+    const pts = (points || []).filter(p => Array.isArray(p) && finite(p[0]) && finite(p[1])).map(p => [p[0], p[1]]);
+    if (tool === 'brush' || tool === 'eraser' || tool === 'path') {
+      if (!pts.length) return null;
+      // Клик кистью без движения — точка (две совпадающие точки дают круглый отпечаток).
+      const list = pts.length === 1 ? [pts[0], [pts[0][0], pts[0][1]]] : pts;
+      return { shape: 'path', mode, points: clampPath(list), width: fogBrushWidth(opts.cells, opts.gridSize) };
+    }
+    if (tool === 'rect') {
+      if (pts.length < 2) return null;
+      const [a, b] = [pts[0], pts[pts.length - 1]];
+      return a[0] === b[0] || a[1] === b[1] ? null : { shape: 'rect', mode, points: [a, b] };
+    }
+    if (tool === 'circle') {
+      if (pts.length < 2) return null;
+      const [a, b] = [pts[0], pts[pts.length - 1]];
+      return a[0] === b[0] && a[1] === b[1] ? null : { shape: 'circle', mode, points: [a, b] };
+    }
+    if (tool === 'polygon' || tool === 'poly') return pts.length >= 3 ? { shape: 'polygon', mode, points: clampPath(pts, 256) } : null;
+    return null;
+  }
+  /// Добавить фигуру в маску карты (с обрезкой по карте и лимитом). Возвращает новый fog.
+  /// { fog, added, shapes } — added=false, если фигура вне карты или достигнут предел.
+  function addMaskShape(fog, mapId, shape, bounds) {
+    const base = normalizeFog(fog);
+    if (!mapId) return { fog: base, added: false, shapes: [] };
+    const cur = maskShapes(base, mapId);
+    if (cur.length >= FOG_MAX_SHAPES) return { fog: base, added: false, shapes: cur };
+    const clipped = clipShape(shape, bounds);
+    if (!clipped) return { fog: base, added: false, shapes: cur };
+    const next = cur.concat([clipped]);
+    base.by_map[mapId] = { shapes: next };
+    return { fog: base, added: true, shapes: next };
+  }
+  /// «Открыть всё»: одна фигура-прямоугольник по границам карты.
+  function revealAllShapes(bounds) {
+    if (!bounds || !(bounds.w > 0) || !(bounds.h > 0)) return [];
+    return [{ shape: 'rect', mode: 'reveal', points: [[bounds.x, bounds.y], [bounds.x + bounds.w, bounds.y + bounds.h]] }];
+  }
+  const copyShapes = shapes => (shapes || []).map(s => ({ ...s, points: s.points.map(p => [p[0], p[1]]) }));
+  /// Положить снимок маски в стек отмены (не больше FOG_UNDO_MAX шагов на карту).
+  function pushUndo(stack, shapes, max = FOG_UNDO_MAX) {
+    const list = Array.isArray(stack) ? stack.slice() : [];
+    list.push(copyShapes(shapes));
+    const limit = Math.max(1, Number(max) || FOG_UNDO_MAX);
+    return list.length > limit ? list.slice(list.length - limit) : list;
+  }
+  /// Снять последний снимок: { shapes: null, stack } — отменять нечего.
+  function undoStep(stack) {
+    const list = Array.isArray(stack) ? stack : [];
+    if (!list.length) return { shapes: null, stack: list };
+    return { shapes: list[list.length - 1], stack: list.slice(0, -1) };
+  }
+
   return {
     LAYER, FALLBACK_LAYER, LAYER_NAMES, layerName, MAX_LAYERS,
     defaultLayers, normalize, find, resolve, orderOf, addLayer, removeLayer, renameLayer, moveLayer, setLayerFlag,
@@ -222,5 +509,12 @@ window.TableModel = (() => {
     isMap, mapItems, findMap, activeMapId, activeMap, boundsOf, unionBounds, boardBounds, fitView,
     gridSize, isHex, hexMetrics, hexCenter, hexAt, snapPos, snapCorner,
     snapRuler, rulerCells, scaleFt, rulerLabel,
+    // туман войны: маска на карту (scene.fog.by_map)
+    FOG_MAX_SHAPES, FOG_UNDO_MAX, FOG_BRUSH_MIN, FOG_BRUSH_MAX, FOG_SHAPES, FOG_MODES,
+    normalizeShape, normalizeMask, normalizeFog, fogEnabled, setFogEnabled,
+    maskShapes, setMaskShapes,
+    clipShape, shapeBounds, containsShape, isRevealed, clipPolygonPoints,
+    clampBrush, fogBrushWidth, fogShape, addMaskShape, revealAllShapes,
+    pushUndo, undoStep,
   };
 })();

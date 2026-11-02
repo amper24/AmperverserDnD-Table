@@ -11,7 +11,96 @@ use sqlx::Row;
 use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, util, AppError, AppState};
 
 pub fn default_grid() -> Value { json!({ "size": 70, "type": "square", "visible": true, "color": "#00000055", "scale": "5 фт" }) }
-pub fn default_fog() -> Value { json!({ "enabled": false, "shapes": [] }) }
+/// Туман войны хранится маской на карту: by_map = { "<id карты>": { shapes: [...] } }.
+/// Старый формат (глобальный shapes) клиент переносит в маску карты при загрузке.
+pub fn default_fog() -> Value { json!({ "enabled": false, "by_map": {} }) }
+
+pub const FOG_MAX_SHAPES_PER_MAP: usize = 200;
+pub const FOG_MAX_MAP_ID: usize = 64;
+const FOG_MAX_POINTS: usize = 2048;
+const FOG_MAX_COORD: f64 = 1e7;
+const FOG_MAX_WIDTH: f64 = 10000.0;
+
+/// Координата фигуры тумана: конечное число в разумных пределах.
+fn fog_coord(v: f64) -> Option<f64> { if v.is_finite() && v.abs() <= FOG_MAX_COORD { Some(v) } else { None } }
+/// Целые координаты пишем целыми — JSON маски остаётся компактным.
+fn fog_number(v: f64) -> Value { if v.fract() == 0.0 { json!(v as i64) } else { json!(v) } }
+
+/// Одна фигура тумана: { shape, mode, points, width? }. None — фигура битая.
+fn normalize_fog_shape(raw: &Value) -> Option<Value> {
+    let kind = raw.get("shape")?.as_str()?.trim().to_lowercase();
+    // 'poly' — старое имя многоугольника, дальше живёт только 'polygon'.
+    let shape = if kind == "poly" { "polygon" } else { kind.as_str() };
+    if !matches!(shape, "rect" | "circle" | "polygon" | "path") {
+        return None;
+    }
+    let mode = raw.get("mode")?.as_str()?.trim().to_lowercase();
+    if mode != "reveal" && mode != "hide" {
+        return None;
+    }
+    let points_in = raw.get("points")?.as_array()?;
+    let (min, max) = match shape { "rect" | "circle" => (2, 2), "polygon" => (3, 256), _ => (2, FOG_MAX_POINTS) };
+    if points_in.len() < min || points_in.len() > max {
+        return None;
+    }
+    let mut points = Vec::with_capacity(points_in.len());
+    for p in points_in {
+        let pair = p.as_array()?;
+        if pair.len() < 2 {
+            return None;
+        }
+        let x = fog_coord(pair[0].as_f64()?)?;
+        let y = fog_coord(pair[1].as_f64()?)?;
+        points.push(json!([fog_number(x), fog_number(y)]));
+    }
+    let mut out = json!({ "shape": shape, "mode": mode, "points": points });
+    if shape == "path" {
+        let w = fog_coord(raw.get("width")?.as_f64()?)?;
+        if w <= 0.0 || w > FOG_MAX_WIDTH {
+            return None;
+        }
+        out["width"] = fog_number(w);
+    }
+    Some(out)
+}
+
+/// Валидация `scene.fog` с клиента. None — это не новый формат (fog не меняем):
+/// старый глобальный shapes сервер не читает, его переносит клиент при загрузке.
+pub fn normalize_fog(v: &Value) -> Option<Value> {
+    let obj = v.as_object()?;
+    let by_map = obj.get("by_map")?.as_object()?;
+    let mut out = serde_json::Map::new();
+    for (id, mask) in by_map {
+        // id карты — до 64 символов; битые записи просто не рассылаем.
+        if id.is_empty() || id.len() > FOG_MAX_MAP_ID {
+            continue;
+        }
+        let Some(shapes_in) = mask.get("shapes").and_then(|s| s.as_array()) else { continue };
+        let shapes: Vec<Value> = shapes_in.iter().filter_map(normalize_fog_shape).take(FOG_MAX_SHAPES_PER_MAP).collect();
+        if shapes.is_empty() {
+            continue;
+        }
+        out.insert(id.clone(), json!({ "shapes": shapes }));
+    }
+    Some(json!({
+        "enabled": obj.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false),
+        "by_map": Value::Object(out),
+    }))
+}
+
+/// Оставить в маске только существующие карты сцены (чужой/устаревший id отбрасывается).
+pub fn restrict_fog_to_maps(fog: &Value, map_ids: &[String]) -> Value {
+    let enabled = fog.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false);
+    let mut out = serde_json::Map::new();
+    if let Some(by_map) = fog.get("by_map").and_then(|b| b.as_object()) {
+        for (id, mask) in by_map {
+            if map_ids.iter().any(|m| m == id) {
+                out.insert(id.clone(), mask.clone());
+            }
+        }
+    }
+    json!({ "enabled": enabled, "by_map": Value::Object(out) })
+}
 
 /// Слои по умолчанию (как LAYER_ORDER на клиенте): id прежних слоёв, порядок — порядок отрисовки.
 pub fn default_layers() -> Value {
@@ -200,8 +289,9 @@ async fn duplicate(State(st): State<AppState>, user: AuthUser, Path((cid, sid)):
     let name = format!("{} (копия)", s.get::<String, _>("name"));
     let layers = util::text(&s, "layers");
     // Элементы копируются с новыми id, поэтому активная карта исходной сцены к копии не относится.
+    // Маска тумана привязана к id карт — у копии id другие, поэтому туман начинается с чистой маски.
     sqlx::query("INSERT INTO scenes (id, campaign_id, name, grid, fog, layers, active_map_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(&nid).bind(&cid).bind(&name).bind(util::text(&s, "grid")).bind(util::text(&s, "fog"))
+        .bind(&nid).bind(&cid).bind(&name).bind(util::text(&s, "grid")).bind(default_fog().to_string())
         .bind(if layers.trim().is_empty() { None } else { Some(layers) })
         .bind(None::<String>)
         .bind(util::now()).execute(&st.db).await?;
@@ -271,5 +361,94 @@ mod layer_tests {
         assert_eq!(untouched.map_id(), None);
         let broken: SceneIn = serde_json::from_value(json!({ "active_map_id": "x".repeat(40) })).unwrap();
         assert_eq!(broken.map_id(), None, "слишком длинный id игнорируется");
+    }
+}
+
+/// Туман войны: маска на карту (scene.fog.by_map) — та же схема, что в table-model.js.
+#[cfg(test)]
+mod fog_tests {
+    use super::*;
+
+    fn rect(mode: &str, pts: Value) -> Value { json!({ "shape": "rect", "mode": mode, "points": pts }) }
+    fn shapes_of(fog: &Value, map: &str) -> Vec<Value> { fog["by_map"][map]["shapes"].as_array().cloned().unwrap_or_default() }
+
+    #[test]
+    fn default_fog_is_an_empty_by_map_mask() {
+        assert_eq!(default_fog(), json!({ "enabled": false, "by_map": {} }));
+    }
+
+    #[test]
+    fn normalize_fog_accepts_the_by_map_contract() {
+        let raw = json!({
+            "enabled": true,
+            "by_map": {
+                "map-a": { "shapes": [rect("reveal", json!([[0, 0], [100, 50]]))] },
+                "map-b": { "shapes": [
+                    { "shape": "circle", "mode": "hide", "points": [[10, 10], [20, 10]] },
+                    { "shape": "poly", "mode": "reveal", "points": [[0, 0], [10, 0], [10, 10]] },
+                    { "shape": "path", "mode": "reveal", "points": [[0, 0], [5, 5]], "width": 70 },
+                ] },
+            },
+        });
+        let out = normalize_fog(&raw).expect("валидный туман");
+        assert_eq!(out["enabled"], true);
+        assert_eq!(out["by_map"]["map-a"]["shapes"].as_array().unwrap().len(), 1);
+        let b = shapes_of(&out, "map-b");
+        assert_eq!(b.len(), 3);
+        assert_eq!(b[1]["shape"], "polygon", "старое имя poly нормализуется");
+        assert_eq!(b[2]["width"], 70);
+        assert_eq!(b[0]["points"], json!([[10, 10], [20, 10]]));
+    }
+
+    #[test]
+    fn normalize_fog_rejects_legacy_and_broken_input() {
+        // Старый формат сервер не читает: миграцию делает клиент.
+        assert!(normalize_fog(&json!({ "enabled": true, "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] })).is_none());
+        for bad in [json!(null), json!([]), json!("туман"), json!({ "enabled": true }), json!({ "by_map": [] })] {
+            assert!(normalize_fog(&bad).is_none(), "принял {bad}");
+        }
+        let broken = normalize_fog(&json!({ "by_map": { "m": { "shapes": [
+            rect("open", json!([[0, 0], [10, 10]])),             // неизвестный режим
+            { "shape": "line", "mode": "reveal", "points": [[0, 0], [1, 1]] },
+            rect("reveal", json!([[0, 0]])),                      // мало точек
+            rect("reveal", json!([[0, 0], [1e9, 10]])),           // координата вне пределов
+            { "shape": "path", "mode": "reveal", "points": [[0, 0], [1, 1]] }, // мазку нужна ширина
+            rect("reveal", json!([[0, 0], [10, 10]])),            // единственная валидная
+        ] } } })).expect("формат by_map");
+        let kept = shapes_of(&broken, "m");
+        assert_eq!(kept.len(), 1, "битые фигуры отброшены, валидная осталась");
+        assert_eq!(kept[0]["mode"], "reveal");
+        // Пустая маска не создаёт запись карты.
+        let empty = normalize_fog(&json!({ "by_map": { "m": { "shapes": [] } } })).unwrap();
+        assert!(empty["by_map"].as_object().unwrap().is_empty());
+        // Слишком длинный id карты отбрасывается.
+        let long = normalize_fog(&json!({ "by_map": { "x".repeat(65): { "shapes": [rect("reveal", json!([[0, 0], [1, 1]]))] } } })).unwrap();
+        assert!(long["by_map"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn normalize_fog_caps_shapes_per_map() {
+        let many: Vec<Value> = (0..(FOG_MAX_SHAPES_PER_MAP + 25)).map(|i| rect("reveal", json!([[i, 0], [i + 1, 1]]))).collect();
+        let out = normalize_fog(&json!({ "by_map": { "m": { "shapes": many } } })).unwrap();
+        assert_eq!(shapes_of(&out, "m").len(), FOG_MAX_SHAPES_PER_MAP);
+    }
+
+    #[test]
+    fn restrict_fog_keeps_only_existing_maps() {
+        let fog = normalize_fog(&json!({
+            "enabled": true,
+            "by_map": {
+                "map-a": { "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] },
+                "deleted-map": { "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] },
+            },
+        })).unwrap();
+        let out = restrict_fog_to_maps(&fog, &["map-a".to_string()]);
+        assert_eq!(out["enabled"], true);
+        assert!(out["by_map"]["map-a"].is_object());
+        assert!(out["by_map"]["deleted-map"].is_null(), "маска несуществующей карты не сохраняется");
+        // Карт нет — масок нет, но флаг «Показать игрокам» остаётся.
+        let none = restrict_fog_to_maps(&fog, &[]);
+        assert!(none["by_map"].as_object().unwrap().is_empty());
+        assert_eq!(none["enabled"], true);
     }
 }

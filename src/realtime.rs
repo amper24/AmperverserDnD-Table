@@ -434,7 +434,18 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             let row = sqlx::query("SELECT grid, fog, name, layers, active_map_id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
             let Some(row) = row else { return };
             let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { util::text(&row, "grid") };
-            let fog = if msg["fog"].is_object() { msg["fog"].to_string() } else { util::text(&row, "fog") };
+            // Туман — маска на карту (scene.fog.by_map): валидируем, оставляем только существующие карты.
+            // Старый глобальный shapes сервер не принимает — клиент переносит его при загрузке.
+            let fog_out = if msg["fog"].is_object() {
+                let map_ids: Vec<String> = sqlx::query("SELECT id FROM scene_items WHERE scene_id = ? AND layer = 'map'")
+                    .bind(scene_id).fetch_all(&st.db).await.ok()
+                    .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
+                    .unwrap_or_default();
+                crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
+            } else {
+                None
+            };
+            let fog = fog_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "fog"));
             let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
             // Слои — часть сцены: валидный массив заменяет список, битый игнорируется.
             let layers_out = msg.get("layers").and_then(crate::scenes::normalize_layers);
@@ -450,9 +461,12 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ?, layers = ?, active_map_id = ? WHERE id = ?")
                 .bind(&grid).bind(&fog).bind(&name).bind(&layers).bind(&active_map_id).bind(scene_id).execute(&st.db).await;
             let mut out = json!({ "type": "scene_update", "scene_id": scene_id });
-            for key in ["grid", "fog", "name"] {
+            for key in ["grid", "name"] {
                 if msg.get(key).is_some() { out[key] = msg[key].clone(); }
             }
+            // Туман отдаём всегда — текущий из сцены, чтобы клиенты не теряли маску,
+            // когда scene_update приходит без поля fog (имя, сетка, слои).
+            out["fog"] = serde_json::from_str::<Value>(&fog).unwrap_or_else(|_| crate::scenes::default_fog());
             if let Some(v) = layers_out { out["layers"] = v; }
             if msg.get("active_map_id").is_some() { out["active_map_id"] = json!(active_map_id); }
             st.hub.broadcast(cid, &out, None).await;

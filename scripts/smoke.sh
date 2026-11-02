@@ -201,9 +201,9 @@ async def main():
         await g.send(json.dumps({"type":"roll","expr":"d20","gm_only":True}))
         assert not [x for x in await drain(p) if x["type"]=="chat"], "игрок увидел скрытый бросок"
         assert [x for x in await drain(g) if x["type"]=="chat"]
-        await g.send(json.dumps({"type":"scene_update","scene_id":SID,"fog":{"enabled":True,"shapes":[]}}))
+        await g.send(json.dumps({"type":"scene_update","scene_id":SID,"fog":{"enabled":True,"by_map":{}}}))
         assert [x for x in await drain(p) if x["type"]=="scene_update"][0]["fog"]["enabled"] is True
-        await p.send(json.dumps({"type":"scene_update","scene_id":SID,"fog":{"enabled":False,"shapes":[]}})); await drain(g)
+        await p.send(json.dumps({"type":"scene_update","scene_id":SID,"fog":{"enabled":False,"by_map":{}}})); await drain(g)
         print("ws ok")
 asyncio.run(main())
 PY

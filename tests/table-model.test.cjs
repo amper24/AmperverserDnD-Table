@@ -188,3 +188,193 @@ test('table.js/app.js используют модель и больше не о�
   const html = fs.readFileSync('static/index.html', 'utf8');
   assert.ok(html.indexOf('/static/table-model.js') < html.indexOf('/static/table.js'), 'table-model.js загружается до table.js');
 });
+
+// ---------------------------------------------------------------- туман войны
+const bounds = (x, y, w, h) => ({ x, y, w, h });
+const rect = (x0, y0, x1, y1, mode = 'reveal') => ({ shape: 'rect', mode, points: [[x0, y0], [x1, y1]] });
+
+test('туман: старый scene.fog.shapes мигрирует в маску карты', () => {
+  const legacy = {
+    enabled: true,
+    shapes: [
+      rect(0, 0, 100, 100),
+      { shape: 'poly', mode: 'hide', points: [[10, 10], [20, 10], [20, 20]] },
+      { shape: 'circle', mode: 'reveal', points: [[5, 5], [15, 5]] },
+      { shape: 'треугольник', mode: 'reveal', points: [[0, 0], [5, 5]] },
+      { shape: 'rect', mode: 'open', points: [[0, 0], [10, 10]] },
+      { shape: 'rect', mode: 'reveal', points: [[0, 0], [Infinity, 10]] },
+    ],
+  };
+  const twoMaps = M.normalizeFog(legacy, { activeMapId: 'm2', mapIds: ['m1', 'm2'] });
+  assert.equal(twoMaps.enabled, true, 'включённость переезжает');
+  assert.deepEqual(plain(Object.keys(twoMaps.by_map)), ['m2'], 'маска уходит активной карте');
+  const shapes = plain(twoMaps.by_map.m2.shapes);
+  assert.deepEqual(shapes.map(s => s.shape), ['rect', 'polygon', 'circle'], 'poly → polygon, битые фигуры отброшены');
+  assert.equal(shapes[1].mode, 'hide');
+
+  // Одна карта без active_map_id — маска её.
+  const single = M.normalizeFog(legacy, { mapIds: ['only'] });
+  assert.deepEqual(plain(Object.keys(single.by_map)), ['only']);
+  // Карт нет — навешивать маску не на что (туман не применяется).
+  assert.deepEqual(plain(M.normalizeFog(legacy, {})), { enabled: true, by_map: {} });
+  // Новый формат главнее старого поля, даже если он пуст: маску уже правили.
+  const fresh = M.normalizeFog({ enabled: false, by_map: {}, shapes: [rect(0, 0, 10, 10)] }, { activeMapId: 'm1' });
+  assert.deepEqual(plain(fresh), { enabled: false, by_map: {} });
+  assert.deepEqual(plain(M.normalizeFog(null)), { enabled: false, by_map: {} });
+  assert.deepEqual(plain(M.normalizeFog('мусор')), { enabled: false, by_map: {} });
+});
+
+test('туман: маска выбирается по карте и не смешивается', () => {
+  let fog = M.normalizeFog({ enabled: true, by_map: { a: { shapes: [rect(0, 0, 50, 50)] }, b: { shapes: [rect(100, 100, 150, 150, 'hide')] } } });
+  assert.equal(M.maskShapes(fog, 'a').length, 1);
+  assert.equal(M.maskShapes(fog, 'b')[0].mode, 'hide');
+  assert.deepEqual(plain(M.maskShapes(fog, 'c')), [], 'карта без записей — пустая маска (всё скрыто)');
+  assert.deepEqual(plain(M.maskShapes(fog, null)), []);
+
+  fog = M.setMaskShapes(fog, 'a', [rect(1, 1, 2, 2)]);
+  assert.deepEqual(plain(M.maskShapes(fog, 'a')), [rect(1, 1, 2, 2)], 'маска карты заменяется, а не дополняется');
+  assert.equal(M.maskShapes(fog, 'b').length, 1, 'другая карта не тронута');
+  fog = M.setMaskShapes(fog, 'b', []);
+  assert.equal(fog.by_map.b, undefined, 'пустая маска удаляет запись карты');
+
+  assert.equal(M.fogEnabled(fog), true);
+  assert.equal(M.fogEnabled({}), false);
+  assert.equal(M.setFogEnabled(fog, false).enabled, false, '«Показать игрокам» — это fog.enabled');
+});
+
+test('туман: обрезка фигур по прямоугольнику карты', () => {
+  const b = bounds(0, 0, 700, 700);
+  assert.deepEqual(plain(M.clipShape(rect(-100, 100, 300, 900), b)), rect(0, 100, 300, 700), 'прямоугольник обрезан');
+  assert.equal(M.clipShape(rect(800, 800, 900, 900), b), null, 'фигура вне карты не создаёт эффекта');
+
+  const circle = M.clipShape({ shape: 'circle', mode: 'reveal', points: [[650, 350], [750, 350]] }, b);
+  assert.equal(circle.shape, 'polygon', 'круг через границу становится многоугольником');
+  assert.ok(plain(circle.points).every(([x, y]) => x >= -0.01 && x <= 700.01 && y >= -0.01 && y <= 700.01), 'все точки внутри карты');
+  assert.equal(M.clipShape({ shape: 'circle', mode: 'reveal', points: [[100, 100], [200, 100]] }, b).shape, 'circle', 'круг целиком внутри не меняется');
+
+  const poly = M.clipShape({ shape: 'polygon', mode: 'hide', points: [[-50, -50], [50, -50], [50, 50], [-50, 50]] }, b);
+  assert.equal(poly.shape, 'polygon');
+  assert.deepEqual(plain(poly.points), [[0, 0], [50, 0], [50, 50], [0, 50]], 'многоугольник обрезан по карте');
+
+  assert.equal(M.clipShape({ shape: 'path', mode: 'reveal', points: [[800, 800], [900, 900]], width: 20 }, b), null, 'мазок вне карты');
+  assert.equal(M.clipShape({ shape: 'path', mode: 'reveal', points: [[100, 100], [200, 200]], width: 20 }, b).shape, 'path');
+  assert.deepEqual(plain(M.clipShape(rect(1, 1, 2, 2), null)), rect(1, 1, 2, 2), 'без границ фигура остаётся как есть');
+  assert.equal(M.clipShape({ shape: 'line', mode: 'reveal', points: [[0, 0], [1, 1]] }, b), null, 'неизвестный вид не обрезается «наугад»');
+});
+
+test('туман: попадание точки, reveal/hide поверх и границы карты', () => {
+  const b = bounds(0, 0, 700, 700);
+  const fog = M.normalizeFog({
+    enabled: true,
+    by_map: {
+      m: {
+        shapes: [
+          rect(100, 100, 400, 400),
+          { shape: 'circle', mode: 'hide', points: [[250, 250], [300, 250]] },
+          { shape: 'path', mode: 'reveal', points: [[500, 100], [600, 100]], width: 40 },
+        ],
+      },
+    },
+  }, { activeMapId: 'm' });
+  assert.equal(M.isRevealed(fog, 'm', 120, 120, b), true, 'reveal открывает');
+  assert.equal(M.isRevealed(fog, 'm', 250, 250, b), false, 'hide поверх reveal снова скрывает');
+  assert.equal(M.isRevealed(fog, 'm', 480, 480, b), false, 'вне фигур скрыто');
+  assert.equal(M.isRevealed(fog, 'm', 550, 110, b), true, 'мазок открывает в пределах половины ширины');
+  assert.equal(M.isRevealed(fog, 'm', 550, 140, b), false, 'дальше половины ширины мазка — нет');
+  assert.equal(M.isRevealed(fog, 'm', -10, 100, b), false, 'за границей карты открыть нельзя');
+  assert.equal(M.isRevealed(fog, 'm', 100, 100, null), false, 'без активной карты тумана нет');
+  assert.equal(M.isRevealed({ enabled: true, by_map: {} }, 'm', 100, 100, b), false, 'карта без маски — скрыта');
+  // contains: круг, многоугольник, путь
+  assert.equal(M.containsShape({ shape: 'circle', mode: 'reveal', points: [[0, 0], [10, 0]] }, 0, 10), true);
+  assert.equal(M.containsShape({ shape: 'circle', mode: 'reveal', points: [[0, 0], [10, 0]] }, 11, 0), false);
+  assert.equal(M.containsShape({ shape: 'polygon', mode: 'reveal', points: [[0, 0], [10, 0], [10, 10]] }, 8, 2), true);
+  assert.equal(M.containsShape({ shape: 'polygon', mode: 'reveal', points: [[0, 0], [10, 0], [10, 10]] }, 1, 8), false);
+});
+
+test('туман: стек отмены на карту (не больше 20 шагов)', () => {
+  let stack = [];
+  for (let i = 0; i < 25; i++) stack = M.pushUndo(stack, [rect(i, i, i + 1, i + 1)]);
+  assert.equal(stack.length, 20);
+  assert.equal(stack.length, M.FOG_UNDO_MAX);
+  assert.deepEqual(plain(stack[0]), [rect(5, 5, 6, 6)], 'старые шаги вытеснены');
+
+  let step = M.undoStep(stack);
+  assert.deepEqual(plain(step.shapes), [rect(24, 24, 25, 25)], 'отменяется последний мазок');
+  assert.equal(step.stack.length, 19);
+  step = M.undoStep(step.stack);
+  assert.deepEqual(plain(step.shapes), [rect(23, 23, 24, 24)]);
+  assert.deepEqual(plain(M.undoStep([])), { shapes: null, stack: [] }, 'отменять нечего');
+
+  // Снимок — копия: правка живой маски не меняет историю.
+  const live = [rect(0, 0, 10, 10)];
+  const saved = M.pushUndo([], live);
+  live[0].points[0][0] = 999;
+  assert.equal(saved[0][0].points[0][0], 0);
+});
+
+test('туман: «Открыть всё», добавление фигур и лимит на карту', () => {
+  const b = bounds(0, 0, 700, 500);
+  assert.deepEqual(plain(M.revealAllShapes(b)), [rect(0, 0, 700, 500)], '«Открыть всё» — прямоугольник по карте');
+  assert.deepEqual(plain(M.revealAllShapes(null)), []);
+
+  const fog = M.normalizeFog({}, {});
+  const added = M.addMaskShape(fog, 'm', rect(-50, -50, 100, 100), b);
+  assert.equal(added.added, true);
+  assert.deepEqual(plain(added.shapes), [rect(0, 0, 100, 100)], 'фигура обрезана по карте');
+  const outside = M.addMaskShape(added.fog, 'm', rect(800, 800, 900, 900), b);
+  assert.equal(outside.added, false, 'фигура вне карты не добавляется');
+  assert.equal(M.maskShapes(outside.fog, 'm').length, 1);
+
+  const many = M.normalizeFog({ enabled: true, by_map: { m: { shapes: Array.from({ length: M.FOG_MAX_SHAPES }, (_, i) => rect(i % 700, 0, (i % 700) + 10, 10)) } } });
+  const over = M.addMaskShape(many, 'm', rect(1, 1, 2, 2), b);
+  assert.equal(over.added, false, 'лимит фигур на карту');
+  assert.equal(M.maskShapes(over.fog, 'm').length, M.FOG_MAX_SHAPES);
+  assert.equal(M.FOG_MAX_SHAPES, 200);
+});
+
+test('туман: фигура из протяжки и размер кисти в клетках', () => {
+  const brush = M.fogShape('brush', [[0, 0], [10, 10]], { mode: 'reveal', cells: 2, gridSize: 70 });
+  assert.equal(brush.shape, 'path');
+  assert.equal(brush.width, 140, '2 клетки по 70 px');
+  assert.equal(brush.mode, 'reveal');
+  assert.equal(M.fogShape('eraser', [[0, 0], [5, 5]], { mode: 'hide', cells: 1, gridSize: 70 }).width, 70);
+  assert.equal(M.fogBrushWidth(0, 70), 70, 'минимум — 1 клетка');
+  assert.equal(M.fogBrushWidth(42, 70), 700, 'максимум — 10 клеток');
+  assert.equal(M.fogBrushWidth(3, undefined), 210, 'размер клетки по умолчанию');
+  assert.equal(M.fogShape('rect', [[0, 0], [10, 10]], {}).shape, 'rect');
+  assert.deepEqual(plain(M.fogShape('circle', [[0, 0], [10, 0]], {}).points), [[0, 0], [10, 0]]);
+  assert.equal(M.fogShape('rect', [[0, 0]], {}), null, 'прямоугольнику нужны две точки');
+  assert.equal(M.fogShape('rect', [[0, 0], [0, 10]], {}), null, 'вырожденный прямоугольник не создаётся');
+  assert.equal(M.fogShape('circle', [[5, 5], [5, 5]], {}), null, 'круг нулевого радиуса не создаётся');
+  assert.equal(M.fogShape('polygon', [[0, 0], [10, 0]], {}), null, 'многоугольнику — три');
+  // Клик кистью без движения — точка (две совпадающие точки), сервер принимает её как мазок.
+  const dot = M.fogShape('brush', [[30, 40]], { mode: 'reveal', cells: 1, gridSize: 70 });
+  assert.deepEqual(plain(dot.points), [[30, 40], [30, 40]]);
+  assert.equal(M.normalizeShape(dot).shape, 'path');
+});
+
+test('туман: битые фигуры и id карт отбрасываются', () => {
+  const ok = { shape: 'rect', mode: 'reveal', points: [[0, 0], [10, 10]] };
+  assert.notEqual(M.normalizeShape(ok), null);
+  for (const bad of [null, 'rect', {}, { ...ok, shape: 'line' }, { ...ok, mode: 'open' },
+    { ...ok, points: [[0, 0], [Infinity, 10]] }, { ...ok, points: [[0]] }, { ...ok, points: [] }, { ...ok, points: 'нет' }]) {
+    assert.equal(M.normalizeShape(bad), null, `принял ${JSON.stringify(bad)}`);
+  }
+  assert.equal(M.normalizeShape({ shape: 'path', mode: 'reveal', points: [[0, 0], [1, 1]] }), null, 'мазку нужна ширина');
+  assert.equal(M.normalizeShape({ shape: 'path', mode: 'reveal', points: [[0, 0], [1, 1]], width: 10 }).shape, 'path');
+
+  const fog = M.normalizeFog({ enabled: true, by_map: { ['x'.repeat(65)]: { shapes: [ok] }, m: { shapes: [ok] } } });
+  assert.deepEqual(plain(Object.keys(fog.by_map)), ['m'], 'слишком длинный id карты отброшен');
+  assert.equal(fog.by_map.m.shapes.length, 1);
+});
+
+test('table.js работает с маской на карту, а не с глобальным fog.shapes', () => {
+  const table = fs.readFileSync('static/table.js', 'utf8');
+  assert.ok(table.includes('normalizeFog'), 'старый формат читается только в миграции (table-model.js)');
+  assert.equal(table.includes('S.scene.fog?.shapes'), false, 'прямого чтения старого fog.shapes нет');
+  assert.equal(table.includes('fogShape'), true, 'туман рисуется инструментами панели');
+  for (const name of ['getFog', 'getFogMask', 'openAllFog', 'hideAllFog', 'undoFog', 'selectFogTool']) {
+    assert.ok(table.includes(name), `API тумана: ${name}`);
+  }
+  assert.ok(table.includes('by_map') || table.includes('maskShapes'), 'код читает маску через модель');
+});
