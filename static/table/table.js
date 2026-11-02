@@ -81,6 +81,7 @@ window.Table = (function () {
       // Слои сцены и активный слой (для клика/загрузки). Активная карта живёт в scene.active_map_id.
       layers: T.normalize(ctx.scene?.layers),
       activeLayer: LAYER.character,
+  pingColor: (() => { try { return localStorage.getItem('table.pingColor') || '#ffd54f'; } catch { return '#ffd54f'; } })(),
       // Мультивыделение: sel — «главный» элемент для панели свойств, selSet — все выбранные.
       selSet: new Set(), selBox: null,
       // Туман войны — право table.manage_fog (по умолчанию совпадает с ролью мастера).
@@ -344,7 +345,7 @@ window.Table = (function () {
     // пинги
     const now = Date.now();
     S.pings = S.pings.filter(p => now - p.t < 2000);
-    for (const p of S.pings) { const a = 1 - (now - p.t) / 2000; c.beginPath(); c.arc(p.x, p.y, (1 - a) * 60 / S.cam.k + 10, 0, 7); c.strokeStyle = `rgba(255,200,60,${a})`; c.lineWidth = 4 / S.cam.k; c.stroke(); c.fillStyle = `rgba(255,200,60,${a})`; c.font = `${14 / S.cam.k}px sans-serif`; c.fillText(p.name, p.x + 14 / S.cam.k, p.y - 14 / S.cam.k); }
+    for (const p of S.pings) { const a = 1 - (now - p.t) / 2000; const hex = (p.color || '#ffd54f').replace('#', ''); const n = parseInt(hex.length === 3 ? hex.split('').map(x => x + x).join('') : hex, 16) || 0xffd54f; const rgba = alpha => `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`; c.beginPath(); c.arc(p.x, p.y, (1 - a) * 60 / S.cam.k + 10, 0, 7); c.strokeStyle = rgba(a); c.lineWidth = 4 / S.cam.k; c.stroke(); c.fillStyle = rgba(a); c.font = `${14 / S.cam.k}px sans-serif`; c.fillText(p.name, p.x + 14 / S.cam.k, p.y - 14 / S.cam.k); }
     c.restore();
     if (STATS_ON) {
       window.__gridStats = gridStatsSnapshot();
@@ -646,10 +647,12 @@ window.Table = (function () {
     S.subbox = el('div', { class: 'sub' });
     S.toolbox.append(S.subbox);
     wrap.append(S.toolbox);
+    const pingColorPicker = el('input', { type: 'color', id: 'pingColor', title: 'Цвет пинга', value: S.pingColor, style: 'width:26px;height:26px;padding:0;border:0;background:none;cursor:pointer', oninput: e => { S.pingColor = e.target.value; try { localStorage.setItem('table.pingColor', S.pingColor); } catch { } } });
     const zoom = el('div', { class: 'zoom' },
       el('button', { class: 'icon', onclick: () => zoomBy(1.25) }, '+'), el('button', { class: 'icon', onclick: () => zoomBy(0.8) }, '−'),
       el('button', { class: 'icon', title: 'Вписать карту', onclick: fitToMap }, icon('fit')),
       el('button', { class: 'icon', title: 'Привязка к сетке', id: 'snapBtn', onclick: (e) => { S.snap = !S.snap; e.currentTarget.classList.toggle('active', S.snap); } }, '#'));
+    zoom.append(pingColorPicker);
     zoom.querySelector('#snapBtn').classList.add('active');
     wrap.append(zoom);
     setTool('select');
@@ -811,8 +814,8 @@ window.Table = (function () {
       }
       if (e.button === 1) {
         // Средняя кнопка (клик колесом) — пинг в точке.
-        S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name });
-        S.ws.send({ type: 'ping', x: w.x, y: w.y });
+        S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name, color: S.pingColor });
+        S.ws.send({ type: 'ping', x: w.x, y: w.y, color: S.pingColor });
         return;
       }
       if (space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
@@ -865,7 +868,7 @@ window.Table = (function () {
           S.drag = { kind: 'temp' };
         }
       } else if (S.tool === 'pointer') {
-        S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name }); S.ws.send({ type: 'ping', x: w.x, y: w.y });
+        S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name, color: S.pingColor }); S.ws.send({ type: 'ping', x: w.x, y: w.y, color: S.pingColor });
       } else if (S.tool === 'text') {
         prompt2('Текст надписи').then(t => { if (t) upsert({ layer: LAYER.text, z: 0, data: { type: 'text', text: t, x: w.x, y: w.y, size: 28, color: '#ffffff', owner_id: S.user.id } }); });
       }
@@ -1146,7 +1149,7 @@ window.Table = (function () {
         notifySceneChange();
         break;
       case 'ruler': if (m.points) S.remoteRulers[m.user_id] = { kind: 'ruler', points: m.points, name: m.name, user_id: m.user_id }; else delete S.remoteRulers[m.user_id]; break;
-      case 'ping': S.pings.push({ x: m.x, y: m.y, t: Date.now(), name: m.name }); break;
+      case 'ping': S.pings.push({ x: m.x, y: m.y, t: Date.now(), name: m.name, color: m.color }); break;
     }
     requestDraw();
   }
