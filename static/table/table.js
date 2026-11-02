@@ -667,7 +667,7 @@ window.Table = (function () {
     S.canvas.className = 'tool-' + t;
     syncFogCursor();
     S.subbox.innerHTML = '';
-    const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить', pan: 'Тяните для панорамирования', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: '' };
+    const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить; ПКМ — панорама, колесо — пинг', pan: 'Тяните для панорамирования (или ПКМ)', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: '' };
     S.hint.textContent = hints[t] || '';
     if (t === 'draw') {
       const shapes = [['path', icon('path')], ['line', icon('line')], ['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]];
@@ -803,17 +803,19 @@ window.Table = (function () {
       cv.setPointerCapture(e.pointerId);
       const w = toWorld(e.offsetX, e.offsetY);
       if (e.button === 2 && !space) {
+        // ПКМ — панорама; короткий клик без движения по элементу откроет его меню на отпускании.
         const it = hitTest(w.x, w.y);
-        if (it) {
-          // ПКМ по элементу из группы — меню всей группы; иначе — одиночное выделение.
-          if (!(S.selSet.has(it.id) && S.selSet.size > 1)) {
-            if (canEdit(it) && !it.data.locked) setSelection([it.id]);
-            else { S.selSet = new Set(); S.sel = it.id; updateProps(); }
-          }
-          contextMenu(it, e.clientX, e.clientY); return;
-        }
+        S.rightClick = it ? { it, x: e.clientX, y: e.clientY } : null;
+        S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y };
+        return;
       }
-      if (e.button === 1 || e.button === 2 || space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
+      if (e.button === 1) {
+        // Средняя кнопка (клик колесом) — пинг в точке.
+        S.pings.push({ x: w.x, y: w.y, t: Date.now(), name: S.user.name });
+        S.ws.send({ type: 'ping', x: w.x, y: w.y });
+        return;
+      }
+      if (space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
       if (S.tool === 'select') {
         const it = hitTest(w.x, w.y);
         const editable = it && canEdit(it) && !it.data.locked;
@@ -908,6 +910,19 @@ window.Table = (function () {
       }
       if (S.drag?.kind === 'marquee') finishMarquee();
       if (S.drag?.kind === 'temp' && S.temp) finishTemp();
+      // ПКМ без движения — обычный клик: выделяем элемент и показываем меню.
+      if (S.drag?.kind === 'pan' && S.rightClick) {
+        const moved = Math.hypot(e.clientX - S.drag.sx, e.clientY - S.drag.sy);
+        if (moved < 4) {
+          const { it, x, y } = S.rightClick;
+          if (!(S.selSet.has(it.id) && S.selSet.size > 1)) {
+            if (canEdit(it) && !it.data.locked) setSelection([it.id]);
+            else { S.selSet = new Set(); S.sel = it.id; updateProps(); }
+          }
+          contextMenu(it, x, y);
+        }
+      }
+      S.rightClick = null;
       S.drag = null;
     });
     cv.addEventListener('dblclick', e => {
