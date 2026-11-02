@@ -667,7 +667,7 @@ fn validate_graph(graph: &Value, groups: &[Value], nested: bool, owner_group: Op
             _ => { problems.push("Провод подключён к отсутствующему сокету.".to_string()); continue; }
         };
         if out_type != in_type { problems.push("Типы сокетов провода не совпадают.".to_string()); continue; }
-        if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") { problems.push("Условие попадания подключается только ко входу «Если».".to_string()); continue; }
+        if from_node["type"] == "condition.hit" && !(to_node["type"] == "flow.if" && in_socket == "condition") && !(to_node["type"].as_str().unwrap_or("").starts_with("action.") && in_socket == "condition") { problems.push("Условие попадания подключается ко входу «Если» или к condition блока действия.".to_string()); continue; }
         // Условия листа считаются только в рантайме: провод допустим только ко входу condition блока.
         if SHEET_CONDITIONS.contains(&from_node["type"].as_str().unwrap_or("")) && !(to_node["type"].as_str().unwrap_or("").starts_with("action.") && in_socket == "condition") {
             problems.push("Условие листа подключается только ко входу «condition» блока действия.".to_string()); continue;
@@ -1341,6 +1341,11 @@ pub fn to_v1_with_context(mechanics: &Value, context: &Value) -> Value {
             // результатов действий и вычисляется исполнителем в рантайме. В план кладётся id
             // узла-источника (condition_src); статическая проверка остаётся только без провода.
             match incoming.get(&(node_id.clone(), "condition".to_string())).cloned() {
+                // «Попадание» — не значение листа, а гейт предыдущей атаки: блок выполняется только
+                // при попадании (when: hit), как ветка «Если» по этому условию.
+                Some((source, _)) if nodes.get(&source).is_some_and(|node| node["type"] == "condition.hit") => {
+                    block.insert("when".into(), json!("hit"));
+                }
                 Some((source, _)) => { block.insert("condition_src".into(), json!(source)); }
                 None => if graph_input_value(current, "condition", &incoming, &nodes, context, None, 0, &env).and_then(|value| value.as_bool()) == Some(false) {
                     let key = (node_id.clone(), "exec".to_string());
@@ -1616,12 +1621,32 @@ mod hit_gate_tests {
     }
 
     #[test]
+    fn hit_condition_gates_a_block_directly() {
+        let mut graph = hit_chain();
+        {
+            let nodes = graph["graph"]["nodes"].as_array_mut().unwrap();
+            nodes.retain(|node| node["id"] != "f");
+            let links = graph["graph"]["links"].as_array_mut().unwrap();
+            links.retain(|link| link["from"]["node"] != "f" && link["to"]["node"] != "f");
+            links.push(json!({"from": {"node": "a", "socket": "exec"}, "to": {"node": "d", "socket": "exec"}}));
+            links.push(json!({"from": {"node": "h", "socket": "value"}, "to": {"node": "d", "socket": "condition"}}));
+        }
+        assert!(problems(&graph).unwrap().is_empty());
+        let v1 = to_v1(&graph);
+        let blocks = v1["programs"][0]["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[1]["kind"], "damage");
+        assert_eq!(blocks[1]["when"], "hit", "попадание гейтит блок напрямую");
+        assert!(blocks[1].get("condition_src").is_none());
+    }
+
+    #[test]
     fn hit_condition_only_feeds_a_branch() {
         let mut graph = hit_chain();
         // Условие попадания подключено к узлу, который не является «Если»: сохранение и исполнение отклоняют граф.
         graph["graph"]["links"].as_array_mut().unwrap().push(json!({"from": {"node": "h", "socket": "value"}, "to": {"node": "d", "socket": "enabled"}}));
         let list = problems(&graph).unwrap();
-        assert!(list.iter().any(|message| message.contains("только ко входу")), "{list:?}");
+        assert!(list.iter().any(|message| message.contains("попадания")), "{list:?}");
     }
 
     #[test]

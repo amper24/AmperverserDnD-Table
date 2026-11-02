@@ -298,7 +298,11 @@
         // Динамическое условие блока проверяется после enabled: false пропускает блок,
         // а поток идёт дальше по exec — как у выключенного блока.
         let skip = enabled === false;
-        if (!skip && inputValue(node, 'condition', undefined) === false) skip = true;
+        // «Попадание» — гейт предыдущей атаки, а не значение: блок идёт в план с when: hit.
+        const condSource = incoming.get(`${node.id}:condition`);
+        const condHit = byId.get(condSource?.node)?.type === 'condition.hit';
+        if (!skip && !condHit && inputValue(node, 'condition', undefined) === false) skip = true;
+        if (condHit && (ap.when === undefined || ap.when === 'always')) ap.when = 'hit';
         if (!skip) {
           if (enabled !== undefined) ap.enabled = enabled;
           delete ap.block_id; delete ap.enabled_input; delete ap.kind;
@@ -504,7 +508,7 @@
       const fromSockets = socketMap(fromNode, groupMap, ownerGroup).outputs, toSockets = socketMap(toNode, groupMap, ownerGroup).inputs;
       if (!Object.hasOwn(fromSockets, source.socket) || !Object.hasOwn(toSockets, target.socket)) { const e = soft(problems, 'Провод подключён к отсутствующему сокету.'); if (e) return e; continue; }
       if (fromSockets[source.socket] !== toSockets[target.socket]) { const e = soft(problems, 'Типы сокетов провода не совпадают.'); if (e) return e; continue; }
-      if (fromNode.type === 'condition.hit' && !(toNode.type === 'flow.if' && target.socket === 'condition')) { const e = soft(problems, 'Условие попадания подключается только ко входу «Если».'); if (e) return e; continue; }
+      if (fromNode.type === 'condition.hit' && !(toNode.type === 'flow.if' && target.socket === 'condition') && !(toNode.type.startsWith('action.') && target.socket === 'condition')) { const e = soft(problems, 'Условие попадания подключается ко входу «Если» или к condition блока действия.'); if (e) return e; continue; }
       // Условия листа считаются только в рантайме и только на входе condition блока (condition_src):
       // статические enabled и flow.if их не считают, поэтому такой провод отклоняется.
       if (SHEET_CONDITION_TYPES.has(fromNode.type) && !(toNode.type.startsWith('action.') && target.socket === 'condition')) { const e = soft(problems, SHEET_CONDITION_TARGET); if (e) return e; continue; }

@@ -74,7 +74,7 @@ test('a branch continues with ungated nodes: only the node wired to the output i
   assert.deepEqual(plain(back).map(b => [b.id, b.when || 'always']), [['atk', 'always'], ['dmg', 'hit'], ['tail', 'always']], 'the chain after the gated block is not gated');
 });
 
-test('a hit condition wired to anything but a branch is saved but not executed', () => {
+test('a hit condition wired to enabled is saved but not executed', () => {
   const graph = withEnds({ version: 2, graph: { nodes: [
     { id: 'p', type: 'action.program', params: { program_id: 'use', name: 'Удар', trigger: 'use' } },
     { id: 'h', type: 'condition.hit', params: {} },
@@ -84,8 +84,17 @@ test('a hit condition wired to anything but a branch is saved but not executed',
     { from: { node: 'h', socket: 'value' }, to: { node: 'd', socket: 'enabled' } },
   ], frames: [], groups: [] } });
   assert.equal(M.validate(graph), '', 'structure is fine, so the record can be saved');
-  assert.ok(M.problems(graph).some(text => text.includes('только ко входу «Если»')));
+  assert.ok(M.problems(graph).some(text => text.includes('попадания')));
   assert.match(M.evaluateGraph(graph).error, /Граф не исполняется/);
+});
+
+test('a hit condition gates a damage block directly without a branch', () => {
+  const graph = vault([program(), roll('a', 'attack', { block_id: 'atk', dice: attackBlock.dice, dc: 3 }), node('h', 'condition.hit', {}), roll('d', 'damage', { block_id: 'dmg', dice: hitDamage.dice })],
+    [wire('p', 'exec', 'a', 'exec'), wire('a', 'exec', 'd', 'exec'), wire('h', 'value', 'd', 'condition')]);
+  assert.equal(M.validate(graph), '');
+  assert.equal(M.problems(graph).length, 0);
+  const blocks = plain(M.toLegacy(graph).programs[0].blocks);
+  assert.deepEqual(blocks.map(b => [b.id, b.when || 'always']), [['atk', 'always'], ['dmg', 'hit']], 'попадание гейтит блок напрямую');
 });
 
 test('nested hit branches are reported as a problem', () => {
