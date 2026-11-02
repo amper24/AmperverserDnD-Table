@@ -81,6 +81,10 @@ window.Table = (function () {
       // Слои сцены и активный слой (для клика/загрузки). Активная карта живёт в scene.active_map_id.
       layers: T.normalize(ctx.scene?.layers),
       activeLayer: LAYER.character,
+      // Мультивыделение: sel — «главный» элемент для панели свойств, selSet — все выбранные.
+      selSet: new Set(), selBox: null,
+      // Туман войны — право table.manage_fog (по умолчанию совпадает с ролью мастера).
+      canFog: ctx.canFog !== undefined ? !!ctx.canFog : !!ctx.isGM,
       // dirty — есть ли изменения для кадра; gridCache — offscreen-кэш сетки.
       dirty: true, gridCache: null,
     };
@@ -102,6 +106,9 @@ window.Table = (function () {
     syncScale();
     resize();
     window.addEventListener('resize', resize);
+    // Контейнер может измениться и без resize окна (боковая панель, мобильная вёрстка):
+    // пересчитываем буфер canvas, камера при этом не сбрасывается.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => resize()).observe(wrap);
     window.addEventListener('hashchange', () => { STATS_ON = statsEnabled(); requestDraw(); });
     fitToMap();
     requestDraw();
@@ -155,10 +162,29 @@ window.Table = (function () {
   function focusMap(id) { if (id) setActiveMap(id); fitToMap(); }
 
   // ---------- геометрия ----------
+  /// Размер canvas по контейнеру: буфер в физических пикселях, CSS-размер — в логических.
+  /// CSS больше не растягивает старый буфер (width/height задаём здесь). Камера
+  /// сохраняется: тот же центр мира остаётся в центре экрана, зум не меняется, fitToMap
+  /// не вызывается — после скрытия/показа боковой панели карта не растягивается и не прыгает.
   function resize() {
-    const r = S.canvas.parentElement.getBoundingClientRect();
-    S.canvas.width = r.width * devicePixelRatio; S.canvas.height = r.height * devicePixelRatio;
-    S.w = r.width; S.h = r.height;
+    if (!S?.canvas) return;
+    const wrap = S.canvas.parentElement;
+    if (!wrap) return;
+    const w = Math.max(1, wrap.clientWidth || 0);
+    const h = Math.max(1, wrap.clientHeight || 0);
+    const dpr = devicePixelRatio || 1;
+    // Мировая точка в центре до изменения размера — её же оставляем в центре после.
+    const had = S.w > 0 && S.h > 0;
+    const cx = had ? (S.w / 2 - S.cam.x) / S.cam.k : 0;
+    const cy = had ? (S.h / 2 - S.cam.y) / S.cam.k : 0;
+    S.w = w; S.h = h;
+    S.canvas.style.width = w + 'px';
+    S.canvas.style.height = h + 'px';
+    const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    // Буфер уже нового размера — кадр запрашиваем после него, без промежуточного растяжения.
+    if (S.canvas.width !== bw) S.canvas.width = bw;
+    if (S.canvas.height !== bh) S.canvas.height = bh;
+    if (had) { S.cam.x = w / 2 - cx * S.cam.k; S.cam.y = h / 2 - cy * S.cam.k; }
     requestDraw();
   }
   const toWorld = (sx, sy) => ({ x: (sx - S.cam.x) / S.cam.k, y: (sy - S.cam.y) / S.cam.k });
@@ -213,6 +239,51 @@ window.Table = (function () {
   }
   function canEdit(it) { return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id) || !!it.data.loot; }
 
+  // ---------- мультивыделение (рамка, группа) ----------
+  /// Элементы, которые можно выделить рамкой: слои персонажей/объектов и только свои.
+  function selectableItems() {
+    return S.scene.items.filter(it => {
+      const lid = layerOf(it);
+      if (lid !== LAYER.character && lid !== LAYER.prop) return false;
+      if (it.data.locked && !S.isGM) return false;
+      return canEdit(it);
+    });
+  }
+  /// Текущее выделение (только то, что реально можно двигать/удалять).
+  function selectionItems() {
+    return S.scene.items.filter(i => S.selSet.has(i.id) && canEdit(i));
+  }
+  function setSelection(ids) {
+    S.selSet = new Set(ids);
+    S.sel = ids.length ? ids[ids.length - 1] : null;
+    updateProps(); requestDraw();
+  }
+  /// Рамка выделения в мировых координатах (нормализованный прямоугольник).
+  function marqueeBounds() {
+    const b = S.selBox;
+    if (!b) return { x: 0, y: 0, w: 0, h: 0 };
+    const x = Math.min(b.x0, b.x1), y = Math.min(b.y0, b.y1);
+    return { x, y, w: Math.abs(b.x1 - b.x0), h: Math.abs(b.y1 - b.y0) };
+  }
+  /// Отпустили рамку: в выделение попадают элементы, чьи bounds пересекаются с ней.
+  function finishMarquee() {
+    const box = S.selBox;
+    const m = marqueeBounds();
+    S.selBox = null;
+    if (!box) return;
+    // Клик без протяжки — просто снять выделение (сброс уже произошёл при нажатии).
+    if (m.w < 2 / S.cam.k && m.h < 2 / S.cam.k) { updateProps(); requestDraw(); return; }
+    const hit = selectableItems().filter(it => {
+      const b = itemBounds(it);
+      return b.x <= m.x + m.w && b.x + b.w >= m.x && b.y <= m.y + m.h && b.y + b.h >= m.y;
+    }).map(it => it.id);
+    setSelection(box.additive ? [...new Set([...S.selSet, ...hit])] : hit);
+  }
+  /// Действие над всем выделением: применяем и отправляем одним upsert на элемент.
+  function eachSelected(fn) {
+    for (const it of selectionItems()) { fn(it); upsert(it); }
+  }
+
   // ---------- рендер ----------
   // ---------- Отрисовка: цикл, сетка, объекты, туман войны ----------
   // Кадры запрашиваются по требованию и склеиваются в один requestAnimationFrame.
@@ -257,8 +328,19 @@ window.Table = (function () {
     // временные фигуры
     if (S.temp) drawTemp(c, S.temp, S.user.id);
     for (const r of Object.values(S.remoteRulers)) drawTemp(c, r, r.user_id);
-    // выделение
-    if (S.sel) { const it = S.scene.items.find(i => i.id === S.sel); if (it) { const b = itemBounds(it); c.strokeStyle = '#7c5cff'; c.lineWidth = 2 / S.cam.k; c.setLineDash([6 / S.cam.k, 4 / S.cam.k]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]); } }
+    // выделение: контур у всех выбранных (мультивыделение), рамка — при протяжке
+    const highlighted = S.selSet.size ? S.scene.items.filter(i => S.selSet.has(i.id)) : (S.sel ? S.scene.items.filter(i => i.id === S.sel) : []);
+    for (const it of highlighted) {
+      const b = itemBounds(it);
+      c.strokeStyle = '#7c5cff'; c.lineWidth = 2 / S.cam.k; c.setLineDash([6 / S.cam.k, 4 / S.cam.k]);
+      c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
+    }
+    if (S.selBox) {
+      const b = marqueeBounds();
+      c.fillStyle = 'rgba(124,92,255,0.12)';
+      c.strokeStyle = '#7c5cff'; c.lineWidth = 1 / S.cam.k;
+      c.fillRect(b.x, b.y, b.w, b.h); c.strokeRect(b.x, b.y, b.w, b.h);
+    }
     // пинги
     const now = Date.now();
     S.pings = S.pings.filter(p => now - p.t < 2000);
@@ -490,7 +572,7 @@ window.Table = (function () {
     const b = map ? T.boundsOf(map) : null;
     if (!b) return;
     const showPlayers = T.fogEnabled(fog);
-    const editing = S.isGM && S.tool === 'fog';
+    const editing = S.canFog && S.tool === 'fog';
     if (!showPlayers && !editing) return;
     const shapes = T.maskShapes(fog, map.id);
     const fc = S.fogCanvas;
@@ -503,7 +585,7 @@ window.Table = (function () {
     x.translate(S.cam.x, S.cam.y); x.scale(S.cam.k, S.cam.k);
     // Обрезка по карте: всё, что нарисовано за её пределами, не darkened и не открывается.
     x.beginPath(); x.rect(b.x, b.y, b.w, b.h); x.clip();
-    x.fillStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
+    x.fillStyle = S.canFog ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
     x.fillRect(b.x, b.y, b.w, b.h);
     for (const sh of shapes) {
       x.globalCompositeOperation = sh.mode === 'reveal' ? 'destination-out' : 'source-over';
@@ -530,7 +612,7 @@ window.Table = (function () {
   }
   /// Предпросмотр под курсором: кружок кисти/ластика или точка-затравка для фигур.
   function drawFogPreview(c) {
-    if (!S.isGM || S.tool !== 'fog' || !S.hover || S.drag) return;
+    if (!S.canFog || S.tool !== 'fog' || !S.hover || S.drag) return;
     const map = activeMap(); const b = T.boundsOf(map); if (!b) return;
     // Цвет — как у будущего мазка: ластик работает в обратном режиме.
     const effective = S.fogTool === 'eraser' ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
@@ -558,7 +640,7 @@ window.Table = (function () {
   // ---------- Инструменты и события мыши/касаний ----------
   function buildTools(wrap) {
     const tools = [['select', icon('select'), 'Выбор (V)'], ['pan', icon('hand'), 'Панорама (H)'], ['ruler', icon('ruler'), 'Линейка (R)'], ['draw', icon('pen'), 'Рисование (D)'], ['text', icon('text'), 'Текст'], ['pointer', icon('pin'), 'Указка (P)']];
-    if (S.isGM) tools.push(['fog', icon('fog'), 'Туман войны (F)']);
+    if (S.canFog) tools.push(['fog', icon('fog'), 'Туман войны (F)']);
     S.toolbox = el('div', { class: 'tools' });
     for (const [id, ico, title] of tools) S.toolbox.append(el('button', { class: 'icon', 'data-tool': id, title, onclick: () => setTool(id) }, ico));
     S.subbox = el('div', { class: 'sub' });
@@ -573,7 +655,7 @@ window.Table = (function () {
     setTool('select');
   }
   function setTool(t) {
-    if (t === 'fog' && !S.isGM) t = 'select'; // игрокам туман недоступен
+    if (t === 'fog' && !S.canFog) t = 'select'; // игрокам туман недоступен
     S.tool = t; S.temp = null; S.hover = null;
     requestDraw();
     S.toolbox.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
@@ -682,7 +764,7 @@ window.Table = (function () {
   /// У кисти/ластика системный курсор прячем: роль курсора играет нарисованный кружок (drawFogPreview).
   function syncFogCursor() {
     if (!S.canvas) return;
-    const circle = S.isGM && S.tool === 'fog' && (S.fogTool === 'brush' || S.fogTool === 'eraser');
+    const circle = S.canFog && S.tool === 'fog' && (S.fogTool === 'brush' || S.fogTool === 'eraser');
     S.canvas.style.cursor = circle ? 'none' : '';
   }
   /// Обновить панель тумана без перерисовки (после действия, отмены и scene_update от другого мастера).
@@ -717,15 +799,44 @@ window.Table = (function () {
       const w = toWorld(e.offsetX, e.offsetY);
       if (e.button === 2 && !space) {
         const it = hitTest(w.x, w.y);
-        if (it) { S.sel = it.id; updateProps(); contextMenu(it, e.clientX, e.clientY); return; }
+        if (it) {
+          // ПКМ по элементу из группы — меню всей группы; иначе — одиночное выделение.
+          if (!(S.selSet.has(it.id) && S.selSet.size > 1)) {
+            if (canEdit(it) && !it.data.locked) setSelection([it.id]);
+            else { S.selSet = new Set(); S.sel = it.id; updateProps(); }
+          }
+          contextMenu(it, e.clientX, e.clientY); return;
+        }
       }
       if (e.button === 1 || e.button === 2 || space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
       if (S.tool === 'select') {
         const it = hitTest(w.x, w.y);
-        if (it && canEdit(it) && !it.data.locked) { S.sel = it.id; S.drag = { kind: 'move', it, ox: w.x - it.data.x, oy: w.y - it.data.y, sx: it.data.x, sy: it.data.y }; }
-        else if (it) { S.sel = it.id; S.drag = null; }
-        else { S.sel = null; S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; }
-        updateProps();
+        const editable = it && canEdit(it) && !it.data.locked;
+        if (editable) {
+          if (e.shiftKey) {
+            // Shift — добавить/убрать из выделения.
+            if (S.selSet.has(it.id)) S.selSet.delete(it.id); else S.selSet.add(it.id);
+            S.sel = [...S.selSet].pop() || null;
+            updateProps(); requestDraw();
+            if (!S.selSet.has(it.id)) { S.drag = null; return; }
+          } else if (!S.selSet.has(it.id)) {
+            setSelection([it.id]);
+          } else {
+            S.sel = it.id; updateProps();
+          }
+          // Тянем всё выделение группой (привязка к сетке — при отпускании).
+          const items = selectionItems().map(x => ({ it: x, sx: x.data.x, sy: x.data.y }));
+          S.drag = { kind: 'move', items, primary: it, ox: w.x, oy: w.y, moved: false };
+        } else if (it) {
+          // Чужой или закреплённый элемент: только просмотр свойств, без выделения и движения.
+          S.selSet = new Set(); S.sel = it.id; S.drag = null; updateProps(); requestDraw();
+        } else {
+          // Пустое место: рамка выделения (Shift — добавить к текущему выделению).
+          if (!e.shiftKey) { S.selSet = new Set(); S.sel = null; updateProps(); }
+          S.selBox = { x0: w.x, y0: w.y, x1: w.x, y1: w.y, additive: !!e.shiftKey };
+          S.drag = { kind: 'marquee' };
+          requestDraw();
+        }
       } else if (S.tool === 'ruler') {
         startRuler([[w.x, w.y], [w.x, w.y]], e);
       } else if (S.tool === 'draw') {
@@ -759,7 +870,12 @@ window.Table = (function () {
       if (S.temp && (S.temp.shape === 'poly')) { S.temp.points[S.temp.points.length - 1] = [w.x, w.y]; return; }
       if (!S.drag) return;
       if (S.drag.kind === 'pan') { S.cam.x = S.drag.cx + e.clientX - S.drag.sx; S.cam.y = S.drag.cy + e.clientY - S.drag.sy; }
-      else if (S.drag.kind === 'move') { const d = S.drag.it.data; d.x = w.x - S.drag.ox; d.y = w.y - S.drag.oy; S.drag.moved = true; }
+      else if (S.drag.kind === 'move') {
+        // Группа двигается одним смещением: относительные позиции сохраняются.
+        const dx = w.x - S.drag.ox, dy = w.y - S.drag.oy;
+        for (const entry of S.drag.items) { entry.it.data.x = entry.sx + dx; entry.it.data.y = entry.sy + dy; }
+        S.drag.moved = true;
+      } else if (S.drag.kind === 'marquee' && S.selBox) { S.selBox.x1 = w.x; S.selBox.y1 = w.y; }
       else if (S.drag.kind === 'temp' && S.temp) {
         if (S.temp.kind === 'ruler') moveRuler(w, e.ctrlKey || e.metaKey);
         else if (S.temp.shape === 'path') {
@@ -774,14 +890,18 @@ window.Table = (function () {
     cv.addEventListener('pointerup', e => {
       requestDraw();
       if (S.drag?.kind === 'move' && S.drag.moved) {
-        const it = S.drag.it, d = it.data;
-        if (d.type === 'image' && it.layer !== LAYER.drawing) {
-          // Карту привязываем левым верхним углом (её сетка должна совпадать с клетками).
-          if (layerOf(it) === LAYER.map && S.snap && !isHex()) { const c = T.snapCorner(d.x - d.w / 2, d.y - d.h / 2, S.scene.grid); d.x = c.x + d.w / 2; d.y = c.y + d.h / 2; }
-          else { const p = snapPos(d.x, d.y, d.w, d.h); d.x = p.x; d.y = p.y; }
+        // Привязка к сетке — каждому элементу группы отдельно, затем один upsert на элемент.
+        for (const entry of S.drag.items) {
+          const it = entry.it, d = it.data;
+          if (d.type === 'image' && it.layer !== LAYER.drawing) {
+            // Карту привязываем левым верхним углом (её сетка должна совпадать с клетками).
+            if (layerOf(it) === LAYER.map && S.snap && !isHex()) { const c = T.snapCorner(d.x - d.w / 2, d.y - d.h / 2, S.scene.grid); d.x = c.x + d.w / 2; d.y = c.y + d.h / 2; }
+            else { const p = snapPos(d.x, d.y, d.w, d.h); d.x = p.x; d.y = p.y; }
+          }
+          upsert(it);
         }
-        upsert(it);
       }
+      if (S.drag?.kind === 'marquee') finishMarquee();
       if (S.drag?.kind === 'temp' && S.temp) finishTemp();
       S.drag = null;
     });
@@ -796,25 +916,25 @@ window.Table = (function () {
       if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
       requestDraw();
       if (e.code === 'Space') { space = true; cv.style.cursor = 'grab'; }
-      if (e.key === 'Escape') { S.temp = null; S.sel = null; updateProps(); }
+      if (e.key === 'Escape') { S.temp = null; S.selBox = null; S.drag = null; S.selSet = new Set(); S.sel = null; updateProps(); requestDraw(); }
       // Ctrl/Cmd переключает привязку линейки к сетке — пересчитываем уже протянутую линию.
       if ((e.key === 'Control' || e.key === 'Meta') && !e.repeat) refreshRulerSnap(true);
       if (e.key === 'Enter' && S.temp?.shape === 'poly') { S.temp.points.pop(); finishTemp(); }
       const map = { v: 'select', h: 'pan', r: 'ruler', d: 'draw', p: 'pointer', f: 'fog' };
-      if (map[e.key.toLowerCase()] && !e.ctrlKey) { if (map[e.key.toLowerCase()] !== 'fog' || S.isGM) setTool(map[e.key.toLowerCase()]); }
+      if (map[e.key.toLowerCase()] && !e.ctrlKey) { if (map[e.key.toLowerCase()] !== 'fog' || S.canFog) setTool(map[e.key.toLowerCase()]); }
       // Туман: 1–4 — инструмент, [ ] — размер кисти, Ctrl+Z — отменить последний мазок.
-      if (S.isGM && S.tool === 'fog' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (S.canFog && S.tool === 'fog' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const fogTools = { 1: 'brush', 2: 'rect', 3: 'circle', 4: 'eraser' };
         if (fogTools[e.key]) { selectFogTool(fogTools[e.key]); return; }
         if (e.key === '[') { setFogCells(S.fogCells - 1); return; }
         if (e.key === ']') { setFogCells(S.fogCells + 1); return; }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && S.isGM && S.tool === 'fog') { e.preventDefault(); undoFog(); return; }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) { deleteSel(); }
-      if (S.sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        const it = S.scene.items.find(i => i.id === S.sel); if (!it || !canEdit(it)) return; e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && S.canFog && S.tool === 'fog') { e.preventDefault(); undoFog(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (S.sel || S.selSet.size)) { deleteSel(); }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectionItems().length) {
+        e.preventDefault();
         const g = grid(); const dx = { ArrowLeft: -g, ArrowRight: g }[e.key] || 0, dy = { ArrowUp: -g, ArrowDown: g }[e.key] || 0;
-        it.data.x += dx; it.data.y += dy; upsert(it);
+        eachSelected(it => { it.data.x += dx; it.data.y += dy; });
       }
       if (e.ctrlKey && e.key === 'c' && S.sel) { const it = S.scene.items.find(i => i.id === S.sel); if (it) S.clip = JSON.parse(JSON.stringify(it)); }
       if (e.ctrlKey && e.key === 'v' && S.clip) { const it = JSON.parse(JSON.stringify(S.clip)); delete it.id; it.data.x += grid(); it.data.y += grid(); upsert(it); }
@@ -965,17 +1085,20 @@ window.Table = (function () {
   /// не дожидаясь ответа сервера: поэтому sendScene тоже просит кадр.
   function sendScene(patch) { S.ws.send({ type: 'scene_update', scene_id: S.scene.id, ...patch }); requestDraw(); }
   function deleteSel() {
-    const it = S.scene.items.find(i => i.id === S.sel); if (!it || !canEdit(it)) return;
-    S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps(); requestDraw();
+    const items = selectionItems();
+    if (!items.length) return;
+    for (const it of items) S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id });
+    S.selSet = new Set(); S.sel = null; updateProps(); requestDraw();
   }
   function onMessage(m) {
     if (m.scene_id && m.scene_id !== S.scene.id && m.type !== 'active_scene') return;
     switch (m.type) {
-      case 'item_upsert': { const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.it.id === m.item.id)) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
+      case 'item_upsert': { const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
       case 'item_delete': {
         const deleted = S.scene.items.find(i => i.id === m.id);
         S.scene.items = S.scene.items.filter(i => i.id !== m.id);
-        if (S.sel === m.id) { S.sel = null; updateProps(); }
+        S.selSet.delete(m.id);
+        if (S.sel === m.id) { S.sel = null; updateProps(); } else if (S.selSet.size) updateProps();
         // Удалили карту — её маска тумана больше не нужна (ключ by_map = id карты).
         if (deleted && T.isMap(deleted) && S.scene.fog?.by_map) delete S.scene.fog.by_map[m.id];
         // Удалили активную карту — активной станет единственная оставшаяся (см. activeMapId).
@@ -1005,6 +1128,8 @@ window.Table = (function () {
   // ---------- Контекстное меню и панель свойств ----------
   function contextMenu(it, x, y) {
     document.querySelectorAll('.ctxmenu').forEach(m => m.remove());
+    // Групповое меню: ПКМ по элементу, который входит в мультивыделение.
+    if (S.selSet.size > 1 && S.selSet.has(it.id)) { groupMenu(x, y); return; }
     const d = it.data, editable = canEdit(it);
     const menu = el('div', { class: 'ctxmenu', style: `left:${x}px;top:${y}px` });
     const add = (label, fn, cls = '') => menu.append(el('div', { class: 'ctxitem ' + cls, onclick: () => { menu.remove(); fn(); } }, label));
@@ -1045,9 +1170,59 @@ window.Table = (function () {
     setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
   }
 
+  /// Контекстное меню группы: «Убрать со стола», «Скрыть» (мастер), планы.
+  function groupMenu(x, y) {
+    const items = selectionItems();
+    if (!items.length) return;
+    const menu = el('div', { class: 'ctxmenu', style: `left:${x}px;top:${y}px` });
+    const add = (label, fn, cls = '') => menu.append(el('div', { class: 'ctxitem ' + cls, onclick: () => { menu.remove(); fn(); } }, label));
+    menu.append(el('div', { class: 'ctxtitle' }, `Выбрано ${items.length}`));
+    add('Убрать со стола', () => deleteSel(), 'danger');
+    if (S.isGM) {
+      add(items.every(i => i.data.hidden) ? 'Показать игрокам' : 'Скрыть от игроков', () => {
+        const hide = !items.every(i => i.data.hidden);
+        eachSelected(it => { it.data.hidden = hide; });
+      });
+    }
+    add('На передний план', () => eachSelected(it => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; }));
+    add('На задний план', () => eachSelected(it => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; }));
+    add('Снять выделение', () => setSelection([]));
+    document.body.append(menu);
+    const r = menu.getBoundingClientRect();
+    if (r.right > innerWidth) menu.style.left = (x - r.width) + 'px';
+    if (r.bottom > innerHeight) menu.style.top = (y - r.height) + 'px';
+    const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('pointerdown', close, true); } };
+    setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+  }
+
+  /// Панель свойств группы: «Выбрано N» и общие действия, разрешённые правами.
+  function renderGroupProps(items) {
+    const box = S.propsBox;
+    box.classList.remove('hidden');
+    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
+      el('b', { style: 'flex:1' }, `Выбрано ${items.length}`), el('span', { class: 'badge' }, 'группа')));
+    const editable = items.filter(canEdit);
+    if (!editable.length) { box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование')); return; }
+    box.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-bottom:8px' },
+      ...items.slice(0, 8).map(it => el('span', { class: 'chip' }, it.data.name || it.data.text || 'элемент'))));
+    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
+      el('button', { class: 'small', style: 'flex:1', onclick: () => eachSelected(it => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; }) }, 'На передний план'),
+      el('button', { class: 'small', style: 'flex:1', onclick: () => eachSelected(it => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; }) }, 'На задний план')));
+    if (S.isGM) {
+      box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
+        el('button', { class: 'small', style: 'flex:1', onclick: () => { const hide = !items.every(i => i.data.hidden); eachSelected(it => { it.data.hidden = hide; }); } }, items.every(i => i.data.hidden) ? 'Показать' : 'Скрыть'),
+        el('button', { class: 'small', style: 'flex:1', onclick: () => setSelection([]) }, 'Снять выделение')));
+    }
+    box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${editable.length})`));
+    S.onSelect && S.onSelect(null);
+  }
+
   // ---------- панель свойств выбранного элемента ----------
   function updateProps() {
     const box = S.propsBox; box.innerHTML = '';
+    // Мультивыделение: панель группы вместо свойств одного элемента.
+    const group = selectionItems();
+    if (group.length > 1) { renderGroupProps(group); return; }
     const it = S.scene.items.find(i => i.id === S.sel);
     S.onSelect && S.onSelect(it);
     if (!it) { box.classList.add('hidden'); return; }
@@ -1146,6 +1321,8 @@ window.Table = (function () {
     getFogState: () => ({ tool: S.fogTool, mode: S.fogMode, cells: S.fogCells, enabled: T.fogEnabled(S.scene?.fog) }),
     selectFogTool, setFogMode, setFogCells, setFogPlayers,
     openAllFog, hideAllFog, undoFog,
+    // размер canvas по контейнеру: панель/окно меняют вёрстку — буфер пересчитывается без сброса камеры
+    refreshSize: resize,
     // производительность сетки: перерисовать кадр и счётчики для отладки/тестов
     requestDraw, gridStats: gridStatsSnapshot, resetGridStats,
     dropLootAtCenter, placeTokenAtCenter,

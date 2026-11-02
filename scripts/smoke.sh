@@ -159,6 +159,38 @@ pl -X POST "$B/api/characters/$CH/transfer" -H 'content-type: application/json' 
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/characters/$CH2/transfer" -H 'content-type: application/json' -d "{\"item_uid\":\"u1\",\"to_character_id\":\"$CH\"}"); [ "$code" = "403" ]
 gm -X DELETE "$B/api/characters/$CH2" | grep -q '"ok":true'
 
+echo "[4e] права: capability, участники, приглашения, сцены, чужие персонажи"
+GMID=$(gm "$B/api/auth/me" | J "d['id']")
+PLID=$(pl "$B/api/auth/me" | J "d['id']")
+# GET кампании отдаёт роль и права роли: мастер — всё, игрок — только свои возможности.
+gm "$B/api/campaigns/$CID" | J "d['role']" | grep -qx gm
+gm "$B/api/campaigns/$CID" | J "len(d['permissions'])" | grep -qx 16
+[ "$(pl "$B/api/campaigns/$CID" | J "len(d['permissions'])")" = "7" ]
+gm "$B/api/campaigns/$CID" | J "'campaign.manage_members' in d['permissions'] and 'character.edit_any' in d['permissions'] and 'table.manage_fog' in d['permissions']" | grep -qx True
+pl "$B/api/campaigns/$CID" | J "'campaign.manage_members' not in d['permissions'] and 'table.manage_fog' not in d['permissions'] and 'table.place_any_character' not in d['permissions'] and 'character.edit_any' not in d['permissions']" | grep -qx True
+pl "$B/api/campaigns/$CID" | J "'campaign.read' in d['permissions'] and 'table.read' in d['permissions'] and 'table.place_character' in d['permissions'] and 'table.move_own_token' in d['permissions']" | grep -qx True
+# Участники и приглашения — только с manage_members / invite.
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/campaigns/$CID/members/$PLID" -H 'content-type: application/json' -d '{"role":"gm"}'); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID/members/$GMID"); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/campaigns/$CID/invites" -H 'content-type: application/json' -d '{"role":"gm"}'); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" "$B/api/campaigns/$CID/invites"); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/campaigns/$CID" -H 'content-type: application/json' -d '{"name":"Взлом"}'); [ "$code" = "403" ]
+# Сцены, сетка и активная карта — table.manage_scene, только мастер.
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/campaigns/$CID/scenes" -H 'content-type: application/json' -d '{"name":"Взлом"}'); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/campaigns/$CID/scenes/$SID" -H 'content-type: application/json' -d '{"name":"Взлом"}'); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID/scenes/$SID"); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X POST "$B/api/campaigns/$CID/active-scene" -H 'content-type: application/json' -d "{\"scene_id\":\"$SID\"}"); [ "$code" = "403" ]
+# Чужой персонаж: игрок не читает и не правит персонажа мастера, мастер — правит персонажа игрока.
+GMCH=$(gm -X POST "$B/api/characters" -H 'content-type: application/json' -d "{\"name\":\"НПС мастера\",\"campaign_id\":\"$CID\"}" | J "d['id']")
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" "$B/api/characters/$GMCH"); [ "$code" = "403" ]
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/characters/$GMCH" -H 'content-type: application/json' -d '{"name":"Взлом"}'); [ "$code" = "403" ]
+[ "$(pl "$B/api/characters?campaign_id=$CID" | J "[c['name'] for c in d].count('НПС мастера')")" = "0" ]
+[ "$(gm "$B/api/characters?campaign_id=$CID" | J "[c['name'] for c in d].count('Торин')")" = "1" ]
+gm -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d '{"name":"Торин"}' >/dev/null
+gm "$B/api/characters/$CH" | J "d['name']" | grep -qx "Торин"
+# Игроку чужой лист недоступен и через shared-флаг другой кампании — лист мастера закрыт.
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X PATCH "$B/api/characters/$CH" -H 'content-type: application/json' -d "{\"campaign_id\":\"$CID\"}"); [ "$code" = "200" ]   # свой — можно
+
 echo "[4d] inventory links and atomic operations"
 B="$B" GM="$GM" PL="$PL" CID="$CID" SID="$SID" python3 tests/inventory-api.py
 
@@ -212,6 +244,94 @@ echo "[5b] состояние после WS"
 [ "$(pl "$B/api/campaigns/$CID/chat" | J "len(d)")" = "$((CHAT_PL_BEFORE + 1))" ]   # only the public roll is visible to the player
 [ "$(gm "$B/api/campaigns/$CID/chat" | J "len(d)")" = "$((CHAT_GM_BEFORE + 2))" ]
 
+echo "[5c] WS: присутствие без дублей и права на токены"
+python3 - "$B" "$CID" "$SID" "$GM" "$PL" "$GMID" "$PLID" "$CH" "$GMCH" <<'PY'
+import sys, json, asyncio
+B, CID, SID, GM, PL, GMID, PLID, CH, GMCH = sys.argv[1:]
+import websockets
+
+async def drain(ws, t=0.6):
+    out = []
+    try:
+        while True:
+            out.append(json.loads(await asyncio.wait_for(ws.recv(), t)))
+    except asyncio.TimeoutError:
+        return out
+
+def presence_users(msgs):
+    pres = [m for m in msgs if m["type"] == "presence"]
+    return pres[-1]["users"] if pres else []
+
+def check_presence(users, expected_connections, where):
+    # Один участник — одна запись, соединения считаются счётчиком.
+    ids = [u["user_id"] for u in users]
+    assert len(ids) == len(set(ids)), f"{where}: дубли участников {users}"
+    pls = [u for u in users if u["user_id"] == PLID]
+    assert len(pls) == 1, f"{where}: игрок должен быть один {users}"
+    assert pls[0]["connections"] == expected_connections, f"{where}: соединений {pls[0]['connections']}, ждали {expected_connections}"
+
+async def main():
+    W = B.replace("http", "ws")
+    g = await websockets.connect(f"{W}/ws/{CID}?token={GM}")
+    p1 = await websockets.connect(f"{W}/ws/{CID}?token={PL}")
+    p2 = await websockets.connect(f"{W}/ws/{CID}?token={PL}")
+    try:
+        users = presence_users(await drain(g, 0.8))
+        check_presence(users, 2, "две вкладки игрока")
+        await p2.close()
+        users = presence_users(await drain(g, 0.8))
+        check_presence(users, 1, "закрыли одну вкладку")
+        await drain(p1, 0.2)
+        # Переподключение (новая вкладка вместо закрытой) не добавляет вторую запись.
+        p3 = await websockets.connect(f"{W}/ws/{CID}?token={PL}")
+        users = presence_users(await drain(g, 0.8))
+        check_presence(users, 2, "reconnect")
+        await p3.close()
+        users = presence_users(await drain(g, 0.8))
+        check_presence(users, 1, "закрыли лишнюю вкладку")
+
+        # Мастер ставит на стол персонажа игрока (чужого для себя) — игрок это видит.
+        await g.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"layer": "character", "z": 0, "data": {"type": "image", "asset_id": "x", "x": 100, "y": 100, "w": 70, "h": 70, "name": "Торин", "character_id": CH, "owner_id": PLID, "hp": {"cur": 10, "max": 10}}}}
+        ))
+        got = [m for m in await drain(p1) if m["type"] == "item_upsert"]
+        assert got, "игрок не увидел токен своего персонажа, поставленный мастером"
+        own_token = got[-1]["item"]
+        await drain(g)
+
+        # NPC мастера: игрок не может его удалить и получает ошибку, токен остаётся.
+        await g.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"layer": "character", "z": 0, "data": {"type": "image", "asset_id": "x", "x": 200, "y": 200, "w": 70, "h": 70, "name": "НПС мастера", "hp": {"cur": 5, "max": 5}}}}))
+        npc = [m for m in await drain(g) if m["type"] == "item_upsert"][-1]["item"]
+        await drain(p1)
+        await p1.send(json.dumps({"type": "item_delete", "scene_id": SID, "id": npc["id"]}))
+        errors = [m for m in await drain(p1) if m["type"] == "error"]
+        assert errors and errors[0]["code"] == "forbidden", f"игроку не отказали в удалении чужого токена: {errors}"
+        assert not [m for m in await drain(g, 0.4) if m["type"] == "item_delete"], "чужой токен всё-таки удалён"
+
+        # Игрок не ставит на стол чужого персонажа (чужой лист в character_id).
+        await p1.send(json.dumps({"type": "item_upsert", "scene_id": SID, "item": {"layer": "character", "z": 0, "data": {"type": "image", "asset_id": "x", "x": 300, "y": 300, "w": 70, "h": 70, "name": "Взлом", "character_id": GMCH, "owner_id": PLID}}}))
+        errors = [m for m in await drain(p1) if m["type"] == "error"]
+        assert errors and errors[0]["code"] == "forbidden", "игрок поставил на стол чужого персонажа"
+        assert not [m for m in await drain(g, 0.3) if m["type"] == "item_upsert"], "чужой персонаж всё-таки попал на стол"
+
+        # Туман и сцены — только мастер.
+        await p1.send(json.dumps({"type": "scene_update", "scene_id": SID, "fog": {"enabled": False, "by_map": {}}}))
+        errors = [m for m in await drain(p1) if m["type"] == "error"]
+        assert errors and errors[0]["code"] == "forbidden", "игроку не отказали в тумане"
+
+        # Уборка: мастер удаляет тестовые токены, стол возвращается к одному элементу.
+        for token in (own_token["id"], npc["id"]):
+            await g.send(json.dumps({"type": "item_delete", "scene_id": SID, "id": token}))
+        await drain(g)
+        await drain(p1, 0.3)
+        print("ws rights ok")
+    finally:
+        await p1.close()
+        await g.close()
+
+asyncio.run(main())
+PY
+[ "$(pl "$B/api/campaigns/$CID/scenes/$SID" | J "len(d['items'])")" = "1" ]   # уборка после [5c]
+
 echo "[6] удаление кампании владельцем"
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PL" -X DELETE "$B/api/campaigns/$CID"); [ "$code" = "403" ]
 gm -X DELETE "$B/api/campaigns/$CID" | grep -q '"ok":true'
@@ -252,19 +372,38 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RT" "$B
 "$BIN" users make-root root@test.ru | grep "root = да" >/dev/null
 # записей справочника: 1294 (SRD 2014) + 1205 (SRD 2024) + 324 и 282 черты + 18 навыков
 rt -X POST "$B/api/admin/reseed" | J "d['entries']" | grep 3123 >/dev/null
-echo "[10] профиль: два cookie, имя, аватар, смена пароля"
+echo "[10] профиль: маршрут, два cookie, имя, аватар, сессии, почта, пароль"
+curl -fs "$B/profile" | grep -q "profile-page.js"   # отдельная страница профиля, не SPA-фолбэк
+curl -fs "$B/profile" | grep -q "profile-page.css"
 hdrs=$(curl -s -D - -o /dev/null -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}')
 [ "$(echo "$hdrs" | grep -ci '^set-cookie: dnd_session')" = "2" ]
 COOK=$(echo "$hdrs" | grep -i '^set-cookie: dnd_session_x=' | sed 's/^[Ss]et-[Cc]ookie: //; s/;.*//')
 curl -fs -H "Cookie: $COOK" "$B/api/auth/me" | J "d['name']" | grep -q Мастер   # вход по «фреймовому» cookie
 gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d '{"name":"Мастер Игры"}' | grep -q '"ok":true'
 gm "$B/api/auth/me" | J "d['name']" | grep -q "Мастер Игры"
+gm "$B/api/auth/me" | J "d['has_password']" | grep -q True
+# Пустое имя (пробелы) отклоняется: 1..64 символа после trim.
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d '{"name":"   "}'); [ "$code" = "400" ]
 AV=$(gm -X POST "$B/api/assets" -F "file=@$MAP_PATH" -F "kind=portrait" -F "name=avatar" | J "d['id']")
 gm -X PATCH "$B/api/auth/me" -H 'content-type: application/json' -d "{\"avatar_asset_id\":\"$AV\"}" | grep -q '"ok":true'
 [ "$(gm "$B/api/auth/me" | J "d['avatar_asset_id']")" = "$AV" ]
 pl "$B/api/assets/$AV" | J "d['id']" | grep -q "$AV"   # чужой аватар доступен для показа
+GM2=$(curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"secret123"}' | J "d['token']")
 code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/auth/change-password" -H 'content-type: application/json' -d '{"old_password":"wrong","password":"another123"}'); [ "$code" = "400" ]
 gm -X POST "$B/api/auth/change-password" -H 'content-type: application/json' -d '{"old_password":"secret123","password":"another123"}' | grep -q '"ok":true'
 curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"another123"}' | J "d['ok']" | grep -q True
 gm "$B/api/auth/me" | J "d['name']" | grep -q "Мастер Игры"   # текущая сессия сохранена
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM2" "$B/api/auth/me"); [ "$code" = "401" ]   # другие сессии завершены
+
+echo "[10b] смена почты: код на новый адрес, уникальность, выход на всех устройствах"
+NEWMAIL="gm-new@test.ru"
+EC=$(gm -X POST "$B/api/auth/change-email/request-code" -H 'content-type: application/json' -d "{\"email\":\"$NEWMAIL\"}" | J "d['dev_code']")
+[ -n "$EC" ]
+gm -X POST "$B/api/auth/change-email" -H 'content-type: application/json' -d "{\"email\":\"$NEWMAIL\",\"code\":\"$EC\",\"password\":\"another123\"}" | grep -q '"ok":true'
+gm "$B/api/auth/me" | J "d['email']" | grep -qx "$NEWMAIL"
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"gm@test.ru","password":"another123"}'); [ "$code" = "400" ]   # старый адрес больше не логин
+curl -fs -X POST "$B/api/auth/login" -H 'content-type: application/json' -d "{\"email\":\"$NEWMAIL\",\"password\":\"another123\"}" | J "d['ok']" | grep -q True
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" -X POST "$B/api/auth/change-email/request-code" -H 'content-type: application/json' -d '{"email":"pl@test.ru"}'); [ "$code" = "400" ]   # чужой адрес занят
+gm -X POST "$B/api/auth/logout-all" | grep -q '"ok":true'
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GM" "$B/api/auth/me"); [ "$code" = "401" ]
 echo "SMOKE OK (root)"

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::get_member, error::ApiResult, util, AppError, AppState};
+use crate::{access, auth::AuthUser, campaigns::get_member, error::ApiResult, util, AppError, AppState};
 
 pub fn default_sheet(name: &str) -> Value {
     json!({
@@ -123,8 +123,12 @@ async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQu
     let rows = match &q.campaign_id {
         Some(cid) => {
             let m = get_member(&st, cid, &user.id).await?;
+            access::require(&m.role, access::CHARACTER_READ_OWN)?;
+            // Мастер видит всех персонажей кампании, игрок — своих и расшаренных.
+            let any = access::allows(&m.role, access::CHARACTER_EDIT_ANY);
+            let shared_ok = access::allows(&m.role, access::CHARACTER_READ_SHARED);
             let rows = sqlx::query("SELECT * FROM characters WHERE campaign_id = ? ORDER BY updated_at DESC").bind(cid).fetch_all(&st.db).await?;
-            rows.iter().map(char_json).filter(|c| m.is_gm() || c["owner_id"] == user.id || c["sheet"]["shared"].as_bool().unwrap_or(false)).collect::<Vec<_>>()
+            rows.iter().map(char_json).filter(|c| any || c["owner_id"] == user.id || (shared_ok && c["sheet"]["shared"].as_bool().unwrap_or(false))).collect::<Vec<_>>()
         }
         None => sqlx::query("SELECT * FROM characters WHERE owner_id = ? ORDER BY updated_at DESC").bind(&user.id).fetch_all(&st.db).await?.iter().map(char_json).collect(),
     };
@@ -136,7 +140,9 @@ pub struct CharIn { pub name: Option<String>, pub campaign_id: Option<String>, p
 
 async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<CharIn>) -> ApiResult<Json<Value>> {
     if let Some(cid) = &body.campaign_id {
-        get_member(&st, cid, &user.id).await?;
+        // Создавать персонажа в кампании может участник, которому разрешено владеть персонажем.
+        let m = get_member(&st, cid, &user.id).await?;
+        access::require(&m.role, access::CHARACTER_EDIT_OWN)?;
     }
     let name = util::truncate(body.name.as_deref().unwrap_or("Новый персонаж"), 128);
     let mut sheet = default_sheet(&name);
@@ -159,12 +165,19 @@ async fn load_row(st: &AppState, id: &str) -> ApiResult<sqlx::any::AnyRow> {
 
 async fn load_checked(st: &AppState, id: &str, user: &AuthUser, write: bool) -> ApiResult<Value> {
     let c = char_json(&load_row(st, id).await?);
+    // Владелец: character.read_own / character.edit_own.
     if c["owner_id"] == user.id {
         return Ok(c);
     }
     if let Some(cid) = c["campaign_id"].as_str() {
         if let Ok(m) = get_member(st, cid, &user.id).await {
-            if m.is_gm() || (!write && c["sheet"]["shared"].as_bool().unwrap_or(false)) {
+            // Мастер: character.edit_any (правка, удаление, чтение любых листов кампании).
+            if access::allows(&m.role, access::CHARACTER_EDIT_ANY) {
+                return Ok(c);
+            }
+            // Игроку чужой лист доступен только на чтение и только если он расшарен.
+            let shared = c["sheet"]["shared"].as_bool().unwrap_or(false);
+            if !write && shared && access::allows(&m.role, access::CHARACTER_READ_SHARED) {
                 return Ok(c);
             }
         }
@@ -201,9 +214,24 @@ async fn patch(State(st): State<AppState>, user: AuthUser, Path(id): Path<String
     }
     if let Some(p) = &body.portrait_asset_id { portrait = Some(p.clone()); }
     if body.detach_campaign {
+        // Отвязать от кампании чужого персонажа — мастерская операция кампании.
+        if c["owner_id"] != user.id {
+            if let Some(src) = c["campaign_id"].as_str() {
+                access::require_cap(&st, src, &user.id, access::CAMPAIGN_MANAGE_CHARACTERS).await?;
+            }
+        }
         campaign = None;
     } else if let Some(cid) = &body.campaign_id {
-        get_member(&st, cid, &user.id).await?;
+        let target = get_member(&st, cid, &user.id).await?;
+        access::require(&target.role, access::CHARACTER_EDIT_OWN)?;
+        // Перенос чужого персонажа между кампаниями — только с правом manage_characters
+        // в кампании-источнике и в кампании-приёмнике.
+        if c["owner_id"] != user.id {
+            access::require(&target.role, access::CAMPAIGN_MANAGE_CHARACTERS)?;
+            if let Some(src) = c["campaign_id"].as_str() {
+                access::require_cap(&st, src, &user.id, access::CAMPAIGN_MANAGE_CHARACTERS).await?;
+            }
+        }
         campaign = Some(cid.clone());
     }
     let updated = sqlx::query("UPDATE characters SET name = ?, sheet = ?, portrait_asset_id = ?, campaign_id = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?")
@@ -254,7 +282,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
     let c = load_checked(&st, &id, &user, true).await?;
     if body.request_id.is_empty() || body.request_id.len() > 64 { return Err(AppError::bad("Нужен идентификатор операции")); }
     let cid = c["campaign_id"].as_str();
-    let is_gm = if let Some(cid) = cid { get_member(&st, cid, &user.id).await?.is_gm() } else { false };
+    let is_gm = if let Some(cid) = cid { access::is_gm(&get_member(&st, cid, &user.id).await?.role) } else { false };
     if cid.is_some() && body.gm_only && !is_gm { return Err(AppError::forbidden("Скрытое использование доступно только мастеру")); }
     if ["drop", "pickup"].contains(&body.op.as_str()) {
         let row = sqlx::query("SELECT campaign_id FROM scenes WHERE id = ?").bind(&body.scene_id).fetch_optional(&st.db).await?.ok_or_else(|| AppError::not_found("Сцена не найдена"))?;

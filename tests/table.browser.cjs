@@ -411,8 +411,128 @@ const SCRIPTS = ['common', 'asset-kinds', 'table-model', 'table'];
     assert.equal(backA.mask, 2, 'маска карты A на месте');
     assert.ok(backA.hint.includes('Карта A'), 'панель переключилась на карту A');
 
+    // ======================= Размер canvas при скрытии боковой панели =======================
+    // Панель меняет ширину контейнера: буфер canvas пересчитывается, а камера
+    // (центр мира и зум) остаётся прежней — карта не растягивается по горизонтали.
+    const resized = await page.evaluate(() => {
+      const st = Table.state();
+      st.tool = 'select';
+      st.cam.x = 0; st.cam.y = 0; st.cam.k = 1;
+      const wrap = st.canvas.parentElement;
+      const cellPx = () => TableModel.gridSize(Table.getScene().grid) * st.cam.k;
+      const worldCenter = () => ({ x: (st.w / 2 - st.cam.x) / st.cam.k, y: (st.h / 2 - st.cam.y) / st.cam.k });
+      const before = { w: st.w, h: st.h, bufW: st.canvas.width, bufH: st.canvas.height, cssW: st.canvas.style.width, cam: { ...st.cam }, cell: cellPx(), center: worldCenter() };
+      wrap.style.width = '700px'; // как будто боковая панель стала шире/уже
+      Table.refreshSize();
+      const after = { w: st.w, h: st.h, bufW: st.canvas.width, bufH: st.canvas.height, cssW: st.canvas.style.width, cssH: st.canvas.style.height, cam: { ...st.cam }, cell: cellPx(), center: worldCenter() };
+      return { before, after, dpr: devicePixelRatio || 1 };
+    });
+    assert.notEqual(resized.after.w, resized.before.w, 'ширина canvas изменилась вместе с контейнером');
+    assert.equal(resized.after.w, 700);
+    assert.equal(resized.after.bufW, Math.round(700 * resized.dpr), 'буфер canvas = clientWidth × dpr');
+    assert.equal(resized.after.cssW, '700px', 'CSS-размер задан явно, а не растянут старым буфером');
+    assert.equal(resized.after.cssH, '800px');
+    assert.equal(resized.after.cam.k, resized.before.cam.k, 'зум не изменился');
+    assert.equal(resized.after.cell, resized.before.cell, 'масштаб клетки в пикселях не изменился — карта не растянута');
+    assert.deepEqual(resized.after.center, resized.before.center, 'центр мира остался в центре экрана');
+
+    // ======================= Мультивыделение рамкой (мастер) =======================
+    await page.evaluate(() => {
+      const st = Table.state();
+      st.tool = 'select'; st.isGM = true; st.user = { id: 'u1', name: 'Мастер' }; st.activeLayer = 'character';
+      st.cam.x = 0; st.cam.y = 0; st.cam.k = 1; // экран = мир
+      const items = Table.getScene().items.filter(i => !i.id.startsWith('sel-'));
+      items.push(
+        { id: 'sel-a', layer: 'character', z: 0, data: { type: 'image', x: 200, y: 200, w: 70, h: 70, name: 'A', owner_id: 'u1' } },
+        { id: 'sel-b', layer: 'character', z: 0, data: { type: 'image', x: 340, y: 200, w: 70, h: 70, name: 'B', owner_id: 'u1' } },
+        { id: 'sel-map', layer: 'map', z: -100, data: { type: 'image', x: 3000, y: 3000, w: 70, h: 70, name: 'D' } },
+      );
+      Table.getScene().items = items;
+      window.sent.length = 0;
+    });
+    // Протяжка по пустому месту: рамка 120,120 → 420,300 накрывает A и B.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const cb = await page.evaluate(() => { const r = Table.state().canvas.getBoundingClientRect(); return { x: r.x, y: r.y }; });
+    await page.mouse.move(cb.x + 120, cb.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(cb.x + 420, cb.y + 300, { steps: 6 });
+    await page.mouse.up();
+    const gmSelection = await page.evaluate(() => ({ ids: [...Table.state().selSet].sort(), props: Table.state().propsBox.textContent }));
+    assert.deepEqual(gmSelection.ids, ['sel-a', 'sel-b'], 'рамка выделила два токена на слое персонажей');
+    assert.ok(gmSelection.props.includes('Выбрано 2'), 'статус «Выбрано 2»');
+
+    // Групповой драг: тянем A — двигаются оба, взаимное расположение сохраняется.
+    const beforeDrag = await page.evaluate(() => {
+      const items = Table.getScene().items;
+      const a = items.find(i => i.id === 'sel-a').data, b = items.find(i => i.id === 'sel-b').data;
+      return { a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } };
+    });
+    await page.mouse.move(cb.x + 200, cb.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(cb.x + 270, cb.y + 270, { steps: 6 });
+    await page.mouse.up();
+    const dragged = await page.evaluate(() => {
+      const items = Table.getScene().items;
+      const a = items.find(i => i.id === 'sel-a').data, b = items.find(i => i.id === 'sel-b').data;
+      const ups = window.sent.filter(m => m.type === 'item_upsert' && ['sel-a', 'sel-b'].includes(m.item.id)).map(m => m.item.id);
+      return { a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, ups };
+    });
+    assert.notEqual(dragged.a.x, beforeDrag.a.x, 'первый выделенный сдвинулся');
+    assert.notEqual(dragged.b.x, beforeDrag.b.x, 'второй выделенный сдвинулся вместе с группой');
+    assert.equal(dragged.b.x - dragged.a.x, beforeDrag.b.x - beforeDrag.a.x, 'взаимное расположение сохранено');
+    assert.deepEqual(dragged.ups.sort(), ['sel-a', 'sel-b'], 'на сервер ушли оба элемента');
+
+    // Delete удаляет всё выделение.
+    await page.keyboard.press('Delete');
+    const gmDeleted = await page.evaluate(() => ({ ids: window.sent.filter(m => m.type === 'item_delete').map(m => m.id).sort(), left: Table.state().selSet.size }));
+    assert.deepEqual(gmDeleted.ids, ['sel-a', 'sel-b'], 'Delete удаляет все выделенные');
+    assert.equal(gmDeleted.left, 0, 'выделение снято');
+
+    // ======================= Мультивыделение: права игрока =======================
+    await page.evaluate(() => {
+      const st = Table.state();
+      st.tool = 'select'; st.isGM = false; st.user = { id: 'u2', name: 'Игрок' }; st.activeLayer = 'character';
+      st.cam.x = 0; st.cam.y = 0; st.cam.k = 1;
+      const items = Table.getScene().items.filter(i => !i.id.startsWith('sel-'));
+      items.push(
+        { id: 'sel-own', layer: 'character', z: 0, data: { type: 'image', x: 340, y: 200, w: 70, h: 70, name: 'Свой', owner_id: 'u2' } },
+        { id: 'sel-foreign', layer: 'character', z: 0, data: { type: 'image', x: 200, y: 200, w: 70, h: 70, name: 'Чужой', owner_id: 'u1' } },
+      );
+      Table.getScene().items = items;
+      window.sent.length = 0;
+    });
+    await page.mouse.move(cb.x + 120, cb.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(cb.x + 420, cb.y + 300, { steps: 6 });
+    await page.mouse.up();
+    assert.deepEqual(await page.evaluate(() => [...Table.state().selSet]), ['sel-own'], 'игрок выделяет только своего');
+
+    // Тянуть чужой токен нельзя: он даже не выделяется.
+    const foreignBefore = await page.evaluate(() => {
+      const f = Table.getScene().items.find(i => i.id === 'sel-foreign').data; return { x: f.x, y: f.y };
+    });
+    await page.mouse.move(cb.x + 200, cb.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(cb.x + 300, cb.y + 300, { steps: 5 });
+    await page.mouse.up();
+    const foreignAfter = await page.evaluate(() => {
+      const f = Table.getScene().items.find(i => i.id === 'sel-foreign').data;
+      return { x: f.x, y: f.y, ups: window.sent.filter(m => m.type === 'item_upsert' && m.item.id === 'sel-foreign').length, sel: [...Table.state().selSet] };
+    });
+    assert.deepEqual([foreignAfter.x, foreignAfter.y], [foreignBefore.x, foreignBefore.y], 'чужой токен не сдвинулся');
+    assert.equal(foreignAfter.ups, 0, 'по чужому токену ничего не отправлено');
+    assert.deepEqual(foreignAfter.sel, [], 'чужой токен не выделяется');
+
+    // Delete игрока удаляет только своего.
+    await page.mouse.move(cb.x + 120, cb.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(cb.x + 420, cb.y + 300, { steps: 6 });
+    await page.mouse.up();
+    await page.keyboard.press('Delete');
+    assert.deepEqual(await page.evaluate(() => window.sent.filter(m => m.type === 'item_delete').map(m => m.id)), ['sel-own'], 'игрок удаляет только своего');
+
     assert.deepEqual(errors, []);
-    console.log('PASS table browser: несколько карт + активная + fitToMap, слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр), соты 200×200 (видимый диапазон, кэш, пан/зум, линейка/hover)');
+    console.log('PASS table browser: несколько карт + активная + fitToMap, слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр), соты 200×200 (видимый диапазон, кэш, пан/зум, линейка/hover), размер canvas при панели (камера и масштаб сохранены), мультивыделение рамкой (групповой драг/Delete, права игрока)');
   } finally {
     await browser.close();
   }

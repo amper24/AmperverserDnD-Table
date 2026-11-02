@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, util, AppError, AppState};
+use crate::{access, auth::AuthUser, campaigns::get_member, error::ApiResult, util, AppError, AppState};
 
 pub fn default_grid() -> Value { json!({ "size": 70, "type": "square", "visible": true, "color": "#00000055", "scale": "5 фт" }) }
 /// Туман войны хранится маской на карту: by_map = { "<id карты>": { shapes: [...] } }.
@@ -220,13 +220,13 @@ impl SceneIn {
 }
 
 async fn list(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
-    get_member(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_READ).await?;
     let rows = sqlx::query("SELECT * FROM scenes WHERE campaign_id = ? ORDER BY created_at").bind(&cid).fetch_all(&st.db).await?;
     Ok(Json(rows.iter().map(scene_json).collect()))
 }
 
 async fn create(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Json(body): Json<SceneIn>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_SCENE).await?;
     let sid = util::uid();
     // Сначала валидируем необязательные поля (заимствуют body), потом забираем имя/сетку.
     let layers = body.layers_json().unwrap_or_else(|| default_layers().to_string());
@@ -253,7 +253,8 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): P
         Ok(Some(role)) => role,
         _ => get_member(&st, &cid, &user.id).await?.role, // чужой участник кампании — 403
     };
-    let is_gm = role == "gm";
+    access::require(&role, access::TABLE_READ)?;
+    let is_gm = access::is_gm(&role);
     let rows = sqlx::query("SELECT * FROM scene_items WHERE scene_id = ? ORDER BY z").bind(&sid).fetch_all(&st.db).await?;
     let items: Vec<Value> = rows.iter().map(item_json)
         .filter(|it| is_gm || !it["data"]["hidden"].as_bool().unwrap_or(false))
@@ -264,7 +265,7 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): P
 }
 
 async fn update(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Path<(String, String)>, Json(body): Json<SceneIn>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_SCENE).await?;
     let s = fetch_scene(&st, &cid, &sid).await?;
     let layers_in = body.layers_json();
     let map_in = body.map_id();
@@ -286,7 +287,7 @@ async fn update(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Pa
 }
 
 async fn delete_one(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_SCENE).await?;
     fetch_scene(&st, &cid, &sid).await?;
     sqlx::query("UPDATE campaigns SET active_scene_id = NULL WHERE id = ? AND active_scene_id = ?").bind(&cid).bind(&sid).execute(&st.db).await?;
     sqlx::query("DELETE FROM scene_items WHERE scene_id = ?").bind(&sid).execute(&st.db).await?;
@@ -295,7 +296,7 @@ async fn delete_one(State(st): State<AppState>, user: AuthUser, Path((cid, sid))
 }
 
 async fn duplicate(State(st): State<AppState>, user: AuthUser, Path((cid, sid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_SCENE).await?;
     let s = fetch_scene(&st, &cid, &sid).await?;
     let nid = util::uid();
     let name = format!("{} (копия)", s.get::<String, _>("name"));

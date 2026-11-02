@@ -387,7 +387,15 @@
     let camp;
     try { camp = await API.get('/api/campaigns/' + cid); } catch (e) { app.innerHTML = ''; app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Нет доступа'), el('p', {}, e.message), el('a', { href: '/' }, 'В лобби')))); return; }
     const isGM = camp.role === 'gm';
-    window.TABLE_CTX = { isGM, campaign: camp, user: me, roll: (expr, label, gm_only) => DiceEngine.submit({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
+    // Права приходят с сервера (GET кампании: role + permissions) — панели и кнопки
+    // гейтим по ним, а не по роли: сервер всё равно ответит 403/ошибкой WS.
+    const perms = Access.perms(camp);
+    const can = cap => Access.can(perms, cap);
+    const canScene = can(Access.CAP.manageScene);
+    const canFog = can(Access.CAP.manageFog);
+    const canMembers = can(Access.CAP.manageMembers);
+    const canInvite = can(Access.CAP.invite);
+    window.TABLE_CTX = { isGM, canFog, permissions: perms, campaign: camp, user: me, roll: (expr, label, gm_only) => DiceEngine.submit({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
     document.title = camp.name + ' — ' + APP_NAME;
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
@@ -402,7 +410,7 @@
     function refreshLayerSel() {
       const list = Table.state() ? Table.getLayers() : [];
       const cur = Table.state() ? Table.getActiveLayer() : AssetKinds.LAYER.character;
-      const shown = list.filter(l => isGM || l.id === AssetKinds.LAYER.character);
+      const shown = list.filter(l => canScene || l.id === AssetKinds.LAYER.character);
       layerSel.innerHTML = '';
       for (const l of shown) layerSel.append(el('option', { value: l.id, selected: l.id === cur ? '' : null }, l.name));
       if (!shown.length) layerSel.append(el('option', { value: AssetKinds.LAYER.character }, Table.LAYER_NAMES[AssetKinds.LAYER.character]));
@@ -410,10 +418,10 @@
     }
     const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
     const bar = el('div', { class: 'tbar' }, el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
-    if (isGM) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
+    if (canScene) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
     const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
-    // Отдельная страница «Участники стола»: токены, HP, скрытность, владелец, аватар.
-    const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Участники стола: добавить токен, HP, скрытность, владелец' }, icon('users'), ' Участники');
+    // Отдельная страница «Участники кампании»: аккаунты, персонажи, токены, HP, скрытность.
+    const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Участники кампании: роли, персонажи, токены, HP, скрытность' }, icon('users'), ' Участники');
     bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, membersBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
@@ -437,7 +445,7 @@
         await Table.placeTokenAtCenter({ name: c.name, hp: c.sheet?.hp?.max ?? 10, character_id: c.id, asset_id: c.portrait_asset_id, owner_id: me.id });
         panels.chars.refresh?.(); openSheet(c.id);
       });
-      if (isGM) add('skull', 'NPC / монстр (токен)', async () => {
+      if (can(Access.CAP.placeAnyCharacter)) add('skull', 'NPC / монстр (токен)', async () => {
         const name = el('input', { placeholder: 'Гоблин' }), hp = el('input', { type: 'number', value: 10, style: 'width:80px' }), size = el('select', {}, ...[[1, 'Средний'], [0.5, 'Крошечный'], [2, 'Большой'], [3, 'Огромный'], [4, 'Громадный']].map(([v, t]) => el('option', { value: v }, t))), hid = el('input', { type: 'checkbox', style: 'width:auto' });
         const ok = await modal('Новый NPC', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Имя'), name), el('div', { class: 'row' }, el('div', { class: 'field' }, el('label', {}, 'Хиты'), hp), el('div', { class: 'field' }, el('label', {}, 'Размер'), size)), el('label', {}, hid, ' скрыт от игроков'), el('p', { class: 'muted small' }, 'Монстра со статблоком удобнее перетащить из бестиария в справочнике.')), [{ label: 'Поставить на стол', cls: 'primary', fn: () => name.value.trim() }]);
         if (!ok) return;
@@ -446,7 +454,7 @@
       sep();
       add('sword', 'Предмет', async () => {
         const it = await Modules.editItem(null, { title: 'Новый предмет' }); if (!it) return;
-        const dest = await chooseDest('Куда положить предмет?', { loot: 'На стол (лут)', char: 'В инвентарь', comp: isGM ? 'В homebrew-справочник кампании' : null });
+        const dest = await chooseDest('Куда положить предмет?', { loot: 'На стол (лут)', char: 'В инвентарь', comp: can(Access.CAP.manageCharacters) ? 'В homebrew-справочник кампании' : null });
         if (!dest) return;
         if (dest === 'loot') { await Table.dropLootAtCenter({ item: it }); toast(`${it.name} на столе`); }
         else if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.inventory = [...(full.sheet.inventory || []), it]; await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${it.name} → ${full.name}`); }
@@ -454,15 +462,15 @@
       });
       add('wand', 'Заклинание', async () => {
         const sp = await Modules.editSpell(null); if (!sp) return;
-        const dest = await chooseDest('Куда добавить заклинание?', { char: 'Персонажу', comp: isGM ? 'В homebrew-справочник кампании' : null });
+        const dest = await chooseDest('Куда добавить заклинание?', { char: 'Персонажу', comp: can(Access.CAP.manageCharacters) ? 'В homebrew-справочник кампании' : null });
         if (!dest) return;
         if (dest.startsWith('char:')) { const full = await API.get('/api/characters/' + dest.slice(5)); full.sheet.spells ||= { known: [], slots: {}, ability: 'int' }; full.sheet.spells.known.push(sp); await API.patch('/api/characters/' + full.id, { sheet: full.sheet }); toast(`${sp.name} → ${full.name}`); }
         else { await API.post('/api/compendium', { category: 'spell', name: sp.name, campaign_id: cid, data: { level: sp.level, school: sp.school, casting_time: sp.casting_time, range: sp.range, components: sp.components, duration: sp.duration, concentration: sp.concentration, ritual: sp.ritual, desc: sp.desc, actions: sp.actions, asset_id: sp.asset_id, token_asset_id: sp.token_asset_id, effect_size: sp.effect_size } }); toast('Добавлено в справочник кампании'); }
       });
-      if (isGM) add('book', 'Запись справочника (монстр, черта, …)', async () => { await Compendium.editEntry(null, { campaignId: cid, isGM, onSaved: () => toast('Сохранено') }); });
+      if (can(Access.CAP.manageCharacters)) add('book', 'Запись справочника (монстр, черта, …)', async () => { await Compendium.editEntry(null, { campaignId: cid, isGM, onSaved: () => toast('Сохранено') }); });
       sep();
       add('upload', 'Импорт из Long Story Short', async () => { await LSS.importDialog({ campaignId: cid, onDone: c => { panels.chars.refresh?.(); openSheet(c.id); } }); });
-      if (isGM) add('map', 'Новая сцена', async () => { const n = await prompt2('Название сцены', 'Подземелье'); if (!n) return; const sc = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sc.id }); reloadPage(); });
+      if (can(Access.CAP.manageScene)) add('map', 'Новая сцена', async () => { const n = await prompt2('Название сцены', 'Подземелье'); if (!n) return; const sc = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sc.id }); reloadPage(); });
       document.body.append(menu);
       setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
     }
@@ -496,7 +504,7 @@
       if (!sid) { canvasWrap.innerHTML = '<div class="center muted">Мастер ещё не выбрал сцену</div>'; refreshLayerSel(); return; }
       currentSceneId = sid;
       const sc = await API.get(`/api/campaigns/${cid}/scenes/${sid}`);
-      if (!Table.state()) Table.init({ campaign: camp, user: me, isGM, scene: sc, ws, container: canvasWrap, onOpenSheet: openSheet, onAssetsChanged: () => panels.assets.refresh?.(), onSelect: () => {}, onSceneChange });
+      if (!Table.state()) Table.init({ campaign: camp, user: me, isGM, canFog, scene: sc, ws, container: canvasWrap, onOpenSheet: openSheet, onAssetsChanged: () => panels.assets.refresh?.(), onSelect: () => {}, onSceneChange });
       else Table.setScene(sc);
       if (isGM) sceneSel.value = sid;
       refreshLayerSel();
@@ -526,7 +534,9 @@
       comp: { title: 'Справ.', name: 'Справочник', build: () => el('div', { style: 'height:100%' }, Compendium.widget({ campaignId: cid, isGM, expandable: true })) },
       init: { title: 'Иниц.', name: 'Инициатива', build: buildInitiative },
     };
-    if (isGM) { panels.scenes = { title: 'Сцены', name: 'Сцены', build: buildScenes }; panels.settings = { title: icon('settings'), name: 'Настройки', build: buildSettings }; }
+    if (canScene) panels.scenes = { title: 'Сцены', name: 'Сцены', build: buildScenes };
+    // Настройки кампании: приглашения — по campaign.invite, участники — по manage_members.
+    if (canMembers || canInvite) panels.settings = { title: icon('settings'), name: 'Настройки', build: buildSettings };
     const paneEls = {};
     let curPanel = 'chat';
     for (const [k, p] of Object.entries(panels)) tabs.append(el('button', { 'data-k': k, title: p.name, onclick: () => showPanel(k) }, p.title));
@@ -661,7 +671,7 @@
           const count = TableModel.countItems(items, l.id);
           const row = el('div', { class: 'item' + (l.id === active ? ' active' : ''), title: 'Сделать активным слоем', onclick: () => { Table.setActiveLayer(l.id); refresh(); } },
             el('span', { class: 'grow' }, (l.hidden ? '◌ ' : '') + l.name, el('span', { class: 'muted small' }, ' · ' + count)));
-          if (isGM) {
+          if (canScene) {
             row.append(
               el('button', { class: 'small', title: 'Выше', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.moveLayer(Table.getLayers(), l.id, 1)); refresh(); } }, icon('up')),
               el('button', { class: 'small', title: 'Ниже', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.moveLayer(Table.getLayers(), l.id, -1)); refresh(); } }, icon('down')),
@@ -673,7 +683,7 @@
           listEl.append(row);
         }
       };
-      if (!isGM) addBtn.classList.add('hidden');
+      if (!canScene) addBtn.classList.add('hidden');
       w.append(addBtn, listEl, el('p', { class: 'muted small', style: 'margin-top:8px' }, 'Сверху списка — верхний слой. Скрытый слой игроки не видят, заблокированный не двигают. Активный слой принимает клики и загрузки.'));
       refresh(); panels.layers.refresh = refresh;
       return w;
@@ -771,15 +781,17 @@
           el('select', { style: 'width:auto', onchange: async e => { await API.patch(`/api/campaigns/${cid}/members/${m.user_id}`, { role: e.target.value }); refreshMem(); } }, el('option', { value: 'player', selected: m.role === 'player' ? '' : null }, 'Игрок'), el('option', { value: 'gm', selected: m.role === 'gm' ? '' : null }, 'Мастер')),
           m.user_id !== camp.owner_id ? el('button', { class: 'small danger', onclick: async () => { if (confirm('Исключить?')) { await API.del(`/api/campaigns/${cid}/members/${m.user_id}`); refreshMem(); } } }, icon('close')) : null));
       };
-      w.append(el('h3', {}, 'Ссылки-приглашения'), el('div', { class: 'row', style: 'margin-bottom:8px' },
+      // Приглашения — только с правом campaign.invite, участники — с campaign.manage_members.
+      if (canInvite) w.append(el('h3', {}, 'Ссылки-приглашения'), el('div', { class: 'row', style: 'margin-bottom:8px' },
         el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'player' }); refreshInv(); } }, '+ Для игроков'),
-        el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'gm' }); refreshInv(); } }, '+ Для мастера')), inv,
-        el('h3', { style: 'margin-top:14px' }, 'Участники'), mem,
-        el('h3', { style: 'margin-top:14px' }, 'Наборы справочника'), Compendium.campaignPacksPanel(cid, isGM),
-        el('h3', { style: 'margin-top:14px' }, 'Кампания'),
+        el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'gm' }); refreshInv(); } }, '+ Для мастера')), inv);
+      if (canMembers) w.append(el('h3', { style: 'margin-top:14px' }, 'Участники'), mem);
+      w.append(el('h3', { style: 'margin-top:14px' }, 'Наборы справочника'), Compendium.campaignPacksPanel(cid, isGM));
+      if (canMembers) w.append(el('h3', { style: 'margin-top:14px' }, 'Кампания'),
         el('button', { class: 'small', onclick: async () => { const n = await prompt2('Название', '', camp.name); if (n) { await API.patch('/api/campaigns/' + cid, { name: n, description: camp.description }); reloadPage(); } } }, 'Переименовать'), ' ',
         el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить кампанию безвозвратно?')) { await API.del('/api/campaigns/' + cid); go('/'); } } }, 'Удалить кампанию'));
-      refreshInv(); refreshMem();
+      if (canInvite) refreshInv();
+      if (canMembers) refreshMem();
       return w;
     }
 
@@ -788,7 +800,18 @@
       switch (m.type) {
         case 'roll_error': DiceEngine.receive(m); break;
         case 'chat': DiceEngine.receive(m); addMsg(m); if (curPanel !== 'chat') tabs.querySelector('[data-k=chat]').style.color = 'var(--accent)'; break;
-        case 'presence': presence.innerHTML = ''; m.users.forEach(u => presence.append(el('span', { class: u.role, title: u.name }, u.name.slice(0, 2).toUpperCase()))); break;
+        case 'presence': {
+          // Один участник — один кружок, даже если у него несколько вкладок
+          // (сервер уже схлопывает соединения по user_id; дубли на всякий случай гасим и здесь).
+          const seen = new Set();
+          presence.innerHTML = '';
+          for (const u of m.users || []) {
+            if (seen.has(u.user_id)) continue;
+            seen.add(u.user_id);
+            presence.append(el('span', { class: u.role, title: u.name + (u.connections > 1 ? ` · вкладок: ${u.connections}` : '') }, u.name.slice(0, 2).toUpperCase()));
+          }
+          break;
+        }
         case 'active_scene': camp.active_scene_id = m.scene_id; refreshSceneSel(); if (!isGM) loadScene(m.scene_id); break;
         case 'initiative': initState = m.state; panels.init.render?.(); if (curPanel !== 'init') tabs.querySelector('[data-k=init]').style.color = 'var(--accent)'; break;
         case 'character_update': panels.chars.refresh?.(); for (const f of sheetFrames) { if (!f.isConnected) { sheetFrames.delete(f); continue; } try { f.contentWindow.postMessage({ type: 'character_update', id: m.character?.id, revision: m.character?.revision }, location.origin); } catch { } } break;

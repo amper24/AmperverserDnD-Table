@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use tokio::sync::{mpsc, RwLock};
 
-use crate::{auth, campaigns::get_member, util, AppState};
+use crate::{access, auth, campaigns::get_member, util, AppState};
 
 #[derive(Clone)]
 struct Client {
@@ -74,9 +74,32 @@ impl Hub {
             let _ = c.tx.send(json!({ "type": "roll_error", "request_id": request_id, "message": message }).to_string());
         }
     }
+    /// Отказ по правам — только тому соединению, которое нарушило правило.
+    async fn forbidden(&self, cid: &str, conn_id: u64, message: &str) {
+        let rooms = self.rooms.read().await;
+        if let Some(c) = rooms.get(cid).and_then(|room| room.get(&conn_id)) {
+            let _ = c.tx.send(json!({ "type": "error", "code": "forbidden", "message": message }).to_string());
+        }
+    }
+    /// Присутствие: один участник — одна запись, даже если у него открыто несколько
+    /// вкладок (счётчик `connections`). Порядок стабилен — по времени подключения.
     async fn presence(&self, cid: &str) -> Value {
         let rooms = self.rooms.read().await;
-        let users: Vec<Value> = rooms.get(cid).map(|r| r.values().map(|c| json!({ "user_id": c.user_id, "name": c.name, "role": c.role })).collect()).unwrap_or_default();
+        let mut users: Vec<Value> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
+        if let Some(room) = rooms.get(cid) {
+            let mut clients: Vec<(u64, &Client)> = room.iter().map(|(id, c)| (*id, c)).collect();
+            clients.sort_by_key(|(id, _)| *id);
+            for (_, c) in clients {
+                if let Some(&i) = index.get(&c.user_id) {
+                    let n = users[i]["connections"].as_u64().unwrap_or(1) + 1;
+                    users[i]["connections"] = json!(n);
+                } else {
+                    index.insert(c.user_id.clone(), users.len());
+                    users.push(json!({ "user_id": c.user_id, "name": c.name, "role": c.role, "connections": 1 }));
+                }
+            }
+        }
         json!({ "type": "presence", "users": users })
     }
 }
@@ -99,6 +122,9 @@ async fn ws_handler(
     };
     let Some(user) = user else { return (StatusCode::UNAUTHORIZED, "auth").into_response(); };
     let Ok(member) = get_member(&st, &cid, &user.id).await else { return (StatusCode::FORBIDDEN, "not a member").into_response(); };
+    if !access::allows(&member.role, access::TABLE_READ) {
+        return (StatusCode::FORBIDDEN, "no table access").into_response();
+    }
     ws.on_upgrade(move |socket| handle_socket(socket, st, cid, user, member.role))
 }
 
@@ -269,18 +295,22 @@ async fn save_chat(st: &AppState, cid: &str, user: &auth::AuthUser, kind: &str, 
     Some(json!({ "type": "chat", "id": id, "user_id": user.id, "name": user.name, "kind": kind, "payload": payload, "at": now }))
 }
 
-fn player_can_edit(data: &Value, user_id: &str) -> bool {
-    data["owner_id"] == user_id || data["editors"].as_array().map(|a| a.iter().any(|e| e == user_id)).unwrap_or(false)
-        || data["loot"].as_bool().unwrap_or(false) // лут на карте может подобрать любой игрок
-}
-
 /// Системное сообщение в чат (сохраняется в историю).
 pub async fn system_message(st: &AppState, cid: &str, user: &auth::AuthUser, text: &str) -> Option<Value> {
     save_chat(st, cid, user, "system", &json!({ "text": text })).await
 }
 
+/// Персонаж принадлежит этому игроку: ставить чужие листы токенами игрок не может.
+async fn character_owned_by(st: &AppState, character_id: &str, user_id: &str) -> bool {
+    sqlx::query("SELECT owner_id FROM characters WHERE id = ?")
+        .bind(character_id).fetch_optional(&st.db).await.ok().flatten()
+        .map(|r| r.get::<String, _>("owner_id") == user_id)
+        .unwrap_or(false)
+}
+
 async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::AuthUser, role: &str, msg: Value) {
-    let is_gm = role == "gm";
+    let role = access::role_of(role);
+    let is_gm = access::is_gm(role);
     let t = msg["type"].as_str().unwrap_or("");
     if matches!(t, "roll" | "multi") && msg["gm_only"].as_bool().unwrap_or(false) && !is_gm {
         st.hub.roll_error(cid, conn_id, &msg["request_id"], "Скрытые броски доступны только мастеру. Бросок не отправлен.").await;
@@ -392,24 +422,29 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 return;
             }
             match t {
-                "item_upsert" => item_upsert(st, cid, scene_id, user, is_gm, &msg["item"]).await,
+                "item_upsert" => item_upsert(st, cid, conn_id, scene_id, user, role, &msg["item"]).await,
                 "item_delete" => {
                     let Some(id) = msg["id"].as_str() else { return };
                     let row = sqlx::query("SELECT data, layer FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
                     if let Some(row) = row {
                         let data = util::json_value(&util::text(&row, "data"));
-                        if is_gm || player_can_edit(&data, &user.id) {
-                            let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
-                            // Удалённая карта больше не активная: клиенты выберут оставшуюся (или ни одну).
-                            if row.get::<String, _>("layer") == "map" {
-                                let _ = sqlx::query("UPDATE scenes SET active_map_id = NULL WHERE id = ? AND active_map_id = ?").bind(scene_id).bind(id).execute(&st.db).await;
-                            }
-                            st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
+                        if access::item_write(role, &data, &user.id) == access::ItemWrite::Deny {
+                            st.hub.forbidden(cid, conn_id, "Нет прав удалять этот элемент стола").await;
+                            return;
                         }
+                        let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
+                        // Удалённая карта больше не активная: клиенты выберут оставшуюся (или ни одну).
+                        if row.get::<String, _>("layer") == "map" {
+                            let _ = sqlx::query("UPDATE scenes SET active_map_id = NULL WHERE id = ? AND active_map_id = ?").bind(scene_id).bind(id).execute(&st.db).await;
+                        }
+                        st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
                     }
                 }
                 _ => {
-                    if !is_gm { return; }
+                    if !access::allows(role, access::TABLE_MOVE_ANY_TOKEN) {
+                        st.hub.forbidden(cid, conn_id, "Раскладку слоёв меняет только мастер").await;
+                        return;
+                    }
                     let items = msg["items"].as_array().cloned().unwrap_or_default();
                     for it in &items {
                         let Some(id) = it["id"].as_str() else { continue };
@@ -429,7 +464,10 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             }
         }
         "scene_update" => {
-            if !is_gm { return; }
+            if !access::allows(role, access::TABLE_MANAGE_SCENE) {
+                st.hub.forbidden(cid, conn_id, "Сцены, сетку и слои меняет только мастер").await;
+                return;
+            }
             let Some(scene_id) = msg["scene_id"].as_str() else { return };
             let row = sqlx::query("SELECT grid, fog, name, layers, active_map_id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
             let Some(row) = row else { return };
@@ -437,11 +475,17 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
             // Туман — маска на карту (scene.fog.by_map): валидируем, оставляем только существующие карты.
             // Старый глобальный shapes сервер не принимает — клиент переносит его при загрузке.
             let fog_out = if msg["fog"].is_object() {
-                let map_ids: Vec<String> = sqlx::query("SELECT id FROM scene_items WHERE scene_id = ? AND layer = 'map'")
-                    .bind(scene_id).fetch_all(&st.db).await.ok()
-                    .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
-                    .unwrap_or_default();
-                crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
+                // Туман войны — отдельная возможность: без неё поле просто игнорируется.
+                if !access::allows(role, access::TABLE_MANAGE_FOG) {
+                    st.hub.forbidden(cid, conn_id, "Туман войны меняет только мастер").await;
+                    None
+                } else {
+                    let map_ids: Vec<String> = sqlx::query("SELECT id FROM scene_items WHERE scene_id = ? AND layer = 'map'")
+                        .bind(scene_id).fetch_all(&st.db).await.ok()
+                        .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
+                        .unwrap_or_default();
+                    crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
+                }
             } else {
                 None
             };
@@ -481,9 +525,8 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
 }
 
 const PLAYER_FIELDS: &[&str] = &["x", "y", "rotation", "hp", "conditions", "attachments", "dead"];
-const PLAYER_LAYERS: &[&str] = &["character", "drawing", "text", "ruler"];
 
-async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::AuthUser, is_gm: bool, item: &Value) {
+async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, user: &auth::AuthUser, role: &str, item: &Value) {
     let id = item["id"].as_str().map(|s| s.to_string());
     let mut data = if item["data"].is_object() { item["data"].clone() } else { json!({}) };
     let layer_in = item["layer"].as_str().map(|s| s.to_string());
@@ -502,15 +545,17 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
             let old = util::json_value(&util::text(&row, "data"));
             let mut layer: String = row.get("layer");
             let mut z: i64 = row.get("z");
-            let merged = if is_gm && old["managed_loot"] != true {
+            let mode = access::item_write(role, &old, &user.id);
+            if mode == access::ItemWrite::Deny {
+                st.hub.forbidden(cid, conn_id, "Нет прав менять этот элемент стола").await;
+                return;
+            }
+            let merged = if mode == access::ItemWrite::Full {
                 layer = layer_in.unwrap_or(layer);
                 z = z_in.unwrap_or(z);
                 data
             } else {
-                if !is_gm && !player_can_edit(&old, &user.id) {
-                    return;
-                }
-                // игроку разрешено менять только позицию/поворот/хиты/состояния своего токена
+                // владельцу токена разрешено менять только позицию/поворот/хиты/состояния
                 let mut m = old.clone();
                 if let (Some(dst), Some(src)) = (m.as_object_mut(), data.as_object()) {
                     for k in PLAYER_FIELDS {
@@ -527,9 +572,16 @@ async fn item_upsert(st: &AppState, cid: &str, scene_id: &str, user: &auth::Auth
         }
         None => {
             let layer = layer_in.unwrap_or_else(|| "character".into());
-            let is_loot = data["loot"].as_bool().unwrap_or(false);
-            if !is_gm && !PLAYER_LAYERS.contains(&layer.as_str()) && !(layer == "prop" && is_loot) {
+            if !access::can_create_item(role, &layer, &data, &user.id) {
+                st.hub.forbidden(cid, conn_id, "Игрок ставит на стол только своих персонажей").await;
                 return;
+            }
+            // Токен игрока не может ссылаться на чужой лист персонажа.
+            if let Some(character_id) = data["character_id"].as_str() {
+                if !access::allows(role, access::CHARACTER_EDIT_ANY) && !character_owned_by(st, character_id, &user.id).await {
+                    st.hub.forbidden(cid, conn_id, "Чужого персонажа нельзя поставить на стол").await;
+                    return;
+                }
             }
             if data.get("owner_id").map(|v| v.is_null()).unwrap_or(true) {
                 data["owner_id"] = json!(user.id);
@@ -588,5 +640,87 @@ mod dice_tests {
         assert_eq!(with_dice_mode("4d20kh3+3", "adv"), "8d20kh3+3");
         assert_eq!(with_dice_mode("4d6kh3+3", "dis"), "8d6kl3+3");
         assert_eq!(with_dice_mode("4d6kh5+3", "adv"), "4d6kh5+3");
+    }
+}
+
+/// Присутствие в комнате: одна запись на участника, сколько бы вкладок у него ни было.
+#[cfg(test)]
+mod presence_tests {
+    use super::*;
+
+    fn connect(hub: &Hub, cid: &str, conn: u64, user_id: &str, role: &str) {
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let client = Client { tx, user_id: user_id.into(), name: format!("{user_id}-name"), role: role.into() };
+        let mut rooms = futures::executor::block_on(hub.rooms.write());
+        rooms.entry(cid.to_string()).or_default().insert(conn, client);
+    }
+
+    fn disconnect(hub: &Hub, cid: &str, conn: u64) {
+        let mut rooms = futures::executor::block_on(hub.rooms.write());
+        if let Some(room) = rooms.get_mut(cid) {
+            room.remove(&conn);
+            if room.is_empty() {
+                rooms.remove(cid);
+            }
+        }
+    }
+
+    fn users(hub: &Hub, cid: &str) -> Vec<Value> {
+        let presence = futures::executor::block_on(hub.presence(cid));
+        presence["users"].as_array().cloned().unwrap_or_default()
+    }
+
+    fn user_entry<'a>(list: &'a [Value], user_id: &str) -> Option<&'a Value> {
+        list.iter().find(|u| u["user_id"] == user_id)
+    }
+
+    #[test]
+    fn presence_keeps_one_entry_per_user_and_counts_connections() {
+        let hub = Hub::default();
+        connect(&hub, "c1", 0, "gm1", "gm");
+        connect(&hub, "c1", 1, "pl1", "player");
+        connect(&hub, "c1", 2, "pl1", "player"); // вторая вкладка того же игрока
+
+        let list = users(&hub, "c1");
+        assert_eq!(list.len(), 2, "два участника, а не три соединения");
+        let player = user_entry(&list, "pl1").expect("игрок в присутствии");
+        assert_eq!(player["connections"], 2);
+        assert_eq!(player["role"], "player");
+        assert_eq!(player["name"], "pl1-name");
+
+        // Закрытие одной вкладки: участник остаётся, счётчик уменьшается.
+        disconnect(&hub, "c1", 2);
+        let list = users(&hub, "c1");
+        assert_eq!(list.len(), 2);
+        assert_eq!(user_entry(&list, "pl1").unwrap()["connections"], 1);
+
+        // Reconnect (старая вкладка закрылась, открылась новая) запись не множит.
+        disconnect(&hub, "c1", 1);
+        connect(&hub, "c1", 3, "pl1", "player");
+        let list = users(&hub, "c1");
+        assert_eq!(list.len(), 2, "после reconnect по-прежнему один игрок");
+        assert_eq!(user_entry(&list, "pl1").unwrap()["connections"], 1);
+
+        // Закрытие последней вкладки убирает участника из списка.
+        disconnect(&hub, "c1", 3);
+        let list = users(&hub, "c1");
+        assert_eq!(list.len(), 1);
+        assert!(user_entry(&list, "pl1").is_none(), "игрок ушёл со стола");
+
+        disconnect(&hub, "c1", 0);
+        assert!(users(&hub, "c1").is_empty());
+    }
+
+    #[test]
+    fn presence_is_scoped_to_the_campaign_room() {
+        let hub = Hub::default();
+        connect(&hub, "c1", 0, "u1", "gm");
+        connect(&hub, "c2", 1, "u2", "player");
+        let first = users(&hub, "c1");
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0]["user_id"], "u1");
+        let second = users(&hub, "c2");
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0]["user_id"], "u2");
     }
 }

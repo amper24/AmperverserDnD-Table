@@ -58,7 +58,9 @@ h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 14px; color: var
 .tbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .tbar .sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
 #canvasWrap { position: relative; overflow: hidden; background: transparent; }
-#canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+/* Размер canvas задаёт table.js (CSS-пиксели) — без width/height:100%, иначе
+   при скрытии боковой панели старый буфер растягивался бы по горизонтали. */
+#canvas { position: absolute; left: 0; top: 0; display: block; touch-action: none; cursor: grab; }
 #canvas.tool-select { cursor: default; }
 #canvas.tool-draw, #canvas.tool-fog, #canvas.tool-ruler, #canvas.tool-pointer { cursor: crosshair; }
 #side { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }

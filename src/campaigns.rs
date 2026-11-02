@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, error::ApiResult, util, AppError, AppState};
+use crate::{access, auth::AuthUser, error::ApiResult, util, AppError, AppState};
 
 pub struct Member { pub role: String }
 impl Member { pub fn is_gm(&self) -> bool { self.role == "gm" } }
@@ -35,6 +35,8 @@ fn campaign_json(r: &sqlx::any::AnyRow, role: Option<&str>) -> Value {
         "owner_id": r.get::<String, _>("owner_id"),
         "active_scene_id": r.get::<Option<String>, _>("active_scene_id"),
         "role": role,
+        // Права роли для UI: страница участников и стол гейтят действия по этому списку.
+        "permissions": role.map(access::perms_json).unwrap_or_else(|| json!([])),
         "created_at": r.get::<String, _>("created_at"),
     })
 }
@@ -87,6 +89,7 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<Str
         .bind(&user.id).bind(&cid).fetch_optional(&st.db).await?
         .ok_or_else(|| AppError::forbidden("Вы не участник этой кампании"))?;
     let m = Member { role: row.get("member_role") };
+    access::require(&m.role, access::CAMPAIGN_READ)?;
     let members = sqlx::query("SELECT m.user_id, m.role, u.name, u.email, u.avatar_asset_id FROM campaign_members m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? ORDER BY m.joined_at")
         .bind(&cid).fetch_all(&st.db).await?;
     let mut out = campaign_json(&row, Some(&m.role));
@@ -121,7 +124,7 @@ async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<
 pub struct ActiveSceneIn { pub scene_id: Option<String> }
 
 async fn set_active_scene(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Json(body): Json<ActiveSceneIn>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_SCENE).await?;
     sqlx::query("UPDATE campaigns SET active_scene_id = ? WHERE id = ?").bind(&body.scene_id).bind(&cid).execute(&st.db).await?;
     st.hub.broadcast(&cid, &json!({ "type": "active_scene", "scene_id": body.scene_id }), None).await;
     Ok(Json(json!({ "ok": true })))
@@ -134,7 +137,7 @@ fn player() -> String { "player".into() }
 fn norm_role(r: &str) -> &'static str { if r == "gm" { "gm" } else { "player" } }
 
 async fn create_invite(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, body: Option<Json<InviteIn>>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_INVITE).await?;
     let body = body.map(|b| b.0).unwrap_or(InviteIn { role: player(), max_uses: 0 });
     let code = util::token(16);
     let role = norm_role(&body.role);
@@ -144,7 +147,7 @@ async fn create_invite(State(st): State<AppState>, user: AuthUser, Path(cid): Pa
 }
 
 async fn list_invites(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_INVITE).await?;
     let rows = sqlx::query("SELECT * FROM invites WHERE campaign_id = ? ORDER BY created_at").bind(&cid).fetch_all(&st.db).await?;
     Ok(Json(rows.iter().map(|r| { let code: String = r.get("code"); json!({
         "code": code, "role": r.get::<String, _>("role"), "uses": r.get::<i64, _>("uses"), "max_uses": r.get::<i64, _>("max_uses"), "url": format!("/join/{code}")
@@ -152,7 +155,7 @@ async fn list_invites(State(st): State<AppState>, user: AuthUser, Path(cid): Pat
 }
 
 async fn delete_invite(State(st): State<AppState>, user: AuthUser, Path((cid, code)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_INVITE).await?;
     sqlx::query("DELETE FROM invites WHERE code = ? AND campaign_id = ?").bind(&code).bind(&cid).execute(&st.db).await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -161,7 +164,7 @@ async fn delete_invite(State(st): State<AppState>, user: AuthUser, Path((cid, co
 pub struct RoleIn { pub role: String }
 
 async fn set_role(State(st): State<AppState>, user: AuthUser, Path((cid, uid)): Path<(String, String)>, Json(body): Json<RoleIn>) -> ApiResult<Json<Value>> {
-    require_gm(&st, &cid, &user.id).await?;
+    access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_MANAGE_MEMBERS).await?;
     let c = fetch_campaign(&st, &cid).await?;
     if c.get::<String, _>("owner_id") == uid && body.role != "gm" {
         return Err(AppError::bad("Владелец всегда мастер"));
@@ -172,8 +175,9 @@ async fn set_role(State(st): State<AppState>, user: AuthUser, Path((cid, uid)): 
 }
 
 async fn kick(State(st): State<AppState>, user: AuthUser, Path((cid, uid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
+    // Выйти из кампании самому можно всегда, исключить другого — только с правом manage_members.
     if uid != user.id {
-        require_gm(&st, &cid, &user.id).await?;
+        access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_MANAGE_MEMBERS).await?;
     }
     let c = fetch_campaign(&st, &cid).await?;
     if c.get::<String, _>("owner_id") == uid {
@@ -188,6 +192,7 @@ pub struct ChatQuery { pub limit: Option<i64> }
 
 async fn chat_history(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Query(q): Query<ChatQuery>) -> ApiResult<Json<Value>> {
     let m = get_member(&st, &cid, &user.id).await?;
+    access::require(&m.role, access::CAMPAIGN_READ)?;
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
     let rows = sqlx::query("SELECT m.id, m.user_id, m.kind, m.payload, m.created_at, u.name FROM chat_messages m JOIN users u ON u.id = m.user_id WHERE m.campaign_id = ? AND (m.kind NOT IN ('private_roll', 'private_multi') OR m.user_id = ?) ORDER BY m.id DESC LIMIT ?")
         .bind(&cid).bind(&user.id).bind(limit).fetch_all(&st.db).await?;
