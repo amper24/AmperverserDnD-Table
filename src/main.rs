@@ -146,7 +146,15 @@ async fn main() -> anyhow::Result<()> {
         println!("    или заполните root.email и root.password в {} и перезапустите сервер.", config::display_path(&loaded.path));
     }
     admin::spawn_console(state_db, cfg.images.clone());
-    axum::serve(listener, app).await?;
+    // РћСЃС‚Р°РЅРѕРІРєР° С‚РѕР»СЊРєРѕ РїРѕ Ctrl+C (РёР»Рё СЏРІРЅРѕР№ РєРѕРјР°РЅРґРµ stop): РїРёС€РµРј РїСЂРёС‡РёРЅСѓ РІ Р»РѕРі.
+    let shutdown = async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::warn!("РџРѕР»СѓС‡РµРЅ Ctrl+C вЂ” СЃРµСЂРІРµСЂ РѕСЃС‚Р°РЅР°РІР»РёРІР°РµС‚СЃСЏ");
+        eprintln!("РџРѕР»СѓС‡РµРЅ Ctrl+C вЂ” СЃРµСЂРІРµСЂ РѕСЃС‚Р°РЅР°РІР»РёРІР°РµС‚СЃСЏ");
+    };
+    axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
+    tracing::warn!("РЎРµСЂРІРµСЂ Р·Р°РІРµСЂС€РёР» СЂР°Р±РѕС‚Сѓ (serve РІРµСЂРЅСѓР» Ok)");
+    eprintln!("РЎРµСЂРІРµСЂ Р·Р°РІРµСЂС€РёР» СЂР°Р±РѕС‚Сѓ");
     Ok(())
 }
 
