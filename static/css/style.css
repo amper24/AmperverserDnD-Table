@@ -1966,3 +1966,5 @@ body.sheet-vars-open { overflow: hidden; }
 /* Лист: «Журнал» и док кубиков не перекрывают нижнюю строку формулы/футер. */
 .sheet-page .dice-dock,
 .sheet-page .dice-log-button { bottom: 74px; }
+/* «Журнал» стоит слева от боковой панели, а когда она свёрнута — у правого края. */
+body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
