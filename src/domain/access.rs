@@ -94,8 +94,13 @@ pub fn perms_json(role: &str) -> Value {
 }
 
 /// Есть ли у роли возможность. Неизвестная возможность — нет.
+/// Проверка идёт по срезу констант: без выделения Vec на каждый вызов (это горячий путь WS и HTTP).
 pub fn allows(role: &str, cap: &str) -> bool {
-    perms(role).iter().any(|c| *c == cap)
+    match role_of(role) {
+        "gm" => ALL.contains(&cap),
+        "player" => PLAYER.contains(&cap),
+        _ => false,
+    }
 }
 
 /// HTTP/WS-проверка: 403 с понятным сообщением, если возможности нет.

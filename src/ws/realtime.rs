@@ -1,7 +1,7 @@
 //! WebSocket-хаб: комната на кампанию. Стол (элементы сцены, туман, сетка), чат, броски, эфемерные события.
 use std::{
     collections::HashMap,
-    sync::{atomic::{AtomicU64, Ordering}, Arc},
+    sync::{atomic::{AtomicU64, Ordering}, Arc, OnceLock},
 };
 
 use axum::{
@@ -165,6 +165,15 @@ async fn handle_socket(socket: WebSocket, st: AppState, cid: String, user: auth:
 }
 
 // ---------- броски кубиков ----------
+/// Регулярные выражения бросков неизменны — компилируем их один раз на процесс,
+/// а не на каждый бросок (roll_expression вызывается на каждый блок действия).
+static ROLL_GRAMMAR: OnceLock<Regex> = OnceLock::new();
+static ROLL_TERM: OnceLock<Regex> = OnceLock::new();
+static ROLL_DICE: OnceLock<Regex> = OnceLock::new();
+static MODE_TERMS: OnceLock<Regex> = OnceLock::new();
+static MODE_DIE: OnceLock<Regex> = OnceLock::new();
+static DOUBLE_DICE_RE: OnceLock<Regex> = OnceLock::new();
+
 /// Те же замены без удаления пробелов: удвоение костей не переписывает разметку выражения.
 fn fold_expr_chars(expr: &str) -> String {
     expr.to_lowercase().replace('к', "d").replace('−', "-").replace('–', "-").replace('—', "-")
@@ -178,10 +187,10 @@ fn normalize_expr(expr: &str) -> String {
 pub fn roll_expression(expr: &str) -> Option<Value> {
     let expr = normalize_expr(expr);
     // Match the WHOLE expression: the old token scan silently accepted d20++5 or trailing signs.
-    let grammar = Regex::new(r"^[+-]?(?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+)(?:[+-](?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+))*$").ok()?;
+    let grammar = ROLL_GRAMMAR.get_or_init(|| Regex::new(r"^[+-]?(?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+)(?:[+-](?:[0-9]*d[0-9]+(?:k[hl][0-9]+)?|[0-9]+))*$").unwrap());
     if expr.is_empty() || expr.len() > 64 || !grammar.is_match(&expr) { return None; }
-    let term_re = Regex::new(r"([+-]?)([^+-]+)").ok()?;
-    let dice_re = Regex::new(r"^([0-9]*)d([0-9]+)(k[hl][0-9]+)?$").ok()?;
+    let term_re = ROLL_TERM.get_or_init(|| Regex::new(r"([+-]?)([^+-]+)").unwrap());
+    let dice_re = ROLL_DICE.get_or_init(|| Regex::new(r"^([0-9]*)d([0-9]+)(k[hl][0-9]+)?$").unwrap());
     let mut rng = rand::thread_rng();
     let mut total: i64 = 0;
     let mut dice_count: usize = 0;
@@ -225,8 +234,8 @@ pub fn roll_expression(expr: &str) -> Option<Value> {
 pub(crate) fn with_dice_mode(expr: &str, mode: &str) -> String {
     if !["adv", "dis"].contains(&mode) { return expr.to_string(); }
     let expr = normalize_expr(expr);
-    let terms = Regex::new(r"([+-]?)([^+\-]+)").unwrap();
-    let die = Regex::new(r"^([+-]?)([0-9]*)d([0-9]+)(?:k([hl])([0-9]+))?$").unwrap();
+    let terms = MODE_TERMS.get_or_init(|| Regex::new(r"([+-]?)([^+\-]+)").unwrap());
+    let die = MODE_DIE.get_or_init(|| Regex::new(r"^([+-]?)([0-9]*)d([0-9]+)(?:k([hl])([0-9]+))?$").unwrap());
     let matches: Vec<_> = terms.captures_iter(&expr).filter_map(|c| {
         let whole = c.get(0).unwrap();
         let d = die.captures(whole.as_str())?;
@@ -261,7 +270,7 @@ pub(crate) fn with_dice_mode(expr: &str, mode: &str) -> String {
 /// Удваивает количество костей в выражении (критический удар): 1d8+3 → 2d8+3.
 pub(crate) fn double_dice(expr: &str) -> String {
     let expr = fold_expr_chars(expr);
-    let re = Regex::new(r"(\d*)(d)(\d+)(?:k([hl])(\d+))?").unwrap();
+    let re = DOUBLE_DICE_RE.get_or_init(|| Regex::new(r"(\d*)(d)(\d+)(?:k([hl])(\d+))?").unwrap());
     re.replace_all(&expr, |c: &regex::Captures| {
         let n: i64 = if c[1].is_empty() { 1 } else {
             match c[1].parse() { Ok(n) => n, Err(_) => return c[0].to_string() }

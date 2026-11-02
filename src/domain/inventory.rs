@@ -21,6 +21,9 @@ static NOT_EQUIPPABLE: OnceLock<Regex> = OnceLock::new();
 static WEAR_RULES: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
 static HAND_MAGIC: OnceLock<Regex> = OnceLock::new();
 static SHIELD: OnceLock<Regex> = OnceLock::new();
+/// КД и формулы бросков считаются на каждое действие — выражения компилируются один раз.
+static AC_NUMBER: OnceLock<Regex> = OnceLock::new();
+static VAR_REF: OnceLock<Regex> = OnceLock::new();
 
 /// Текст для распознавания: название, теги (там категория справочника) и свойства, в нижнем регистре.
 fn item_text(it: &Value) -> String {
@@ -302,7 +305,7 @@ pub fn armor_class(sheet: &Value) -> i64 { armor_class_parts(sheet).0 }
 pub fn armor_class_parts(sheet: &Value) -> (i64, Vec<(String, i64)>) {
     let dex = modifier(sheet, "dex"); let mut base = 10 + dex; let mut base_name = String::from("Без доспеха"); let mut shield = 0; let mut shield_name = String::new(); let mut armored = false;
     let mut bonuses: Vec<(String, i64)> = Vec::new();
-    let number = Regex::new(r"[0-9]+").unwrap();
+    let number = AC_NUMBER.get_or_init(|| Regex::new(r"[0-9]+").unwrap());
     for it in sheet["inventory"].as_array().into_iter().flatten() {
         if it["equipped"] != true || it["qty"].as_i64().unwrap_or(0) == 0 { continue; }
         // предмет с настройкой без настройки бонусов не даёт
@@ -328,6 +331,10 @@ pub fn armor_class_parts(sheet: &Value) -> (i64, Vec<(String, i64)>) {
 }
 fn modifier(sheet: &Value, key: &str) -> i64 { (sheet["abilities"][key].as_i64().unwrap_or(10) - 10).div_euclid(2) }
 pub fn resolve(expr: &str, sheet: &Value) -> ApiResult<String> {
+    // Списки листа проверяются по строке элемента: json!(k) на каждый навык — лишняя аллокация в горячем пути.
+    fn has(list: Option<&Vec<Value>>, key: &str) -> bool {
+        list.is_some_and(|v| v.iter().any(|x| x.as_str() == Some(key)))
+    }
     let mut ctx = HashMap::new();
     for k in ["str", "dex", "con", "int", "wis", "cha"] { ctx.insert(k.to_string(), modifier(sheet, k)); }
     let prof = sheet["proficiency_bonus"].as_i64().unwrap_or(2); let best = ctx["str"].max(ctx["dex"]);
@@ -336,14 +343,14 @@ pub fn resolve(expr: &str, sheet: &Value) -> ApiResult<String> {
     for (k, v) in [("spell_mod", spell), ("dc", 8 + prof + spell), ("spell_dc", 8 + prof + spell), ("half_level", sheet["level"].as_i64().unwrap_or(1) / 2), ("hp", sheet["hp"]["current"].as_i64().unwrap_or(0)), ("hp_max", sheet["hp"]["max"].as_i64().unwrap_or(0)), ("ac", sheet["ac"].as_i64().unwrap_or(10)), ("speed", sheet["speed"].as_i64().unwrap_or(30)), ("init", modifier(sheet, "dex") + sheet["initiative_bonus"].as_i64().unwrap_or(0))] { ctx.insert(k.into(), v); }
     // Значения характеристик (показатели) для узла «Характеристика / навык»: @str_score и т. д.
     for k in ["str", "dex", "con", "int", "wis", "cha"] { ctx.insert(format!("{k}_score"), sheet["abilities"][k].as_i64().unwrap_or(10)); }
-    for k in ["str", "dex", "con", "int", "wis", "cha"] { let trained = sheet["saving_throws"].as_array().is_some_and(|v| v.contains(&json!(k))); ctx.insert(format!("save_{k}"), modifier(sheet, k) + if trained { prof } else { 0 }); }
+    for k in ["str", "dex", "con", "int", "wis", "cha"] { let trained = has(sheet["saving_throws"].as_array(), k); ctx.insert(format!("save_{k}"), modifier(sheet, k) + if trained { prof } else { 0 }); }
     for (k, ab) in [("acrobatics","dex"),("animal","wis"),("arcana","int"),("athletics","str"),("deception","cha"),("history","int"),("insight","wis"),("intimidation","cha"),("investigation","int"),("medicine","wis"),("nature","int"),("perception","wis"),("performance","cha"),("persuasion","cha"),("religion","int"),("sleight","dex"),("stealth","dex"),("survival","wis")] {
-        let trained = sheet["skills"].as_array().is_some_and(|v| v.contains(&json!(k))); let expert = sheet["expertise"].as_array().is_some_and(|v| v.contains(&json!(k)));
+        let trained = has(sheet["skills"].as_array(), k); let expert = has(sheet["expertise"].as_array(), k);
         ctx.insert(k.into(), modifier(sheet, ab) + prof * if expert { 2 } else if trained { 1 } else { 0 });
     }
     ctx.insert("passive".into(), 10 + ctx["perception"]);
     let compact = expr.to_lowercase().replace(char::is_whitespace, "");
-    let re = regex::Regex::new(r"@([a-z_]+)").unwrap(); let mut unknown = false;
+    let re = VAR_REF.get_or_init(|| Regex::new(r"@([a-z_]+)").unwrap()); let mut unknown = false;
     let s = re.replace_all(&compact, |c: &regex::Captures| { if let Some(v) = ctx.get(&c[1]) { v.to_string() } else { unknown = true; "0".into() } }).to_string();
     if unknown { return Err(AppError::bad("Неизвестная переменная в действии предмета")); }
     Ok(s.replace("+-", "-").replace("--", "+"))
