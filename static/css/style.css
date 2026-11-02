@@ -1959,3 +1959,7 @@ body.sheet-vars-open { overflow: hidden; }
   .sheet-vars-head, .sheet-vars-foot { padding-right: 14px; padding-left: 14px; }
 }
 @media print { .sheet-vars-overlay { display: none !important; } }
+
+/* Стол: плавающие доки кубиков и «Журнал» не перекрывают панель инструментов и чат. */
+.table-page .dice-dock,
+.table-page .dice-log-button { bottom: 74px; }

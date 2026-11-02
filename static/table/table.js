@@ -656,6 +656,11 @@ window.Table = (function () {
   }
   function setTool(t) {
     if (t === 'fog' && !S.canFog) t = 'select'; // игрокам туман недоступен
+    // Без активной карты маска тумана не к чему привязать: выбираем первую карту сцены.
+    if (t === 'fog' && !activeMap()) {
+      const first = T.mapItems(S.scene.items)[0];
+      if (first) setActiveMap(first.id);
+    }
     S.tool = t; S.temp = null; S.hover = null;
     requestDraw();
     S.toolbox.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
@@ -765,7 +770,7 @@ window.Table = (function () {
   function syncFogCursor() {
     if (!S.canvas) return;
     const circle = S.canFog && S.tool === 'fog' && (S.fogTool === 'brush' || S.fogTool === 'eraser');
-    S.canvas.style.cursor = circle ? 'none' : '';
+    S.canvas.style.cursor = circle ? 'crosshair' : '';
   }
   /// Обновить панель тумана без перерисовки (после действия, отмены и scene_update от другого мастера).
   function syncFogPanel() {
