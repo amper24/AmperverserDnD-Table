@@ -10,9 +10,9 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const browserLaunchOptions = require('./browser-launch.cjs');
 
-const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js', 'node-menu.js', 'mechanics-graph.js', 'modules.js', 'compendium.js', 'class-rules.js', 'levelup.js'];
+const SCRIPTS = ['core/common.js', 'pages/presets.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'editor/node-params-form.js', 'editor/node-registry.js', 'editor/node-menu.js', 'editor/mechanics-graph.js', 'core/modules.js', 'pages/compendium.js', 'core/class-rules.js', 'editors/levelup.js'];
 const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
-const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => f === 'node-registry.js' ? `<script src="/static/${f}"></script>` + NODE_SCRIPTS : `<script src="/static/${f}"></script>`).join('')}</body></html>`;
+const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => f === 'editor/node-registry.js' ? `<script src="/static/${f}"></script>` + NODE_SCRIPTS : `<script src="/static/${f}"></script>`).join('')}</body></html>`;
 // Каталог — как у сервера: набор SRD плюс собранные из него черты (data_seed/feats_2014.json).
 const SEED = loadSrd('data_seed/srd_2014.json').concat(loadSrd('data_seed/feats_2014.json'));
 const catalog = category => SEED.filter(r => r.category === category).map(r => ({ ...r, id: r.slug, source: 'SRD 2014' }));

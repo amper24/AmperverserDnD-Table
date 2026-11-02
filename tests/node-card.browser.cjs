@@ -8,7 +8,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const ORIGIN = 'https://node-card.test';
-const EDITOR_MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
+const EDITOR_MODULES = ['core/common', 'core/dice', 'core/formulas', 'core/equipment', 'editor/mechanics', 'editor/node-params-form', 'editor/node-registry', 'editor/node-menu', 'pages/presets', 'editor/mechanics-graph', 'core/asset-kinds', 'core/modules'];
 const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 
 // Программа «Удар жезлом»: атака (КД 12) → «Если» по условию «Попадание атаки» → урон 1d8 только при попадании.
@@ -58,7 +58,7 @@ const WAND = {
       }
       if (url.pathname.startsWith('/sheet/')) return route.fulfill({ contentType: 'text/html', body: fs.readFileSync('static/sheet.html') });
       if (url.pathname.startsWith('/api/')) return json([]);
-      return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' + EDITOR_MODULES.map(name => name === 'node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
+      return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/css/style.css"><div id="app"></div>' + EDITOR_MODULES.map(name => name === 'editor/node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
     });
 
     // ---- 1. Параметр меняется на карточке узла --------------------------------------------------

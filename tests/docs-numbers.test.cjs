@@ -28,7 +28,7 @@ test('типы узлов: 46 файлов, 44 видимых и два внут
   assert.match(palette, /Всего 46 типов: 44 видимых в меню и два внутренних узла групп/);
   const readme = read('README.md');
   assert.match(readme, /Всего в палитре 44 типа; ещё два/, 'README: 44 видимых + 2 внутренних');
-  const registry = read('static/node-registry.js');
+  const registry = read('static/editor/node-registry.js');
   assert.equal((registry.match(/category/g)?.length > 0), true);
   assert.match(read('docs/node-system-v3-audit.md'), /\*\*46 \/ 46\*\* \(44 видимых \+ 2 внутренних\)/);
 });
@@ -47,7 +47,7 @@ test('шаблоны: 46 механик, 19 стартовых графов, 16 
 });
 
 test('категории палитры: 6 штук, и в доке перечислен тот же порядок', () => {
-  const registry = read('static/node-registry.js');
+  const registry = read('static/editor/node-registry.js');
   const ids = [...registry.matchAll(/\{ id: '([a-z]+)', title: '([^']+)'/g)].map(m => ({ id: m[1], title: m[2] }));
   assert.equal(ids.length, 6, 'категорий в NodeRegistry.CATEGORIES');
   assert.deepEqual(ids.map(c => c.title), ['Начало', 'Действия', 'Данные', 'Условия', 'Правила', 'Группы']);

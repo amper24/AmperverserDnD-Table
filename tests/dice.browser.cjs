@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
       if (url.pathname.startsWith('/static/')) {
         const file = path.join(process.cwd(), url.pathname);
         await route.fulfill({ body: fs.readFileSync(file), contentType: file.endsWith('.css') ? 'text/css' : 'text/javascript' });
-      } else await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"></head><body><main style="padding:60px"><h1>Визуализация бросков</h1><p>Центральная площадка прозрачна для кликов по столу.</p><button id="underlay" style="position:fixed;left:50%;top:50%;z-index:1">Стол остаётся интерактивным</button></main><script src="/static/common.js"></script><script src="/static/dice-physics.js"></script><script src="/static/dice-visual.js"></script><script src="/static/dice.js"></script><script src="/static/modules.js"></script></body></html>` });
+      } else await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html data-theme="dark"><head><meta charset="utf-8"><link rel="stylesheet" href="/static/css/style.css"></head><body><main style="padding:60px"><h1>Визуализация бросков</h1><p>Центральная площадка прозрачна для кликов по столу.</p><button id="underlay" style="position:fixed;left:50%;top:50%;z-index:1">Стол остаётся интерактивным</button></main><script src="/static/core/common.js"></script><script src="/static/core/dice-physics.js"></script><script src="/static/core/dice-visual.js"></script><script src="/static/core/dice.js"></script><script src="/static/core/modules.js"></script></body></html>` });
     });
     await page.goto('https://dice.test/');
     const visualStage = page.locator('.dice-visual-root');

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {} };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/asset-kinds.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/asset-kinds.js', 'utf8'), ctx);
 const AK = ctx.window.AssetKinds;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -37,7 +37,7 @@ test('table layers come from the registry, with the old routing kept', () => {
 });
 
 test('app.js and table.js no longer hard-code asset kind lists or routing', () => {
-  const app = fs.readFileSync('static/app.js', 'utf8');
+  const app = fs.readFileSync('static/pages/app.js', 'utf8');
   const table = fs.readFileSync('static/table/table.js', 'utf8');
   for (const literal of ["['map', 'Карты']", "['token', 'Токены']", "['prop', 'Объекты']", "['portrait', 'Портреты']", "['token', 'Токен']", "{ map: 'карта'"]) {
     assert.ok(!app.includes(literal), `app.js has no literal ${literal}`);
@@ -70,7 +70,7 @@ test('выбор картинки: токен — только токены, п�
 });
 
 test('imagePicker не сравнивает тип с литералом токена и берёт список по реестру', () => {
-  const modules = fs.readFileSync('static/modules.js', 'utf8');
+  const modules = fs.readFileSync('static/core/modules.js', 'utf8');
   assert.equal(modules.includes('tokenKind'), false, 'нет сравнения с токеном');
   assert.ok(modules.includes('AssetKinds.pickFor(kind)'), 'список фильтруется по реестру');
 });
@@ -80,7 +80,7 @@ test('обложка набора — свой вид реестра, а не п
   assert.equal(AK.get('cover').picker, true);
   assert.equal(AK.label('cover'), 'Обложка');
   assert.equal(AK.get('item').picker, false, 'предмет не попадает в списки выбора');
-  const packs = fs.readFileSync('static/packs.js', 'utf8');
+  const packs = fs.readFileSync('static/pages/packs.js', 'utf8');
   assert.ok(packs.includes("forUsage('cover')"), 'обложка набора использует вид cover');
 });
 
@@ -97,6 +97,6 @@ test('слои стола берутся из реестра слоёв, а tabl
 test('панель стола не показывает обложки (table: false), библиотека — показывает', () => {
   assert.deepEqual(plain(AK.tableOptions()), [['map', 'Карты'], ['token', 'Токены'], ['prop', 'Объекты'], ['portrait', 'Портреты']]);
   assert.ok(AK.filterOptions().some(([k]) => k === 'cover'), 'в библиотеке обложки видны');
-  const app = fs.readFileSync('static/app.js', 'utf8');
+  const app = fs.readFileSync('static/pages/app.js', 'utf8');
   assert.ok(app.includes('AssetKinds.tableOptions()'), 'панель стола берёт список из реестра');
 });

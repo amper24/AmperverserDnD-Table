@@ -13,16 +13,16 @@ function el(tag, attrs = {}, ...children) {
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' }, SKILLS: [] };
 vm.createContext(ctx);
 // Порядок загрузки — как на листе персонажа: правила заклинаний опираются на Mechanics.
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js',
-                    ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f)), 'static/spell-rules.js', 'static/mechanics-graph.js'])
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js',
+                    ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f)), 'static/core/spell-rules.js', 'static/editor/mechanics-graph.js'])
   vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
 const M = ctx.window.Mechanics, R = ctx.window.SpellRules;
 const plain = value => JSON.parse(JSON.stringify(value));
 const seeds = { 2014: JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed/srd_2014.json'), 'utf8')), 2024: JSON.parse(fs.readFileSync(path.join(ROOT, 'data_seed/srd_2024.json'), 'utf8')) };
 
 const modulesCtx = { window: {} }; vm.createContext(modulesCtx);
-vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), modulesCtx);
-vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), modulesCtx);
+vm.runInContext(fs.readFileSync('static/core/formulas.js', 'utf8'), modulesCtx);
+vm.runInContext(fs.readFileSync('static/core/modules.js', 'utf8'), modulesCtx);
 const Modules = modulesCtx.window.Modules;
 
 test('модуль заклинания задаёт обычный расход по умолчанию и сохраняет индивидуальную стоимость/заряды из справочника', () => {

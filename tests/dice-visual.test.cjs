@@ -41,9 +41,9 @@ function harness() {
   };
   const context = { window, document, el: makeElement, crypto: require('node:crypto').webcrypto, Uint32Array, Math, Number, String, Set };
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync('static/dice-physics.js', 'utf8'), context);
+  vm.runInContext(fs.readFileSync('static/core/dice-physics.js', 'utf8'), context);
   context.DicePhysics = context.window.DicePhysics;
-  vm.runInContext(fs.readFileSync('static/dice-visual.js', 'utf8'), context);
+  vm.runInContext(fs.readFileSync('static/core/dice-visual.js', 'utf8'), context);
   return { window, document, queue, canvasContext };
 }
 

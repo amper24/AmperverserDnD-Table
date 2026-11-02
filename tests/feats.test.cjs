@@ -111,8 +111,8 @@ test('все ссылки разрешаются в своей редакции,
 test('запись черты: текст, английский слой и граф с программой «Правила применения»', () => {
   const ctx = { window: {} };
   vm.createContext(ctx);
-  const files = ['static/common.js', 'static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js',
-    'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js'];
+  const files = ['static/core/common.js', 'static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js',
+    'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js'];
   for (const file of files)
     vm.runInContext(fs.readFileSync(path.isAbsolute(file) ? file : path.join(ROOT, file), 'utf8'), ctx, { filename: file });
   const Mechanics = ctx.window.Mechanics;
@@ -166,10 +166,10 @@ domCtx.window = domCtx;
 domCtx.globalThis = domCtx;
 vm.createContext(domCtx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(domCtx);
-for (const f of ['static/common.js', 'static/dice.js', 'static/formulas.js', 'static/equipment.js', 'static/mechanics.js', 'static/node-params-form.js',
-  'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f)),
-  'static/mechanics-graph.js', 'static/modules.js', 'static/class-rules.js', 'static/character-builder.js',
-  'static/race-editor.js', 'static/class-editor.js'])
+for (const f of ['static/core/common.js', 'static/core/dice.js', 'static/core/formulas.js', 'static/core/equipment.js', 'static/editor/mechanics.js', 'static/editor/node-params-form.js',
+  'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f)),
+  'static/editor/mechanics-graph.js', 'static/core/modules.js', 'static/core/class-rules.js', 'static/editors/character-builder.js',
+  'static/editors/race-editor.js', 'static/editors/class-editor.js'])
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), domCtx, { filename: f });
 
 const walk = (node, fn) => { fn(node); for (const c of node.children || []) walk(c, fn); };

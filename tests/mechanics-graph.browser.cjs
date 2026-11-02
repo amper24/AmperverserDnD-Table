@@ -13,8 +13,8 @@ const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
     await page.route('https://mechanics-graph.test/**', route => {
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) return route.fulfill({ body: fs.readFileSync(path.join(process.cwd(), url.pathname)), contentType: url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript' });
-      return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><div id="app"></div>' +
-        ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'].map(name => name === 'node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
+      return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/css/style.css"><div id="app"></div>' +
+        ['core/common', 'core/dice', 'core/formulas', 'core/equipment', 'editor/mechanics', 'editor/node-params-form', 'editor/node-registry', 'editor/node-menu', 'pages/presets', 'editor/mechanics-graph', 'core/asset-kinds', 'core/modules'].map(name => name === 'editor/node-registry' ? `<script src="/static/${name}.js"></script>` + NODE_SCRIPTS : `<script src="/static/${name}.js"></script>`).join('') });
     });
     await page.goto('https://mechanics-graph.test/');
     await page.waitForFunction(() => window.Presets?.loaded === true);

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const SCRIPTS = ['common', 'asset-kinds', 'table-model', 'table'];
+const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/table'];
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());

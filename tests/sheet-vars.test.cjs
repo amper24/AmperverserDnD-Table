@@ -65,5 +65,5 @@ test('лист подключает помощники до sheet.js и испо
   assert.match(sheet, /Переменные…/, 'кнопка в шапке');
   assert.match(sheet, /window\.SheetVars/, 'панель использует общие проверки');
   assert.match(sheet, /Переменных пока нет — их создаёт действие с узлом «Записать переменную»\./, 'пустое состояние');
-  assert.match(fs.readFileSync('static/style.css', 'utf8'), /\.sheet-vars-dialog/, 'стили диалога');
+  assert.match(fs.readFileSync('static/css/style.css', 'utf8'), /\.sheet-vars-dialog/, 'стили диалога');
 });

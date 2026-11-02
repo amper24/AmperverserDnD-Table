@@ -1,4 +1,4 @@
-// Регрессия редактора расы (static/race-editor.js): чтение/запись записи, узлы графа
+// Регрессия редактора расы (static/editors/race-editor.js): чтение/запись записи, узлы графа
 // (rule.value с kind speed/ability, rule.list с kind languages/skill_proficiency/skills/proficiencies)
 // и программы черт. Скрипт запускается в vm со стабом DOM и наборами данных.
 const { test, before } = require('node:test');
@@ -18,8 +18,8 @@ const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx
 before(() => presetsReady);
 // presets.js не перезапускаем: его уже загрузил node-loader (иначе реестр пуст).
 // node-loader отдаёт абсолютные пути, остальные файлы — относительно static/.
-const FILES = ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
-  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'race-editor.js'];
+const FILES = ['core/common.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'editor/node-params-form.js', 'editor/node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'editor/mechanics-graph.js', 'core/modules.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/race-editor.js'];
 for (const f of FILES) vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 
 const RE = ctx.window.RaceEditor;

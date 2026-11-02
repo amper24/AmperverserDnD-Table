@@ -9,7 +9,7 @@ const ctx = { window: { ...dictionaries }, ABIL: { str: 'Сила', dex: 'Лов
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 // Граф механик: правила класса (в том числе список навыков — узел rule.list, kind: skills) читаются узлами.
 require('./fixtures/graph.cjs')(ctx);
-for (const f of ['static/class-rules.js', 'static/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+for (const f of ['static/core/class-rules.js', 'static/editors/levelup.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 const L = ctx.window.LevelUp;
 const plain = x => JSON.parse(JSON.stringify(x));
@@ -130,7 +130,7 @@ test('компетентность: ключи навыков берутся и�
   // Регрессия: levelup.js держал свою таблицу «русское название → ключ» с длинными id
   // (animal_handling, sleight_of_hand), которых нет в словаре листа (window.SKILLS: animal, sleight).
   // Выбранная компетентность тогда не находилась на листе и не давала модификатор.
-  const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'static', 'levelup.js'), 'utf8');
+  const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'static', 'editors', 'levelup.js'), 'utf8');
   assert.ok(!/SKILL_KEYS_RU/.test(source), 'в levelup.js осталась своя таблица «название → ключ»');
   const canonical = new Set(dictionaries.SKILLS.map(([key]) => key));
   const wizard = cls('2024', 'wizard');
@@ -353,7 +353,7 @@ test('подклассы друида и барда: правила из наб�
   assert.equal(L.subclassCantripGain(druid, land, '2014', 3), 0);
   const land24 = cls('2024', 'druid').data.subclasses.find(s => s.name_en === 'Circle of the Land');
   assert.equal(L.subclassCantripGain(cls('2024', 'druid'), land24, '2024', 2), 0, 'в 2024 правила нет');
-  const src = fs.readFileSync('static/levelup.js', 'utf8');
+  const src = fs.readFileSync('static/editors/levelup.js', 'utf8');
   assert.doesNotMatch(src, /Круг Земли|Коллегия знаний|college of lore|круг земли/i, 'имена подклассов не зашиты в код');
 });
 

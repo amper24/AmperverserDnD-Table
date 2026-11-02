@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const ctx = { window: {}, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' } };
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
-vm.runInContext(fs.readFileSync('static/levelup.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/editors/levelup.js', 'utf8'), ctx);
 before(async () => { await presetsReady; });
 const L = ctx.window.LevelUp;
 const seed = ed => loadSrd(`data_seed/srd_${ed}.json`).filter(e => e.category === 'feat');
@@ -56,7 +56,7 @@ test('требования: уровень, боевой стиль и сила'
 test('черта без правила в наборе ничем не ограничена; в коде нет жёсткого списка стилей', () => {
   assert.equal(L.isStyleFeat({ name: 'Своя', data: { name_en: 'Custom', edition: '2024' } }), false);
   assert.equal(L.featPrerequisitesMet({ name: 'Своя', data: { name_en: 'Custom', edition: '2024' } }, at(1), sheet()), true);
-  const src = fs.readFileSync('static/levelup.js', 'utf8');
+  const src = fs.readFileSync('static/editors/levelup.js', 'utf8');
   assert.ok(!src.includes('STYLE_FEATS_EN'));
   assert.ok(!src.includes("'archery', 'defense'"));
 });

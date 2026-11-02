@@ -12,8 +12,8 @@ function el(tag, attrs = {}, ...children) {
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() {}, console };
 ctx.window.SKILLS = [['acrobatics', 'Акробатика', 'dex'], ['stealth', 'Скрытность', 'dex']];
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js',
-  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
 const R = ctx.window.NodeRegistry;
 const M = ctx.window.Mechanics;
 const NF = ctx.window.NodeForm;

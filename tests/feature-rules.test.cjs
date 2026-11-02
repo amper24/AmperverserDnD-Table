@@ -15,7 +15,7 @@ test('наборы feature_rules есть для обеих редакций и 
 });
 
 test('levelup.js не содержит регулярок классификации особенностей', () => {
-  const src = require('node:fs').readFileSync('static/levelup.js', 'utf8');
+  const src = require('node:fs').readFileSync('static/editors/levelup.js', 'utf8');
   for (const name of ['RE_ASI', 'RE_EPIC', 'RE_EXPERT', 'RE_SECRETS', 'RE_MANUAL']) assert.ok(!src.includes(name), name);
   assert.ok(!src.includes("'Таинственные воззвания '"));
 });

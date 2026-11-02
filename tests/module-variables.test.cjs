@@ -5,8 +5,8 @@ const vm = require('node:vm');
 
 // Переменные модулей (@atk, @dc …) считаются формулами из реестра DERIVED_VARS через Formulas.
 const ctx = { window: {} }; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/formulas.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/modules.js', 'utf8'), ctx);
 const Modules = ctx.window.Modules;
 const F = ctx.window.Formulas;
 

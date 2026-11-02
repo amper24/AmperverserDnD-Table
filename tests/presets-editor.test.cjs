@@ -8,7 +8,7 @@ const ctx = { window: {}, console, localStorage: { getItem() { return null; }, s
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-vm.runInContext(fs.readFileSync('static/presets-editor.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/pages/presets-editor.js', 'utf8'), ctx);
 const PE = ctx.window.PresetsEditor;
 const P = ctx.window.Presets;
 const plain = x => JSON.parse(JSON.stringify(x));

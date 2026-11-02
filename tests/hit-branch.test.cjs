@@ -11,7 +11,7 @@ const ctx = { window: {}, crypto: require('node:crypto').webcrypto, el, toast() 
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
 const plain = value => JSON.parse(JSON.stringify(value));
 

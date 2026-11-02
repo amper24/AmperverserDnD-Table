@@ -79,7 +79,7 @@ vm.createContext(sandbox);
 // Наборы данных (языки, состояния) — первыми: модули читают их списки при загрузке.
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(sandbox);
 before(() => presetsReady);
-for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'])
+for (const f of ['core/common.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'core/modules.js', 'pages/compendium.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/builder-dialog.js'])
   vm.runInContext(fs.readFileSync('static/' + f, 'utf8'), sandbox, { filename: f });
 
 // ---------- помощники ----------

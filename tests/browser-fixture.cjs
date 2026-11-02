@@ -10,10 +10,10 @@ function nodeScripts() {
 }
 
 // Скрипты страницы редактора механик в порядке загрузки (node-registry + классы узлов).
-const EDITOR_MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
+const EDITOR_MODULES = ['core/common', 'core/dice', 'core/formulas', 'core/equipment', 'editor/mechanics', 'editor/node-params-form', 'editor/node-registry', 'editor/node-menu', 'pages/presets', 'editor/mechanics-graph', 'core/asset-kinds', 'core/modules'];
 
 function editorScripts(modules = EDITOR_MODULES) {
-  return modules.map(name => name === 'node-registry'
+  return modules.map(name => name === 'editor/node-registry'
     ? `<script src="/static/${name}.js"></script>` + nodeScripts()
     : `<script src="/static/${name}.js"></script>`).join('');
 }

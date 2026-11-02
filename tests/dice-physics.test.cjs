@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 const context = { window: {}, crypto: require('node:crypto').webcrypto };
 vm.createContext(context);
-vm.runInContext(fs.readFileSync('static/dice-physics.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/core/dice-physics.js', 'utf8'), context);
 const Physics = context.window.DicePhysics;
 const plain = value => JSON.parse(JSON.stringify(value));
 

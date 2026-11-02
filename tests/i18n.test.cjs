@@ -36,7 +36,7 @@ function client() {
   Object.assign(win, { document: { querySelector: () => null, querySelectorAll: () => [], documentElement: { dataset: {} }, cookie: '', addEventListener() {}, body: { append() {} }, createElement: () => ({}) },
     location: { search: '', pathname: '/', reload() {} }, navigator: {}, console, setTimeout, clearTimeout, fetch: () => {}, matchMedia: () => ({ matches: false }), history: {} });
   win.window = win; vm.createContext(win);
-  vm.runInContext(fs.readFileSync('static/common.js', 'utf8'), win);
+  vm.runInContext(fs.readFileSync('static/core/common.js', 'utf8'), win);
   return win;
 }
 

@@ -9,7 +9,7 @@ const ctx = { window: {}, console, crypto: globalThis.crypto, localStorage: { ge
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-for (const f of ['static/dice.js', 'static/formulas.js', 'static/equipment.js', 'static/modules.js', 'static/class-rules.js', 'static/mechanics.js', 'static/character-builder.js']) {
+for (const f of ['static/core/dice.js', 'static/core/formulas.js', 'static/core/equipment.js', 'static/core/modules.js', 'static/core/class-rules.js', 'static/editor/mechanics.js', 'static/editors/character-builder.js']) {
   vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 }
 const Mech = ctx.window.Mechanics;

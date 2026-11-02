@@ -10,7 +10,7 @@ function el(tag, attrs = {}, ...children) {
 }
 const ctx = { window: { addEventListener() {}, removeEventListener() {}, requestAnimationFrame() {} }, requestAnimationFrame() {}, crypto: require('node:crypto').webcrypto, el, toast() {}, document: { createElementNS() { return { setAttribute() {}, appendChild() {} }; } }, ABIL: { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' }, SKILLS: [] };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const M = ctx.window.Mechanics;
 const R = ctx.window.NodeRegistry;
 const NF = ctx.window.NodeForm;

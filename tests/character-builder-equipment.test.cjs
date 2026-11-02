@@ -13,11 +13,11 @@ vm.createContext(ctx);
 // Наборы (правила классов, защита без доспехов по данным) грузятся до тестов.
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/dice.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/formulas.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/equipment.js', 'utf8'), ctx);
 ctx.Equipment = ctx.window.Equipment;
-vm.runInContext(fs.readFileSync('static/modules.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/modules.js', 'utf8'), ctx);
 ctx.Modules = ctx.window.Modules;
 ctx.window.SKILLS = [
   ['acrobatics', 'Акробатика', 'dex'], ['animal', 'Уход за животными', 'wis'], ['arcana', 'Магия', 'int'], ['athletics', 'Атлетика', 'str'],
@@ -28,8 +28,8 @@ ctx.window.SKILLS = [
 ];
 ctx.SKILLS = ctx.window.SKILLS;
 ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
-vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/class-rules.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/editors/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 before(async () => { await presetsReady; ctx.window.ClassRules.refresh(); });
 // Значения приходят из песочницы vm — сравниваем структуру, а не прототипы другого контекста.

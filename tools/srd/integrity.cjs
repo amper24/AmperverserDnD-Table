@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // integrity.cjs — проверка целостности встроенного справочника SRD
 // (data_seed/srd_2014.json, data_seed/srd_2024.json) и соответствия клиента
-// серверу (static/node-registry.js ↔ src/domain/mechanics_graph.rs).
+// серверу (static/editor/node-registry.js ↔ src/domain/mechanics_graph.rs).
 //
 // Запуск:   node tools/srd/integrity.cjs [--edition 2014,2024] [--json] [--quiet] [--max 20]
 // Библиотека: module.exports = { runAll, checkSeed, checkRuntime, REPO }
@@ -21,7 +21,7 @@ const EDITIONS = ['2014', '2024'];
 const CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'npc', 'feat', 'condition', 'lore'];
 const SEED_CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'feat', 'condition'];
 const RUNTIME_NODE_FILES = require('../nodes/node-loader.cjs').nodeFiles().map(f => path.relative(REPO, f).split(path.sep).join('/'));
-const RUNTIME_FILES = ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...RUNTIME_NODE_FILES, 'static/mechanics-graph.js'];
+const RUNTIME_FILES = ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...RUNTIME_NODE_FILES, 'static/editor/mechanics-graph.js'];
 const CJK_CYR = /[\u0400-\u04FF]/;
 const LATIN = /[A-Za-z]/;
 
@@ -30,13 +30,13 @@ function readJson(file) {
 }
 
 // ---------- рантайм клиента: реестр узлов, валидатор графа, движок бросков ----------
-// Список навыков и характеристики — из static/common.js (словари загружаются в первом слое,
+// Список навыков и характеристики — из static/core/common.js (словари загружаются в первом слое,
 // поэтому берём только их объявления, а не весь файл с DOM-зависимостями).
 function commonDictionaries() {
-  const text = fs.readFileSync(path.join(REPO, 'static/common.js'), 'utf8');
+  const text = fs.readFileSync(path.join(REPO, 'static/core/common.js'), 'utf8');
   const pick = (name) => {
     const m = text.match(new RegExp(`window\\.${name}\\s*=\\s*(\\[[\\s\\S]*?\\n\\]|\\{[\\s\\S]*?\\});`));
-    if (!m) throw new Error(`не найден window.${name} в static/common.js`);
+    if (!m) throw new Error(`не найден window.${name} в static/core/common.js`);
     return vm.runInNewContext(`(${m[1]})`);
   };
   return { SKILLS: pick('SKILLS'), ABIL: pick('ABIL') };
@@ -90,7 +90,7 @@ const isArr = Array.isArray;
 const nameOf = e => e.name;
 
 // Технические токены характеристик: короткие формы из tools/srd/ru_names.py (ABIL),
-// их показывает лист персонажа в чипе «СЛ … ЛОВ» (static/modules.js).
+// их показывает лист персонажа в чипе «СЛ … ЛОВ» (static/core/modules.js).
 const ABILITY_CODES = ['СИЛ', 'ЛОВ', 'ТЕЛ', 'ИНТ', 'МДР', 'ХАР'];
 // Тип урона — отображаемая строка (dtype/damage_type), сравнений по ней в коде нет.
 const DAMAGE_TYPES_RU = ['кислота', 'дробящий', 'холод', 'огонь', 'силовое поле', 'электричество', 'некротический', 'колющий', 'яд', 'психический', 'излучение', 'рубящий', 'звук'];
@@ -129,7 +129,7 @@ const stripVars = expr => String(expr).replace(/@[a-z_0-9]+/gi, '0').replace(/\{
 
 // ---------- проверка одной редакции ----------
 
-// ---------- пресеты классов (запасные таблицы развития, static/levelup.js::progression) ----------
+// ---------- пресеты классов (запасные таблицы развития, static/editors/levelup.js::progression) ----------
 const presetCache = new Map();
 function presetFor(edition) {
   if (!presetCache.has(edition)) {
@@ -391,7 +391,7 @@ function checkSeed(edition, opts = {}) {
       for (const s of d.saves || []) if (!['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(s)) report.error('enum-values', where, 'data.saves', `неизвестный спасбросок «${s}»`);
       if (isObj(d.skills)) {
         if (!isInt(d.skills.choose) || d.skills.choose < 0 || d.skills.choose > 18) report.error('field-range', where, 'data.skills.choose', `skills.choose=${d.skills.choose}`);
-        for (const s of d.skills.from || []) if (!(runtime.SKILLS || []).some(([, ru]) => ru === s)) report.error('broken-reference', where, 'data.skills.from', `навык «${s}» не из списка SKILLS (static/common.js)`);
+        for (const s of d.skills.from || []) if (!(runtime.SKILLS || []).some(([, ru]) => ru === s)) report.error('broken-reference', where, 'data.skills.from', `навык «${s}» не из списка SKILLS (static/core/common.js)`);
       }
       const featureNames = new Set(Object.values(d.features || {}).flat());
       for (const name of featureNames) if (!(name in (d.feature_texts || {}))) report.error('missing-feature-text', where, `data.feature_texts.${name}`, `у умения «${name}» нет текста`);
@@ -402,7 +402,7 @@ function checkSeed(edition, opts = {}) {
       if (isStr(d.spellcasting) && !['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(d.spellcasting)) report.error('enum-values', where, 'data.spellcasting', `характеристика заклинаний «${d.spellcasting}»`);
       // Таблица развития класса живёт в узле rule.class (kind: class_progression) — её и читает лист, а встроенный
       // пресет static/presets/class-progression-<edition>.json — запасной вариант того же правила
-      // (static/levelup.js::progression). Проверяем, что копии не разошлись.
+      // (static/editors/levelup.js::progression). Проверяем, что копии не разошлись.
       const classNode = (type, kind) => ((d.mechanics || {}).graph?.nodes || []).find(n => n && n.type === type && n.params?.kind === kind);
       const node = classNode('rule.class', 'class_progression');
       const presetRow = (presetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
@@ -416,7 +416,7 @@ function checkSeed(edition, opts = {}) {
       } else if (!nodeLevels && presetRow) {
         report.warn('class-progression-missing', where, 'data.mechanics.graph.nodes[rule.class:class_progression].params.table.levels', 'таблицы развития в узле нет: уровень берётся из пресета, а не из записи класса');
       }
-      // Те же правила класса лежат в узле rule.class (kind: class_rules) — он первичен для листа (static/class-rules.js::rulesOf),
+      // Те же правила класса лежат в узле rule.class (kind: class_rules) — он первичен для листа (static/core/class-rules.js::rulesOf),
       // а набор class-rules-<редакция>.json — запасной вариант. Узел собирается из набора полями caster,
       // multiclass.requirements и weapon_mastery (tools/srd/add_class_progression_nodes.cjs): сверяем, что копии равны.
       const rulesRow = (rulesPresetFor(edition).items || []).find(it => it && it.id === row.slug.replace(/^srd\d+-/, ''));
@@ -720,30 +720,30 @@ function checkRuntime(opts = {}) {
   const defs = Object.keys(Registry.NODE_DEFS);
   const exposed = defs.filter(t => !Registry.INTERNAL.has(t));
   for (const type of exposed) {
-    if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/domain/mechanics_graph.rs NODE_TYPES)`);
+    if (!rust.NODE_TYPES.includes(type)) report.error('client-server-parity', `static/editor/node-registry.js`, type, `узел есть в реестре клиента, но сервер его не принимает (src/domain/mechanics_graph.rs NODE_TYPES)`);
   }
   // Внутренние узлы (group.input/group.output) намеренно вне палитры, но обязаны быть в реестре и на сервере.
   for (const type of rust.NODE_TYPES) {
-    if (!defs.includes(type)) report.error('client-server-parity', `src/domain/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/node-registry.js)`);
+    if (!defs.includes(type)) report.error('client-server-parity', `src/domain/mechanics_graph.rs`, type, `сервер принимает узел, которого нет в реестре клиента (static/editor/node-registry.js)`);
   }
   for (const type of Registry.INTERNAL) {
-    if (!defs.includes(type)) report.error('client-server-parity', `static/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
+    if (!defs.includes(type)) report.error('client-server-parity', `static/editor/node-registry.js`, type, `внутренний узел не описан в NODE_DEFS`);
   }
   // Настраиваемые узлы покрывают несколько видов блоков плана: «Бросок» и «Изменить поле» — через kind,
   // «Расход ресурса» — один блок consume.
   const expandKind = t => (Registry.blockKindsOf ? Registry.blockKindsOf(t) : (t === 'action.roll' ? (Registry.ROLL_KINDS || ['roll']) : [t.slice(7)]));
   const actionKinds = [...new Set(defs.filter(t => t.startsWith('action.') && t !== 'action.program').flatMap(expandKind))];
-  if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);
+  if (actionKinds.slice().sort().join() !== rust.ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'ACTION_KINDS', `наборы действий клиента (${actionKinds.join(',')}) и сервера (${rust.ACTIONS.join(',')}) различаются`);
   const diceKinds = [...new Set(defs.filter(t => t.startsWith('action.') && Registry.NODE_DEFS[t].inputs && Registry.NODE_DEFS[t].inputs.dice).flatMap(expandKind))];
-  if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
-  if ((Registry.ROLL_KINDS || []).slice().sort().join() !== rust.ROLL_KINDS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'ROLL_KINDS', `виды настраиваемого броска клиента (${(Registry.ROLL_KINDS || []).join(',')}) и сервера (${rust.ROLL_KINDS.join(',')}) различаются`);
-  if ((Registry.LOGIC_OPS || []).slice().sort().join() !== rust.LOGIC_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'LOGIC_OPS', `операции логики клиента (${(Registry.LOGIC_OPS || []).join(',')}) и сервера (${rust.LOGIC_OPS.join(',')}) различаются`);
+  if (diceKinds.slice().sort().join() !== rust.DICE_ACTIONS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'DICE_KINDS', `действия с костью: клиент ${diceKinds.join(',')} против сервера ${rust.DICE_ACTIONS.join(',')}`);
+  if ((Registry.ROLL_KINDS || []).slice().sort().join() !== rust.ROLL_KINDS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'ROLL_KINDS', `виды настраиваемого броска клиента (${(Registry.ROLL_KINDS || []).join(',')}) и сервера (${rust.ROLL_KINDS.join(',')}) различаются`);
+  if ((Registry.LOGIC_OPS || []).slice().sort().join() !== rust.LOGIC_OPS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'LOGIC_OPS', `операции логики клиента (${(Registry.LOGIC_OPS || []).join(',')}) и сервера (${rust.LOGIC_OPS.join(',')}) различаются`);
   // Переменные и математика: закрытые списки областей и операций обязаны совпадать.
-  if ((Registry.VAR_SCOPES || []).slice().sort().join() !== rust.VAR_SCOPES.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'VAR_SCOPES', `области переменных клиента (${(Registry.VAR_SCOPES || []).join(',')}) и сервера (${rust.VAR_SCOPES.join(',')}) различаются`);
-  if ((Registry.MATHFUN_OPS || []).slice().sort().join() !== rust.MATHFUN_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'MATHFUN_OPS', `операции математики клиента (${(Registry.MATHFUN_OPS || []).join(',')}) и сервера (${rust.MATHFUN_OPS.join(',')}) различаются`);
+  if ((Registry.VAR_SCOPES || []).slice().sort().join() !== rust.VAR_SCOPES.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'VAR_SCOPES', `области переменных клиента (${(Registry.VAR_SCOPES || []).join(',')}) и сервера (${rust.VAR_SCOPES.join(',')}) различаются`);
+  if ((Registry.MATHFUN_OPS || []).slice().sort().join() !== rust.MATHFUN_OPS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'MATHFUN_OPS', `операции математики клиента (${(Registry.MATHFUN_OPS || []).join(',')}) и сервера (${rust.MATHFUN_OPS.join(',')}) различаются`);
   // Строки и списки: операции data.text и data.textcheck обязаны совпадать у клиента и сервера.
-  if ((Registry.TEXT_OPS || []).slice().sort().join() !== rust.TEXT_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'TEXT_OPS', `операции строк клиента (${(Registry.TEXT_OPS || []).join(',')}) и сервера (${rust.TEXT_OPS.join(',')}) различаются`);
-  if ((Registry.TEXT_CHECK_OPS || []).slice().sort().join() !== rust.TEXT_CHECK_OPS.slice().sort().join()) report.error('client-server-parity', 'static/node-registry.js', 'TEXT_CHECK_OPS', `операции сравнения строк клиента (${(Registry.TEXT_CHECK_OPS || []).join(',')}) и сервера (${rust.TEXT_CHECK_OPS.join(',')}) различаются`);
+  if ((Registry.TEXT_OPS || []).slice().sort().join() !== rust.TEXT_OPS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'TEXT_OPS', `операции строк клиента (${(Registry.TEXT_OPS || []).join(',')}) и сервера (${rust.TEXT_OPS.join(',')}) различаются`);
+  if ((Registry.TEXT_CHECK_OPS || []).slice().sort().join() !== rust.TEXT_CHECK_OPS.slice().sort().join()) report.error('client-server-parity', 'static/editor/node-registry.js', 'TEXT_CHECK_OPS', `операции сравнения строк клиента (${(Registry.TEXT_CHECK_OPS || []).join(',')}) и сервера (${rust.TEXT_CHECK_OPS.join(',')}) различаются`);
   // «Изменить поле»: виды и списки полей листа обязаны совпадать у клиента и сервера.
   for (const [name, client, server] of [
     ['FIELD_KINDS', Registry.FIELD_KINDS, rust.FIELD_KINDS],
@@ -757,20 +757,20 @@ function checkRuntime(opts = {}) {
     ['SHEET_CONDITIONS', Registry.SHEET_CONDITIONS, rust.SHEET_CONDITIONS],
   ]) {
     const a = (client || []).slice().sort().join(), b = (server || []).slice().sort().join();
-    if (a !== b) report.error('client-server-parity', 'static/node-registry.js', name, `списки клиента (${a}) и сервера (${b}) различаются`);
+    if (a !== b) report.error('client-server-parity', 'static/editor/node-registry.js', name, `списки клиента (${a}) и сервера (${b}) различаются`);
   }
   const skillIds = (runtime.SKILLS || []).map(([id]) => id);
   if (skillIds.slice().sort().join() !== rust.SKILL_IDS.slice().sort().join()) {
     const only = (a, b) => a.filter(x => !b.includes(x)).join(',');
-    report.error('client-server-parity', 'static/common.js', 'SKILLS', `идентификаторы навыков клиента и сервера (SKILL_IDS) различаются: только у клиента ${only(skillIds, rust.SKILL_IDS) || '—'}; только у сервера ${only(rust.SKILL_IDS, skillIds) || '—'}`);
+    report.error('client-server-parity', 'static/core/common.js', 'SKILLS', `идентификаторы навыков клиента и сервера (SKILL_IDS) различаются: только у клиента ${only(skillIds, rust.SKILL_IDS) || '—'}; только у сервера ${only(rust.SKILL_IDS, skillIds) || '—'}`);
   }
   const abilityValues = [...new Set(Object.values(Registry.NODE_DEFS).map(d => d.defaults && d.defaults.value).filter(v => isStr(v) && v.length === 3 && rust.ABILITIES.includes(v)))];
   if ((Registry.ABILITIES || []).slice().sort().join() !== rust.ABILITIES.slice().sort().join()) {
-    report.error('client-server-parity', 'static/node-registry.js', 'ABILITIES', `характеристики клиента (${(Registry.ABILITIES || []).join(',')}) и сервера (${rust.ABILITIES.join(',')}) различаются`);
+    report.error('client-server-parity', 'static/editor/node-registry.js', 'ABILITIES', `характеристики клиента (${(Registry.ABILITIES || []).join(',')}) и сервера (${rust.ABILITIES.join(',')}) различаются`);
   }
   // Типы сокетов: клиент описывает их в VALUE_TYPES, сервер — в SOCKET_TYPES (проверка интерфейса групп).
   if ((Registry.VALUE_TYPES || []).slice().sort().join() !== rust.SOCKET_TYPES.slice().sort().join()) {
-    report.error('client-server-parity', 'static/node-registry.js', 'VALUE_TYPES', `типы сокетов клиента (${(Registry.VALUE_TYPES || []).join(',')}) и сервера SOCKET_TYPES (${rust.SOCKET_TYPES.join(',')}) различаются`);
+    report.error('client-server-parity', 'static/editor/node-registry.js', 'VALUE_TYPES', `типы сокетов клиента (${(Registry.VALUE_TYPES || []).join(',')}) и сервера SOCKET_TYPES (${rust.SOCKET_TYPES.join(',')}) различаются`);
   }
   // Порты узлов: ни один вход не должен требовать значение, которое не производит ни один узел,
   // и ни один выход (кроме конечных эффектов) не должен оставаться без потребителя.
@@ -780,10 +780,10 @@ function checkRuntime(opts = {}) {
     for (const kind of Object.values(def.outputs || {})) ports.out.set(kind, [...(ports.out.get(kind) || []), type]);
   }
   for (const [kind, types] of ports.in) {
-    if (!ports.out.has(kind)) report.error('node-sockets', 'static/node-registry.js', kind, `тип сокета «${kind}» принимают узлы (${types.join(',')}), но не производит ни один узел — вход невозможно подключить`);
+    if (!ports.out.has(kind)) report.error('node-sockets', 'static/editor/node-registry.js', kind, `тип сокета «${kind}» принимают узлы (${types.join(',')}), но не производит ни один узел — вход невозможно подключить`);
   }
   for (const [kind, types] of ports.out) {
-    if (kind !== 'effect' && !ports.in.has(kind)) report.error('node-sockets', 'static/node-registry.js', kind, `тип сокета «${kind}» производят узлы (${types.join(',')}), но не принимает ни один узел — значение некуда подключить`);
+    if (kind !== 'effect' && !ports.in.has(kind)) report.error('node-sockets', 'static/editor/node-registry.js', kind, `тип сокета «${kind}» производят узлы (${types.join(',')}), но не принимает ни один узел — значение некуда подключить`);
   }
   report.stats.parity = { abilities: abilityValues.length, skills: skillIds.length, socket_types: ports.in.size };
   report.stats.client_nodes = exposed.length;

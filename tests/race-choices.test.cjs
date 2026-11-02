@@ -8,14 +8,14 @@ const ctx = { crypto: require('node:crypto').webcrypto, window: {}, console,
   Modules: { newFeature: x => x, spellFromCompendium: e => ({ name: e.name, level: e.data?.level ?? 1, prepared: false }) },
   SKILLS: [['stealth', 'Скрытность', 'dex'], ['athletics', 'Атлетика', 'str'], ['perception', 'Восприятие', 'wis']] };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/dice.js', 'utf8'), ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
 ctx.DiceEngine = { ...ctx.window.DiceEngine, present() {} };
 require('./fixtures/graph.cjs')(ctx);
 ctx.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телосложение', int: 'Интеллект', wis: 'Мудрость', cha: 'Харизма' };
-vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/character-builder.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/class-rules.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/editors/character-builder.js', 'utf8'), ctx);
 const B = ctx.window.CharacterBuilder;
 const abil = Object.fromEntries(B.keys.map(k => [k, 10]));
 const load = ed => loadSrd(`data_seed/srd_${ed}.json`).map(e => e.id ? e : { ...e, id: `${e.category}|${e.name}` });

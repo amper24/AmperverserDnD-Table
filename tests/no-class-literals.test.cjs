@@ -8,7 +8,7 @@ const feature2014 = JSON.parse(read('static/presets/feature-rules-2014.json'));
 const feature2024 = JSON.parse(read('static/presets/feature-rules-2024.json'));
 
 test('создание: «Боевой стиль» пропускается по признаку набора, а не по классу fighter', () => {
-  const src = read('static/character-builder.js');
+  const src = read('static/editors/character-builder.js');
   assert.equal(src.includes("slug === 'fighter'"), false);
   const rule = feature2014.items.find(i => i.table?.creation === 'skip');
   assert.ok(rule, 'в наборе 2014 есть правило creation: skip');
@@ -19,14 +19,14 @@ test('создание: «Боевой стиль» пропускается п�
 });
 
 test('повышение: список классов для тайных заклинаний 2024 — из набора', () => {
-  const src = read('static/levelup.js');
+  const src = read('static/editors/levelup.js');
   assert.equal(src.includes("'Волшебник'"), false, 'нет литерала списка классов');
   const secrets = feature2024.items.find(i => i.id === 'secrets');
   assert.deepEqual(secrets.table.spell_classes, ["Бард", "Жрец", "Друид", "Волшебник", "Bard", "Cleric", "Druid", "Wizard"]);
 });
 
 test('блок атаки: умолчание формулы берётся из block_defaults', () => {
-  const src = read('static/node-registry.js');
+  const src = read('static/editor/node-registry.js');
   assert.equal(src.includes("'1d20+@atk' : '1d6'"), false, 'нет запасной формулы в коде');
   assert.ok(src.includes("Presets?.item('block_defaults', kind)"));
   const bd = JSON.parse(read('static/presets/block-defaults.json'));

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {}, document: {}, console };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/common.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/common.js', 'utf8'), ctx);
 const names = ctx.window.ICON_NAMES;
 
 test('новые иконки предметов и рас есть в пуле', () => {
@@ -20,7 +20,7 @@ test('иконки, которые раньше были только в ICONS_K
 });
 
 test('сопоставление рас указывает на существующие иконки', () => {
-  const src = fs.readFileSync('static/modules.js', 'utf8');
+  const src = fs.readFileSync('static/core/modules.js', 'utf8');
   const block = src.match(/const RACE_ICONS = \{([^}]*)\}/);
   assert.ok(block, 'RACE_ICONS объявлен');
   const values = [...block[1].matchAll(/:\s*'([a-z]+)'/g)].map(m => m[1]);
@@ -29,6 +29,6 @@ test('сопоставление рас указывает на существу
 });
 
 test('modules.js не держит отдельный список иконок', () => {
-  const src = fs.readFileSync('static/modules.js', 'utf8');
+  const src = fs.readFileSync('static/core/modules.js', 'utf8');
   assert.ok(src.includes('window.ICON_NAMES'), 'ICONS_KNOWN берёт список из common.js');
 });

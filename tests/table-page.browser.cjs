@@ -9,13 +9,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-const SCRIPTS = ['common', 'nav', 'access', 'asset-kinds', 'table-model', 'table-page'];
+const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/asset-kinds', 'table/table-model', 'table/table-page'];
 
-// Права берём из static/access.js — того же модуля, что и страница.
+// Права берём из static/core/access.js — того же модуля, что и страница.
 function accessModule() {
   const ctx = { window: {} };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync('static/access.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync('static/core/access.js', 'utf8'), ctx);
   return ctx.window.Access;
 }
 const Access = accessModule();
@@ -75,7 +75,7 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
     if (!url.pathname.startsWith('/api/')) {
       return route.fulfill({
         contentType: 'text/html',
-        body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/nav.css"><div id="app"></div>' +
+        body: '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/static/css/style.css"><link rel="stylesheet" href="/static/core/nav.css"><div id="app"></div>' +
           SCRIPTS.map(name => `<script src="/static/${name}.js"></script>`).join(''),
       });
     }

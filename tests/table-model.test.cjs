@@ -8,7 +8,7 @@ const vm = require('node:vm');
 function loadModel() {
   const ctx = { window: {} };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync('static/asset-kinds.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync('static/core/asset-kinds.js', 'utf8'), ctx);
   vm.runInContext(fs.readFileSync('static/table/table-model.js', 'utf8'), ctx);
   return ctx.window.TableModel;
 }
@@ -281,7 +281,7 @@ test('gridCacheCovers: кэш с полями накрывает вьюпорт,
 
 test('table.js/app.js используют модель и больше не ограничивают число карт', () => {
   const table = fs.readFileSync('static/table/table.js', 'utf8');
-  const app = fs.readFileSync('static/app.js', 'utf8');
+  const app = fs.readFileSync('static/pages/app.js', 'utf8');
   assert.ok(table.includes('window.TableModel'), 'table.js берёт слои/карты/линейку из модели');
   assert.equal(table.includes('Заменить текущую карту?'), false, 'карту больше не «заменяют»');
   assert.equal(/find\(i => i\.layer === LAYER\.map\)/.test(table), false, 'нет поиска «первой карты» для fitToMap/тумана');

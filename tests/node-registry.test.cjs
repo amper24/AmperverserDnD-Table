@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {}, console };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/node-menu.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/node-menu.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 const R = ctx.window.NodeRegistry;
 const plain = value => JSON.parse(JSON.stringify(value));
 

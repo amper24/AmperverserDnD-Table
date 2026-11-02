@@ -58,7 +58,7 @@ test('liveList с фильтром: языки для 2024', () => {
 });
 
 test('термины английского вида: состояния переводятся из набора conditions', () => {
-  const src = fs.readFileSync('static/common.js', 'utf8');
+  const src = fs.readFileSync('static/core/common.js', 'utf8');
   assert.ok(!/'Отравленный'\s*:/.test(src), 'в common.js нет словаря состояний');
   assert.ok(!/'Испуганный'\s*:/.test(src));
 });

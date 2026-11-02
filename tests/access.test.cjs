@@ -1,4 +1,4 @@
-// Права UI: матрица роль×возможность в static/access.js и её совпадение с сервером
+// Права UI: матрица роль×возможность в static/core/access.js и её совпадение с сервером
 // (src/domain/access.rs). access.js не трогает DOM и сеть, поэтому проверяется в vm.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,7 +8,7 @@ const vm = require('node:vm');
 function loadAccess() {
   const ctx = { window: {} };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync('static/access.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync('static/core/access.js', 'utf8'), ctx);
   return ctx.window.Access;
 }
 const Access = loadAccess();

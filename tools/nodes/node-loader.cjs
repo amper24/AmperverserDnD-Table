@@ -1,11 +1,11 @@
 // tools/nodes/node-loader.cjs — загрузка скриптов узлов графа механик в node:vm.
-// Порядок: mechanics.js (база) → node-registry.js (база GraphNode + реестр) → файлы static/nodes/*
+// Порядок: mechanics.js (база) → node-registry.js (база GraphNode + реестр) → файлы static/editor/nodes/*
 // (каждая папка — категория, каждый файл — класс узла). Возвращает список загруженных файлов.
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const NODE_DIR = path.join(ROOT, 'static', 'nodes');
+const NODE_DIR = path.join(ROOT, 'static', 'editor', 'nodes');
 
 function nodeFiles() {
   const order = ['data', 'conditions', 'logic', 'flow', 'rules', 'actions', 'groups'];
@@ -20,8 +20,8 @@ function nodeFiles() {
 
 function loadNodes(vm, ctx, extra = []) {
   const scripts = [
-    path.join(ROOT, 'static', 'mechanics.js'),
-    path.join(ROOT, 'static', 'node-registry.js'),
+    path.join(ROOT, 'static', 'editor', 'mechanics.js'),
+    path.join(ROOT, 'static', 'editor', 'node-registry.js'),
     ...nodeFiles(),
     ...extra,
   ];

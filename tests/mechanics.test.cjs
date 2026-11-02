@@ -4,9 +4,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 function node(tag,attrs={},...children){return {tag,attrs,children:children.flat().filter(x=>x!==null&&x!==undefined),classList:{add(){}},append(...more){this.children.push(...more.flat().filter(x=>x!==null&&x!==undefined));}};}
 const ctx={window:{},crypto:require('node:crypto').webcrypto,el:node,toast(){}};vm.createContext(ctx);
 // Шаблоны и стартовые программы читаются из наборов mechanic_templates / mechanic_starters.
-const presetsReady=require('../tools/presets/node-loader.cjs').loadPresets(ctx);vm.runInContext(fs.readFileSync('static/dice.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/mechanics.js','utf8'),ctx);
+const presetsReady=require('../tools/presets/node-loader.cjs').loadPresets(ctx);vm.runInContext(fs.readFileSync('static/core/dice.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/editor/mechanics.js','utf8'),ctx);
 // SRD хранится в графе v2; проверки ниже читают его план исполнения (toLegacy), то есть ту же логику, что редактор.
-vm.runInContext(fs.readFileSync('static/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-params-form.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/node-registry.js','utf8'),ctx);require('../tools/nodes/node-loader.cjs').nodeFiles().forEach(f=>vm.runInContext(fs.readFileSync(f,'utf8'),ctx));vm.runInContext(fs.readFileSync('static/mechanics-graph.js','utf8'),ctx);const M=ctx.window.Mechanics,G=M;
+vm.runInContext(fs.readFileSync('static/core/formulas.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/editor/node-params-form.js','utf8'),ctx);vm.runInContext(fs.readFileSync('static/editor/node-registry.js','utf8'),ctx);require('../tools/nodes/node-loader.cjs').nodeFiles().forEach(f=>vm.runInContext(fs.readFileSync(f,'utf8'),ctx));vm.runInContext(fs.readFileSync('static/editor/mechanics-graph.js','utf8'),ctx);const M=ctx.window.Mechanics,G=M;
 // Данные справочника остаются графом v2; `plan` — его план исполнения для проверок блоков.
 const srd=f=>loadSrd(f).map(e=>e.data?.mechanics?.version===2?{...e,data:{...e.data,plan:JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics)))}}:e);
 const plain=x=>JSON.parse(JSON.stringify(x));

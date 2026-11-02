@@ -8,7 +8,7 @@ const seed = ed => loadSrd(`data_seed/srd_${ed}.json`);
 const ctx = { crypto: require('node:crypto').webcrypto, window: {}, console: { log() {}, warn() {}, error() {} }, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
-for (const f of ['static/dice.js', 'static/formulas.js', 'static/equipment.js', 'static/modules.js', 'static/class-rules.js', 'static/character-builder.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
+for (const f of ['static/core/dice.js', 'static/core/formulas.js', 'static/core/equipment.js', 'static/core/modules.js', 'static/core/class-rules.js', 'static/editors/character-builder.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);
 ctx.window.SKILLS = [['acrobatics', 'Акробатика', 'dex'], ['arcana', 'Магия', 'int'], ['religion', 'Религия', 'int'], ['nature', 'Природа', 'int'], ['athletics', 'Атлетика', 'str']];
 ctx.SKILLS = ctx.window.SKILLS;
 ctx.Modules = ctx.window.Modules;
@@ -46,7 +46,7 @@ test('черта стиля воина 2024 берётся из наборов �
 });
 
 test('в коде сборщика больше нет жёстких ключей выборов класса', () => {
-  const src = fs.readFileSync('static/character-builder.js', 'utf8');
+  const src = fs.readFileSync('static/editors/character-builder.js', 'utf8');
   for (const token of ["ruleChoices.clericOrder === 'thaumaturge'", "classSlug === 'fighter') {\n      const style", "ruleChoices.druidOrder === 'magician'"]) assert.ok(!src.includes(token), token);
 });
 

@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const ctx = { window: {}, console };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles()]) {
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles()]) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
 }
 const R = ctx.window.NodeRegistry;
@@ -56,5 +56,5 @@ test('список NODE_TYPES сервера совпадает с таблиц�
   const server = rustConstants().NODE_TYPES.slice().sort();
   const documented = rowsOf(fs.readFileSync(DOC, 'utf8')).map(row => row.type).sort();
   assert.deepEqual(server, documented, 'src/domain/mechanics_graph.rs NODE_TYPES = docs/node-system-v3.md');
-  assert.deepEqual(server, Object.keys(R.NODE_DEFS).sort(), 'src/domain/mechanics_graph.rs NODE_TYPES = static/node-registry.js');
+  assert.deepEqual(server, Object.keys(R.NODE_DEFS).sort(), 'src/domain/mechanics_graph.rs NODE_TYPES = static/editor/node-registry.js');
 });

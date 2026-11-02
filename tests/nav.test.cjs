@@ -1,4 +1,4 @@
-// Единая навигация: чистые пункты меню (static/nav.js) — состав, активный раздел
+// Единая навигация: чистые пункты меню (static/core/nav.js) — состав, активный раздел
 // по location.pathname, адрес «Стола» и отсутствие вмешательства в history API.
 // nav.js не трогает DOM до вызова header()/menu(), поэтому грузится в vm.
 const { test } = require('node:test');
@@ -9,10 +9,10 @@ const vm = require('node:vm');
 function loadNav() {
   const ctx = { window: {}, document: {}, console, location: { pathname: '/' } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync('static/common.js', 'utf8'), ctx, { filename: 'static/common.js' });
+  vm.runInContext(fs.readFileSync('static/core/common.js', 'utf8'), ctx, { filename: 'static/core/common.js' });
   // Хранилище последней открытой кампании (в браузере — LS из common.js).
   ctx.window.LS = { getItem: key => (ctx.lastCampaign && key === 'et-last-campaign' ? ctx.lastCampaign : null) };
-  vm.runInContext(fs.readFileSync('static/nav.js', 'utf8'), ctx, { filename: 'static/nav.js' });
+  vm.runInContext(fs.readFileSync('static/core/nav.js', 'utf8'), ctx, { filename: 'static/core/nav.js' });
   return { Nav: ctx.window.Nav, ctx };
 }
 const { Nav, ctx } = loadNav();
@@ -37,8 +37,8 @@ test('пункты меню: шесть штук, «Главная» — лог�
   for (const item of plain(Nav.ITEMS)) assert.ok(ctx.window.ICON_NAMES.includes(item.icon), `иконка ${item.icon}`);
   // Подписи пунктов совпадают с теми, что видят страницы из HTML-разметки.
   const index = fs.readFileSync('static/index.html', 'utf8');
-  assert.match(index, /\/static\/nav\.js/, 'index.html подключает nav.js');
-  assert.match(index, /\/static\/nav\.css/, 'index.html подключает nav.css');
+  assert.match(index, /\/static\/core\/nav\.js/, 'index.html подключает nav.js');
+  assert.match(index, /\/static\/core\/nav\.css/, 'index.html подключает nav.css');
 });
 
 test('активный пункт по pathname: главная, кампании, персонажи, справочник, стол, профиль', () => {
@@ -85,7 +85,7 @@ test('«Стол» ведёт на стол кампании: /table/:cid, /c/:c
 });
 
 test('nav.js только рисует ссылки и не вмешивается в роутинг', () => {
-  const src = fs.readFileSync('static/nav.js', 'utf8');
+  const src = fs.readFileSync('static/core/nav.js', 'utf8');
   for (const forbidden of ['history.pushState', 'history.replaceState', 'preventDefault()', 'location.href =']) {
     assert.equal(src.includes(forbidden), false, `nav.js не должен содержать ${forbidden}`);
   }

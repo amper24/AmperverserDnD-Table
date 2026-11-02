@@ -223,7 +223,7 @@ test('механики: используются только узлы, изве
   const ctx = { window: {}, console, crypto: require('node:crypto').webcrypto };
   vm.createContext(ctx);
   // Реестр узлов собирается из видов действий mechanics.js — грузим в том же порядке, что и страница.
-  for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f).split(path.sep).join('/'))])
+  for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => path.relative(ROOT, f).split(path.sep).join('/'))])
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
   const known = new Set(Object.keys(ctx.window.NodeRegistry.NODE_DEFS));
   for (const edition of EDITIONS) {

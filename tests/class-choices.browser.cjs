@@ -10,7 +10,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const browserLaunchOptions = require('./browser-launch.cjs');
 
-const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'modules.js', 'compendium.js', 'class-rules.js', 'character-builder.js', 'builder-dialog.js'];
+const SCRIPTS = ['core/common.js', 'pages/presets.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'core/modules.js', 'pages/compendium.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/builder-dialog.js'];
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => `<script src="/static/${f}"></script>`).join('')}</body></html>`;
 // Каталог — как у сервера: набор SRD плюс собранные из него черты (data_seed/feats_*.json).
 const SEEDS = {

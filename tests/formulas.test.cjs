@@ -1,4 +1,4 @@
-// Движок формул (static/formulas.js): арифметика, переменные из реестра, ошибки и безопасность.
+// Движок формул (static/core/formulas.js): арифметика, переменные из реестра, ошибки и безопасность.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,12 +6,12 @@ const vm = require('node:vm');
 
 const ctx = { window: {} };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/formulas.js', 'utf8'), ctx);
 const F = ctx.window.Formulas;
 // Механики SRD хранятся в графе v2: читаем v1-представление (toLegacy), как редактор.
 const mctx = { window: {}, el: (tag, attrs = {}, ...children) => ({ tag, attrs, children }), toast() {}, crypto: require('node:crypto').webcrypto };
 vm.createContext(mctx);
-for (const f of ['static/dice.js', 'static/formulas.js', 'static/mechanics.js', 'static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), mctx);
+for (const f of ['static/core/dice.js', 'static/core/formulas.js', 'static/editor/mechanics.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), mctx);
 const G = mctx.window.Mechanics;
 const srd = f => JSON.parse(fs.readFileSync(f, 'utf8')).map(e => e.data?.mechanics?.version === 2 ? { ...e, data: { ...e.data, mechanics: JSON.parse(JSON.stringify(G.toLegacy(e.data.mechanics))) } } : e);
 

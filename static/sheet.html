@@ -5,90 +5,90 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Лист персонажа — Edge Tablet</title>
 <script>try{var t=localStorage.getItem("et-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;}catch(e){}</script>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/css/style.css">
 <link rel="stylesheet" href="/static/sheet/sheet-polish.css">
-<link rel="stylesheet" href="/static/nav.css">
+<link rel="stylesheet" href="/static/core/nav.css">
 </head>
 <body>
 <div id="app"></div>
 <!-- Порядок подключения важен: каждый файл создаёт свой window-объект сразу при
      загрузке, поэтому зависимость всегда идёт раньше зависимого (слои 1 → 5). -->
 <!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, словари (SKILLS, ABIL), тема. -->
-<script src="/static/common.js"></script>
+<script src="/static/core/common.js"></script>
 <!-- Единая навигация; в embed=1 (лист поверх стола) шапка не рисуется. -->
-<script src="/static/nav.js"></script>
-<script src="/static/presets.js"></script>
-<script src="/static/presets-editor.js"></script>
+<script src="/static/core/nav.js"></script>
+<script src="/static/pages/presets.js"></script>
+<script src="/static/pages/presets-editor.js"></script>
 <!-- Слой 2 — движки правил: физика/визуализация кубиков, кубики, экипировка, механики. -->
-<script src="/static/dice-physics.js"></script>
-<script src="/static/dice-visual.js"></script>
-<script src="/static/dice.js"></script>
-<script src="/static/formulas.js"></script>
-<script src="/static/equipment.js"></script>
-<script src="/static/mechanics.js"></script>
-<script src="/static/node-params-form.js"></script>
-<script src="/static/node-registry.js"></script>
-<!-- Узлы графа механик: папка — категория, файл — класс узла (static/nodes/). -->
-<script src="/static/nodes/data/number.js"></script>
-<script src="/static/nodes/data/boolean.js"></script>
-<script src="/static/nodes/data/math.js"></script>
-<script src="/static/nodes/data/dice.js"></script>
-<script src="/static/nodes/data/stat.js"></script>
-<script src="/static/nodes/data/combine.js"></script>
-<script src="/static/nodes/data/compare.js"></script>
-<script src="/static/nodes/data/result.js"></script>
-<script src="/static/nodes/data/sheet.js"></script>
-<script src="/static/nodes/data/cast.js"></script>
-<script src="/static/nodes/data/var.js"></script>
-<script src="/static/nodes/data/ref.js"></script>
-<script src="/static/nodes/data/mathfun.js"></script>
-<script src="/static/nodes/data/text.js"></script>
-<script src="/static/nodes/data/textlen.js"></script>
-<script src="/static/nodes/data/textcheck.js"></script>
-<script src="/static/nodes/data/list.js"></script>
-<script src="/static/nodes/data/listget.js"></script>
-<script src="/static/nodes/data/listlen.js"></script>
-<script src="/static/nodes/data/listjoin.js"></script>
-<script src="/static/nodes/conditions/context.js"></script>
-<script src="/static/nodes/conditions/hit.js"></script>
-<script src="/static/nodes/conditions/status.js"></script>
-<script src="/static/nodes/conditions/item.js"></script>
-<script src="/static/nodes/conditions/hp.js"></script>
-<script src="/static/nodes/conditions/slot.js"></script>
-<script src="/static/nodes/logic/op.js"></script>
-<script src="/static/nodes/flow/if.js"></script>
-<script src="/static/nodes/flow/end.js"></script>
-<script src="/static/nodes/rules/value.js"></script>
-<script src="/static/nodes/rules/list.js"></script>
-<script src="/static/nodes/rules/class.js"></script>
-<script src="/static/nodes/rules/manual.js"></script>
-<script src="/static/nodes/actions/program.js"></script>
-<script src="/static/nodes/actions/roll.js"></script>
-<script src="/static/nodes/actions/field.js"></script>
-<script src="/static/nodes/actions/spend.js"></script>
-<script src="/static/nodes/actions/slot.js"></script>
-<script src="/static/nodes/actions/setvar.js"></script>
-<script src="/static/nodes/actions/grant-item.js"></script>
-<script src="/static/nodes/actions/manual.js"></script>
-<script src="/static/nodes/groups/instance.js"></script>
-<script src="/static/nodes/groups/input.js"></script>
-<script src="/static/nodes/groups/output.js"></script>
-<script src="/static/node-menu.js"></script>
-<script src="/static/mechanics-graph.js"></script>
+<script src="/static/core/dice-physics.js"></script>
+<script src="/static/core/dice-visual.js"></script>
+<script src="/static/core/dice.js"></script>
+<script src="/static/core/formulas.js"></script>
+<script src="/static/core/equipment.js"></script>
+<script src="/static/editor/mechanics.js"></script>
+<script src="/static/editor/node-params-form.js"></script>
+<script src="/static/editor/node-registry.js"></script>
+<!-- Узлы графа механик: папка — категория, файл — класс узла (static/editor/nodes/). -->
+<script src="/static/editor/nodes/data/number.js"></script>
+<script src="/static/editor/nodes/data/boolean.js"></script>
+<script src="/static/editor/nodes/data/math.js"></script>
+<script src="/static/editor/nodes/data/dice.js"></script>
+<script src="/static/editor/nodes/data/stat.js"></script>
+<script src="/static/editor/nodes/data/combine.js"></script>
+<script src="/static/editor/nodes/data/compare.js"></script>
+<script src="/static/editor/nodes/data/result.js"></script>
+<script src="/static/editor/nodes/data/sheet.js"></script>
+<script src="/static/editor/nodes/data/cast.js"></script>
+<script src="/static/editor/nodes/data/var.js"></script>
+<script src="/static/editor/nodes/data/ref.js"></script>
+<script src="/static/editor/nodes/data/mathfun.js"></script>
+<script src="/static/editor/nodes/data/text.js"></script>
+<script src="/static/editor/nodes/data/textlen.js"></script>
+<script src="/static/editor/nodes/data/textcheck.js"></script>
+<script src="/static/editor/nodes/data/list.js"></script>
+<script src="/static/editor/nodes/data/listget.js"></script>
+<script src="/static/editor/nodes/data/listlen.js"></script>
+<script src="/static/editor/nodes/data/listjoin.js"></script>
+<script src="/static/editor/nodes/conditions/context.js"></script>
+<script src="/static/editor/nodes/conditions/hit.js"></script>
+<script src="/static/editor/nodes/conditions/status.js"></script>
+<script src="/static/editor/nodes/conditions/item.js"></script>
+<script src="/static/editor/nodes/conditions/hp.js"></script>
+<script src="/static/editor/nodes/conditions/slot.js"></script>
+<script src="/static/editor/nodes/logic/op.js"></script>
+<script src="/static/editor/nodes/flow/if.js"></script>
+<script src="/static/editor/nodes/flow/end.js"></script>
+<script src="/static/editor/nodes/rules/value.js"></script>
+<script src="/static/editor/nodes/rules/list.js"></script>
+<script src="/static/editor/nodes/rules/class.js"></script>
+<script src="/static/editor/nodes/rules/manual.js"></script>
+<script src="/static/editor/nodes/actions/program.js"></script>
+<script src="/static/editor/nodes/actions/roll.js"></script>
+<script src="/static/editor/nodes/actions/field.js"></script>
+<script src="/static/editor/nodes/actions/spend.js"></script>
+<script src="/static/editor/nodes/actions/slot.js"></script>
+<script src="/static/editor/nodes/actions/setvar.js"></script>
+<script src="/static/editor/nodes/actions/grant-item.js"></script>
+<script src="/static/editor/nodes/actions/manual.js"></script>
+<script src="/static/editor/nodes/groups/instance.js"></script>
+<script src="/static/editor/nodes/groups/input.js"></script>
+<script src="/static/editor/nodes/groups/output.js"></script>
+<script src="/static/editor/node-menu.js"></script>
+<script src="/static/editor/mechanics-graph.js"></script>
 <!-- Слой 3 — данные справочника: модели записей и их редактор. -->
-<script src="/static/asset-kinds.js"></script>
-<script src="/static/modules.js"></script>
-<script src="/static/compendium.js"></script>
+<script src="/static/core/asset-kinds.js"></script>
+<script src="/static/core/modules.js"></script>
+<script src="/static/pages/compendium.js"></script>
 <!-- Слой 4 — создание персонажа: правила нужны листу и редактору справочника (мастер-окно здесь не используется). -->
-<script src="/static/class-rules.js"></script>
-<script src="/static/class-editor.js"></script>
-<script src="/static/race-editor.js"></script>
-<script src="/static/background-editor.js"></script>
-<script src="/static/character-builder.js"></script>
+<script src="/static/core/class-rules.js"></script>
+<script src="/static/editors/class-editor.js"></script>
+<script src="/static/editors/race-editor.js"></script>
+<script src="/static/editors/background-editor.js"></script>
+<script src="/static/editors/character-builder.js"></script>
 <!-- Таблицы развития классов: сгенерированные данные (см. tools/srd), не править вручную. -->
 <!-- Слой 5 — страница листа: повышение уровень, правила заклинаний, сам лист. -->
-<script src="/static/levelup.js"></script>
-<script src="/static/spell-rules.js"></script>
+<script src="/static/editors/levelup.js"></script>
+<script src="/static/core/spell-rules.js"></script>
 <!-- Переменные листа: чистые проверки sheet.vars для панели «Переменные…» (без DOM). -->
 <script src="/static/sheet/sheet-vars.js"></script>
 <script src="/static/sheet/sheet.js"></script>

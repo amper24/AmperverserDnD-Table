@@ -1,4 +1,4 @@
-// Регрессия редактора предыстории (static/background-editor.js): чтение/запись записи, узлы графа
+// Регрессия редактора предыстории (static/editors/background-editor.js): чтение/запись записи, узлы графа
 // (rule.list с kind skill_proficiency/skills/proficiencies/languages/feature) и проекция
 // правок в мастера создания персонажа. Скрипт запускается в vm со стабом DOM и наборами данных.
 const { test, before } = require('node:test');
@@ -16,8 +16,8 @@ vm.createContext(ctx);
 
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-const FILES = ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
-  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'background-editor.js'];
+const FILES = ['core/common.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'editor/node-params-form.js', 'editor/node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'editor/mechanics-graph.js', 'core/modules.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/background-editor.js'];
 for (const f of FILES) vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 
 const BE = ctx.window.BackgroundEditor;

@@ -8,8 +8,8 @@ const path = require('node:path');
 
 const ctx = { window: {}, crypto: require('node:crypto').webcrypto, console };
 vm.createContext(ctx);
-for (const file of ['static/common.js', 'static/dice.js', 'static/mechanics.js', 'static/formulas.js', 'static/node-params-form.js',
-  'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) {
+for (const file of ['static/core/common.js', 'static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js',
+  'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), ctx);
 }
 const M = ctx.window.Mechanics;

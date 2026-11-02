@@ -16,8 +16,8 @@ const ctx = {
   SKILLS: [['acrobatics', 'Акробатика', 'dex'], ['stealth', 'Скрытность', 'dex']],
 };
 vm.createContext(ctx);
-for (const file of ['static/dice.js', 'static/mechanics.js', 'static/formulas.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
-for (const file of ['static/node-params-form.js', 'static/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+for (const file of ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+for (const file of ['static/editor/node-params-form.js', 'static/editor/node-registry.js', ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'static/editor/mechanics-graph.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
 const M = ctx.window.Mechanics, R = ctx.window.NodeRegistry;
 const clone = value => JSON.parse(JSON.stringify(value));
 const defaults = type => clone(R.NODE_DEFS[type].defaults || {});

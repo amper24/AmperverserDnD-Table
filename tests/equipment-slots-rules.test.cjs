@@ -10,9 +10,9 @@ const ctx = { window: {}, console, localStorage: { getItem() { return null; }, s
 vm.createContext(ctx);
 const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx);
 before(() => presetsReady);
-vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/formulas.js', 'utf8'), ctx);
-vm.runInContext(fs.readFileSync('static/equipment.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/dice.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/formulas.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/equipment.js', 'utf8'), ctx);
 const E = ctx.window.Equipment;
 const plain = x => JSON.parse(JSON.stringify(x));
 const item = (name, props = {}) => E.normalize({ name, type: 'gear', qty: 1, ...props });

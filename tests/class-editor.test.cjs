@@ -1,4 +1,4 @@
-// Регрессия редактора класса (static/class-editor.js): чтение/запись данных записи,
+// Регрессия редактора класса (static/editors/class-editor.js): чтение/запись данных записи,
 // текст стартового снаряжения (совместимый с парсером мастера создания) и навыки как
 // записи справочника. Скрипт запускается в vm с минимальным DOM-стабом и наборами данных.
 const { test, before } = require('node:test');
@@ -18,8 +18,8 @@ const presetsReady = require('../tools/presets/node-loader.cjs').loadPresets(ctx
 before(() => presetsReady);
 // presets.js не перезапускаем: его уже загрузил node-loader (иначе реестр пуст).
 // Графовый слой: правила класса живут в узлах (rule.*), и мастер создания читает их движком узлов.
-for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
-  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
+for (const f of ['core/common.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'editor/node-params-form.js', 'editor/node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'editor/mechanics-graph.js', 'core/modules.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/class-editor.js'])
   vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), ctx, { filename: f });
 const CE = ctx.window.ClassEditor;
 // Объекты из vm — другого окружения: сравнение идёт через JSON.
@@ -313,8 +313,8 @@ vm.createContext(domCtx);
 const domPresets = require('../tools/presets/node-loader.cjs').loadPresets(domCtx);
 // presets.js уже загружен node-loader — не перезапускаем.
 // Графовый слой нужен и здесь: редактор пишет правила в узлы, и граф должен остаться валидным.
-for (const f of ['common.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js',
-  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'mechanics-graph.js', 'modules.js', 'class-rules.js', 'character-builder.js', 'class-editor.js'])
+for (const f of ['core/common.js', 'core/dice.js', 'core/formulas.js', 'core/equipment.js', 'editor/mechanics.js', 'editor/node-params-form.js', 'editor/node-registry.js',
+  ...require('../tools/nodes/node-loader.cjs').nodeFiles(), 'editor/mechanics-graph.js', 'core/modules.js', 'core/class-rules.js', 'editors/character-builder.js', 'editors/class-editor.js'])
   vm.runInContext(fs.readFileSync(path.isAbsolute(f) ? f : 'static/' + f, 'utf8'), domCtx, { filename: f });
 
 const walk = (node, fn) => { fn(node); for (const c of node.children || []) walk(c, fn); };
@@ -429,7 +429,7 @@ test('редактор класса открывается: все раздел�
 
 // ---------- Место редактора: конструктор класса живёт в окне редактора записи ----------
 test('класс правится в окне редактора записи, отдельных страниц редактора нет', () => {
-  const compendium = fs.readFileSync('static/compendium.js', 'utf8');
+  const compendium = fs.readFileSync('static/pages/compendium.js', 'utf8');
   // Карточка открывает окно редактора записи, а внутри для класса — конструктор.
   assert.match(compendium, /const EDITOR_LABELS = \{ class: 'Редактор класса', race: 'Редактор расы', background: 'Редактор предыстории' \}/,
     'кнопка конструктора названа своим именем');
@@ -443,10 +443,10 @@ test('класс правится в окне редактора записи, �
     'результат конструктора сохраняется в саму запись справочника');
   // Создание записи и мастерская наборов: тот же путь.
   assert.match(compendium, /function createRecord\(\)[\s\S]{0,600}editEntry\(null, \{/, '«+ Своя запись» открывает то же окно');
-  assert.match(fs.readFileSync('static/packs.js', 'utf8'), /C\(\)\.editEntry\(null, \{ packId: pid, category/, '«+ Запись» в наборе открывает то же окно');
+  assert.match(fs.readFileSync('static/pages/packs.js', 'utf8'), /C\(\)\.editEntry\(null, \{ packId: pid, category/, '«+ Запись» в наборе открывает то же окно');
   // Отдельных страниц редактора в приложении нет.
   assert.equal(fs.existsSync('static/editor-page.js'), false, 'страница редактора записи удалена');
-  assert.doesNotMatch(fs.readFileSync('static/app.js', 'utf8'), /class-editor|EditorPage/, 'в маршрутах нет страницы редактора');
+  assert.doesNotMatch(fs.readFileSync('static/pages/app.js', 'utf8'), /class-editor|EditorPage/, 'в маршрутах нет страницы редактора');
   for (const file of ['static/index.html', 'static/sheet.html'])
     assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /editor-page\.js/, `${file}: страница редактора не подключается`);
 });

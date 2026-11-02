@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const ctx = { window: {} }; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/class-rules.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/core/class-rules.js', 'utf8'), ctx);
 const R = ctx.window.ClassRules;
 const ready = require('../tools/presets/node-loader.cjs').loadPresets(ctx).then(() => R.refresh());
 const srd = (name, extra = {}) => ({ name, data: { name_en: name, ...extra } });

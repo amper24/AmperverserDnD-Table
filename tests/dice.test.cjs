@@ -1,12 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 const context = { window: {}, crypto: require('node:crypto').webcrypto };
 vm.createContext(context);
-vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/core/dice.js', 'utf8'), context);
 const D = context.window.DiceEngine;
 const plain = v => JSON.parse(JSON.stringify(v));
+// Все файлы static/ рекурсивно: проверки ниже не зависят от раскладки каталогов.
+const staticFiles = (dir = 'static') => fs.readdirSync(dir, { withFileTypes: true })
+  .flatMap(e => e.isDirectory() ? staticFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]);
 
 test('strict grammar and matching server bounds', () => {
   for (const expr of ['', '+', 'd20+', 'd20++5', 'd20--2', '2garbage', '0d6', 'd0', '101d6', '60d6+41d6', '2d6kh0', '2d6kh3', 'd1001', '1000001', '999999999999999999999999d6', '1.5d6']) assert.throws(() => D.parse(expr), undefined, expr);
@@ -109,7 +113,7 @@ test('accepted local and server results update the journal and trigger the visua
     setTimeout(fn, delay) { const timer = setTimeout(fn, delay); if (delay >= 8000) timer.unref?.(); return timer; }, clearTimeout,
   };
   vm.createContext(browser);
-  vm.runInContext(fs.readFileSync('static/dice.js', 'utf8'), browser);
+  vm.runInContext(fs.readFileSync('static/core/dice.js', 'utf8'), browser);
   const engine = browser.window.DiceEngine;
   // В этой изолированной проверке визуализатор подменён шпионом: он получает только готовые результаты.
   const ALLOWED_ROOTS = ['.dice-journal', '.dice-dock', '.dice-log-button'];
@@ -150,10 +154,10 @@ test('accepted local and server results update the journal and trigger the visua
 
 test('visualization is separated from the secure result engine', () => {
   for (const name of ['animate', 'dismiss', 'mesh', 'rotate', 'faceLabels', 'faceAngles']) assert.equal(D[name], undefined, `${name} is not part of the result API`);
-  const js = fs.readFileSync('static/dice.js', 'utf8');
-  const physics = fs.readFileSync('static/dice-physics.js', 'utf8');
-  const visual = fs.readFileSync('static/dice-visual.js', 'utf8');
-  const css = fs.readFileSync('static/style.css', 'utf8');
+  const js = fs.readFileSync('static/core/dice.js', 'utf8');
+  const physics = fs.readFileSync('static/core/dice-physics.js', 'utf8');
+  const visual = fs.readFileSync('static/core/dice-visual.js', 'utf8');
+  const css = fs.readFileSync('static/css/style.css', 'utf8');
   assert.match(js, /DiceVisualizer\?\.show\?\.\(payload\)/);
   assert.match(physics, /die\.orientation = \[\.\.\.die\.target\]/, 'the finished face is locked to the accepted result');
   assert.match(visual, /MAX_DICE = 32/);
@@ -166,10 +170,10 @@ test('visualization is separated from the secure result engine', () => {
 // которая не перехватывает клики и не создаёт отдельную карточку на каждый бросок.
 test('shipped dice visualization is single, transparent and click-through', () => {
   const forbidden = /dice-global|dice-stage|dice-scene|dice-burst|dice-canvas|dice-overlay|dice-fullscreen|roll-overlay|roll-banner|roll-stage|roll-scene|result-overlay|result-banner/i;
-  for (const file of fs.readdirSync('static').sort().filter(f => fs.statSync('static/' + f).isFile())) {
-    assert.doesNotMatch(fs.readFileSync('static/' + file, 'utf8'), forbidden, `${file} must not ship a blocking result overlay`);
+  for (const file of staticFiles()) {
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), forbidden, `${file} must not ship a blocking result overlay`);
   }
-  const css = fs.readFileSync('static/style.css', 'utf8');
+  const css = fs.readFileSync('static/css/style.css', 'utf8');
   for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (!/dice|roll/i.test(selector)) continue;
     if (selector.includes('.dice-visual-root') && /inset:\s*0/.test(body)) {

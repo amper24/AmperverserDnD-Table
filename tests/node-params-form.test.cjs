@@ -9,7 +9,7 @@ function el(tag, attrs = {}, ...children) {
 }
 const ctx = { window: {}, el, crypto: require('node:crypto').webcrypto };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('static/node-params-form.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('static/editor/node-params-form.js', 'utf8'), ctx);
 const NF = ctx.window.NodeForm;
 const plain = value => JSON.parse(JSON.stringify(value));
 // Значения из vm-контекста имеют другой прототип: сравниваем через JSON-копию.
