@@ -55,12 +55,6 @@ window.Lobby = {
         window.open(withTok('/sheet/' + c.id), '_blank');
         reloadPage();
       };
-      const joinCampaign = async () => {
-        const raw = await prompt2('Код или ссылка приглашения', 'например, /join/abc123');
-        if (!raw) return;
-        const code = String(raw).trim().split(/[\s/]+/).filter(Boolean).pop();
-        if (code) go('/join/' + encodeURIComponent(code));
-      };
       const quick = (label, ico, cls, fn) => el('button', {
         class: cls, type: 'button', onclick: () => run(fn),
       }, icon(ico, 16), ' ', label);
@@ -70,8 +64,7 @@ window.Lobby = {
           el('p', { class: 'muted' }, 'Кампании, персонажи и быстрый старт — всё с главной страницы.')),
         el('div', { class: 'home-quick' },
           quick('Новая кампания', 'plus', 'primary', newCampaign),
-          quick('Новый персонаж', 'user', '', newCharacter),
-          quick('Присоединиться по коду', 'link', '', joinCampaign))));
+          quick('Новый персонаж', 'user', '', newCharacter))));
 
       // ---------- секции и их состояния ----------
       const campsBox = el('div', { class: 'home-cards', 'data-sec': 'campaigns' });
@@ -157,9 +150,8 @@ window.Lobby = {
 
         if (!camps) done(campsBox, [errorCard(campsRes.reason?.message, load)]);
         else if (!camps.length) done(campsBox, [emptyCard('Пока нет кампаний',
-          'Создайте кампанию и отправьте игрокам ссылку-приглашение — или присоединитесь по коду от мастера.',
-          [el('button', { class: 'primary', type: 'button', onclick: () => run(newCampaign) }, icon('plus', 16), ' Создать кампанию'),
-            el('button', { type: 'button', onclick: () => run(joinCampaign) }, 'Присоединиться по коду')])]);
+          'Создайте кампанию и отправьте игрокам ссылку-приглашение — присоединиться можно по ней.',
+          [el('button', { class: 'primary', type: 'button', onclick: () => run(newCampaign) }, icon('plus', 16), ' Создать кампанию')])]);
         else {
           const cards = shown.map((c, i) => {
             const [detail, scenes] = details[i] || [];
@@ -352,7 +344,7 @@ window.Lobby = {
       const list = await API.get('/api/campaigns');
       wrap.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Кампании'),
         el('button', { class: 'primary', style: 'flex:0;white-space:nowrap', onclick: async () => { const n = await prompt2('Название кампании', 'Затерянные рудники'); if (n) { const c = await API.post('/api/campaigns', { name: n }); go('/c/' + c.id); } } }, 'Новая кампания'),
-        el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { const c = await prompt2('Код или ссылка приглашения'); if (c) go('/join/' + c.split('/').pop()); } }, 'Присоединиться по ссылке')));
+        el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { const c = await prompt2('Ссылка-приглашение', 'например, https://…/join/abc123'); if (c) go('/join/' + String(c).trim().split('/').filter(Boolean).pop()); } }, 'Присоединиться по ссылке')));
       const g = el('div', { class: 'grid' });
       if (!list.length) g.append(el('p', { class: 'muted' }, 'Пока нет кампаний. Создайте свою или присоединитесь по ссылке-приглашению.'));
       for (const c of list) g.append(el('div', { class: 'card camp-card', onclick: () => go('/c/' + c.id) }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, c.name), el('span', { class: 'badge ' + c.role }, c.role === 'gm' ? 'мастер' : 'игрок')), el('p', { class: 'muted' }, c.description || 'Без описания'), el('div', { class: 'muted small' }, `${c.members_count || c.members?.length || ''} участников`.replace(/^ /, ''))));
