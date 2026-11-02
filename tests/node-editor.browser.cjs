@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const { EDITOR_MODULES: MODULES } = require('./browser-fixture.cjs');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());

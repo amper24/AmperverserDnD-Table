@@ -4,13 +4,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 (async()=>{
-  let launch={headless:true};if(process.env.SPARTICUZ){const pkg=require('@sparticuz/chromium'),bin=pkg.default||pkg;launch={...launch,args:bin.args,executablePath:await bin.executablePath()};}
-  const browser=await chromium.launch(launch);
+  const browser=await chromium.launch(await require('./browser-launch.cjs')());
   try{
     const page=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'reduce'}), errors=[];page.on('pageerror',e=>errors.push(e.message));
     let sheet={_revision:0,name:'Следопыт',level:1,race:'Эльф',class:'Воин',abilities:{str:12,dex:16,con:14,int:10,wis:13,cha:8},skills:[],expertise:[],saving_throws:[],proficiency_bonus:2,hp:{current:12,max:12,temp:0,hit_dice:'1d10'},ac:13,speed:30,death_saves:{success:0,failure:0},conditions:[],auto_armor:true,inventory:[
       {uid:'bow',name:'Длинный лук',type:'weapon',qty:1,properties:['Двуручное','Боеприпас'],actions:[{name:'Атака',kind:'attack',roll:'d20+@atk_dex'},{name:'Урон',kind:'damage',roll:'d8+@dex'}]},
-      {uid:'arrows',name:'Стрелы',type:'ammo',qty:3,actions:[]}
+      {uid:'arrows',name:'Стрелы',type:'ammo',qty:3,actions:[]},
+      // Второй предмет с графом v3: расход зарядов — узел action.spend. На нём проверяется
+      // редактор механик («Ресурс» / «Включено»), не трогая проверки лука и связки действий.
+      {uid:'wand',name:'Жезл стрел',type:'magic',qty:1,actions:[],mechanics:{version:2,origin:'test',graph:{nodes:[
+        {id:'prog',type:'action.program',params:{program_id:'use',name:'Залп',trigger:'use'},position:{x:40,y:40}},
+        {id:'spend',type:'action.spend',params:{block_id:'spend',enabled:true,resource:'charges',source:'self',amount:1,trigger:'use'},position:{x:280,y:40}},
+        {id:'end',type:'flow.end',params:{},position:{x:520,y:40}}
+      ],links:[
+        {from:{node:'prog',socket:'exec'},to:{node:'spend',socket:'exec'}},
+        {from:{node:'spend',socket:'exec'},to:{node:'end',socket:'exec'}}
+      ],frames:[],groups:[]}}}
     ]}; const ops=[]; let concurrentSave = false;
     const character=()=>({id:'hero',name:sheet.name,owner_id:'user',revision:sheet._revision,sheet:JSON.parse(JSON.stringify(sheet))});
     await page.route('https://equipment.test/**',async route=>{
@@ -52,8 +61,15 @@ const assert = require('node:assert/strict');
     await page.locator('.roll-mode-menu').getByRole('menuitem', { name: 'С помехой', exact: true }).click();
     assert.equal(await page.evaluate(() => rollMessages[1].expr), '2d20kl1+1');
     const skillRow = page.locator('.sheet-proficiencies .skills').nth(1).locator(':scope > div').first();
-    await skillRow.click({ button: 'right' });
-    await page.locator('.roll-mode-menu').getByRole('menuitem', { name: 'Обычный бросок', exact: true }).click();
+    // Третий режим проверяем на строке навыка. Клик мышью Playwright сам прокручивает
+    // страницу, а попап «Режим броска» закрывается на любом scroll — получалась гонка:
+    // отложенный scroll закрывал попап сразу после открытия (первый и второй режимы выше
+    // проверены настоящим ПКМ). Поэтому здесь открываем меню и сразу выбираем первый пункт
+    // в одной задаче — ровно так же, как обработчик строки делает это по клику.
+    await skillRow.evaluate(node => {
+      node.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 440 }));
+      document.querySelector('.roll-mode-menu [role="menuitem"]').click();
+    });
     assert.equal(await page.evaluate(() => rollMessages[2].expr), 'd20+3');
     await abilityCheck.click();
     assert.equal(await page.evaluate(() => rollMessages[3].expr), 'd20+1', 'left-click remains an ordinary roll');
@@ -79,7 +95,7 @@ const assert = require('node:assert/strict');
 
     await page.getByLabel('Основная рука',{exact:true}).selectOption('bow');
     await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===1&&!document.querySelector('.sheet').inert);
-    assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,2);
+    assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,3);
     await page.locator('[data-uid="bow"] .act-btn.all').evaluate(b=>{b.click();b.click();});
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'));
     assert.equal(ops.filter(x=>x.op==='use').length,1);assert.equal(sheet.inventory[1].qty,2);
@@ -90,13 +106,14 @@ const assert = require('node:assert/strict');
     await page.waitForTimeout(300);
     assert.equal(ops.at(-1).op,'equip');assert.equal(ops.at(-1).item_uid,'bow');assert.equal(ops.at(-1).slot,'main','одна рука — одноручный хват');
     await page.keyboard.press('Escape');
-    await page.locator('[data-uid="bow"] .mcard-head').click();
-    await page.locator('[data-uid="bow"]').getByRole('button',{name:'Изменить',exact:true}).click();
-    // Расход ресурса — узел action.spend на карточке графа (поле «Ресурс»); выключаем его «Включено».
-    const consumeCard = page.locator('.graph-node').filter({ has: page.getByLabel('Ресурс', { exact: true }) });
+    await page.locator('[data-uid="wand"] .mcard-head').click();
+    await page.locator('[data-uid="wand"]').getByRole('button',{name:'Изменить',exact:true}).click();
+    // Карточку узла ищем по заголовку «Расход ресурса»: поле ресурса — select без <label>,
+    // поэтому getByLabel('Ресурс') его не находит, а чекбокс «Включено» — находится.
+    const consumeCard = page.locator('.graph-node').filter({ hasText: 'Расход ресурса' });
     await consumeCard.getByLabel('Включено', { exact: true }).uncheck();
     await page.getByRole('button',{name:'Сохранить',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('выключен'));
+    await page.waitForFunction(()=>document.querySelector('[data-uid="wand"] .item-resource').textContent.includes('выключен'));
     assert.ok(await page.locator('.equipment-hands').count());
     await page.waitForTimeout(600);
     const before = ops.length; concurrentSave = true;

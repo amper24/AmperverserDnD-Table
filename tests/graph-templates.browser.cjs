@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());

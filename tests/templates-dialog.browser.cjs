@@ -4,7 +4,9 @@ const { chromium } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
+// Число встроенных стартов берём из набора: UI обязан показывать ровно столько (см. tests/docs-numbers.test.cjs).
+const STARTERS = require('../static/presets/graph-starters.json').items.length;
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -62,10 +64,10 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.match(await dialog.locator('.templates-subtitle').innerText(), /Выпить зелье/, 'подзаголовок с именем действия');
 
     // 2. Вкладки со счётчиками и готовые карточки с мини-превью.
-    assert.equal(await tabs('ready').locator('.templates-count').innerText(), '13', 'тринадцать готовых шаблонов');
+    assert.equal(await tabs('ready').locator('.templates-count').innerText(), String(STARTERS), 'все встроенные старты в списке');
     assert.equal(await tabs('mine').locator('.templates-count').innerText(), '0', 'своих пока нет');
     assert.equal(await tabs('groups').locator('.templates-count').innerText(), '0', 'групп пока нет');
-    assert.equal(await cards().count(), 13, 'карточки готовых шаблонов');
+    assert.equal(await cards().count(), STARTERS, 'карточки встроенных стартов');
     const speed = page.locator('.templates-card[data-template-id="speed-level"]');
     assert.equal(await speed.locator('.templates-preview-svg').count(), 1, 'у карточки есть SVG-превью');
     assert.equal(await speed.locator('.templates-preview-node').count(), 2, 'в превью две рамки узлов');
@@ -86,7 +88,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal(await cards().count(), 0, 'ничего не найдено');
     assert.equal(await dialog.locator('[data-templates-empty]').innerText(), 'Ничего не найдено по запросу.', 'текст пустого поиска');
     await search.fill('');
-    assert.equal(await cards().count(), 13, 'фильтр сброшен');
+    assert.equal(await cards().count(), STARTERS, 'фильтр сброшен');
 
     // 4. Вкладки «Мои» и «Группы»: пустые подсказки и переключение стрелками.
     await tabs('mine').click();
@@ -153,7 +155,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
 
     // 10. Вставка своего шаблона в новое действие и отмена вставки.
     await page.locator('.node-toolbar button.node-add[title="action.program"]').click();
-    assert.equal(await page.locator('.node-starters button').count(), 14, 'быстрые стартеры пустого действия: 13 встроенных и свой шаблон');
+    assert.equal(await page.locator('.node-starters button').count(), STARTERS + 1, 'быстрые стартеры пустого действия: все встроенные и свой шаблон');
     // В пустом действии сохранять нечего: кнопка недоступна, причина написана в форме.
     await page.getByRole('button', { name: 'Сохранить как шаблон', exact: true }).click();
     await dialog.waitFor();

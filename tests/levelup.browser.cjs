@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const browserLaunchOptions = require('./browser-launch.cjs');
 
 const SCRIPTS = ['common.js', 'presets.js', 'dice.js', 'formulas.js', 'equipment.js', 'mechanics.js', 'node-params-form.js', 'node-registry.js', 'node-menu.js', 'mechanics-graph.js', 'modules.js', 'compendium.js', 'class-rules.js', 'levelup.js'];
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"></head><body>${SCRIPTS.map(f => f === 'node-registry.js' ? `<script src="/static/${f}"></script>` + NODE_SCRIPTS : `<script src="/static/${f}"></script>`).join('')}</body></html>`;
 // Каталог — как у сервера: набор SRD плюс собранные из него черты (data_seed/feats_2014.json).
 const SEED = loadSrd('data_seed/srd_2014.json').concat(loadSrd('data_seed/feats_2014.json'));

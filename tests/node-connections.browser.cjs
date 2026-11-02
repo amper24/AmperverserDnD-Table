@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const { EDITOR_MODULES: MODULES } = require('./browser-fixture.cjs');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -76,17 +76,20 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.equal((await links()).length, linksBefore, 'Undo убрал и провод');
     assert.equal(await page.locator(`.graph-node[data-node-id="${contextNode.id}"]`).count(), 0, 'узел исчез с холста');
 
-    // 3. condition.hit в «к этой ноде» есть, но валидация разрешает его только ко входу «Если»:
-    // узел добавляется без провода, статус объясняет причину — правило connectionError не нарушено.
+    // 3. condition.hit в «к этой ноде» подключается к БЛОКУ действия: по правилам
+    // (docs/node-system-v3.md, «Условия») он допустим ко входу «Если» ИЛИ напрямую ко входу
+    // `condition` блока — второй вариант компилируется в `when: hit`. Провод создаётся,
+    // а не отклоняется; ограничение «только ко входу condition» проверяют
+    // tests/condition-nodes.test.cjs для условий листа.
     const linksBeforeHit = await links();
     await openNodeMenu('roll');
     await hoverSection('Подключить к этой ноде');
     await visibleItem('Условие · Попадание атаки').click();
     const hitNode = (await graph()).nodes.at(-1);
     assert.equal(hitNode.type, 'condition.hit', 'условие попадания добавлено');
-    assert.deepEqual(await links(), linksBeforeHit, 'запрещённый провод не создан');
-    assert.match(await statusText(), /добавлен без провода/, 'статус объясняет отсутствие провода');
-    assert.match(await statusText(), /Если/, 'причина — ограничение «Попадания атаки»');
+    assert.ok((await links()).includes(`${hitNode.id}.value->roll.condition`), 'провод value → condition создан для condition.hit');
+    assert.equal((await links()).length, linksBeforeHit.length + 1, 'добавлен ровно один провод');
+    assert.match(await statusText(), /добавлен и подключён/, 'статус подтверждает подключение');
     await undo();
 
     // 4. ПКМ по «Началу действия»: секции «к этой ноде» нет (у начала нет входов), «от этой ноды» есть.
@@ -124,7 +127,7 @@ const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f
     assert.ok(await nodeCount() > nodesBeforeDup, 'дублирование из меню узла работает');
 
     assert.deepEqual(errors, [], 'нет ошибок страницы');
-    console.log('PASS node connections browser: sections, socket pairs, bold title, condition first, node+wire, Undo both, hit restricted without wire, program section, exec priority, busy input, old items');
+    console.log('PASS node connections browser: sections, socket pairs, bold title, condition first, node+wire, Undo both, hit wired to action condition, program section, exec priority, busy input, old items');
   } finally {
     await browser.close();
   }

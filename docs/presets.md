@@ -8,16 +8,29 @@
 | Файл | Вид набора | Что внутри |
 |---|---|---|
 | `static/presets/index.json` | — | список встроенных наборов (`{"sets": ["graph-starters.json", ...]}`) |
-| `static/presets/graph-starters.json` | `graph_starter` | готовые графы для пустого редактора |
+| `static/presets/graph-starters.json` | `graph_starter` | 19 готовых графов для пустого редактора (16 с `attach: true` вставляются в действие) |
 | — (пользовательский слой) | `graph_group` | группы нод, сохранённые из редактора графа (вход/выход, узлы, связи) |
-| `static/presets/item-presets.json` | `item_preset` | основы «Что создаём?» для предмета |
-| `static/presets/spell-presets.json` | `spell_preset` | основы «Что создаём?» для заклинания |
-| `static/presets/class-progression-2014.json`, `…-2024.json` | `class_progression` | таблица развития каждого класса (ключ — slug) |
+| `static/presets/mechanic-templates.json` | `mechanic_templates` | 46 шаблонов механик для библиотеки предмета/заклинания/умения (группы `table.group`: Бой 13, Лечение 7, Предметы 4, Умения и эффекты 10, Персонаж 12) |
+| `static/presets/mechanic-starters.json` | `mechanic_starters` | 3 полных графа создания персонажа: раса, класс, предыстория |
+| `static/presets/item-presets.json` | `item_preset` | 6 основ «Что создаём?» для предмета |
+| `static/presets/spell-presets.json` | `spell_preset` | 5 основ «Что создаём?» для заклинания |
+| `static/presets/class-progression-2014.json`, `…-2024.json` | `class_progression` | таблица развития каждого класса (ключ — slug), по 12 классов на редакцию |
 | `static/presets/multiclass-slots-2014.json`, `…-2024.json` | `multiclass_slots` | общие ячейки заклинателей по уровню (элемент `multiclass`) |
 | `static/presets/class-rules-2014.json`, `…-2024.json` | `class_rules` | правила класса (ключ — slug): `ru`, `color`, `caster`, `multiclass`, `weapon_mastery` (2024), `legacy_unarmored` |
+| `static/presets/race-rules-2014.json`, `…-2024.json` | `race_rules` | варианты выбора расы (навыки, инструменты, языки, хит-кость): 6 и 11 элементов |
 | `static/presets/feat-rules-2014.json`, `…-2024.json` | `feat_rules` | правила черт по названию `name_en`: `groups` (`style` — боевой стиль, `asi` — служебная «Увеличение характеристик», `epic` — эпический дар), `ability_increase` (`amount`, `max`, `abilities`), `requires` (`level`, `feature_contains`, `ability`) |
+| `static/presets/feature-rules-2014.json`, `…-2024.json` | `feature_rules` | правила умений классов и подклассов: 14 и 13 элементов |
+| `static/presets/equipment-text-rules.json` | `equipment_text_rules` | разбор текста стартового снаряжения (27 правил) |
+| `static/presets/equipment-pick-rules.json` | `equipment_pick_rules` | выбор предмета при разборе снаряжения (28 правил) |
+| `static/presets/conditions.json` | `conditions` | 16 состояний: подписи, тексты и порядок |
+| `static/presets/spell-schools.json` | `spell_schools` | 8 школ заклинаний |
+| `static/presets/languages.json` | `languages` | 17 языков справочника |
+| `static/presets/enemy-types.json` | `enemy_types` | 14 типов врагов для монстров |
+| `static/presets/block-defaults.json` | `block_defaults` | 12 умолчаний блоков (например, кость броска по умолчанию) |
 
 Таблицы развития генерирует `tools/srd/build_progression.py` (из OmnisGM-Rules, CC BY 4.0).
+Все эти файлы перечислены в `index.json` и грузятся реестром `Presets`; тест `tests/presets.test.cjs`
+ловит набор, забытый в `index.json`.
 
 ## Формат набора
 
@@ -62,7 +75,7 @@
 У записей классов SRD таблица также записана в узел `rule.class` (kind `class_progression`) (`tools/srd/add_class_progression_nodes.cjs`).
 Мастер уровней берёт таблицу в порядке: данные записи → узел графа → набор `class_progression`.
 Правила класса (`class_rules`) тоже записаны в узел `rule.class` (kind `class_rules`) той же записи (без полей `ru`, `color`, `legacy_unarmored`). Порядок чтения: блок `data.caster` (старые записи) → узел графа → набор `class_rules`.
-Набор нужен записям без узла: старым снимкам и базам, где правка сохранена (`seed.rs` не перезаписывает изменённые строки).
+Набор нужен записям без узла: пользовательским записям, homebrew и наборам, где узел ещё не создан. Базовая часть справочника при смене вшитых файлов заменяется целиком (`src/seed.rs`), поэтому у записей SRD узел всегда есть; набор остаётся запасным путём для чтения старых и чужих данных.
 
 ## Выборы класса (`class_rules` → `choices`)
 

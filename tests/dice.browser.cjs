@@ -6,9 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 (async () => {
-  let options = { headless: true };
-  if (process.env.SPARTICUZ) { const pkg = require('@sparticuz/chromium'); const binary = pkg.default || pkg; options = { ...options, args: binary.args, executablePath: await binary.executablePath() }; }
-  const browser = await chromium.launch(options);
+  const browser = await chromium.launch(await require('./browser-launch.cjs')());
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errors = []; page.on('pageerror', e => errors.push(e.message));

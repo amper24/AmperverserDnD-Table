@@ -5,8 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const { EDITOR_MODULES: MODULES } = require('./browser-fixture.cjs');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
+// Встроенных стартов столько же, сколько элементов в наборе: число не хардкодим (см. tests/docs-numbers.test.cjs).
+const STARTERS = require('../static/presets/graph-starters.json').items.length;
 const MY_SET = {
   kind: 'graph_starter', id: 'user.my-sets', name: 'Мои варианты', items: [
     { id: 'my-level-speed', name: 'Моя скорость с 3 уровня', hint: 'Свой набор: скорость 40 фт', nodes: [
@@ -36,7 +38,7 @@ const MY_SET = {
     // Диалог наборов поверх окна редактора предмета: ищем его по заголовку.
     const dialog = () => page.locator('.modal', { has: page.locator('h2', { hasText: 'Наборы данных' }) });
     const before = await starterButtons().count();
-    assert.equal(before, 13, 'встроенные стартовые графы на месте');
+    assert.equal(before, STARTERS, 'встроенные стартовые графы на месте');
 
     // 1. Открываем диалог из редактора и импортируем свой набор текстом.
     await page.locator('button[data-action="presets"]').click();

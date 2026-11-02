@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 
 const ORIGIN = 'https://node-card.test';
 const EDITOR_MODULES = ['common', 'dice', 'formulas', 'equipment', 'mechanics', 'node-params-form', 'node-registry', 'node-menu', 'presets', 'mechanics-graph', 'asset-kinds', 'modules'];
-const NODE_SCRIPTS = require('../tools/nodes/node-loader.cjs').nodeFiles().map(f => `<script src="/${path.relative(process.cwd(), f).split(path.sep).join('/')}"></script>`).join('');
+const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
 
 // Программа «Удар жезлом»: атака (КД 12) → «Если» по условию «Попадание атаки» → урон 1d8 только при попадании.
 const WAND = {

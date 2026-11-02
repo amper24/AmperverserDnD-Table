@@ -383,30 +383,68 @@ dnd-table users make-root admin@example.com
 ## Структура
 ```
 Cargo.toml              # в корне — как требует Pterodactyl generic-rust egg
-src/
-  main.rs               # axum-роутер, встроенная статика (rust-embed)
-  config.rs db.rs       # config.yml + переменные окружения, схема БД (MySQL/SQLite через sqlx Any)
-  auth.rs               # коды на почту (lettre), сессии, экстрактор AuthUser
-  campaigns.rs scenes.rs assets.rs characters.rs compendium.rs
-  realtime.rs           # WebSocket-хаб: стол, чат, броски, права игрок/мастер
+src/                    # Rust-сервер: axum + sqlx, 21 модуль
+  main.rs               # роутер, встроенная статика (rust-embed), CLI
+  config.rs db.rs       # config.yml + переменные окружения; схема БД и индексы (MySQL/SQLite)
+  auth.rs access.rs     # коды на почту, сессии, профиль; возможности и роли
+  campaigns.rs scenes.rs assets.rs characters.rs compendium.rs packs.rs inventory.rs
+  mechanics.rs realtime.rs # механики, WebSocket-хаб (стол, чат, броски, права)
+  mechanics_graph.rs    # исполнение графа механик: NODE_TYPES, план, рантайм
   images.rs             # ресайз → JPEG/PNG → zlib → base64
   seed.rs               # справочник и встроенные ассеты из data_seed/ (вшиты в бинарник)
-static/                 # фронтенд без бандлера: слои и карта файлов — в docs/frontend.md
-                        #   index.html (лобби+стол), sheet.html (лист персонажа), table.html
-                        #   (участники), profile.html (профиль); nav.js/nav.css — единая навигация
-                        #   app.js (лобби+кампания), table.js (canvas-стол), sheet.js (лист),
-                        #   character-builder.js (правила создания) + builder-dialog.js (мастер-окно),
-                        #   compendium.js (справочник), class-editor.js (конструктор класса),
-                        #   race-editor.js (конструктор расы), background-editor.js
-                        #   (конструктор предыстории), nodes/ (классы узлов графа),
-                        #   см. также уровень-файлы в docs/frontend.md
-data_seed/              # srd_2014.json, srd_2024.json (~2500 записей SRD 5.1/5.2, сборка tools/srd/), skills.json (18 навыков с графом, сборка tools/srd/build_skills.py), builtin/ (30 ассетов)
-scripts/smoke.sh        # сквозной API/WS-тест (гоняется в CI на SQLite и MySQL 8.4)
+static/                 # фронтенд без бандлера (слои и карта файлов — docs/frontend.md)
+  *.html                #   index.html (лобби+стол), sheet.html (лист), table.html (участники),
+                        #   profile.html (профиль)
+  nav.js/nav.css        #   единая навигация; lobby.js (лендинг, разделы, профиль, админка),
+                        #   app.js (роутинг и кампания/стол), table.js (canvas-стол),
+                        #   sheet.js (лист), compendium.js (справочник), presets.js (наборы),
+                        #   character-builder.js + builder-dialog.js (создание персонажа),
+                        #   levelup.js (повышение уровня)
+  class-editor.js · race-editor.js · background-editor.js   # конструкторы записей
+  mechanics.js · mechanics-graph.js · node-registry.js · node-menu.js · node-params-form.js
+                        #   визуальное программирование: движок графа, реестр и меню узлов
+                        #   полный список модулей и их роли — docs/frontend.md
+  nodes/<категория>/    #   ООП-классы 46 типов узлов (файл = узел)
+  presets/              #   данные редактора: 46 шаблонов механик, 19 стартовых графов,
+                        #   таблицы развития классов, правила рас/классов/черт (JSON, не код)
+data_seed/              # вшитый справочник: srd_2014.json + srd_2024.json (2 499 записей
+                        #   SRD 5.1/5.2), feats_2014.json / feats_2024.json (черты и умения),
+                        #   skills.json (18 навыков с графом), builtin/ (30 ассетов: карты,
+                        #   токены, предметы). Собирается tools/srd/
+tests/                  # node:test: *.test.cjs (юнит/интеграция) и *.browser.cjs (Playwright),
+                        #   фикстуры в tests/fixtures/, общий запуск Chromium — browser-launch.cjs
+tools/                  # генераторы и проверки справочника (tools/srd/*.py, *.cjs),
+                        #   загрузчики наборов для тестов (tools/nodes, tools/presets),
+                        #   эталон проекций (tools/node_rules_baseline.py)
+docs/                   # документация: архитектура, права, БД, узлы, редакторы, аудит (см. ниже)
+scripts/smoke.sh        # сквозной API/WS-тест (в CI на SQLite и MySQL 8.4)
 deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run.bat · install.sh · install.bat
-.github/workflows/ci.yml      # сборка + smoke (SQLite/MySQL), Windows-джоб с run.bat/install.bat, .exe артефактом в PR
+.github/workflows/ci.yml      # сборка + тесты + smoke (SQLite/MySQL), Windows-джоб с run.bat/install.bat
 .github/workflows/release.yml # по тегу vX.Y.Z: бинарники Linux/Windows/macOS → GitHub Release
 .gitattributes          # *.bat/*.cmd — всегда CRLF (иначе cmd.exe ломает разбор батников)
 ```
+
+## Документация
+
+| Документ | О чём |
+|---|---|
+| [docs/frontend.md](docs/frontend.md) | слои и карта файлов фронтенда, страницы, навигация |
+| [docs/db.md](docs/db.md) | индексы, планы запросов и замеры БД |
+| [docs/permissions.md](docs/permissions.md) | роли, возможности, HTTP/WS-проверки |
+| [docs/table.md](docs/table.md) | стол: слои, карты, туман, сетка, производительность |
+| [docs/node-system-v3.md](docs/node-system-v3.md) | палитра из 46 типов узлов, семантика, шаблоны, ограничения |
+| [docs/mechanics-v2.md](docs/mechanics-v2.md) | формат хранения графа механик (version 2) |
+| [docs/mechanics.md](docs/mechanics.md) | механики справочника и листа, сводка покрытия |
+| [docs/presets.md](docs/presets.md) | наборы данных: шаблоны, старты, правила |
+| [docs/inventory.md](docs/inventory.md) | экипировка, руки, расход, идемпотентность |
+| [docs/character-builder.md](docs/character-builder.md) · [docs/level-up.md](docs/level-up.md) | создание и повышение персонажа |
+| [docs/class-editor.md](docs/class-editor.md) · [docs/race-editor.md](docs/race-editor.md) · [docs/background-editor.md](docs/background-editor.md) | конструкторы записей справочника |
+| [docs/profile.md](docs/profile.md) | профиль, смена почты и пароля, сессии |
+| [docs/dice-engine.md](docs/dice-engine.md) | кубики, формулы, преимущество/помеха |
+| [docs/integrity.md](docs/integrity.md) | проверка целостности: что значит 0 ошибок и 12 предупреждений |
+| [docs/node-system-v3-audit.md](docs/node-system-v3-audit.md) · [docs/srd-audit-report.md](docs/srd-audit-report.md) | ревизия нодовой системы и аудит SRD |
+| [docs/editors-audit.md](docs/editors-audit.md) · [docs/hardcode-audit.md](docs/hardcode-audit.md) · [docs/node-rules-inventory.md](docs/node-rules-inventory.md) | аудиты редакторов и захардкоженных правил |
+| [docs/archive.md](docs/archive.md) | удалённые миграционные артефакты и скрипты: что и почему |
 
 ## Разработка
 ```bash
@@ -415,6 +453,20 @@ DATABASE_URL=mysql://dnd:dnd@localhost/dnd cargo run
 bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (нужны python3, websockets)
 # индексы, EXPLAIN QUERY PLAN и замеры запросов — docs/db.md
 ```
+
+Проверки перед коммитом (те же, что в CI):
+
+```bash
+node --test "tests/*.test.cjs"            # 552 теста: юнит + интеграция, без браузера
+cargo test --release                      # 130 тестов сервера
+node tools/srd/integrity.cjs              # 0 ошибок, 12 исторических предупреждений
+node tools/srd/mechanics_summary.cjs --check   # сводка docs/mechanics-migration.json свежая
+node tests/equipment.browser.cjs          # браузерные сценарии: по файлу, нужен Playwright
+```
+
+Браузерные тесты (`tests/*.browser.cjs`, Chromium через Playwright) поднимают страницы из `static/`
+через `page.route` — сервер для них не нужен. Перечень и статус счётчиков — в
+[docs/node-system-v3-audit.md](docs/node-system-v3-audit.md).
 
 ## Сборки и релизы
 
@@ -457,3 +509,4 @@ run.bat · install.bat · SHA256SUMS.txt
 
 ## Дорожная карта
 Вход через Google (OAuth) · динамическое освещение · аудио · экспорт/импорт кампаний · расширение справочника · миграции схемы.
+

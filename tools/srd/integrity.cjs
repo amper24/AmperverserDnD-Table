@@ -823,6 +823,13 @@ function printReports(reports, { max = 20, quiet = false, json = false } = {}) {
     }
   }
   console.log(`\nошибок: ${errors}, предупреждений: ${warnings}`);
+  // Расшифровка предупреждений: каждое историческое исключение описано по одному адресу.
+  if (warnings) {
+    const byCheck = new Map();
+    for (const report of Object.values(reports)) for (const issue of report.issues) if (issue.level === 'warn') byCheck.set(issue.check, (byCheck.get(issue.check) || 0) + 1);
+    console.log(`предупреждения по видам: ${[...byCheck].map(([check, count]) => `${check} — ${count}`).join('; ')}`);
+    console.log('это исторические исключения, а не ошибки: разбор каждого — docs/integrity.md');
+  }
   return errors;
 }
 
