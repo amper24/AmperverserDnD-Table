@@ -1,24 +1,19 @@
 //! Edge Tablet — сервер виртуального стола (axum + sqlx, MySQL/SQLite).
-mod access;
-mod admin;
-mod assets;
-mod auth;
-mod campaigns;
-mod characters;
-mod compendium;
+mod api;
+mod domain;
+mod store;
+mod ws;
+
 mod config;
-mod db;
 mod error;
 mod i18n;
-mod images;
-mod inventory;
-mod mechanics;
-mod mechanics_graph;
-mod packs;
-mod realtime;
-mod scenes;
-mod seed;
 mod util;
+
+// Плоские имена сохранены: код по-прежнему пишет crate::auth, crate::mechanics и т. п.
+pub use api::{admin, assets, auth, campaigns, characters, compendium, images, packs, scenes};
+pub use domain::{access, inventory, mechanics, mechanics_graph};
+pub use store::{db, seed};
+pub use ws::realtime;
 
 use std::sync::Arc;
 

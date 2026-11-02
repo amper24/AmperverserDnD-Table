@@ -9,8 +9,8 @@
 
 | Слой | Что это | Файлы |
 |---|---|---|
-| 1. Фундамент | хранилище с согласием на cookie, API-клиент, DOM-помощники (`el`, `modal`, `floatWindow`, `toast`, `icon`), словари (`SKILLS`, `ABIL`, `EDITIONS`, `CAT_NAMES`), тема; права UI (`Access.can`) — зеркало `src/access.rs`; единая навигация (пункты, активный раздел, шапка) | `common.js`, `access.js`, `nav.js` |
-| 2. Движки правил | физика и визуализация принятых бросков, движок кубиков и журнал; слоты экипировки (зеркало `src/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `dice-physics.js`, `dice-visual.js`, `dice.js`, `equipment.js`, `mechanics.js`, `spell-rules.js` (только лист) |
+| 1. Фундамент | хранилище с согласием на cookie, API-клиент, DOM-помощники (`el`, `modal`, `floatWindow`, `toast`, `icon`), словари (`SKILLS`, `ABIL`, `EDITIONS`, `CAT_NAMES`), тема; права UI (`Access.can`) — зеркало `src/domain/access.rs`; единая навигация (пункты, активный раздел, шапка) | `common.js`, `access.js`, `nav.js` |
+| 2. Движки правил | физика и визуализация принятых бросков, движок кубиков и журнал; слоты экипировки (зеркало `src/domain/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `dice-physics.js`, `dice-visual.js`, `dice.js`, `equipment.js`, `mechanics.js`, `spell-rules.js` (только лист) |
 | 3. Данные | модель записей листа (предмет/заклинание/умение, карточки, чат, редакторы); справочник (поиск, редактор записи, перетаскивание); правила классов и таблицы развития — **сгенерированные данные** в `static/presets/`, не править вручную | `modules.js`, `compendium.js`, `class-rules.js` |
 | 4. Создание персонажа | правилное ядро (`CharacterBuilder`: проекции модулей, выборы «либо/либо», разбор снаряжения, сборка листа) и мастер-окно из восьми шагов (`newCharacterDialog`) — отдельно правила, отдельно UI | `character-builder.js`, `builder-dialog.js` |
 | 5. Возможности | мастерская наборов; импорт из Long Story Short; canvas-стол; повышение уровня | `packs.js`, `lss.js`, `table.js` (index), `levelup.js` (sheet) |
@@ -28,7 +28,7 @@
 | `common.js` | фундамент | `LS`, `Consent`, `API`, `Lang`, `el/modal/prompt2/floatWindow/toast/icon`, `Theme`, `SKILLS/ABIL/EDITIONS/CAT_NAMES`, `defaultEdition` |
 | `nav.js` | единая навигация без роутинга: пункты, активный раздел, шапка и компактное меню | `Nav` (`APP_NAME`, `ITEMS`, `activeKey`, `build`, `items`, `tableHref`, `header`, `menu`, `closeAll`) |
 | `nav.css` | оформление навигации: шапка, пункты, выпадающее меню, фокус; темы — через переменные `style.css` | стили |
-| `access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/access.rs` | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`) |
+| `access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/domain/access.rs` | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`) |
 | `dice-physics.js` | симуляция костей | `DicePhysics` (без генерации/переброса результата) |
 | `dice-visual.js` | одна центральная площадка с устойчивой сеткой и canvas-рендером | `DiceVisualizer` |
 | `dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
@@ -41,7 +41,7 @@
 | `node-params-form.js` | формы параметров узла на карточке (без ручного JSON) | `NodeForm` |
 | `class-rules.js` | правила классов из данных: блок `data.caster` → узел `rule.class` → набор `class_rules` | `ClassRules` |
 | `formulas.js` | безопасный вычислитель формул (без `eval`) и реестр переменных | `Formulas` |
-| `asset-kinds.js` | реестр типов ассетов (карта, токен, объект, портрет, предмет) — зеркало `ASSET_KINDS` в `src/assets.rs` | `AssetKinds` |
+| `asset-kinds.js` | реестр типов ассетов (карта, токен, объект, портрет, предмет) — зеркало `ASSET_KINDS` в `src/api/assets.rs` | `AssetKinds` |
 | `modules.js` | записи листа и редакторы | `Modules` |
 | `compendium.js` | справочник | `Compendium` |
 | `class-editor.js` | конструктор класса справочника (разделы: общее, уровни 1–20, навыки, языки, снаряжение, подклассы, заклинания) | `ClassEditor` |

@@ -383,15 +383,14 @@ dnd-table users make-root admin@example.com
 ## Структура
 ```
 Cargo.toml              # в корне — как требует Pterodactyl generic-rust egg
-src/                    # Rust-сервер: axum + sqlx, 21 модуль
+src/                    # Rust-сервер: axum + sqlx, слои по папкам
   main.rs               # роутер, встроенная статика (rust-embed), CLI
-  config.rs db.rs       # config.yml + переменные окружения; схема БД и индексы (MySQL/SQLite)
-  auth.rs access.rs     # коды на почту, сессии, профиль; возможности и роли
-  campaigns.rs scenes.rs assets.rs characters.rs compendium.rs packs.rs inventory.rs
-  mechanics.rs realtime.rs # механики, WebSocket-хаб (стол, чат, броски, права)
-  mechanics_graph.rs    # исполнение графа механик: NODE_TYPES, план, рантайм
-  images.rs             # ресайз → JPEG/PNG → zlib → base64
-  seed.rs               # справочник и встроенные ассеты из data_seed/ (вшиты в бинарник)
+  config.rs error.rs i18n.rs util.rs  # конфиг, ошибки API, переводы, общие хелперы
+  api/                  # HTTP-слой: auth (коды, сессии, профиль), campaigns, scenes, assets,
+                        #   characters, compendium, packs, admin, images
+  domain/               # правила: mechanics.rs, mechanics_graph.rs, inventory.rs, access.rs
+  store/                # db.rs — схема и индексы (MySQL/SQLite), seed.rs — справочник из data_seed/
+  ws/                   # realtime.rs — WebSocket-хаб (стол, чат, броски, права)
 static/                 # фронтенд без бандлера (слои и карта файлов — docs/frontend.md)
   *.html                #   index.html (лобби+стол), sheet.html (лист), table.html (участники),
                         #   profile.html (профиль)

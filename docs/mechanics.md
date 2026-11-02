@@ -221,7 +221,7 @@ NPC и сведения используют один редактор. Опис
 
 - `node --test tests/*.test.cjs`: JS-инварианты, миграция, стартовые шаблоны
   расы/класса/предыстории, схема выбора, вся стандартная библиотека.
-- Rust unit tests в `src/mechanics.rs`, `src/inventory.rs`.
+- Rust unit tests в `src/domain/mechanics.rs`, `src/domain/inventory.rs`.
 - `tests/inventory-api.py`, вызываемый `scripts/smoke.sh`: реальный API,
   атомарное зелье, повтор запроса, откат поздней ошибки.
 

@@ -5,7 +5,7 @@
 Чистая логика вынесена в `static/table-model.js`: файл не трогает DOM и сеть,
 поэтому проверяется юнит-тестами (`tests/table-model.test.cjs`), а `table.js`,
 `app.js` и `table-page.js` используют его как единственный источник правил.
-Права ролей и проверки — [permissions.md](permissions.md) (`src/access.rs`,
+Права ролей и проверки — [permissions.md](permissions.md) (`src/domain/access.rs`,
 `static/access.js`).
 
 Порядок загрузки: `common.js → access.js → asset-kinds.js → table-model.js →
@@ -207,7 +207,7 @@ scene.fog = {
 ### Синхронизация
 
 Маска — часть сцены и ходит тем же каналом, что сетка и слои: `commitFog`
-(`static/table.js`) → `scene_update { fog }`. Сервер (`src/realtime.rs`) валидирует
+(`static/table.js`) → `scene_update { fog }`. Сервер (`src/ws/realtime.rs`) валидирует
 её `scenes::normalize_fog`:
 
 * `by_map` — объект; ключ — id карты до 64 символов (маски несуществующих карт
@@ -303,7 +303,7 @@ WebSocket, что у стола (`item_upsert`/`item_delete`), новый сер
 
 ## Сервер
 
-`scenes.layers` (JSON) и `scenes.active_map_id` — новые колонки (`src/db.rs`,
+`scenes.layers` (JSON) и `scenes.active_map_id` — новые колонки (`src/store/db.rs`,
 миграция `ALTER TABLE` для старых баз). `GET` сцены отдаёт `layers` и
 `active_map_id` (у старых сцен — `null`, клиент берёт слои по умолчанию).
 `PATCH /api/campaigns/:cid/scenes/:sid` и WebSocket `scene_update` принимают
@@ -343,10 +343,10 @@ id).
   «На стол» для чужого персонажа у мастера / для своего у игрока, токены сцены
   (HP, скрытность, владелец) и недоступность мастерских действий игроку.
 * `tests/access.test.cjs` — матрица роль×возможность и сверка `static/access.js`
-  с `src/access.rs`.
+  с `src/domain/access.rs`.
 * `cargo test` — валидация `scene.layers` и тела `scene_update`
-  (`src/scenes.rs`, модули `layer_tests` и `fog_tests`), права
-  (`src/access.rs`), дедупликация присутствия (`src/realtime.rs`,
+  (`src/api/scenes.rs`, модули `layer_tests` и `fog_tests`), права
+  (`src/domain/access.rs`), дедупликация присутствия (`src/ws/realtime.rs`,
   `presence_tests`).
 
 ## Ограничения

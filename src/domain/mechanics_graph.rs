@@ -1497,7 +1497,7 @@ mod tests {
     use super::*;
     #[test]
     fn validation_matches_the_shared_graph_contract_fixture() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         for case in fixture["cases"].as_array().unwrap() {
             let actual = validate(&case["mechanics"]).is_ok();
             assert_eq!(actual, case["valid"].as_bool().unwrap(), "saves: {}", case["name"].as_str().unwrap());
@@ -1506,7 +1506,7 @@ mod tests {
     }
     #[test]
     fn reusable_group_boundaries_compile_into_the_legacy_action_chain() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let graph = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "reusable-group-boundary").unwrap();
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
@@ -1515,7 +1515,7 @@ mod tests {
     /// Ссылка внутри повторно используемой группы: локальный ID цели получает префикс экземпляра.
     #[test]
     fn data_ref_inside_a_group_resolves_with_the_instance_prefix() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let graph = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-ref-inside-a-group").unwrap();
         let compiled = to_v1(&graph["mechanics"]);
         let blocks = compiled["programs"][0]["blocks"].as_array().unwrap();
@@ -1524,7 +1524,7 @@ mod tests {
     /// data.call: числовые аргументы по порядку — сумма x + y = 5.
     #[test]
     fn data_call_sums_positional_arguments() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-simple-function").unwrap();
         assert!(validate(&case["mechanics"]).is_ok());
         assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(5.0));
@@ -1561,7 +1561,7 @@ mod tests {
 
     #[test]
     fn data_call_nests_function_groups() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-nested-function").unwrap();
         assert!(validate(&case["mechanics"]).is_ok());
         assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(25.0));
@@ -1569,7 +1569,7 @@ mod tests {
     /// Рекурсивный вызов A → B → A отклоняется сохранением с отдельным сообщением.
     #[test]
     fn data_call_rejects_recursive_groups() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-recursive").unwrap();
         let error = validate(&case["mechanics"]).unwrap_err().1;
         assert!(error.contains("Рекурсивный вызов группы"), "{error}");
@@ -1577,7 +1577,7 @@ mod tests {
     /// Группа-функция не может содержать действий: только value-узлы и границы группы.
     #[test]
     fn data_call_function_group_is_value_only() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-simple-function").unwrap();
         let mut mechanics = case["mechanics"].clone();
         mechanics["graph"]["groups"][0]["nodes"].as_array_mut().unwrap().push(json!({"id": "act", "type": "action.manual", "params": {"block_id": "act", "text": "Шаг"}}));
@@ -1587,7 +1587,7 @@ mod tests {
     /// Результат bool из data.textcheck внутри группы: «Огонь» = «огонь» без учёта регистра.
     #[test]
     fn data_call_returns_bool_from_textcheck_inside_a_group() {
-        let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/mechanics-graph.json")).unwrap();
         let case = fixture["cases"].as_array().unwrap().iter().find(|case| case["name"] == "data-call-bool-result").unwrap();
         assert!(validate(&case["mechanics"]).is_ok());
         assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(true));

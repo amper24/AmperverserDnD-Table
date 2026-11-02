@@ -8,7 +8,7 @@
 > **Историческая справка.** Разделы про снимки прежних поставок (`legacy_hashes.json`,
 > `previous_shipped.json`, `verify_migration.py`) описывают механизм, который удалён:
 > базовый справочник теперь заменяется целиком при изменении вшитых файлов (см.
-> `src/seed.rs`). Вместе с совместимостью удалены `graph_convert.cjs` (конвертер блоков v1
+> `src/store/seed.rs`). Вместе с совместимостью удалены `graph_convert.cjs` (конвертер блоков v1
 > в граф) и `migrate_spells_071.cjs` (разовая пересборка заклинаний 0.7.1). Остальные
 > результаты аудита — сверка с SRD, локализация, термины, спасброски — по-прежнему актуальны.
 
@@ -156,7 +156,7 @@
    неизменённые строки, правки пользователя не трогаются. Покрытие проверяет
    `tools/srd/verify_migration.py` — по всем релизам «проблем: 0».
 10. **Строки без механики из прежних сборок.** Снимок пропускал записи без узлов механики, а
-    `src/seed.rs::matches_shipped` требовал непустой хеш механики, поэтому 531 строка из
+    `src/store/seed.rs::matches_shipped` требовал непустой хеш механики, поэтому 531 строка из
     v0.5.8–v0.6.3 (313 у 2014 и 218 у 2024 — все записи без механики: состояния, умения, фоны,
     пассивные предметы) не обновлялась ни одним путём: `ReplaceLegacy` их не берёт (данные уже со
     слоем перевода), `ReplaceShipped` пропускал. Теперь снимок хранит и пары с пустым хешем
@@ -316,7 +316,7 @@
 
 * Один движок на клиент и сервер: грамматика `static/dice.js` (модификаторы `1d20+5`,
   преимущество/помеха `2d20kh1`, `4d6kh3`, кириллическая `к` как `d`, лимиты 100 костей,
-  1000 граней) и её серверное повторение в `src/realtime.rs` / `src/mechanics.rs`.
+  1000 граней) и её серверное повторение в `src/ws/realtime.rs` / `src/domain/mechanics.rs`.
   Второй движок не создавался.
 * Проверено тестами: `tests/dice.test.cjs`, `formulas`, `graph-dice-logic`, `hit-branch`,
   `dice-physics`, `dice-visual` — выражения, модификаторы, преимущество/помеха,
@@ -331,14 +331,14 @@
   `kind` `attack`/`damage`), вычисленные формулы после сборки графа в v1-программы).
 * Переменные формул: `@str…@cha`, `@str_score…`, `@prof`, `@level`, `@spell`,
   `@spell_mod`, `@dc`, `@half_level`, `@hp`, `@passive`, 18 навыков, `@atk*`, `@best`
-  (`src/inventory.rs::resolve`, `static/formulas.js`).
+  (`src/domain/inventory.rs::resolve`, `static/formulas.js`).
 * Статус: **Механически реализовано** и **Протестировано** (детерминированные тесты,
   случайность задаётся движком).
 
 ## 7. Механические узлы
 
 * Граф v2: 49 узлов в реестре клиента (`static/node-registry.js`), 51 тип принимает сервер
-  (`src/mechanics_graph.rs`), расхождение — только внутренние `group.input` / `group.output`.
+  (`src/domain/mechanics_graph.rs`), расхождение — только внутренние `group.input` / `group.output`.
 * Копии одного правила не расходятся: таблица развития класса и правила класса лежат и в узле
   записи (`rule.class` с kind `class_progression` и `class_rules` — их читает лист), и в наборах
   `static/presets/class-*.json` (запасной путь). Сверка: 24 класса, 480 уровней таблиц развития,
@@ -349,7 +349,7 @@
   `graph-actions`, `node-registry`, `node-params-form`, `class-progression-graph`,
   `class-rules-node`, `node-rules-baseline`; браузерные — `node-editor`, `graph-groups`,
   `graph-templates`, `node-card`.
-* Исполнение: `src/mechanics.rs::execute` (нормализация, `to_v1_with_context`, расход
+* Исполнение: `src/domain/mechanics.rs::execute` (нормализация, `to_v1_with_context`, расход
   ресурсов, проверки условий, критический удар, ограничения диапазонов), клиентский
   `static/mechanics-graph.js` повторяет валидацию и сборку в программы. Механика узлов,
   изменённых этой работой, проверена отдельно: узел `rule.class` (kind `class_rules`) читается листом
@@ -412,7 +412,7 @@
   `ClassRules.startPrepared` по редакциям (`tests/class-rules.test.cjs`).
 * CI (`.github/workflows/ci.yml`): сборка, клиппи, JS-тесты, `cargo test`, smoke-тесты на SQLite
   и MySQL, браузерные тесты, Windows-сборка. Наблюдались прогоны на этой ветке: `b9f007c`
-  (прогон 38192210457), `c8c6d30` (прогон 38194999022, включает правку `src/seed.rs` и новый
+  (прогон 38192210457), `c8c6d30` (прогон 38194999022, включает правку `src/store/seed.rs` и новый
   Rust-тест) и `c7c4802` (прогон 38195372440) — все успешны, шаги «Clippy», «JavaScript tests»,
   «Unit tests», «Smoke test (SQLite)», «Smoke test (MySQL)» — success.
 * В песочнице без Rust: Rust-тесты и smoke прогоняются в CI GitHub, локально проверены JS-тесты
@@ -438,7 +438,7 @@
   (313 у 2014, 218 у 2024 — все записи без узлов механики) оставалась в базе нетеченой: данные уже
   со слоем перевода, поэтому `ReplaceLegacy` не срабатывал, а `ReplaceShipped` требовал непустую
   механику. Теперь такие пары (с пустым вторым хешем) есть в снимке, `matches_shipped` в
-  `src/seed.rs` их принимает, `integrity.cjs` считает пустой второй хеш допустимым, а
+  `src/store/seed.rs` их принимает, `integrity.cjs` считает пустой второй хеш допустимым, а
   `verify_migration.py` воспроизводит порядок решений `classify` и потому видит эти строки.
   Отрицательный прогон: если убрать 536 пар с пустой механикой, скрипт сообщает 1882 проблемы;
   с ними — 0.
@@ -450,7 +450,7 @@
   1294 строк, 2024 — 1204 из 1204). Сборки v0.4.3+ со слоем перевода покрыты снимком
   `previous_shipped.json`. Ключи `legacy_hashes.json` покрывают все вшитые записи, кроме
   документированного `item/srd24-shield-magic`; за этим следит тест
-  `src/seed.rs::embedded_reference_is_fully_localized_and_covered_by_legacy_hashes`.
+  `src/store/seed.rs::embedded_reference_is_fully_localized_and_covered_by_legacy_hashes`.
 * **Как проверялось покрытие.** Наборы всех релизов скачаны по именам тегов
   (`gh api …?ref=<тег>`, а не `targetCommitish` — у части релизов там ветка, и вернулось бы её
   текущее содержимое), снимок пересобран
@@ -539,7 +539,7 @@
 | `b9f007c` | Отчёт об аудите справочника SRD и сверка с официальным дампом | `docs/srd-audit-report.md`, `tools/srd/compare_upstream.py`, `CHANGELOG.md` |
 | `8bfcfea` | Локализация: английские названия навыков берутся из словаря с алиасами | `tools/srd/i18n_terms.py`, `tools/srd/localize.py` |
 | `7430f96` | Правила классов: узлы из наборов, мастерство оружия и старт заклинаний по SRD | `static/presets/class-rules-2024.json`, `static/{class-rules,character-builder}.js`, `tools/srd/{add_class_progression_nodes.cjs,integrity.cjs,compare_upstream.py}`, `data_seed/srd_{2014,2024}.json`, `tests/class-*.test.cjs` |
-| `c8c6d30` | Обновление развёрнутых баз: покрытие всех релизов и строки без механики | `src/seed.rs`, `tools/srd/{previous_shipped.py,verify_migration.py}`, `data_seed/previous_shipped.json` |
+| `c8c6d30` | Обновление развёрнутых баз: покрытие всех релизов и строки без механики | `src/store/seed.rs`, `tools/srd/{previous_shipped.py,verify_migration.py}`, `data_seed/previous_shipped.json` |
 | `c7c4802` | Отчёт об аудите: числа обновления баз, строк без механики и прогонов CI | `docs/srd-audit-report.md`, `CHANGELOG.md` |
 | `e43ffa3` | Отчёт: прогон CI на финальном коммите ветки | `docs/srd-audit-report.md` |
 | `d6a13e8` | Защиты монстров: термины по официальному SRD, состояния — не в поле урона | `data_seed/srd_{2014,2024}.json`, `data_seed/previous_shipped.json`, `tools/srd/{fix_monster_defenses.py,integrity.cjs}`, `tests/srd-integrity.test.cjs` |

@@ -8,10 +8,10 @@
 
 | Требование | Факт | Подтверждение |
 |---|---|---|
-| Маленькие ортогональные блоки | 9 блоков действий: `program`, `roll`, `field`, `spend`, `slot`, `hands`, `grant_item`, `manual`, `setvar`; всего 46 типов (44 видимых + 2 внутренних узла групп) | `src/mechanics_graph.rs` (`NODE_TYPES`), 46 файлов `static/nodes/**`, `NodeRegistry.NODE_DEFS` |
+| Маленькие ортогональные блоки | 9 блоков действий: `program`, `roll`, `field`, `spend`, `slot`, `hands`, `grant_item`, `manual`, `setvar`; всего 46 типов (44 видимых + 2 внутренних узла групп) | `src/domain/mechanics_graph.rs` (`NODE_TYPES`), 46 файлов `static/nodes/**`, `NodeRegistry.NODE_DEFS` |
 | У каждого блока `enabled` и `condition` | У всех `action.*` (кроме `program`) входы `exec`, `enabled`, `condition`; `program` — `trigger`/`exec` | тесты `node-registry.test.cjs`, `node-sockets.test.cjs`; Rust `all_action_blocks_expose_enabled_and_condition` |
 | `condition` в рантайме | `to_v1` кладёт `condition_src`, `execute` вычисляет узел с листом и результатами; `false`/`0` → блок пропускается | Rust `action_results_gate_the_next_action_in_the_runtime`, `condition_input_skips_block_and_keeps_flow` |
-| Результаты действий | `sheet.action_results = {last, by_program}`: `total/hit/applied/spent/rolls/at`; ответ `execute` содержит `results` | `src/mechanics.rs`, docs `node-system-v3.md` |
+| Результаты действий | `sheet.action_results = {last, by_program}`: `total/hit/applied/spent/rolls/at`; ответ `execute` содержит `results` | `src/domain/mechanics.rs`, docs `node-system-v3.md` |
 | `data.result` | Источник `last` или id программы; поля `total/hit/applied/spent`; выход `value:number` | `static/nodes/data/result.js`, фикстура `tests/fixtures/mechanics-graph.json` |
 | `data.sheet` | Путь поля листа (`hp.current`, `level`, `abilities.str`), нечисловое → 0 | `static/nodes/data/sheet.js`, Rust `data_sheet_reads_a_nested_sheet_field_and_defaults_to_zero` |
 | Переменные и ссылки | `action.setvar`/`data.var` с областями action/sheet и именем `[a-z0-9_]{1,32}`; `data.ref` на числовой узел того же графа, циклические ссылки отклоняются | `static/nodes/actions/setvar.js`, `static/nodes/data/var.js`, `static/nodes/data/ref.js`; Rust `setvar_action_scope_is_visible_to_later_blocks_only`, `setvar_sheet_scope_persists_for_the_next_program` |
@@ -21,7 +21,7 @@
 | Условия листа | Четыре узла `condition.status/item/hp/slot` читают лист в рантайме; без листа — false | `static/nodes/conditions/*`, Rust `STATUS_MODES`/`ITEM_MODES`/`HP_OPS`/`SLOT_OPS` |
 | Строки и списки | Семь узлов: `data.text`, `data.textlen`, `data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`; таблицы операций одни на клиенте и сервере | `static/nodes/data/text*.js`, `static/nodes/data/list*.js`; Rust `TEXT_OPS`/`TEXT_CHECK_OPS` |
 | Функции-группы | `data.call`: до трёх числовых аргументов `a/b/c`, типизированный результат number/text/bool/list; рекурсия и блоки действий внутри функции запрещены | `static/nodes/data/call.js`, `tests/graph-call.test.cjs`; Rust `call_group_value` |
-| Руки | `action.hands` — add/remove/set, `count` 1–6; `extra_hands` 0–4, слоты `extra1..extra4`, при исчезновении руки предметы уходят в рюкзак | `static/nodes/actions/hands.js`, `src/mechanics.rs` (`hands`, `inventory::MAX_EXTRA_HANDS`), `tests/action-hands.test.cjs` |
+| Руки | `action.hands` — add/remove/set, `count` 1–6; `extra_hands` 0–4, слоты `extra1..extra4`, при исчезновении руки предметы уходят в рюкзак | `static/nodes/actions/hands.js`, `src/domain/mechanics.rs` (`hands`, `inventory::MAX_EXTRA_HANDS`), `tests/action-hands.test.cjs` |
 | Палитра сокращена | `action.condition/adjust/passive` → `action.field`; `consume` → `spend`; `condition.compare` → `data.compare`; `require` удалён; `slot` — отдельный узел | grep по `static/src/tests/data_seed/tools` — старых типов нет (кроме CHANGELOG) |
 | Данные мигрированы без обратной совместимости | 0 записей с v1 `programs`; все записи с механиками — графы | аудит-скрипт: v1 = 0 в `srd_2014/srd_2024/skills` |
 | Поток «Начало → Конец» | у каждой программы ровно один `flow.end` на цепочку | 2014: 3625 программ / 3625 «Концов»; 2024: 3349/3349; `add_flow_ends.cjs --check` — обрывов нет |
