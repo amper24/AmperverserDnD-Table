@@ -104,7 +104,7 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     assert.equal(dropped.upsert.item.layer, 'map', 'новая карта кладётся на слой map');
     assert.equal(dropped.upsert.item.data.w, 700);
     assert.ok(/^[0-9a-f]{32}$/.test(dropped.upsert.item.id), 'у новой карты есть id для выбора активной');
-    assert.equal(dropped.sceneUpdate.active_map_id, dropped.upsert.item.id, 'новая карта сразу становится активной');
+    assert.equal(dropped.sceneUpdate, undefined, 'карта — обычный объект: активной автоматически не становится');
     assert.equal(dropped.maps, 1, 'локальный список карт не трогаем — ждём рассылку сервера');
 
     // ---- слои сцены: добавление уходит на сервер и доступно в селекторе ----

@@ -1051,10 +1051,9 @@ window.Table = (function () {
       else if (S.snap) { const c = T.snapCorner(w.x - wdt / 2, w.y - hgt / 2, S.scene.grid); x = c.x + wdt / 2; y = c.y + hgt / 2; }
     } else { const ratio = a.width / a.height || 1; wdt = g; hgt = g / ratio; if (AssetKinds.get(a.kind).square) { wdt = g; hgt = g; } const p = snapPos(x, y, wdt, hgt); x = p.x; y = p.y; }
     const id = layer === LAYER.map ? newId() : undefined;
-    // Активный слой переключаем на «Карту», чтобы новую карту сразу можно было двигать.
-    if (layer === LAYER.map) S.activeLayer = LAYER.map;
     upsert({ id, layer, z: layer === LAYER.map ? -100 : 0, data: { type: 'image', asset_id: a.id, x, y, w: wdt, h: hgt, name: layer === LAYER.character ? a.name : undefined, owner_id: S.isGM ? undefined : S.user.id, locked: layer === LAYER.map ? false : undefined } });
-    if (layer === LAYER.map) { if (id) setActiveMap(id); setTimeout(fitToMap, 80); }
+    // Карта — обычный объект: не делаем её активной и не вписываем вид автоматически.
+    // Активную карту (для тумана) мастер выбирает сам, а двигать/выделять её можно на слое «Карта».
   }
   // ---------- линейка: привязка к сетке (Ctrl/Cmd — свободно) ----------
   /// Свободный режим линейки: зажат Ctrl/Cmd или привязка выключена кнопкой «#».
