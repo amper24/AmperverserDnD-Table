@@ -1974,3 +1974,6 @@ body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
 /* Карточки справочника: кнопки-броски одной высоты, без переносов, иконка не раздувает строку. */
 .inline-roll { min-height: 26px; white-space: nowrap; }
 .inline-roll svg { width: 12px; height: 12px; flex: 0 0 auto; }
+/* На столе док кубиков и «Журнал» подняты над нижней панелью инструментов. */
+body:has(#table) .dice-dock,
+body:has(#table) .dice-log-button { bottom: 74px; }
