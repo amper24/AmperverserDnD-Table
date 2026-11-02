@@ -1963,3 +1963,6 @@ body.sheet-vars-open { overflow: hidden; }
 /* Стол: плавающие доки кубиков и «Журнал» не перекрывают панель инструментов и чат. */
 .table-page .dice-dock,
 .table-page .dice-log-button { bottom: 74px; }
+/* Лист: «Журнал» и док кубиков не перекрывают нижнюю строку формулы/футер. */
+.sheet-page .dice-dock,
+.sheet-page .dice-log-button { bottom: 74px; }
