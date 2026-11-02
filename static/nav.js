@@ -38,6 +38,8 @@
     if (p === '/characters' || p.startsWith('/characters/')) return 'characters';
     if (p.startsWith('/sheet/') || p.startsWith('/character/')) return 'characters';
     if (p === '/compendium' || p.startsWith('/compendium/')) return 'compendium';
+    // Библиотека ресурсов и наборы — тот же раздел «Справочник».
+    if (p === '/library' || p.startsWith('/library/') || p === '/packs' || p.startsWith('/packs/')) return 'compendium';
     if (p === '/campaigns' || p.startsWith('/campaigns/')) return 'campaigns';
     return '';
   }

@@ -50,7 +50,7 @@ test('активный пункт по pathname: главная, кампани�
     ['/table/camp1', 'table'], ['/table/camp1/', 'table'], ['/table', 'table'],
     ['/c/camp1', 'campaigns'], ['/c/camp1?x=1', 'campaigns'],
     ['/profile', 'profile'], ['/profile/', 'profile'],
-    ['/library', ''], ['/packs', ''], ['/login', ''],
+    ['/library', 'compendium'], ['/library/x', 'compendium'], ['/packs', 'compendium'], ['/packs/x', 'compendium'], ['/login', ''],
   ];
   for (const [pathname, expected] of cases) {
     assert.equal(Nav.activeKey(pathname), expected, `активный раздел для ${JSON.stringify(pathname)}`);
