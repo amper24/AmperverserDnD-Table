@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Участники стола — Edge Tablet</title>
+<script>try{var t=localStorage.getItem("et-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app"></div>
+<!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, тема, иконки. -->
+<script src="/static/common.js"></script>
+<!-- Реестр типов ассетов: слой персонажей и подписи (без него не создаются токены). -->
+<script src="/static/asset-kinds.js"></script>
+<!-- Модель стола: сетка, привязка позиции токена, границы активной карты. -->
+<script src="/static/table-model.js"></script>
+<!-- Страница участников: список персонажей/NPC, токены сцены, HP, скрытность, владелец. -->
+<script src="/static/table-page.js"></script>
+</body>
+</html>

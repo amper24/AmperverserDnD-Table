@@ -130,10 +130,19 @@ fn ports_for(kind: &str, params: &Value, groups: &[Value], owner_group: Option<&
         "data.var" => { outputs.insert("value".into(), "number".into()); }
         // Ссылка на числовой узел этого же графа (значение цели).
         "data.ref" => { outputs.insert("value".into(), "number".into()); }
-        // Вызов группы-функции: a, b, c — числовые аргументы по порядку входов группы,
-        // выход value получает объявленный тип результата (по умолчанию number).
+        // Вызов группы-функции: входы a, b, c строятся по снимку подписи (params.args — типы
+        // входов по порядку); без снимка — три числовых аргумента (старые группы).
         "data.call" => {
-            inputs.insert("a".into(), "number".into()); inputs.insert("b".into(), "number".into()); inputs.insert("c".into(), "number".into());
+            let names = ["a", "b", "c"];
+            match params["args"].as_array() {
+                Some(args) => {
+                    for (index, kind) in args.iter().take(3).enumerate() {
+                        let kind = kind.as_str().filter(|kind| FUNCTION_TYPES.contains(kind)).unwrap_or("number");
+                        inputs.insert(names[index].into(), kind.into());
+                    }
+                }
+                None => for name in names { inputs.insert(name.into(), "number".into()); },
+            }
             let result = params["result"].as_str().filter(|kind| FUNCTION_TYPES.contains(kind)).unwrap_or("number");
             outputs.insert("value".into(), result.into());
         }
@@ -340,6 +349,16 @@ fn validate_node_params(n: &Value, programs: &HashSet<String>, nodes: &[Value], 
             if !FUNCTION_TYPES.contains(&result) { return Err(bad("Узел вызова: тип результата number, text, bool или list.")); }
             let Some(group) = groups.iter().find(|g| g["id"].as_str() == Some(group_id)) else { return Err(bad("Узел вызова: группа не найдена.")); };
             function_group_check(group, result)?;
+            // Снимок подписи (params.args) должен совпадать с фактическими входами группы:
+            // иначе подпись изменили, а вызов не пересобрали — граф не исполняется.
+            if let Some(args) = p["args"].as_array() {
+                let expected = group["inputs"].as_array().cloned().unwrap_or_default();
+                if args.len() != expected.len() { return Err(bad("Узел вызова: подпись группы изменилась — обновите аргументы.")); }
+                for (index, kind) in args.iter().enumerate() {
+                    let Some(kind) = kind.as_str().filter(|kind| FUNCTION_TYPES.contains(kind)) else { return Err(bad("Узел вызова: недопустимый тип аргумента.")); };
+                    if kind != expected[index]["type"].as_str().unwrap_or("") { return Err(bad("Узел вызова: тип аргумента не совпадает с подписью группы.")); }
+                }
+            }
         }
         // Математика: закрытый список операций; clamp без входов b и c не считается (провод — в validate_graph).
         "data.mathfun" if !MATHFUN_OPS.contains(&p["op"].as_str().unwrap_or("")) => {
@@ -1424,7 +1443,36 @@ mod tests {
         assert!(validate(&case["mechanics"]).is_ok());
         assert_eq!(node_value(&case["mechanics"]["graph"], "call", &json!({})).unwrap(), json!(5.0));
     }
-    /// Вложенный вызов: внешняя группа вызывает внутреннюю без циклов (5 + 10 + 10 = 25).
+    /// Типизированные аргументы: подпись группы с двумя text-входами даёт text-порты a и b
+    /// (без c) и text-результат; снимок подписи обязан совпадать с группой.
+    #[test]
+    fn data_call_ports_follow_the_typed_signature() {
+        let group = json!({"id": "g", "name": "concat",
+            "inputs": [
+                {"id": "x", "name": "x", "type": "text"},
+                {"id": "y", "name": "y", "type": "text"}
+            ],
+            "outputs": [{"id": "out", "name": "result", "type": "text"}],
+            "nodes": [
+            {"id": "i1", "type": "group.input", "params": {"socket_id": "x", "name": "x", "type": "text"}},
+            {"id": "i2", "type": "group.input", "params": {"socket_id": "y", "name": "y", "type": "text"}},
+            {"id": "o", "type": "group.output", "params": {"socket_id": "out", "type": "text"}}
+        ], "links": []});
+        let params = json!({"group": "g", "args": ["text", "text"], "result": "text"});
+        let groups = vec![group.clone()];
+        let (inputs, outputs) = ports_for("data.call", &params, &groups, None);
+        assert_eq!(inputs.get("a").map(String::as_str), Some("text"));
+        assert_eq!(inputs.get("b").map(String::as_str), Some("text"));
+        assert!(inputs.get("c").is_none(), "у функции из двух входов нет порта c");
+        assert_eq!(outputs.get("value").map(String::as_str), Some("text"));
+        let mechanisms = json!({"version": 2, "graph": {"nodes": [
+            {"id": "c", "type": "data.call", "params": json!({"group": "g", "args": ["number", "text"], "result": "text"})}
+        ], "links": [], "frames": [], "groups": [group]}});
+        let error = validate(&mechanisms).unwrap_err().1;
+        assert!(error.contains("не совпадает с подписью"), "{error}");
+    }
+
+
     #[test]
     fn data_call_nests_function_groups() {
         let fixture: Value = serde_json::from_str(include_str!("../tests/fixtures/mechanics-graph.json")).unwrap();

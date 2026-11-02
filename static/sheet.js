@@ -65,6 +65,13 @@
     s.death_saves = obj(s.death_saves); s.death_saves.success = num(s.death_saves.success, 0); s.death_saves.failure = num(s.death_saves.failure ?? s.death_saves.fail, 0); delete s.death_saves.fail;
     s.currency = obj(s.currency); for (const k of ['pp', 'gp', 'ep', 'sp', 'cp']) s.currency[k] = num(s.currency[k], 0);
     s.traits = obj(s.traits); s.notes_by = obj(s.notes_by);
+    // sheet.vars — числа, которые пишут действия с узлом setvar (scope: sheet).
+    // Импорт и старые записи могут содержать мусор: оставляем только «имя → число»,
+    // пустой объект в лист не пишем (панель показывает пустое состояние).
+    if (s.vars !== undefined && window.SheetVars) {
+      const vars = window.SheetVars.normalize(s.vars);
+      if (Object.keys(vars).length) s.vars = vars; else delete s.vars;
+    }
     s.spells = obj(s.spells); if (!Array.isArray(s.spells.known)) s.spells.known = []; s.spells.slots = obj(s.spells.slots); if (typeof s.spells.ability !== 'string' || !s.spells.ability) s.spells.ability = s.spells.ability ? String(s.spells.ability) : 'int';
     for (const sl of Object.values(s.spells.slots)) { sl.max = Math.max(0, Math.min(20, Math.floor(num(sl.max, 0)))); sl.used = Math.max(0, Math.min(sl.max, Math.floor(num(sl.used, 0)))); }
     if (s.spells.pact_slots && typeof s.spells.pact_slots === 'object') { s.spells.pact_slots.max = Math.max(0, Math.min(20, Math.floor(num(s.spells.pact_slots.max, 0)))); s.spells.pact_slots.used = Math.max(0, Math.min(s.spells.pact_slots.max, Math.floor(num(s.spells.pact_slots.used, 0)))); s.spells.pact_slots.level = Math.max(1, Math.min(9, Math.floor(num(s.spells.pact_slots.level, 1)))); }
@@ -347,6 +354,101 @@
   }
   const dis = () => readonly ? '' : null;
 
+  // ---------- Переменные листа (sheet.vars) ----------
+  // Действия с узлом «Записать переменную» (scope: sheet) кладут сюда числа;
+  // data.var читает их обратно. Панель правит те же значения, что и лист:
+  // каждое изменение идёт через save(), поэтому отдельного хранилища нет.
+  // В readonly — только просмотр: без добавления, удаления и сброса.
+  function openVarsDialog() {
+    const V = window.SheetVars;
+    if (!V) return toast('Проверки переменных листа не загружены.');
+    const vars = () => V.normalize(s.vars);
+    const bg = el('div', { class: 'sheet-vars-overlay' });
+    const dialog = el('div', { class: 'sheet-vars-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'sheet-vars-title' });
+    const head = el('div', { class: 'sheet-vars-head' },
+      el('div', { class: 'grow' },
+        el('h2', { id: 'sheet-vars-title' }, 'Переменные'),
+        el('p', { class: 'muted small' }, readonly
+          ? 'Только просмотр: значения записывают действия с узлом «Записать переменную».'
+          : 'Числа листа: их пишет узел «Записать переменную», читает «Переменная». Изменения сохраняются автоматически.')),
+      readonly ? el('span', { class: 'badge' }, 'только чтение') : null);
+    const body = el('div', { class: 'sheet-vars-body' });
+    const tableWrap = el('div', { class: 'sheet-vars-table-wrap' });
+    body.append(tableWrap);
+    let resetBtn = null, resetArmed = false, resetTimer = null;
+    const close = () => {
+      bg.remove(); document.body.classList.remove('sheet-vars-open');
+      document.removeEventListener('keydown', onKey); clearTimeout(resetTimer);
+    };
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    // Лист хранит sheet.vars объектом «имя → число»; пустой объект не оставляем.
+    const commit = next => { s.vars = next; if (!Object.keys(next).length) delete s.vars; save(); };
+    /// Таблица текущих переменных и строка добавления (скрыта в readonly).
+    function paint() {
+      const list = V.entries(s.vars);
+      tableWrap.replaceChildren(list.length
+        ? el('table', { class: 'sheet-vars-table' },
+          el('thead', {}, el('tr', {}, el('th', {}, 'Имя'), el('th', {}, 'Значение'), el('th', { class: 'sheet-vars-actions-col' }, el('span', { class: 'hidden' }, 'Действия')))),
+          el('tbody', {}, ...list.map(([name, value]) => el('tr', {},
+            el('td', { class: 'sheet-vars-name' }, el('code', {}, name)),
+            el('td', {}, readonly
+              ? el('span', { class: 'sheet-vars-read' }, String(value))
+              : el('input', { class: 'sheet-vars-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Значение «' + name + '»', value: String(value), onchange: e => {
+                  const next = V.parseValue(e.target.value);
+                  if (next === null) { e.target.value = String(value); return toast(V.VALUE_ERROR, 3500); }
+                  e.target.value = String(next);
+                  if (next !== value) commit(V.upsert(s.vars, name, next));
+                } })),
+            el('td', { class: 'sheet-vars-actions-col' }, readonly ? null : el('button', {
+              class: 'small danger sheet-vars-del', type: 'button', title: 'Удалить переменную «' + name + '»', 'aria-label': 'Удалить переменную «' + name + '»',
+              onclick: () => { commit(V.remove(s.vars, name)); paint(); toast('Удалено: ' + name, 2000); }
+            }, icon('trash', 12)))))))
+        : el('p', { class: 'sheet-vars-empty' }, 'Переменных пока нет — их создаёт действие с узлом «Записать переменную».'));
+      if (resetBtn) resetBtn.disabled = !list.length;
+    }
+    let nameInp = null, valueInp = null;
+    const add = () => {
+      const name = nameInp.value.trim();
+      const error = V.nameError(name, Object.keys(vars()));
+      if (error) { toast(error, 3500); nameInp.focus(); return; }
+      const value = V.parseValue(valueInp.value);
+      if (value === null) { toast(V.VALUE_ERROR, 3500); valueInp.focus(); return; }
+      commit(V.upsert(s.vars, name, value));
+      nameInp.value = ''; valueInp.value = '';
+      paint(); nameInp.focus();
+      toast('Добавлено: ' + name, 1800);
+    };
+    if (!readonly) {
+      nameInp = el('input', { class: 'sheet-vars-add-name', placeholder: 'новая_переменная', maxlength: V.MAX_NAME, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Имя новой переменной',
+        onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); add(); } } });
+      valueInp = el('input', { class: 'sheet-vars-add-value', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', 'aria-label': 'Значение новой переменной',
+        onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); add(); } } });
+      body.append(el('div', { class: 'sheet-vars-add' },
+        el('label', { class: 'sheet-vars-add-field' }, el('span', {}, 'Имя'), nameInp),
+        el('label', { class: 'sheet-vars-add-field' }, el('span', {}, 'Значение'), valueInp),
+        el('button', { class: 'primary sheet-vars-add-btn', type: 'button', onclick: add }, 'Добавить')));
+      resetBtn = el('button', { class: 'danger sheet-vars-reset', type: 'button', title: 'Удалить все переменные листа', onclick: () => {
+        if (!V.entries(s.vars).length) return;
+        // Подтверждение живёт в самом диалоге: первый клик взводит, второй удаляет.
+        if (!resetArmed) {
+          resetArmed = true; resetBtn.textContent = 'Точно?'; resetBtn.classList.add('armed');
+          resetTimer = setTimeout(() => { resetArmed = false; resetBtn.textContent = 'Сбросить все'; resetBtn.classList.remove('armed'); }, 4000);
+          return;
+        }
+        clearTimeout(resetTimer); resetArmed = false; resetBtn.textContent = 'Сбросить все'; resetBtn.classList.remove('armed');
+        commit({}); paint(); toast('Все переменные удалены.', 2500);
+      } }, 'Сбросить все');
+    }
+    dialog.append(head, body, el('div', { class: 'sheet-vars-foot' }, el('div', { class: 'grow' }, resetBtn),
+      el('button', { class: 'primary sheet-vars-close', type: 'button', onclick: close }, 'Закрыть')));
+    bg.append(dialog);
+    bg.addEventListener('pointerdown', e => { if (e.target === bg) close(); });
+    document.body.append(bg); document.body.classList.add('sheet-vars-open');
+    document.addEventListener('keydown', onKey);
+    paint();
+    setTimeout(() => nameInp?.focus(), 0);
+  }
+
   // ---- отправка в чат / на карту / другому персонажу ----
   function sendCard(doc, kind) { M.sendCard({ ...M.toChatCard(doc, kind), owner: ch.name, ...(kind === 'item' ? { item_ref: { character_id: id, uid: doc.uid } } : {}) }); toast('Отправлено в чат'); }
   async function transfer(it) {
@@ -550,6 +652,7 @@
     const bar = el('div', { class: 'row', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
+      el('button', { class: 'small', style: 'flex:0', title: 'Переменные листа: числа, которые записывают и читают действия (sheet.vars)', onclick: openVarsDialog }, 'Переменные…'),
       readonly ? el('span', { class: 'badge', title: 'Редакция правил' }, EDITIONS[s.edition || '2014']) : el('select', { class: 'small', style: 'flex:0;width:auto', title: 'Редакция правил: влияет на набор записей справочника и порядок создания персонажа', onchange: e => { s.edition = e.target.value; save(); if (compEl) { toggleComp(); } render(); } }, ...Object.entries(EDITIONS).map(([k, v]) => el('option', { value: k, selected: (s.edition || '2014') === k ? '' : null }, v))),
       tokenPick,
       el('button', { class: 'small', onclick: () => { if (!dirty || confirm('Отбросить несохранённые изменения и загрузить актуальный лист?')) reload(true); } }, 'Обновить'),

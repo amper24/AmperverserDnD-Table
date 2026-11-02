@@ -112,6 +112,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(realtime::router())
         .route("/static/*path", get(static_handler))
         .route("/sheet/:id", get(|| async { serve_embedded("sheet.html", None) }))
+        // Страница «Участники стола» (токены, HP, скрытность, владелец).
+        .route("/table/:cid", get(|| async { serve_embedded("table.html", None) }))
         .fallback(get(|| async { serve_embedded("index.html", None) }))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())

@@ -396,12 +396,25 @@
     // ---- верхняя панель ----
     const sceneSel = el('select', { style: 'width:auto;max-width:220px' });
     const presence = el('div', { class: 'presence' });
-    const layerSel = el('select', { style: 'width:auto', title: 'Активный слой (для клика и загрузки файлов)', onchange: e => Table.setActiveLayer(e.target.value) }, ...['character', 'prop', 'map'].filter(l => isGM || l === 'character').map(l => el('option', { value: l }, Table.LAYER_NAMES[l])));
+    const layerSel = el('select', { style: 'width:auto', title: 'Активный слой (для клика и загрузки файлов)', onchange: e => Table.setActiveLayer(e.target.value) });
+    // Слои берём из сцены (scene.layers, по умолчанию — прежний LAYER_ORDER): игроку доступен
+    // только слой персонажей, мастеру — все. Неизвестный слой фолбэчится на prop в table.js.
+    function refreshLayerSel() {
+      const list = Table.state() ? Table.getLayers() : [];
+      const cur = Table.state() ? Table.getActiveLayer() : AssetKinds.LAYER.character;
+      const shown = list.filter(l => isGM || l.id === AssetKinds.LAYER.character);
+      layerSel.innerHTML = '';
+      for (const l of shown) layerSel.append(el('option', { value: l.id, selected: l.id === cur ? '' : null }, l.name));
+      if (!shown.length) layerSel.append(el('option', { value: AssetKinds.LAYER.character }, Table.LAYER_NAMES[AssetKinds.LAYER.character]));
+      layerSel.value = cur;
+    }
     const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
     const bar = el('div', { class: 'tbar' }, el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
     if (isGM) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
     const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
-    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
+    // Отдельная страница «Участники стола»: токены, HP, скрытность, владелец, аватар.
+    const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Участники стола: добавить токен, HP, скрытность, владелец' }, icon('users'), ' Участники');
+    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, membersBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
     const canvasWrap = el('div', { id: 'canvasWrap' });
@@ -480,13 +493,22 @@
     let scenes = await API.get(`/api/campaigns/${cid}/scenes`);
     let currentSceneId = camp.active_scene_id || scenes[0]?.id;
     async function loadScene(sid) {
-      if (!sid) { canvasWrap.innerHTML = '<div class="center muted">Мастер ещё не выбрал сцену</div>'; return; }
+      if (!sid) { canvasWrap.innerHTML = '<div class="center muted">Мастер ещё не выбрал сцену</div>'; refreshLayerSel(); return; }
       currentSceneId = sid;
       const sc = await API.get(`/api/campaigns/${cid}/scenes/${sid}`);
-      if (!Table.state()) Table.init({ campaign: camp, user: me, isGM, scene: sc, ws, container: canvasWrap, onOpenSheet: openSheet, onAssetsChanged: () => panels.assets.refresh?.(), onSelect: () => {} });
+      if (!Table.state()) Table.init({ campaign: camp, user: me, isGM, scene: sc, ws, container: canvasWrap, onOpenSheet: openSheet, onAssetsChanged: () => panels.assets.refresh?.(), onSelect: () => {}, onSceneChange });
       else Table.setScene(sc);
       if (isGM) sceneSel.value = sid;
-      panels.scenes.refresh?.();
+      refreshLayerSel();
+      panels.layers?.refresh?.();
+      panels.scenes?.refresh?.();
+    }
+    // Сцена поменялась (слои, активная карта, карты): обновляем панели без запросов к серверу.
+    function onSceneChange() {
+      refreshLayerSel();
+      panels.layers?.refresh?.();
+      panels.scenes?.refreshMaps?.();
+      panels.scenes?.refreshGrid?.();
     }
     function refreshSceneSel() { sceneSel.innerHTML = ''; scenes.forEach(s => sceneSel.append(el('option', { value: s.id, selected: s.id === currentSceneId ? '' : null }, s.name + (s.id === camp.active_scene_id ? ' (активная)' : '')))); }
     sceneSel.addEventListener('change', () => loadScene(sceneSel.value));
@@ -500,6 +522,7 @@
       chat: { title: 'Чат', name: 'Чат', build: buildChat },
       chars: { title: 'Герои', name: 'Персонажи', build: buildChars },
       assets: { title: 'Ассеты', name: 'Ассеты', build: buildAssets },
+      layers: { title: 'Слои', name: 'Слои', build: buildLayers },
       comp: { title: 'Справ.', name: 'Справочник', build: () => el('div', { style: 'height:100%' }, Compendium.widget({ campaignId: cid, isGM, expandable: true })) },
       init: { title: 'Иниц.', name: 'Инициатива', build: buildInitiative },
     };
@@ -621,6 +644,41 @@
       return w;
     }
 
+    // ---- слои: порядок, переименование, видимость/блокировка, выбор активного ----
+    function buildLayers() {
+      const w = el('div');
+      const listEl = el('div', { class: 'list' });
+      const addBtn = el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: () => { Table.setLayers(TableModel.addLayer(Table.getLayers(), 'Слой ' + (Table.getLayers().length + 1))); refresh(); } }, '+ Слой');
+      const refresh = () => {
+        const st = Table.state();
+        listEl.innerHTML = '';
+        if (!st?.scene) { listEl.append(el('p', { class: 'muted' }, 'Сцена не загружена')); return; }
+        const layersList = Table.getLayers();
+        const active = Table.getActiveLayer();
+        const items = st.scene.items || [];
+        // Сверху списка — верхний слой: больший order рисуется последним.
+        for (const l of [...layersList].sort((a, b) => b.order - a.order)) {
+          const count = TableModel.countItems(items, l.id);
+          const row = el('div', { class: 'item' + (l.id === active ? ' active' : ''), title: 'Сделать активным слоем', onclick: () => { Table.setActiveLayer(l.id); refresh(); } },
+            el('span', { class: 'grow' }, (l.hidden ? '◌ ' : '') + l.name, el('span', { class: 'muted small' }, ' · ' + count)));
+          if (isGM) {
+            row.append(
+              el('button', { class: 'small', title: 'Выше', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.moveLayer(Table.getLayers(), l.id, 1)); refresh(); } }, icon('up')),
+              el('button', { class: 'small', title: 'Ниже', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.moveLayer(Table.getLayers(), l.id, -1)); refresh(); } }, icon('down')),
+              el('button', { class: 'small', title: 'Переименовать', onclick: async e => { e.stopPropagation(); const n = await prompt2('Название слоя', '', l.name); if (n) { Table.setLayers(TableModel.renameLayer(Table.getLayers(), l.id, n)); refresh(); } } }, icon('edit')),
+              el('button', { class: 'small' + (l.hidden ? ' active' : ''), title: l.hidden ? 'Показать игрокам' : 'Скрыть от игроков', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.setLayerFlag(Table.getLayers(), l.id, 'hidden', !l.hidden)); refresh(); } }, icon(l.hidden ? 'eyeoff' : 'eye')),
+              el('button', { class: 'small' + (l.locked ? ' active' : ''), title: l.locked ? 'Открепить слой' : 'Заблокировать слой', onclick: e => { e.stopPropagation(); Table.setLayers(TableModel.setLayerFlag(Table.getLayers(), l.id, 'locked', !l.locked)); refresh(); } }, icon(l.locked ? 'lock' : 'unlock')),
+              el('button', { class: 'small danger', title: count ? 'Слой не пуст' : 'Удалить пустой слой', onclick: e => { e.stopPropagation(); if (count) return toast('Слой не пуст: сначала уберите объекты'); if (Table.getLayers().length <= 1) return toast('Последний слой удалить нельзя'); Table.setLayers(TableModel.removeLayer(Table.getLayers(), l.id)); refresh(); } }, icon('trash')));
+          }
+          listEl.append(row);
+        }
+      };
+      if (!isGM) addBtn.classList.add('hidden');
+      w.append(addBtn, listEl, el('p', { class: 'muted small', style: 'margin-top:8px' }, 'Сверху списка — верхний слой. Скрытый слой игроки не видят, заблокированный не двигают. Активный слой принимает клики и загрузки.'));
+      refresh(); panels.layers.refresh = refresh;
+      return w;
+    }
+
     // ---- инициатива ----
     function buildInitiative() {
       const w = el('div');
@@ -667,8 +725,31 @@
           el('div', { class: 'field' }, el('label', {}, 'Цвет линий'), el('input', { type: 'color', value: (g.color || '#000000').slice(0, 7), style: 'height:32px;padding:2px', onchange: e => { g.color = e.target.value + '66'; Table.sendScene({ grid: g }); } })),
           el('label', {}, el('input', { type: 'checkbox', checked: g.visible ? '' : null, style: 'width:auto', onchange: e => { g.visible = e.target.checked; Table.sendScene({ grid: g }); } }), ' Показывать сетку'));
       };
-      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Название сцены'); if (n) { const s = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await refresh(); loadScene(s.id); } } }, '+ Новая сцена'), list, gridBox);
-      refresh(); panels.scenes.refresh = () => { refresh(); renderGrid(); };
+      // Карты сцены: их может быть несколько (этажи/области), активная — по кнопке или ПКМ.
+      const mapsBox = el('div', { class: 'card', style: 'margin-top:10px' });
+      const renderMaps = () => {
+        const st = Table.state();
+        mapsBox.innerHTML = '';
+        if (!st?.scene) return;
+        const maps = Table.getMapItems();
+        const activeId = Table.getActiveMapId();
+        mapsBox.append(el('h3', {}, 'Карты сцены'),
+          el('p', { class: 'muted small' }, 'Карт может быть несколько: перетащите ещё одну из «Ассетов» на слой карты. Активная карта задаёт «Вписать», «Открыть всё» и туман войны.'));
+        if (!maps.length) { mapsBox.append(el('p', { class: 'muted' }, 'Карт пока нет.')); return; }
+        const ml = el('div', { class: 'list' });
+        maps.forEach((m, i) => {
+          const isActive = m.id === activeId;
+          ml.append(el('div', { class: 'item' + (isActive ? ' active' : ''), title: 'Сделать активной и вписать', onclick: () => { Table.focusMap(m.id); renderMaps(); } },
+            el('span', { class: 'grow' }, m.data?.name || ('Карта ' + (i + 1)), isActive ? el('span', { class: 'badge' }, 'активная') : null),
+            el('button', { class: 'small', title: 'Вписать в экран', onclick: e => { e.stopPropagation(); Table.focusMap(m.id); renderMaps(); } }, icon('fit'))));
+        });
+        mapsBox.append(ml);
+      };
+      w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const n = await prompt2('Название сцены'); if (n) { const s = await API.post(`/api/campaigns/${cid}/scenes`, { name: n }); await refresh(); loadScene(s.id); } } }, '+ Новая сцена'), list, mapsBox, gridBox);
+      refresh(); renderMaps();
+      panels.scenes.refresh = () => { refresh(); renderMaps(); };
+      panels.scenes.refreshMaps = renderMaps;
+      panels.scenes.refreshGrid = renderGrid;
       setTimeout(renderGrid, 300);
       return w;
     }

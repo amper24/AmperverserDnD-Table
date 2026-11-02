@@ -395,11 +395,15 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
                 "item_upsert" => item_upsert(st, cid, scene_id, user, is_gm, &msg["item"]).await,
                 "item_delete" => {
                     let Some(id) = msg["id"].as_str() else { return };
-                    let row = sqlx::query("SELECT data FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
+                    let row = sqlx::query("SELECT data, layer FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
                     if let Some(row) = row {
                         let data = util::json_value(&util::text(&row, "data"));
                         if is_gm || player_can_edit(&data, &user.id) {
                             let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
+                            // Удалённая карта больше не активная: клиенты выберут оставшуюся (или ни одну).
+                            if row.get::<String, _>("layer") == "map" {
+                                let _ = sqlx::query("UPDATE scenes SET active_map_id = NULL WHERE id = ? AND active_map_id = ?").bind(scene_id).bind(id).execute(&st.db).await;
+                            }
                             st.hub.broadcast(cid, &json!({ "type": "item_delete", "scene_id": scene_id, "id": id }), None).await;
                         }
                     }
@@ -427,13 +431,31 @@ async fn handle_message(st: &AppState, cid: &str, conn_id: u64, user: &auth::Aut
         "scene_update" => {
             if !is_gm { return; }
             let Some(scene_id) = msg["scene_id"].as_str() else { return };
-            let row = sqlx::query("SELECT grid, fog, name FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
+            let row = sqlx::query("SELECT grid, fog, name, layers, active_map_id FROM scenes WHERE id = ? AND campaign_id = ?").bind(scene_id).bind(cid).fetch_optional(&st.db).await.ok().flatten();
             let Some(row) = row else { return };
             let grid = if msg["grid"].is_object() { msg["grid"].to_string() } else { util::text(&row, "grid") };
             let fog = if msg["fog"].is_object() { msg["fog"].to_string() } else { util::text(&row, "fog") };
             let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
-            let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ? WHERE id = ?").bind(&grid).bind(&fog).bind(&name).bind(scene_id).execute(&st.db).await;
-            st.hub.broadcast(cid, &json!({ "type": "scene_update", "scene_id": scene_id, "grid": msg["grid"], "fog": msg["fog"], "name": msg["name"] }), None).await;
+            // Слои — часть сцены: валидный массив заменяет список, битый игнорируется.
+            let layers_out = msg.get("layers").and_then(crate::scenes::normalize_layers);
+            let layers = layers_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "layers"));
+            // Активная карта: null очищает, строка (до 32 символов) задаёт, иначе — без изменений.
+            let current_map = util::text(&row, "active_map_id");
+            let active_map_id: Option<String> = match msg.get("active_map_id") {
+                Some(v) if v.is_null() => None,
+                Some(v) => v.as_str().filter(|s| !s.is_empty() && s.len() <= 32).map(|s| s.to_string())
+                    .or_else(|| if current_map.is_empty() { None } else { Some(current_map.clone()) }),
+                None => if current_map.is_empty() { None } else { Some(current_map.clone()) },
+            };
+            let _ = sqlx::query("UPDATE scenes SET grid = ?, fog = ?, name = ?, layers = ?, active_map_id = ? WHERE id = ?")
+                .bind(&grid).bind(&fog).bind(&name).bind(&layers).bind(&active_map_id).bind(scene_id).execute(&st.db).await;
+            let mut out = json!({ "type": "scene_update", "scene_id": scene_id });
+            for key in ["grid", "fog", "name"] {
+                if msg.get(key).is_some() { out[key] = msg[key].clone(); }
+            }
+            if let Some(v) = layers_out { out["layers"] = v; }
+            if msg.get("active_map_id").is_some() { out["active_map_id"] = json!(active_map_id); }
+            st.hub.broadcast(cid, &out, None).await;
         }
         "initiative" => {
             if is_gm {

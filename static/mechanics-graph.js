@@ -165,8 +165,13 @@
     return `${prefix}${localId}`;
   }
   // ---- группы-функции (data.call) ---------------------------------------
-  // Типы параметров/результата функции. Числовые аргументы MVP; результат — любой value-тип.
+  // Типы параметров/результата функции. Результат — любой value-тип; аргументы вызова
+  // получают типы подписи после сохранения «Параметров функции…».
   const FUNCTION_TYPES = ['number', 'text', 'bool', 'list'];
+  const FUNCTION_TYPE_LABELS = { number: 'число', text: 'текст', bool: 'логическое', list: 'список' };
+  const MAX_FUNCTION_INPUTS = 3;
+  // Имена портов data.call фиксированы: по ним движок читает аргументы по порядку.
+  const FUNCTION_ARG_SOCKETS = ['a', 'b', 'c'];
   const MAX_CALL_DEPTH = 16;
   const defaultValue = type => type === 'number' ? 0 : type === 'text' ? '' : type === 'bool' ? false : type === 'list' ? [] : undefined;
   // Приведение к типу функции: без значения — 0 / "" / false / []. Та же таблица на сервере.
@@ -187,6 +192,64 @@
     const inputs = Array.isArray(group?.inputs) ? group.inputs : [], outputs = Array.isArray(group?.outputs) ? group.outputs : [];
     return outputs.length === 1 && FUNCTION_TYPES.includes(outputs[0].type) && inputs.length <= 3
       && inputs.every(socket => FUNCTION_TYPES.includes(socket.type) && validParamName(socket.name));
+  }
+  // Группа, для которой доступен редактор подписи. Имена не проверяются: старые подписи
+  // «Вход 1», «Вход 2» мигрируют в x/y/z при открытии диалога.
+  function isFunctionCandidate(group) {
+    const inputs = Array.isArray(group?.inputs) ? group.inputs : [], outputs = Array.isArray(group?.outputs) ? group.outputs : [];
+    return outputs.length === 1 && FUNCTION_TYPES.includes(outputs[0]?.type) && inputs.length <= MAX_FUNCTION_INPUTS
+      && inputs.every(socket => FUNCTION_TYPES.includes(socket?.type));
+  }
+  const functionNameValid = name => /^[a-z0-9_]{1,32}$/.test(String(name ?? ''));
+  const LEGACY_INPUT_NAME = /^Вход\s*\d+$/i;
+  // Детерминированная миграция старых имён: «Вход 1»/«Вход 2»/пустое имя → x/y/z.
+  // Действительные имена сохраняются, прочие некорректные остаются и ловятся валидацией.
+  function migrateFunctionParamNames(inputs) {
+    const list = Array.isArray(inputs) ? inputs : [];
+    const taken = new Set(list.filter(socket => functionNameValid(socket?.name)).map(socket => String(socket.name)));
+    return list.map((socket, index) => {
+      const name = String(socket?.name ?? ''), trimmed = name.trim();
+      if (functionNameValid(name)) return name;
+      if (trimmed !== '' && !LEGACY_INPUT_NAME.test(trimmed)) return name;
+      const fallback = ['x', 'y', 'z', 'arg1', 'arg2', 'arg3'].find(option => !taken.has(option)) || `arg${index + 1}`;
+      const preferred = ['x', 'y', 'z'][index];
+      const next = preferred && !taken.has(preferred) ? preferred : fallback;
+      taken.add(next);
+      return next;
+    });
+  }
+  // Проверка подписи до применения: до трёх входов, имена 1–32 [a-z0-9_], без дублей,
+  // типы из number/text/bool/list. Ноль входов допустим.
+  function validateFunctionSignature(signature) {
+    const inputs = Array.isArray(signature?.inputs) ? signature.inputs : null;
+    if (!inputs) return 'Параметры функции: список входов обязателен.';
+    if (inputs.length > MAX_FUNCTION_INPUTS) return 'У функции не может быть больше 3 входов.';
+    const names = new Set();
+    for (const [index, input] of inputs.entries()) {
+      const name = String(input?.name ?? '').trim();
+      if (!name) return `Вход ${index + 1}: имя не может быть пустым.`;
+      if (!functionNameValid(name)) return `Вход ${index + 1}: имя — 1–32 символа [a-z0-9_].`;
+      if (names.has(name)) return `Имя входа «${name}» уже используется.`;
+      names.add(name);
+      if (!FUNCTION_TYPES.includes(input?.type)) return `Вход «${name}»: тип number, text, bool или list.`;
+    }
+    if (!FUNCTION_TYPES.includes(signature?.output?.type)) return 'Тип выхода: number, text, bool или list.';
+    return '';
+  }
+  // Типы аргументов вызова из params.args. null — снимка нет (старая запись: a/b/c number).
+  function callArgumentTypes(params) {
+    const args = params?.args;
+    if (!Array.isArray(args) || args.length > MAX_FUNCTION_INPUTS || !args.every(type => FUNCTION_TYPES.includes(type))) return null;
+    return args.slice();
+  }
+  // Порты data.call по снимку подписи: число и типы аргументов; без снимка — прежние a/b/c number.
+  function callPorts(params) {
+    const args = callArgumentTypes(params) || ['number', 'number', 'number'];
+    const result = FUNCTION_TYPES.includes(params?.result) ? params.result : 'number';
+    return {
+      inputs: Object.fromEntries(FUNCTION_ARG_SOCKETS.slice(0, args.length).map((socket, index) => [socket, args[index]])),
+      outputs: { value: result },
+    };
   }
   // Вызов группы-функции: аргументы по порядку group.input, результат — значение на group.output.
   // Рекурсия и глубина 16 дают значение по умолчанию. Та же семантика в call_group_value (Rust).
@@ -227,6 +290,87 @@
       return undefined;
     }
     return coerceFunctionValue(resultType, localValue({ node: source.node, socket: source.socket }, new Set()));
+  }
+  // После сохранения подписи вызовы этой группы получают снимок аргументов (params.args) и
+  // новый тип результата. Провода, ставшие несовместимыми или ведущие в исчезнувший порт,
+  // снимаются: редактор не оставляет структурно невалидный граф.
+  function syncFunctionCalls(mechanics, group) {
+    const graph = graphOf(mechanics), argTypes = (group.inputs || []).map(socket => socket.type);
+    const resultType = group.outputs?.[0]?.type || 'number';
+    const groups = new Map((graph.groups || []).map(item => [item.id, item]));
+    const scopes = [{ nodes: graph.nodes || [], links: graph.links || [], owner: null },
+      ...(graph.groups || []).map(item => ({ nodes: item.nodes || [], links: item.links || [], owner: item }))];
+    let updatedCalls = 0;
+    for (const scope of scopes) {
+      scope.callIds = new Set();
+      for (const node of scope.nodes) {
+        if (node.type !== 'data.call' || String(node.params?.group || '') !== group.id) continue;
+        node.params = { ...node.params, args: argTypes.slice(), result: resultType };
+        scope.callIds.add(node.id);
+        updatedCalls++;
+      }
+    }
+    let removedLinks = 0;
+    for (const scope of scopes) {
+      const kept = scope.links.filter(link => {
+        if (!scope.callIds.has(link?.from?.node) && !scope.callIds.has(link?.to?.node)) return true;
+        const from = scope.nodes.find(node => node.id === link?.from?.node), to = scope.nodes.find(node => node.id === link?.to?.node);
+        const out = from ? socketMap(from, groups, scope.owner).outputs?.[link.from.socket] : undefined;
+        const into = to ? socketMap(to, groups, scope.owner).inputs?.[link.to.socket] : undefined;
+        if (out && into && out === into) return true;
+        removedLinks++;
+        return false;
+      });
+      if (scope.owner) scope.owner.links = kept; else graph.links = kept;
+    }
+    return { updatedCalls, removedLinks };
+  }
+  // Применяет подпись к группе: порядок/имена/типы group.inputs, тип group.outputs[0],
+  // params границ group.input/group.output и снимок аргументов у всех data.call.
+  function applyFunctionSignature(mechanics, groupId, signature) {
+    const error = validateFunctionSignature(signature);
+    if (error) return { error, updatedCalls: 0, removedLinks: 0 };
+    const graph = graphOf(mechanics);
+    const group = (graph.groups || []).find(item => item.id === groupId);
+    if (!group) return { error: 'Параметры функции: группа не найдена.', updatedCalls: 0, removedLinks: 0 };
+    if (!isFunctionCandidate(group)) return { error: 'Параметры функции: у группы должен быть один value-выход и до трёх value-входов.', updatedCalls: 0, removedLinks: 0 };
+    if (!Array.isArray(group.nodes)) group.nodes = [];
+    if (!Array.isArray(group.links)) group.links = [];
+    if (!Array.isArray(group.frames)) group.frames = [];
+    const oldInputs = Array.isArray(group.inputs) ? group.inputs : [];
+    const oldIds = new Set(oldInputs.map(socket => socket.id));
+    const usedIds = new Set(oldIds);
+    const allocateId = () => { let index = 1; while (usedIds.has(`in-${index}`)) index++; const id = `in-${index}`; usedIds.add(id); return id; };
+    const nextInputs = signature.inputs.map(input => {
+      const old = oldInputs.find(socket => socket.id === input.id);
+      const id = old ? old.id : allocateId();
+      return { ...(old || {}), id, name: String(input.name).trim(), type: input.type };
+    });
+    const nextIds = new Set(nextInputs.map(socket => socket.id));
+    const removed = oldInputs.filter(socket => !nextIds.has(socket.id));
+    const dropBoundaries = new Set((group.nodes || []).filter(node => node.type === 'group.input'
+      && !nextIds.has(String(node.params?.socket_id || ''))).map(node => node.id));
+    if (dropBoundaries.size) {
+      group.nodes = (group.nodes || []).filter(node => !dropBoundaries.has(node.id));
+      group.links = (group.links || []).filter(link => !dropBoundaries.has(link?.from?.node) && !dropBoundaries.has(link?.to?.node));
+      group.frames = (group.frames || []).map(frame => ({ ...frame, nodes: (frame.nodes || []).filter(id => !dropBoundaries.has(id)) }));
+    }
+    group.inputs = nextInputs;
+    for (const socket of nextInputs) {
+      const boundary = (group.nodes || []).find(node => node.type === 'group.input' && String(node.params?.socket_id || '') === socket.id);
+      const params = { socket_id: socket.id, name: socket.name, type: socket.type };
+      if (boundary) boundary.params = { ...boundary.params, ...params };
+      else group.nodes.push({ id: mkId('gin'), type: 'group.input', params, position: { x: 0, y: 0 } });
+    }
+    const output = group.outputs[0];
+    output.type = signature.output.type;
+    if (!output.name) output.name = 'result';
+    const outBoundary = (group.nodes || []).find(node => node.type === 'group.output' && String(node.params?.socket_id || '') === output.id);
+    const outParams = { socket_id: output.id, name: output.name, type: output.type };
+    if (outBoundary) outBoundary.params = { ...outBoundary.params, ...outParams };
+    else group.nodes.push({ id: mkId('gout'), type: 'group.output', params: outParams, position: { x: 0, y: 0 } });
+    const synced = syncFunctionCalls(mechanics, group);
+    return { error: '', updatedCalls: synced.updatedCalls, removedLinks: synced.removedLinks, removedInputs: removed.length };
   }
   // Окружение значений корневого графа: data.call получает доступ к группам через callGroup.
   function callEnvironment(groups, context) {
@@ -326,6 +470,8 @@
       const group = groups.get(String(node.params?.group_id || ''));
       return group ? interfaceSockets(group) : { inputs: {}, outputs: {} };
     }
+    // Вызов группы: порты аргументов — по снимку подписи (params.args), иначе прежние a/b/c number.
+    if (node.type === 'data.call') return callPorts(node.params || {});
     if (node.type === 'group.input' || node.type === 'group.output') {
       const socketId = String(node.params?.socket_id || ''), direction = node.type === 'group.input' ? 'inputs' : 'outputs';
       const item = ownerGroup?.[direction]?.find(x => x.id === socketId);
@@ -622,6 +768,15 @@
     if (!FUNCTION_TYPES.includes(outputs[0].type)) return 'Узел вызова: выход группы-функции должен быть number, text, bool или list.';
     if (outputs[0].type !== result) return 'Узел вызова: результат не совпадает с типом выхода группы.';
     if (inputs.length > 3) return 'Узел вызова: у группы-функции не может быть больше 3 входов.';
+    // Снимок аргументов после «Параметров функции…» должен совпадать с текущей подписью:
+    // иначе вызов устарел и его нужно сохранить заново.
+    if (params.args !== undefined) {
+      const args = callArgumentTypes(params);
+      if (!args) return 'Узел вызова: аргументы — до 3 типов number, text, bool или list.';
+      if (args.length !== inputs.length || args.some((type, index) => type !== inputs[index].type)) {
+        return 'Узел вызова: подпись группы изменилась — откройте «Параметры функции…» и сохраните её заново.';
+      }
+    }
     for (const socket of inputs) {
       if (!FUNCTION_TYPES.includes(socket.type)) return 'Узел вызова: вход группы-функции должен быть number, text, bool или list.';
       if (!validParamName(socket.name)) return 'Узел вызова: имя входа группы — 1–32 символа [a-z0-9_] или пусто.';
@@ -1015,6 +1170,8 @@
     };
     // Состояние диалога шаблонов (разметка и обработчики — в блоке «Диалог шаблонов»).
     const tpl = { open: false, mode: 'browse', tab: 'ready', query: '', name: '', error: '', selected: '', confirmKey: '', confirmButton: null, confirmTimer: 0, overlay: null, refs: {}, opener: null, openerAction: '', lastFocused: null };
+    // Состояние диалога «Параметры функции…» (см. блок ниже).
+    const sig = { open: false, groupId: '', inputs: [], outputType: 'number', error: '', overlay: null, refs: {}, opener: null };
     // Превью-провод при перетаскивании от сокета: путь обновляется на pointermove, остальной DOM не трогается.
     let wirePreview = null;
     const field = (label, control) => el('label', { class: 'node-field' }, el('span', {}, label), control);
@@ -1496,11 +1653,181 @@
       (tpl.mode === 'save' ? nameInput : searchInput).focus();
     }
 
+    // ---- диалог «Параметры функции…» -------------------------------------
+    // Подпись — это порядок/имена/типы group.inputs и тип group.outputs[0]. Диалог не трогает
+    // группу до «Сохранить»; миграция старых имён показывается сразу и записывается при сохранении.
+    const signatureGroup = () => graph.groups.find(item => item.id === sig.groupId) || null;
+    function signatureError(message = sig.error) {
+      sig.error = message;
+      if (!sig.refs.error) return;
+      sig.refs.error.textContent = message;
+      sig.refs.error.hidden = !message;
+    }
+    function signatureTypeSelect(value, onChange) {
+      return el('select', { class: 'signature-row-type', 'aria-label': 'Тип входа', onchange: e => { onChange(e.target.value); signatureError(''); } },
+        ...FUNCTION_TYPES.map(type => el('option', { value: type, selected: type === value ? '' : null }, FUNCTION_TYPE_LABELS[type])));
+    }
+    function signatureRow(input, index) {
+      const move = delta => {
+        const target = index + delta;
+        if (target < 0 || target >= sig.inputs.length) return;
+        [sig.inputs[index], sig.inputs[target]] = [sig.inputs[target], sig.inputs[index]];
+        signatureError(''); renderSignatureRows(target, delta > 0 ? 'down' : 'up');
+      };
+      const remove = () => {
+        sig.inputs.splice(index, 1);
+        signatureError(''); renderSignatureRows(Math.min(index, sig.inputs.length - 1), 'name');
+      };
+      return el('div', { class: 'signature-row', 'data-signature-index': index },
+        el('span', { class: 'signature-order' }, String(index + 1)),
+        el('input', { class: 'signature-row-name', type: 'text', maxlength: '32', spellcheck: 'false', value: input.name,
+          'aria-label': `Имя входа ${index + 1}`, placeholder: 'например, x',
+          oninput: e => { input.name = e.target.value; signatureError(''); } }),
+        signatureTypeSelect(input.type, type => { input.type = type; }),
+        el('div', { class: 'signature-row-actions' },
+          el('button', { class: 'small', type: 'button', title: 'Выше', 'aria-label': `Вход ${index + 1} выше`,
+            'data-signature-move': 'up', disabled: index === 0 ? '' : null, onclick: () => move(-1) }, '↑'),
+          el('button', { class: 'small', type: 'button', title: 'Ниже', 'aria-label': `Вход ${index + 1} ниже`,
+            'data-signature-move': 'down', disabled: index === sig.inputs.length - 1 ? '' : null, onclick: () => move(1) }, '↓'),
+          el('button', { class: 'small danger', type: 'button', title: 'Удалить вход', onclick: remove }, 'Удалить')));
+    }
+    function signatureFocus(index, part = 'name') {
+      const row = sig.refs.rows?.querySelector?.(`[data-signature-index="${index}"]`);
+      const target = part === 'name' ? row?.querySelector?.('.signature-row-name') : row?.querySelector?.(`[data-signature-move="${part}"]`);
+      target?.focus?.();
+    }
+    function renderSignatureRows(focusIndex = -1, part = 'name') {
+      if (!sig.refs.rows) return;
+      sig.refs.rows.replaceChildren(...sig.inputs.map(signatureRow));
+      if (sig.refs.empty) sig.refs.empty.hidden = sig.inputs.length > 0;
+      if (sig.refs.add) {
+        sig.refs.add.disabled = sig.inputs.length >= MAX_FUNCTION_INPUTS ? '' : null;
+        sig.refs.add.textContent = sig.inputs.length >= MAX_FUNCTION_INPUTS ? 'Добавить вход (не больше 3)' : 'Добавить вход';
+      }
+      if (sig.refs.subtitle) {
+        const group = signatureGroup();
+        sig.refs.subtitle.textContent = `Группа «${group?.name || 'без имени'}» · ${sig.inputs.length} ${plural(sig.inputs.length, 'вход', 'входа', 'входов')}`;
+      }
+      if (focusIndex >= 0) signatureFocus(focusIndex, part);
+    }
+    function addSignatureInput() {
+      if (sig.inputs.length >= MAX_FUNCTION_INPUTS) return;
+      const taken = new Set(sig.inputs.map(input => String(input.name || '').trim()));
+      const name = ['x', 'y', 'z'].find(option => !taken.has(option)) || `arg${sig.inputs.length + 1}`;
+      sig.inputs.push({ id: mkId('param'), name, type: 'number' });
+      signatureError(''); renderSignatureRows(sig.inputs.length - 1, 'name');
+    }
+    function readSignatureForm() {
+      for (const [index, input] of sig.inputs.entries()) {
+        const row = sig.refs.rows?.querySelector?.(`[data-signature-index="${index}"]`);
+        const name = row?.querySelector?.('.signature-row-name'), type = row?.querySelector?.('.signature-row-type');
+        if (name) input.name = name.value;
+        if (type) input.type = type.value;
+      }
+      if (sig.refs.output) sig.outputType = sig.refs.output.value;
+      return { inputs: sig.inputs.map(input => ({ id: input.id, name: String(input.name || '').trim(), type: input.type })), output: { type: sig.outputType } };
+    }
+    function closeSignatureDialog({ restoreFocus = true } = {}) {
+      if (!sig.open) return;
+      sig.open = false;
+      sig.overlay?.remove();
+      sig.overlay = null; sig.refs = {}; sig.inputs = []; sig.groupId = '';
+      if (restoreFocus) sig.opener?.focus?.();
+      sig.opener = null;
+    }
+    function submitSignature() {
+      if (!sig.open) return;
+      const signature = readSignatureForm();
+      const validation = validateFunctionSignature(signature);
+      if (validation) { signatureError(validation); sig.refs.rows?.querySelector?.('.signature-row-name')?.focus?.(); return; }
+      const group = signatureGroup();
+      if (!group) { signatureError('Параметры функции: группа не найдена.'); return; }
+      const before = snapshot();
+      const result = applyFunctionSignature(mechanics, group.id, signature);
+      if (result.error) {
+        const next = JSON.parse(before); graph.nodes = next.nodes; graph.links = next.links; graph.frames = next.frames; graph.groups = next.groups;
+        signatureError(result.error); return;
+      }
+      const invalid = validate(mechanics);
+      if (invalid) {
+        const next = JSON.parse(before); graph.nodes = next.nodes; graph.links = next.links; graph.frames = next.frames; graph.groups = next.groups;
+        signatureError(`Не удалось сохранить: ${invalid}`); return;
+      }
+      const name = group.name, parts = [`Параметры функции «${name}» сохранены`];
+      if (result.updatedCalls) parts.push(`вызовов обновлено: ${result.updatedCalls}`);
+      if (result.removedLinks) parts.push(`проводов снято: ${result.removedLinks}`);
+      const message = `${parts.join(', ')}.`;
+      closeSignatureDialog({ restoreFocus: false });
+      checkpoint(); status = message; window.toast?.(message); render();
+    }
+    function trapSignatureFocus(event) {
+      const panel = sig.refs.panel; if (!panel) return;
+      const focusables = [...panel.querySelectorAll?.('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])') || []]
+        .filter(node => !node.disabled && node.getClientRects?.().length);
+      if (!focusables.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1], active = document.activeElement;
+      if (!panel.contains(active)) { event.preventDefault(); first.focus(); return; }
+      if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+    }
+    function openSignatureDialog(groupId, opener = null) {
+      const group = graph.groups.find(item => item.id === groupId);
+      if (!group || !isFunctionCandidate(group)) { status = 'Параметры функции доступны только группе с value-входом и одним value-выходом.'; render(); return; }
+      if (sig.open) closeSignatureDialog({ restoreFocus: false });
+      sig.open = true; sig.groupId = groupId; sig.error = ''; sig.opener = opener;
+      const migrated = migrateFunctionParamNames(group.inputs || []);
+      sig.inputs = (group.inputs || []).map((socket, index) => ({ id: socket.id, name: migrated[index], type: FUNCTION_TYPES.includes(socket.type) ? socket.type : 'number' }));
+      sig.outputType = FUNCTION_TYPES.includes(group.outputs?.[0]?.type) ? group.outputs[0].type : 'number';
+      const overlay = el('div', { class: 'signature-overlay', 'data-signature-overlay': '', onclick: e => { if (e.target === overlay) closeSignatureDialog(); } });
+      const panel = el('div', { class: 'signature-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'signature-title', 'data-signature-panel': '', tabindex: '-1' });
+      const head = el('div', { class: 'signature-head' },
+        el('div', { class: 'signature-head-text' },
+          el('h2', { class: 'signature-title', id: 'signature-title' }, 'Параметры функции'),
+          el('p', { class: 'signature-subtitle muted small', 'data-signature-subtitle': '' })),
+        el('button', { class: 'signature-close', type: 'button', title: 'Закрыть', 'aria-label': 'Закрыть параметры функции', onclick: () => closeSignatureDialog() }, '×'));
+      const rows = el('div', { class: 'signature-inputs' });
+      const empty = el('p', { class: 'signature-empty muted small', hidden: '' }, 'Входов нет — функция без параметров.');
+      const add = el('button', { class: 'small', type: 'button', 'data-signature-add': '', onclick: addSignatureInput }, 'Добавить вход');
+      const output = el('select', { class: 'signature-output-type', 'aria-label': 'Тип выхода', onchange: e => { sig.outputType = e.target.value; signatureError(''); } },
+        ...FUNCTION_TYPES.map(type => el('option', { value: type, selected: type === sig.outputType ? '' : null }, FUNCTION_TYPE_LABELS[type])));
+      const error = el('p', { class: 'signature-error', role: 'alert', 'aria-live': 'assertive', hidden: '' });
+      const nonValue = (group.nodes || []).filter(node => !isFunctionValueNode(node.type)).length;
+      const body = el('div', { class: 'signature-body' },
+        el('p', { class: 'signature-hint muted small' }, 'Входы вызываются по порядку: a, b, c. Имя — 1–32 символа [a-z0-9_]; типы — number, text, bool, list.'),
+        nonValue ? el('p', { class: 'signature-warning' }, 'В группе есть блоки действий или поток: вызовы такой группы будут отклонены проверкой.') : null,
+        rows, empty,
+        el('div', { class: 'signature-toolbar' }, add, el('span', { class: 'muted small' }, 'До 3 входов')),
+        el('div', { class: 'signature-output' }, el('span', {}, 'Тип выхода'), output),
+        error);
+      const foot = el('div', { class: 'signature-foot' },
+        el('button', { type: 'button', onclick: () => closeSignatureDialog() }, 'Отмена'),
+        el('button', { class: 'primary', type: 'button', 'data-signature-save': '', onclick: submitSignature }, 'Сохранить'));
+      panel.append(head, body, foot);
+      overlay.append(panel);
+      overlay.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSignatureDialog(); return; }
+        if (e.key === 'Tab') trapSignatureFocus(e);
+        e.stopPropagation();
+      });
+      sig.overlay = overlay;
+      sig.refs = { overlay, panel, rows, empty, add, output, subtitle: head.querySelector?.('[data-signature-subtitle]'), error };
+      root.append(overlay);
+      renderSignatureRows();
+      signatureError('');
+      (sig.inputs.length ? rows.querySelector?.('.signature-row-name') : add)?.focus?.();
+    }
+
     function portType(node, direction, socket) {
       const groups = new Map(graph.groups.map(g => [g.id, g]));
       return socketMap(node, groups)[direction]?.[socket];
     }
     function portLabel(node, direction, socket) {
+      if (node.type === 'data.call') {
+        const group = graph.groups.find(item => item.id === String(node.params?.group || ''));
+        const index = FUNCTION_ARG_SOCKETS.indexOf(socket);
+        if (group && index >= 0 && group.inputs?.[index]?.name) return group.inputs[index].name;
+        return socket;
+      }
       if (node.type !== 'group.instance') return socket;
       const group = graph.groups.find(item => item.id === node.params?.group_id), list = direction === 'inputs' ? group?.inputs : group?.outputs;
       return list?.find(item => item.id === socket)?.name || socket;
@@ -1826,18 +2153,19 @@
         // Перетаскивание — за любую часть карточки, кроме кнопок, полей и сокетов (у них свои жесты).
         onpointerdown: e => { suppressClick = false; if (e.target?.closest?.('button, input, select, textarea')) return; startDrag(e, node); },
         onclick: e => { if (suppressClick) { suppressClick = false; return; } activeNode = node.id; if (e.ctrlKey || e.metaKey || e.shiftKey) { if (selected.has(node.id)) selected.delete(node.id); else selected.add(node.id); } else selected = new Set([node.id]); render(); },
-        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } openMenu(e.clientX, e.clientY, { categories: true, sections: [
+        oncontextmenu: e => { e.preventDefault(); e.stopPropagation(); if (!selected.has(node.id)) { selected = new Set([node.id]); activeNode = node.id; render(); } const menuGroup = node.type === 'group.instance' ? graph.groups.find(item => item.id === node.params?.group_id) : null; const menuFunction = menuGroup && isFunctionCandidate(menuGroup) ? menuGroup : null; openMenu(e.clientX, e.clientY, { categories: true, sections: [
           // Сначала — типы, которые можно подключить к этому узлу или от него (см. connectionCandidates).
           ...connectionSections(node),
           { title: 'Узел', items: [
             { label: 'Дублировать', run: () => ({ action: 'duplicate' }) },
             { label: 'Удалить выделенное', run: () => ({ action: 'delete' }) }] },
           { title: 'Группа', items: [
+            ...(menuFunction ? [{ label: 'Параметры функции…', run: () => ({ action: 'function-signature', group: menuFunction.id }) }] : []),
             { label: 'Сгруппировать выделенное', run: () => ({ action: 'group' }) },
             { label: 'Рамка из выделения', run: () => ({ action: 'frame' }) }] },
           { title: 'Добавить рядом', items: window.NodeMenu.catalogCategories().map(cat => ({ label: cat.label, children: cat.children.map(c => ({ ...c, run: () => ({ action: 'add', type: c.hint, at: { x: node.position.x + 280, y: node.position.y } }) })) })) },
         ],
-          onPick: r => { if (r.action === 'connect') addConnectedNode(node, r.type, r.mode, r.pair); else if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else addFrame(); } }); } },
+          onPick: r => { if (r.action === 'connect') addConnectedNode(node, r.type, r.mode, r.pair); else if (r.action === 'delete') deleteNodes([...selected]); else if (r.action === 'group') makeGroup(); else if (r.action === 'duplicate') duplicateNodes([...selected]); else if (r.action === 'add') addNode(r.type, null, r.at); else if (r.action === 'function-signature') openSignatureDialog(r.group); else addFrame(); } }); } },
         // Шапка как в Blender: цвет категории, имя узла и компактный id; ниже — список портов, затем поля.
         el('header', { class: 'graph-node-head' },
           el('span', { class: 'node-dot' }), el('b', { title: [node.type, NodeRegistry.nodeDef(node.type)?.description].filter(Boolean).join(' · ') }, label),
@@ -1935,6 +2263,8 @@
       const stop = { onpointerdown: e => e.stopPropagation(), onclick: e => e.stopPropagation() };
       return el('div', { class: 'node-group-details', ...stop },
         field('Имя группы', el('input', { value: group.name, onchange: e => { group.name = String(e.target.value).slice(0, 120) || group.name; checkpoint(); render(); } })),
+        isFunctionCandidate(group) ? el('button', { class: 'small', type: 'button', 'data-action': 'function-signature', title: 'Имена и типы входов, тип выхода',
+          onclick: e => { e.stopPropagation(); openSignatureDialog(group.id, e.currentTarget); } }, 'Параметры функции…') : null,
         el('p', { class: 'muted small' }, `Входы: ${(group.inputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`),
         el('p', { class: 'muted small' }, `Выходы: ${(group.outputs || []).map(item => `${item.name} · ${item.type}`).join(', ') || 'нет'}`));
     }
@@ -1976,10 +2306,18 @@
       const query = search.toLocaleLowerCase();
       const palette = Object.entries(NODE_DEFS).filter(([type, def]) => !['group.input', 'group.output'].includes(type) && (!query || `${type} ${def.label} ${def.description || ''} ${def.group}`.toLocaleLowerCase().includes(query)));
       const shownPalette = query ? palette.slice(0, 8) : QUICK_NODES.filter(t => NODE_DEFS[t]).map(t => [t, NODE_DEFS[t]]);
+      const selectedFunction = (() => {
+        if (selected.size !== 1) return null;
+        const node = nodeById([...selected][0]);
+        if (node?.type !== 'group.instance') return null;
+        const group = graph.groups.find(item => item.id === node.params?.group_id);
+        return group && isFunctionCandidate(group) ? group : null;
+      })();
       const toolbar = el('div', { class: 'node-toolbar' }, field('Поиск / добавить узел', searchBox), ...shownPalette.map(([type, def]) => el('button', { class: 'small node-add', title: type, 'data-description': def.description || '', onclick: () => addNode(type) }, '+ ', def.label)),
         el('button', { class: 'small', disabled: historyIndex <= 0 ? '' : null, onclick: () => restore(historyIndex - 1) }, '↶ Отменить'),
         el('button', { class: 'small', disabled: historyIndex >= history.length - 1 ? '' : null, onclick: () => restore(historyIndex + 1) }, '↷ Повторить'),
         el('button', { class: 'small', onclick: addFrame }, '+ Рамка'), el('button', { class: 'small', onclick: makeGroup }, 'Сгруппировать'),
+        selectedFunction ? el('button', { class: 'small', 'data-action': 'function-signature', onclick: e => openSignatureDialog(selectedFunction.id, e.currentTarget) }, 'Параметры функции…') : null,
         el('button', { class: 'small', 'data-action': 'presets', onclick: () => window.Presets?.openManager() }, 'Наборы данных…'),
         el('span', { class: 'muted small' }, 'ПКМ — меню узлов · колесо — масштаб · средняя кнопка — панорама · рамка — выделение'));
       // Пустой граф: сразу предлагаем готовые варианты, чтобы не начинать с чистого холста.
@@ -2024,6 +2362,7 @@
       shell.append(...[actionBar, toolbar, starters, groupShelf, el('div', { class: 'node-workspace' }, canvas), templateBar, statusLine, renderPreview()].filter(Boolean));
       // Если редактор перерисовали при открытом диалоге, окно остаётся поверх оболочки.
       if (tpl.open && tpl.overlay && !tpl.overlay.isConnected) root.append(tpl.overlay);
+      if (sig.open && sig.overlay && !sig.overlay.isConnected) root.append(sig.overlay);
       // Провода рисуются после вставки карточек: точки сокетов измеряются по DOM.
       drawWires(world);
       // Сетка холста выравнивается по текущему виду (applyView только двигает фон и transform).
@@ -2071,6 +2410,13 @@
     // Подбор узлов для контекстного меню редактора (чистые функции, без DOM).
     connectionCandidates,
     connectionPorts,
+    // Редактор сигнатуры функции: кандидат группы, миграция имён, проверка и применение подписи,
+    // порты data.call по снимку аргументов (используются и тестами, и диалогом).
+    isFunctionCandidate,
+    migrateFunctionParamNames,
+    validateFunctionSignature,
+    applyFunctionSignature,
+    callPorts,
     CONNECT_LIMIT,
     CONNECT_TO,
     CONNECT_FROM,

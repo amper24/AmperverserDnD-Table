@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS scenes (
   name VARCHAR(128) NOT NULL,
   grid TEXT NOT NULL,
   fog {MEDIUMTEXT} NOT NULL,
+  layers {MEDIUMTEXT} NULL,
+  active_map_id VARCHAR(32) NULL,
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 );
@@ -221,6 +223,9 @@ const ALTERS: &[&str] = &[
     // локализация наборов: базовый язык записей (ru|en) и переводы названия/описания {"en": {"name", "description"}}
     "ALTER TABLE packs ADD COLUMN locale VARCHAR(8) NULL",
     "ALTER TABLE packs ADD COLUMN i18n TEXT NULL",
+    // слои сцены (JSON-массив {id,name,order,...}) и активная карта (id элемента слоя map)
+    "ALTER TABLE scenes ADD COLUMN layers MEDIUMTEXT NULL",
+    "ALTER TABLE scenes ADD COLUMN active_map_id VARCHAR(32) NULL",
 ];
 
 const INDEXES: &[&str] = &[
