@@ -162,6 +162,42 @@ window.TableModel = (() => {
   const isHex = grid => (grid?.type || 'square') === 'hex';
   function hexMetrics(grid) { const w = gridSize(grid), r = w / Math.sqrt(3); return { w, r, hstep: w, vstep: r * 1.5 }; }
   function hexCenter(q, rr, grid) { const { w, r } = hexMetrics(grid); return { x: w * (q + rr / 2), y: r * 1.5 * rr }; }
+  /// Видимый диапазон гексов для прямоугольника мира (x0..x1, y0..y1).
+  /// Формула та же, что у отрисовки: запас в один гекс по краям, поэтому
+  /// диапазон можно использовать и для подсчёта клеток кадра.
+  function hexRowRange(rr, x0, x1, grid) {
+    const { w } = hexMetrics(grid);
+    return { q0: Math.floor(x0 / w - rr / 2) - 1, q1: Math.ceil(x1 / w - rr / 2) + 1 };
+  }
+  function hexVisibleRange(x0, y0, x1, y1, grid) {
+    const { r } = hexMetrics(grid);
+    const hstep = r * 1.5;
+    if (![x0, y0, x1, y1].every(Number.isFinite) || x1 < x0 || y1 < y0) return { r0: 0, r1: -1, q0: 0, q1: -1, rows: 0, count: 0 };
+    const r0 = Math.floor(y0 / hstep) - 1, r1 = Math.ceil(y1 / hstep) + 1;
+    let count = 0, q0 = Infinity, q1 = -Infinity, rows = 0;
+    for (let rr = r0; rr <= r1; rr++) {
+      const row = hexRowRange(rr, x0, x1, grid);
+      if (row.q1 < row.q0) continue;
+      rows++;
+      count += row.q1 - row.q0 + 1;
+      if (row.q0 < q0) q0 = row.q0;
+      if (row.q1 > q1) q1 = row.q1;
+    }
+    return { r0, r1, q0: rows ? q0 : 0, q1: rows ? q1 : -1, rows, count };
+  }
+  /// Ключ кэша сетки: тип/размер/цвет/видимость, зум, dpr и размер вьюпорта.
+  /// Пан камеры в ключ не входит — кэш сдвигается без перерисовки.
+  function gridCacheKey(opts = {}) {
+    const g = opts.grid || {};
+    return [isHex(g) ? 'hex' : 'square', gridSize(g), String(opts.color ?? g.color ?? ''), g.visible ? 1 : 0,
+      Number(opts.dpr) || 1, Number(opts.k) || 1, Number(opts.w) || 0, Number(opts.h) || 0].join('|');
+  }
+  /// Накрывает ли прямоугольник кэша (экранные CSS-px) весь вьюпорт.
+  function gridCacheCovers(rect, w, h, tolerance = 0) {
+    if (!rect || !(rect.w > 0) || !(rect.h > 0)) return false;
+    return rect.x <= tolerance && rect.y <= tolerance
+      && rect.x + rect.w >= w - tolerance && rect.y + rect.h >= h - tolerance;
+  }
   function hexAt(x, y, grid) {
     const { r } = hexMetrics(grid);
     const qf = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / r, rf = (2 / 3 * y) / r;
@@ -507,7 +543,7 @@ window.TableModel = (() => {
     defaultLayers, normalize, find, resolve, orderOf, addLayer, removeLayer, renameLayer, moveLayer, setLayerFlag,
     countItems, sortItems,
     isMap, mapItems, findMap, activeMapId, activeMap, boundsOf, unionBounds, boardBounds, fitView,
-    gridSize, isHex, hexMetrics, hexCenter, hexAt, snapPos, snapCorner,
+    gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner,
     snapRuler, rulerCells, scaleFt, rulerLabel,
     // туман войны: маска на карту (scene.fog.by_map)
     FOG_MAX_SHAPES, FOG_UNDO_MAX, FOG_BRUSH_MIN, FOG_BRUSH_MAX, FOG_SHAPES, FOG_MODES,

@@ -16,6 +16,56 @@ window.Table = (function () {
   const COLORS = ['#ffffff', '#e5484d', '#f5a524', '#f7d038', '#46a758', '#3e9bff', '#7c5cff', '#000000'];
   const newId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : (Date.now().toString(16) + Math.random().toString(16).slice(2, 18)).slice(0, 32));
 
+  // ---------- производительность сетки ----------
+  // Углы вершин гекса считаем один раз: раньше Math.cos/sin вызывались 12 раз
+  // на каждый гекс каждый кадр.
+  const HEX_COS = new Float64Array(6), HEX_SIN = new Float64Array(6);
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 180 * (60 * i - 30);
+    HEX_COS[i] = Math.cos(a); HEX_SIN[i] = Math.sin(a);
+  }
+  // Кэш сетки: поля вокруг вьюпорта (чтобы панорама шла без перерисовки) и
+  // предохранитель по числу пикселей на retina/4K-экранах.
+  const GRID_MARGIN_MIN = 128, GRID_MARGIN_MAX = 384, GRID_CACHE_MAX_PIXELS = 16 * 1024 * 1024;
+  // Счётчики кадра: включаются флагом #gridstats / ?gridstats / localStorage.
+  const gridStats = {
+    frames: 0, drawGridMs: 0, drawGridMsMax: 0, drawGridMsLast: 0,
+    rebuilds: 0, rebuildMs: 0, rebuildMsMax: 0, rebuildMsLast: 0,
+    blits: 0, rasterizedLast: 0, pathOpsLast: 0, visibleCells: 0, cacheKey: '',
+  };
+  let lastStatsLog = 0;
+  function statsEnabled() {
+    try {
+      return location.hash.includes('gridstats') || new URLSearchParams(location.search).has('gridstats')
+        || localStorage.getItem('table.gridStats') === '1';
+    } catch { return false; }
+  }
+  let STATS_ON = statsEnabled();
+  function gridStatsSnapshot() {
+    const frames = Math.max(1, gridStats.frames);
+    return {
+      on: STATS_ON,
+      frames: gridStats.frames,
+      drawGridMsAvg: +(gridStats.drawGridMs / frames).toFixed(4),
+      drawGridMsMax: +gridStats.drawGridMsMax.toFixed(4),
+      drawGridMsLast: +gridStats.drawGridMsLast.toFixed(4),
+      rebuilds: gridStats.rebuilds,
+      rebuildMsAvg: gridStats.rebuilds ? +(gridStats.rebuildMs / gridStats.rebuilds).toFixed(3) : 0,
+      rebuildMsMax: +gridStats.rebuildMsMax.toFixed(3),
+      rebuildMsLast: +gridStats.rebuildMsLast.toFixed(3),
+      blits: gridStats.blits,
+      rasterizedLast: gridStats.rasterizedLast,
+      pathOpsLast: gridStats.pathOpsLast,
+      visibleCells: gridStats.visibleCells,
+      cacheKey: gridStats.cacheKey,
+    };
+  }
+  function resetGridStats() {
+    gridStats.frames = 0; gridStats.drawGridMs = 0; gridStats.drawGridMsMax = 0; gridStats.drawGridMsLast = 0;
+    gridStats.rebuilds = 0; gridStats.rebuildMs = 0; gridStats.rebuildMsMax = 0; gridStats.rebuildMsLast = 0;
+    gridStats.blits = 0; gridStats.rasterizedLast = 0; gridStats.pathOpsLast = 0; gridStats.visibleCells = 0;
+  }
+
   let S; // состояние стола
 
   // ---------- Состояние, сцены, камера ----------
@@ -31,6 +81,8 @@ window.Table = (function () {
       // Слои сцены и активный слой (для клика/загрузки). Активная карта живёт в scene.active_map_id.
       layers: T.normalize(ctx.scene?.layers),
       activeLayer: LAYER.character,
+      // dirty — есть ли изменения для кадра; gridCache — offscreen-кэш сетки.
+      dirty: true, gridCache: null,
     };
     S.scene = adoptScene(ctx.scene);
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
@@ -50,8 +102,9 @@ window.Table = (function () {
     syncScale();
     resize();
     window.addEventListener('resize', resize);
+    window.addEventListener('hashchange', () => { STATS_ON = statsEnabled(); requestDraw(); });
     fitToMap();
-    requestAnimationFrame(loop);
+    requestDraw();
   }
 
   /// Сцена при загрузке: старый scene.fog.shapes переезжает в маску активной/единственной карты.
@@ -68,7 +121,7 @@ window.Table = (function () {
     S.layers = T.normalize(scene?.layers);
     // Активный слой мог исчезнуть в новой сцене — фолбэк на prop, как и у элементов.
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
-    syncScale(); updateProps(); syncFogPanel(); fitToMap(); notifySceneChange();
+    syncScale(); updateProps(); syncFogPanel(); fitToMap(); notifySceneChange(); requestDraw();
   }
   function syncScale() { S.gridScaleFt = parseInt(S.scene.grid?.scale) || 5; }
 
@@ -88,7 +141,7 @@ window.Table = (function () {
     syncLayers(next);
     sendScene({ layers: S.layers });
     if (!layerDef(S.activeLayer)) S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
-    updateProps(); notifySceneChange();
+    updateProps(); notifySceneChange(); requestDraw();
   }
   /// Сделать карту активной (fitToMap/туман/«Открыть всё» считаются по ней). null — все карты.
   function setActiveMap(id) {
@@ -97,7 +150,7 @@ window.Table = (function () {
     sendScene({ active_map_id: next });
     // У каждой карты своя маска тумана — панель и оверлей сразу показывают маску новой карты.
     syncFogPanel();
-    updateProps(); notifySceneChange();
+    updateProps(); notifySceneChange(); requestDraw();
   }
   function focusMap(id) { if (id) setActiveMap(id); fitToMap(); }
 
@@ -106,13 +159,13 @@ window.Table = (function () {
     const r = S.canvas.parentElement.getBoundingClientRect();
     S.canvas.width = r.width * devicePixelRatio; S.canvas.height = r.height * devicePixelRatio;
     S.w = r.width; S.h = r.height;
+    requestDraw();
   }
   const toWorld = (sx, sy) => ({ x: (sx - S.cam.x) / S.cam.k, y: (sy - S.cam.y) / S.cam.k });
   const grid = () => T.gridSize(S.scene?.grid);
   // ---------- Сетка: квадраты и гексы, привязка позиций ----------
   const isHex = () => T.isHex(S.scene?.grid);
   const hexMetrics = () => T.hexMetrics(S.scene?.grid);
-  const hexCenter = (q, rr) => T.hexCenter(q, rr, S.scene?.grid);
   function snapPos(x, y, w, h) { return T.snapPos(x, y, w, h, { grid: S.scene?.grid, snap: S.snap }); }
   /// Вписать в экран активную карту (или все карты, если активная не выбрана, — как раньше без карт).
   function fitToMap() {
@@ -120,6 +173,7 @@ window.Table = (function () {
     const b = T.boardBounds(S.scene) || { x: 0, y: 0, w: g * 20, h: g * 20 };
     const view = T.fitView(b, { w: S.w, h: S.h });
     if (view) { S.cam.k = view.k; S.cam.x = view.x; S.cam.y = view.y; }
+    requestDraw();
   }
   // ---------- Объекты стола: границы, видимость, права ----------
   function itemBounds(it) {
@@ -161,8 +215,26 @@ window.Table = (function () {
 
   // ---------- рендер ----------
   // ---------- Отрисовка: цикл, сетка, объекты, туман войны ----------
-  function loop() { draw(); requestAnimationFrame(loop); }
+  // Кадры запрашиваются по требованию и склеиваются в один requestAnimationFrame.
+  // Раньше draw() шёл 60 раз в секунду всегда, даже если ничего не менялось.
+  let frameQueued = false;
+  function requestDraw() {
+    if (!S) return;
+    S.dirty = true;
+    if (frameQueued) return;
+    frameQueued = true;
+    requestAnimationFrame(frame);
+  }
+  function frame() {
+    frameQueued = false;
+    if (!S || (!S.dirty && !S.pings.length)) return;
+    S.dirty = false;
+    draw();
+    // Пинги живут две секунды и плавно гаснут — пока они есть, кадры идут подряд.
+    if (S.pings.length) requestDraw();
+  }
   function draw() {
+    gridStats.frames++;
     const c = S.ctx2d; c.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     c.clearRect(0, 0, S.w, S.h);
     c.save(); c.translate(S.cam.x, S.cam.y); c.scale(S.cam.k, S.cam.k);
@@ -171,10 +243,10 @@ window.Table = (function () {
     let gridAt = 0;
     for (let i = 0; i < items.length; i++) if (layerOf(items[i]) === LAYER.map) gridAt = i + 1;
     for (let i = 0; i < items.length; i++) {
-      if (i === gridAt) drawGrid(c);
+      if (i === gridAt) drawGridTimed(c);
       drawItem(c, items[i], S.isGM && layerHidden(layerOf(items[i])));
     }
-    if (gridAt >= items.length) drawGrid(c);
+    if (gridAt >= items.length) drawGridTimed(c);
     // Подсветка активной карты — только мастеру и только когда карт несколько.
     if (S.isGM && T.mapItems(S.scene.items).length > 1) {
       const b = T.boundsOf(activeMap());
@@ -192,31 +264,139 @@ window.Table = (function () {
     S.pings = S.pings.filter(p => now - p.t < 2000);
     for (const p of S.pings) { const a = 1 - (now - p.t) / 2000; c.beginPath(); c.arc(p.x, p.y, (1 - a) * 60 / S.cam.k + 10, 0, 7); c.strokeStyle = `rgba(255,200,60,${a})`; c.lineWidth = 4 / S.cam.k; c.stroke(); c.fillStyle = `rgba(255,200,60,${a})`; c.font = `${14 / S.cam.k}px sans-serif`; c.fillText(p.name, p.x + 14 / S.cam.k, p.y - 14 / S.cam.k); }
     c.restore();
+    if (STATS_ON) {
+      window.__gridStats = gridStatsSnapshot();
+      const t = performance.now();
+      if (t - lastStatsLog > 1000) { lastStatsLog = t; console.info('[grid]', window.__gridStats); }
+    }
+  }
+  /// Обёртка замера: drawGridMs — это блит кэша или перерисовка кэша, без остальных объектов.
+  function drawGridTimed(c) {
+    const t0 = performance.now();
+    gridStats.rasterizedLast = 0;
+    gridStats.pathOpsLast = 0;
+    drawGrid(c);
+    const ms = performance.now() - t0;
+    gridStats.drawGridMsLast = ms;
+    gridStats.drawGridMs += ms;
+    if (ms > gridStats.drawGridMsMax) gridStats.drawGridMsMax = ms;
+  }
+  const gridDpr = () => devicePixelRatio || 1;
+  function gridMargin() {
+    // Чем мельче клетки на экране, тем меньше поле вокруг вьюпорта: иначе на
+    // дальней дистанции кэш рисовал бы десятки тысяч лишних гексов.
+    const cellPx = Math.max(1, grid() * S.cam.k);
+    const want = cellPx < 8 ? GRID_MARGIN_MIN : cellPx < 16 ? 192 : Math.round(Math.min(S.w, S.h) * 0.4);
+    return Math.max(GRID_MARGIN_MIN, Math.min(GRID_MARGIN_MAX, want));
+  }
+  /// Перерисовать offscreen-кэш сетки для текущего зума и камеры.
+  /// Внутри — один beginPath на всю сетку и один stroke; никаких closePath на
+  /// десятках тысяч подпутей (в Chrome это O(n²) и стоило секунды на кадр).
+  function rebuildGridCache(key) {
+    const t0 = performance.now();
+    const g = S.scene.grid;
+    const dpr = gridDpr();
+    let margin = gridMargin();
+    let cw = Math.ceil(S.w) + margin * 2, ch = Math.ceil(S.h) + margin * 2;
+    // Потолок памяти: на 4K/retina при необходимости уменьшаем поля и разрешение кэша.
+    while (margin > GRID_MARGIN_MIN && cw * ch * dpr * dpr > GRID_CACHE_MAX_PIXELS) {
+      margin = Math.max(GRID_MARGIN_MIN, margin - 64);
+      cw = Math.ceil(S.w) + margin * 2; ch = Math.ceil(S.h) + margin * 2;
+    }
+    let renderDpr = dpr;
+    while (renderDpr > 1 && cw * ch * renderDpr * renderDpr > GRID_CACHE_MAX_PIXELS) renderDpr = Math.max(1, renderDpr - 0.25);
+    const x0 = -margin, y0 = -margin;
+    const cv = S.gridCache?.canvas || document.createElement('canvas');
+    const pw = Math.max(1, Math.round(cw * renderDpr)), ph = Math.max(1, Math.round(ch * renderDpr));
+    if (cv.width !== pw) cv.width = pw;
+    if (cv.height !== ph) cv.height = ph;
+    const o = cv.getContext('2d');
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, pw, ph);
+    o.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
+    o.translate(-x0, -y0);
+    o.translate(S.cam.x, S.cam.y);
+    o.scale(S.cam.k, S.cam.k);
+    o.strokeStyle = g.color || '#00000055';
+    o.lineWidth = 1 / S.cam.k;
+    o.beginPath();
+    const wx0 = (x0 - S.cam.x) / S.cam.k, wx1 = (x0 + cw - S.cam.x) / S.cam.k;
+    const wy0 = (y0 - S.cam.y) / S.cam.k, wy1 = (y0 + ch - S.cam.y) / S.cam.k;
+    let cells = 0, ops = 0;
+    if (isHex()) {
+      const { w, r } = hexMetrics();
+      const hstep = r * 1.5;
+      const r0 = Math.floor(wy0 / hstep) - 1, r1 = Math.ceil(wy1 / hstep) + 1;
+      for (let rr = r0; rr <= r1; rr++) {
+        const q0 = Math.floor(wx0 / w - rr / 2) - 1, q1 = Math.ceil(wx1 / w - rr / 2) + 1;
+        if (q1 < q0) continue;
+        const cy = hstep * rr;
+        for (let q = q0; q <= q1; q++) {
+          const cx = w * (q + rr / 2);
+          o.moveTo(cx + r * HEX_COS[0], cy + r * HEX_SIN[0]);
+          for (let i = 1; i < 6; i++) o.lineTo(cx + r * HEX_COS[i], cy + r * HEX_SIN[i]);
+          // Замыкаем шестиугольник линией к первой вершине вместо closePath().
+          o.lineTo(cx + r * HEX_COS[0], cy + r * HEX_SIN[0]);
+          cells++; ops += 7;
+        }
+      }
+    } else {
+      const size = grid();
+      const sx0 = Math.floor(wx0 / size) * size, sy0 = Math.floor(wy0 / size) * size;
+      let nx = 0, ny = 0;
+      for (let x = sx0; x <= wx1; x += size) { o.moveTo(x, wy0); o.lineTo(x, wy1); nx++; }
+      for (let y = sy0; y <= wy1; y += size) { o.moveTo(wx0, y); o.lineTo(wx1, y); ny++; }
+      ops = (nx + ny) * 2;
+    }
+    o.stroke();
+    gridStats.rebuilds++;
+    const ms = performance.now() - t0;
+    gridStats.rebuildMs += ms;
+    if (ms > gridStats.rebuildMsMax) gridStats.rebuildMsMax = ms;
+    gridStats.rebuildMsLast = ms;
+    gridStats.rasterizedLast = cells;
+    gridStats.pathOpsLast = ops;
+    gridStats.visibleCells = cells;
+    gridStats.cacheKey = key;
+    S.gridCache = { key, canvas: cv, cw, ch, x0, y0, camX: S.cam.x, camY: S.cam.y, renderDpr };
+  }
+  /// Кэш актуален, если совпал ключ и при текущей камере он всё ещё накрывает вьюпорт.
+  function gridCacheMatches(cache, key) {
+    if (!cache || cache.key !== key) return false;
+    const dx = S.cam.x - cache.camX, dy = S.cam.y - cache.camY;
+    return T.gridCacheCovers({ x: cache.x0 + dx, y: cache.y0 + dy, w: cache.cw, h: cache.ch }, S.w, S.h, -1);
+  }
+  /// Блит кэша в экранных координатах: 1:1 по устройству, без пересчёта гексов.
+  function blitGridCache(c, cache) {
+    const dpr = gridDpr();
+    const dx = Math.round(cache.x0 * dpr + (S.cam.x - cache.camX) * dpr);
+    const dy = Math.round(cache.y0 * dpr + (S.cam.y - cache.camY) * dpr);
+    const dw = Math.round(cache.cw * dpr), dh = Math.round(cache.ch * dpr);
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    // При renderDpr === dpr масштабирования нет — пиксели кэша ложатся как есть.
+    c.imageSmoothingEnabled = cache.canvas.width !== dw || cache.canvas.height !== dh;
+    c.drawImage(cache.canvas, 0, 0, cache.canvas.width, cache.canvas.height, dx, dy, dw, dh);
+    c.restore();
+    gridStats.blits++;
   }
   function drawGrid(c) {
     const g = S.scene.grid; if (!g?.visible) return;
-    const size = g.size || 70;
+    const size = T.gridSize(g);
     const tl = toWorld(0, 0), br = toWorld(S.w, S.h);
-    c.strokeStyle = g.color || '#00000055'; c.lineWidth = 1 / S.cam.k; c.beginPath();
+    // Слишком мелкая сетка (>400 клеток по ширине экрана) не рисуется — как раньше.
     if ((br.x - tl.x) / size > 400) return;
-    if (isHex()) {
-      const { w, r } = hexMetrics();
-      const r0 = Math.floor(tl.y / (r * 1.5)) - 1, r1 = Math.ceil(br.y / (r * 1.5)) + 1;
-      for (let rr = r0; rr <= r1; rr++) {
-        const q0 = Math.floor(tl.x / w - rr / 2) - 1, q1 = Math.ceil(br.x / w - rr / 2) + 1;
-        for (let q = q0; q <= q1; q++) {
-          const hc = hexCenter(q, rr);
-          for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); const px = hc.x + r * Math.cos(a), py = hc.y + r * Math.sin(a); if (i === 0) c.moveTo(px, py); else c.lineTo(px, py); }
-          c.closePath();
-        }
-      }
-      c.stroke();
-      return;
-    }
-    const x0 = Math.floor(tl.x / size) * size, y0 = Math.floor(tl.y / size) * size;
-    for (let x = x0; x <= br.x; x += size) { c.moveTo(x, tl.y); c.lineTo(x, br.y); }
-    for (let y = y0; y <= br.y; y += size) { c.moveTo(tl.x, y); c.lineTo(br.x, y); }
-    c.stroke();
+    const key = T.gridCacheKey({ grid: g, color: g.color || '#00000055', dpr: gridDpr(), k: S.cam.k, w: S.w, h: S.h });
+    if (!gridCacheMatches(S.gridCache, key)) rebuildGridCache(key);
+    blitGridCache(c, S.gridCache);
+  }
+  // Кадры идут по требованию: когда картинка догрузилась, просим один кадр,
+  // иначе токен остался бы заглушкой до следующего действия пользователя.
+  const watchedImages = new WeakSet();
+  function watchImage(img) {
+    if (!img || img.complete || watchedImages.has(img)) return;
+    watchedImages.add(img);
+    img.addEventListener('load', () => { watchedImages.delete(img); requestDraw(); }, { once: true });
+    img.addEventListener('error', () => { watchedImages.delete(img); }, { once: true });
   }
   function drawItem(c, it, dim) {
     const d = it.data;
@@ -224,6 +404,7 @@ window.Table = (function () {
     if (d.hidden || dim) c.globalAlpha = 0.45;
     if (d.type === 'image') {
       const img = assetImage(d.asset_id);
+      watchImage(img);
       c.translate(d.x, d.y); c.rotate((d.rotation || 0) * Math.PI / 180);
       if (img.complete && img.naturalWidth) c.drawImage(img, -d.w / 2, -d.h / 2, d.w, d.h);
       else { c.fillStyle = '#333'; c.fillRect(-d.w / 2, -d.h / 2, d.w, d.h); }
@@ -247,6 +428,7 @@ window.Table = (function () {
       const r = Math.min(d.w, d.h) / 2;
       c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || '#f5a524') : '#f5a524'; c.lineWidth = 3 / S.cam.k; c.stroke();
       const li = d.item?.token_asset_id || d.item?.asset_id ? assetImage(d.item.token_asset_id || d.item.asset_id) : null;
+      if (li) watchImage(li);
       if (li && li.complete && li.naturalWidth) { c.save(); c.beginPath(); c.roundRect(-r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r, r * 0.25); c.clip(); c.drawImage(li, -r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r); c.restore(); }
       else { c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05); }
       const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
@@ -393,6 +575,7 @@ window.Table = (function () {
   function setTool(t) {
     if (t === 'fog' && !S.isGM) t = 'select'; // игрокам туман недоступен
     S.tool = t; S.temp = null; S.hover = null;
+    requestDraw();
     S.toolbox.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     S.canvas.className = 'tool-' + t;
     syncFogCursor();
@@ -443,12 +626,13 @@ window.Table = (function () {
     S.scene.fog = fog;
     sendScene({ fog: S.scene.fog });
     syncFogPanel();
+    requestDraw();
   }
   /// Снимок маски карты в стек отмены (до T.FOG_UNDO_MAX шагов на карту).
   function pushFogUndo(mapId) { S.fogUndo[mapId] = T.pushUndo(S.fogUndo[mapId], T.maskShapes(S.scene.fog, mapId)); }
-  function selectFogTool(k) { S.fogTool = k; S.temp = null; syncFogCursor(); syncFogPanel(); }
-  function setFogMode(m) { S.fogMode = m === 'hide' ? 'hide' : 'reveal'; syncFogPanel(); }
-  function setFogCells(n) { S.fogCells = T.clampBrush(n); syncFogPanel(); }
+  function selectFogTool(k) { S.fogTool = k; S.temp = null; syncFogCursor(); syncFogPanel(); requestDraw(); }
+  function setFogMode(m) { S.fogMode = m === 'hide' ? 'hide' : 'reveal'; syncFogPanel(); requestDraw(); }
+  function setFogCells(n) { S.fogCells = T.clampBrush(n); syncFogPanel(); requestDraw(); }
   function setFogPlayers(on) { commitFog(T.setFogEnabled(S.scene.fog, on)); }
   function openAllFog() {
     const t = fogTarget(); if (!t) return;
@@ -518,6 +702,7 @@ window.Table = (function () {
   function zoomBy(f, cx = S.w / 2, cy = S.h / 2) {
     const k2 = Math.min(6, Math.max(0.08, S.cam.k * f));
     S.cam.x = cx - (cx - S.cam.x) * (k2 / S.cam.k); S.cam.y = cy - (cy - S.cam.y) * (k2 / S.cam.k); S.cam.k = k2;
+    requestDraw();
   }
 
   // ---------- события ----------
@@ -527,6 +712,7 @@ window.Table = (function () {
     cv.addEventListener('contextmenu', e => e.preventDefault());
     cv.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 0.9, e.offsetX, e.offsetY); }, { passive: false });
     cv.addEventListener('pointerdown', e => {
+      requestDraw();
       cv.setPointerCapture(e.pointerId);
       const w = toWorld(e.offsetX, e.offsetY);
       if (e.button === 2 && !space) {
@@ -567,6 +753,7 @@ window.Table = (function () {
       }
     });
     cv.addEventListener('pointermove', e => {
+      requestDraw();
       const w = toWorld(e.offsetX, e.offsetY);
       S.hover = { x: w.x, y: w.y };
       if (S.temp && (S.temp.shape === 'poly')) { S.temp.points[S.temp.points.length - 1] = [w.x, w.y]; return; }
@@ -583,8 +770,9 @@ window.Table = (function () {
         else S.temp.points[1] = [w.x, w.y];
       }
     });
-    cv.addEventListener('pointerleave', () => { S.hover = null; });
+    cv.addEventListener('pointerleave', () => { S.hover = null; requestDraw(); });
     cv.addEventListener('pointerup', e => {
+      requestDraw();
       if (S.drag?.kind === 'move' && S.drag.moved) {
         const it = S.drag.it, d = it.data;
         if (d.type === 'image' && it.layer !== LAYER.drawing) {
@@ -598,6 +786,7 @@ window.Table = (function () {
       S.drag = null;
     });
     cv.addEventListener('dblclick', e => {
+      requestDraw();
       const w = toWorld(e.offsetX, e.offsetY);
       if (S.temp?.shape === 'poly') { S.temp.points.pop(); finishTemp(); return; }
       const it = hitTest(w.x, w.y);
@@ -605,6 +794,7 @@ window.Table = (function () {
     });
     window.addEventListener('keydown', e => {
       if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
+      requestDraw();
       if (e.code === 'Space') { space = true; cv.style.cursor = 'grab'; }
       if (e.key === 'Escape') { S.temp = null; S.sel = null; updateProps(); }
       // Ctrl/Cmd переключает привязку линейки к сетке — пересчитываем уже протянутую линию.
@@ -630,6 +820,7 @@ window.Table = (function () {
       if (e.ctrlKey && e.key === 'v' && S.clip) { const it = JSON.parse(JSON.stringify(S.clip)); delete it.id; it.data.x += grid(); it.data.y += grid(); upsert(it); }
     });
     window.addEventListener('keyup', e => {
+      requestDraw();
       if (e.code === 'Space') { space = false; syncFogCursor(); }
       if (e.key === 'Control' || e.key === 'Meta') refreshRulerSnap(!!(e.ctrlKey || e.metaKey));
     });
@@ -638,6 +829,7 @@ window.Table = (function () {
     cv.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
     cv.addEventListener('drop', async e => {
       e.preventDefault();
+      requestDraw();
       const w = toWorld(e.offsetX, e.offsetY); const g = grid();
       const asset = e.dataTransfer.getData('application/x-asset');
       const chr = e.dataTransfer.getData('application/x-character');
@@ -767,11 +959,14 @@ window.Table = (function () {
   function upsert(it) {
     if (it.id) { const idx = S.scene.items.findIndex(i => i.id === it.id); if (idx >= 0) S.scene.items[idx] = it; }
     S.ws.send({ type: 'item_upsert', scene_id: S.scene.id, item: { id: it.id, layer: it.layer, z: it.z, data: it.data } });
+    requestDraw();
   }
-  function sendScene(patch) { S.ws.send({ type: 'scene_update', scene_id: S.scene.id, ...patch }); }
+  /// Локальные настройки сцены (в т.ч. сетка из панели ГМ) применяются сразу,
+  /// не дожидаясь ответа сервера: поэтому sendScene тоже просит кадр.
+  function sendScene(patch) { S.ws.send({ type: 'scene_update', scene_id: S.scene.id, ...patch }); requestDraw(); }
   function deleteSel() {
     const it = S.scene.items.find(i => i.id === S.sel); if (!it || !canEdit(it)) return;
-    S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps();
+    S.ws.send({ type: 'item_delete', scene_id: S.scene.id, id: it.id }); S.sel = null; updateProps(); requestDraw();
   }
   function onMessage(m) {
     if (m.scene_id && m.scene_id !== S.scene.id && m.type !== 'active_scene') return;
@@ -803,6 +998,7 @@ window.Table = (function () {
       case 'ruler': if (m.points) S.remoteRulers[m.user_id] = { kind: 'ruler', points: m.points, name: m.name, user_id: m.user_id }; else delete S.remoteRulers[m.user_id]; break;
       case 'ping': S.pings.push({ x: m.x, y: m.y, t: Date.now(), name: m.name }); break;
     }
+    requestDraw();
   }
 
   // ---------- контекстное меню (ПКМ по элементу) ----------
@@ -950,6 +1146,8 @@ window.Table = (function () {
     getFogState: () => ({ tool: S.fogTool, mode: S.fogMode, cells: S.fogCells, enabled: T.fogEnabled(S.scene?.fog) }),
     selectFogTool, setFogMode, setFogCells, setFogPlayers,
     openAllFog, hideAllFog, undoFog,
+    // производительность сетки: перерисовать кадр и счётчики для отладки/тестов
+    requestDraw, gridStats: gridStatsSnapshot, resetGridStats,
     dropLootAtCenter, placeTokenAtCenter,
   };
 })();

@@ -147,6 +147,124 @@ const SCRIPTS = ['common', 'asset-kinds', 'table-model', 'table'];
     assert.equal(afterUp.temp, null, 'после отпускания линейка завершается');
     assert.ok(afterUp.sent.some(m => m.type === 'ruler' && m.points === null), 'линейка убирается у всех');
 
+    // ---- сетка «соты» на большой карте: видимый диапазон, кэш, coalescing ----
+    // До оптимизации 200×200 при вписывании рисовала ~60 000 гексов в каждом кадре
+    // (≈422 000 вызовов path и 10 с на кадр в headless Chromium).
+    const hexPerf = await page.evaluate(async () => {
+      Table.setScene({
+        id: 'scene-hex', name: 'Соты', grid: { size: 70, type: 'hex', visible: true, color: '#00000055', scale: '5 фт' },
+        active_map_id: 'big', fog: { enabled: false, by_map: {} },
+        items: [{ id: 'big', layer: 'map', z: -100, data: { type: 'image', asset_id: 'a', x: 7000, y: 7000, w: 14000, h: 14000, name: '200×200' } }],
+      });
+      Table.fitToMap();
+      // Даём кэшу построиться (один кадр), затем меряем только устоявшиеся кадры.
+      await new Promise(r => setTimeout(r, 400));
+      const built = Table.gridStats();
+      Table.resetGridStats();
+      // Кадры идут по требованию: для замера просим их 500 мс подряд.
+      const force = setInterval(() => Table.requestDraw(), 5);
+      await new Promise(r => setTimeout(r, 500));
+      clearInterval(force);
+      const st = Table.state();
+      const stats = Table.gridStats();
+      const range = TableModel.hexVisibleRange(
+        (0 - st.cam.x) / st.cam.k, (0 - st.cam.y) / st.cam.k,
+        (st.w - st.cam.x) / st.cam.k, (st.h - st.cam.y) / st.cam.k, st.scene.grid);
+      return { built, stats, range, cam: { x: st.cam.x, y: st.cam.y, k: st.cam.k }, w: st.w, h: st.h };
+    });
+    assert.equal(hexPerf.range.count, 60298, 'модель видимого диапазона совпадает с замером старого drawGrid');
+    assert.ok(hexPerf.built.rebuilds >= 1 && hexPerf.built.rebuilds <= 3, 'кэш сетки построен один раз');
+    assert.ok(hexPerf.built.visibleCells >= hexPerf.range.count, 'в кэш попадает видимый диапазон (плюс поля)');
+    assert.ok(hexPerf.stats.frames >= 10, `за 500 мс прошло ${hexPerf.stats.frames} кадров — сетка не тормозит`);
+    assert.equal(hexPerf.stats.rebuilds, 0, 'устоявшиеся кадры не перестраивают кэш');
+    assert.equal(hexPerf.stats.rasterizedLast, 0, 'в устоявшемся кадре гексы не перерисовываются — только блит');
+    assert.ok(hexPerf.stats.blits > 0, 'кадры берут готовый кэш');
+    assert.ok(hexPerf.stats.drawGridMsAvg < 1.5, `drawGrid в среднем ${hexPerf.stats.drawGridMsAvg} мс, а не десятки/тысячи`);
+
+    // Пан в пределах поля кэша не перерисовывает сетку; выход за поле — перестраивает.
+    const pan = await page.evaluate(async () => {
+      Table.resetGridStats();
+      const st = Table.state();
+      const before = st.gridCache;
+      st.cam.x += 40; Table.requestDraw();
+      await new Promise(r => setTimeout(r, 100));
+      const near = Table.gridStats().rebuilds;
+      st.cam.x += 500; Table.requestDraw();
+      await new Promise(r => setTimeout(r, 150));
+      const far = Table.gridStats().rebuilds;
+      return { near, far, replaced: before !== st.gridCache };
+    });
+    assert.equal(pan.near, 0, 'пан внутри поля кэша не перерисовывает сетку');
+    assert.ok(pan.far >= 1, 'выход за поле кэша перестраивает сетку');
+    assert.equal(pan.replaced, true, 'кэш заменён новым');
+
+    // Зум меняет ключ кэша: после колеса сетка перестраивается, кадры продолжают идти.
+    await page.mouse.move(canvasBox.x + 400, canvasBox.y + 300);
+    const zoomBefore = await page.evaluate(() => { Table.resetGridStats(); return Table.state().cam.k; });
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(200);
+    const zoomAfter = await page.evaluate(() => ({ k: Table.state().cam.k, stats: Table.gridStats() }));
+    assert.ok(zoomAfter.k > zoomBefore, 'колесо приблизило камеру');
+    assert.ok(zoomAfter.stats.rebuilds >= 1, 'зум инвалидирует кэш сетки');
+    const afterZoomBlit = await page.evaluate(async () => {
+      Table.requestDraw();
+      await new Promise(r => setTimeout(r, 80));
+      return Table.gridStats().rasterizedLast;
+    });
+    assert.equal(afterZoomBlit, 0, 'после перестройки снова только блит');
+
+    // Сетка реально рисуется, а выключение видимости убирает её с канвы.
+    const pixels = await page.evaluate(async () => {
+      const st = Table.state();
+      st.cam.x = 0; st.cam.y = 0; st.cam.k = 1;
+      const read = () => {
+        const d = st.ctx2d.getImageData(0, Math.floor(st.canvas.height / 2), st.canvas.width, 1).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 50 && d[i + 1] < 50 && d[i + 2] < 50) n++;
+        return n;
+      };
+      Table.sendScene({ grid: st.scene.grid }); await new Promise(r => setTimeout(r, 120));
+      const on = read();
+      st.scene.grid.visible = false; Table.sendScene({ grid: st.scene.grid }); await new Promise(r => setTimeout(r, 120));
+      const off = read();
+      st.scene.grid.visible = true;
+      st.scene.grid.type = 'square'; Table.sendScene({ grid: st.scene.grid }); await new Promise(r => setTimeout(r, 120));
+      const square = read();
+      st.scene.grid.type = 'hex'; Table.sendScene({ grid: st.scene.grid }); await new Promise(r => setTimeout(r, 120));
+      const hex = read();
+      return { on, off, square, hex };
+    });
+    assert.ok(pixels.on > 0, 'соты видны на канве');
+    assert.equal(pixels.off, 0, 'при visible=false сетки нет');
+    assert.ok(pixels.square > 0, 'квадратная сетка после кэша тоже рисуется');
+    assert.ok(pixels.hex > 0, 'возврат к сотам снова рисует гексы');
+
+    // Линейка и hover на сотах: привязка к центрам гексов, Ctrl — свободно.
+    await page.evaluate(() => { const st = Table.state(); st.cam.x = 0; st.cam.y = 0; st.cam.k = 1; Table.requestDraw(); });
+    await page.keyboard.press('r');
+    await page.mouse.move(canvasBox.x + 100, canvasBox.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x + 281, canvasBox.y + 349, { steps: 4 });
+    const hexRuler = await page.evaluate(() => {
+      const st = Table.state();
+      return { points: st.temp.points.map(p => p.slice()), expected: TableModel.snapRuler(st.temp.raw, st.scene.grid, false), hover: st.hover };
+    });
+    assert.deepEqual(hexRuler.points, hexRuler.expected, 'линейка на сотах привязана к центрам гексов');
+    assert.deepEqual(hexRuler.hover, { x: 281, y: 349 }, 'hover на сотах обновляется');
+    await page.keyboard.down('Control');
+    const hexFree = await page.evaluate(() => Table.state().temp.points.map(p => p.slice()));
+    assert.deepEqual(hexFree, [[100, 100], [281, 349]], 'Ctrl на сотах отключает привязку');
+    await page.keyboard.up('Control');
+    await page.mouse.up();
+    // Без действий кадры не рисуются вовсе (раньше draw() крутился 60 раз в секунду).
+    await page.waitForTimeout(120);
+    const idleFrames = await page.evaluate(async () => {
+      Table.resetGridStats();
+      await new Promise(r => setTimeout(r, 300));
+      return Table.gridStats().frames;
+    });
+    assert.equal(idleFrames, 0, 'в покое кадры не рисуются — coalescing работает');
+
     // ---- туман войны: маска на карту, инструменты, отмена, предпросмотр ----
     const fogScene = await page.evaluate(() => {
       window.sent = [];
@@ -294,7 +412,7 @@ const SCRIPTS = ['common', 'asset-kinds', 'table-model', 'table'];
     assert.ok(backA.hint.includes('Карта A'), 'панель переключилась на карту A');
 
     assert.deepEqual(errors, []);
-    console.log('PASS table browser: несколько карт + активная + fitToMap, слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр)');
+    console.log('PASS table browser: несколько карт + активная + fitToMap, слои сцены, линейка (сетка/Ctrl), туман (маска на карту, кисть/прямоугольник, Ctrl+Z, предпросмотр), соты 200×200 (видимый диапазон, кэш, пан/зум, линейка/hover)');
   } finally {
     await browser.close();
   }

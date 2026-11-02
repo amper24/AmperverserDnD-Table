@@ -174,6 +174,111 @@ test('длина и подпись линейки в футах и клетка�
   assert.equal(M.scaleFt({ scale: 'мусор' }, 5), 5);
 });
 
+// ---------------------------------------------------------------- видимый диапазон и кэш сетки
+test('видимый диапазон гексов: та же формула, что у отрисовки, с запасом в клетку', () => {
+  const hex = grid(70, 'hex');
+  assert.deepEqual(plain(M.hexVisibleRange(0, 0, 100, 100, hex)), { r0: -1, r1: 3, q0: -3, q1: 3, rows: 5, count: 25 });
+  assert.deepEqual(plain(M.hexRowRange(-1, 0, 100, hex)), { q0: -1, q1: 3 });
+  assert.deepEqual(plain(M.hexRowRange(1, 0, 100, hex)), { q0: -2, q1: 2 });
+  // Каждая строка диапазона действительно рядом с вьюпортом (не дальше клетки).
+  const small = M.hexVisibleRange(0, 0, 100, 100, hex);
+  for (let rr = small.r0; rr <= small.r1; rr++) {
+    const row = M.hexRowRange(rr, 0, 100, hex);
+    for (let q = row.q0; q <= row.q1; q++) {
+      const c = M.hexCenter(q, rr, hex);
+      assert.ok(c.x >= -140 && c.x <= 240, `строка ${rr}, q=${q}: центр не дальше двух клеток от вьюпорта`);
+    }
+  }
+  // 200×200 при вписывании: ровно столько клеток старый drawGrid рисовал за кадр (замер до оптимизации).
+  const b = { x: 0, y: 0, w: 14000, h: 14000 };
+  const view = M.fitView(b, { w: 1000, h: 800 });
+  const range = M.hexVisibleRange((0 - view.x) / view.k, (0 - view.y) / view.k, (1000 - view.x) / view.k, (800 - view.y) / view.k, hex);
+  assert.equal(range.count, 60298);
+  assert.equal(range.rows, range.r1 - range.r0 + 1);
+  // Битые входы не дают отрицательных диапазонов.
+  assert.deepEqual(plain(M.hexVisibleRange(NaN, 0, 100, 100, hex)), { r0: 0, r1: -1, q0: 0, q1: -1, rows: 0, count: 0 });
+  assert.deepEqual(plain(M.hexVisibleRange(10, 0, 0, 100, hex)), { r0: 0, r1: -1, q0: 0, q1: -1, rows: 0, count: 0 });
+});
+
+test('видимый диапазон покрывает все гексы, попавшие во вьюпорт', () => {
+  const hex = grid(70, 'hex');
+  const x0 = -137, y0 = -211, x1 = 431, y1 = 389;
+  const range = M.hexVisibleRange(x0, y0, x1, y1, hex);
+  let hits = 0;
+  for (let rr = -10; rr <= 10; rr++) {
+    const row = M.hexRowRange(rr, x0, x1, hex);
+    for (let q = -15; q <= 15; q++) {
+      const c = M.hexCenter(q, rr, hex);
+      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) continue;
+      hits++;
+      assert.ok(rr >= range.r0 && rr <= range.r1 && q >= row.q0 && q <= row.q1, `гекс ${q},${rr} потерян`);
+    }
+  }
+  assert.ok(hits > 0, 'в тестовый вьюпорт попадают гексы');
+});
+
+test('hexAt: кубическое округление O(1) — обратное к hexCenter и ближайший центр', () => {
+  const hex = grid(70, 'hex');
+  for (let q = -6; q <= 6; q++) {
+    for (let rr = -6; rr <= 6; rr++) {
+      const c = M.hexCenter(q, rr, hex);
+      assert.deepEqual(plain(M.hexAt(c.x, c.y, hex)), { q, r: rr });
+    }
+  }
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 200; i++) {
+    const x = (rnd() - 0.5) * 2000, y = (rnd() - 0.5) * 2000;
+    const h = M.hexAt(x, y, hex);
+    const dist = p => { const c = M.hexCenter(p.q, p.r, hex); return Math.hypot(c.x - x, c.y - y); };
+    const dh = dist(h);
+    for (let dq = -1; dq <= 1; dq++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (!dq && !dr) continue;
+        assert.ok(dh <= dist({ q: h.q + dq, r: h.r + dr }) + 1e-9, `hexAt не ближайший для (${x}, ${y})`);
+      }
+    }
+  }
+});
+
+test('привязка центра и угла идемпотентна: повторный снап не двигает точку', () => {
+  for (const g of [grid(70), grid(70, 'hex')]) {
+    for (const [x, y] of [[0, 0], [33, 33], [103.4, 97.2], [-250, 411], [7000, 7000]]) {
+      const c1 = M.snapCorner(x, y, g), c2 = M.snapCorner(c1.x, c1.y, g);
+      assert.ok(Math.abs(c1.x - c2.x) < 1e-9 && Math.abs(c1.y - c2.y) < 1e-9, `snapCorner ${g.type}: (${x}, ${y})`);
+      const p1 = M.snapPos(x, y, 70, 70, { grid: g, snap: true }), p2 = M.snapPos(p1.x, p1.y, 70, 70, { grid: g, snap: true });
+      assert.ok(Math.abs(p1.x - p2.x) < 1e-9 && Math.abs(p1.y - p2.y) < 1e-9, `snapPos ${g.type}: (${x}, ${y})`);
+    }
+  }
+});
+
+test('ключ кэша сетки: инвалидация по типу/размеру/цвету/зуму/dpr/вьюпорту, пан не влияет', () => {
+  const base = { grid: grid(70, 'hex'), color: '#00000055', dpr: 1, k: 0.5, w: 1000, h: 800 };
+  const key = (o = {}) => M.gridCacheKey({ ...base, ...o });
+  const k0 = key();
+  assert.equal(key(), k0, 'одинаковые параметры — одинаковый ключ');
+  assert.notEqual(key({ grid: grid(70, 'square') }), k0, 'тип сетки');
+  assert.notEqual(key({ grid: grid(100, 'hex') }), k0, 'размер клетки');
+  assert.notEqual(key({ color: '#ff0000' }), k0, 'цвет линий');
+  assert.notEqual(key({ grid: { ...base.grid, visible: true } }), k0, 'видимость сетки');
+  assert.notEqual(key({ dpr: 2 }), k0, 'devicePixelRatio');
+  assert.notEqual(key({ k: 0.51 }), k0, 'зум');
+  assert.notEqual(key({ w: 1001 }), k0, 'ширина вьюпорта');
+  assert.notEqual(key({ h: 801 }), k0, 'высота вьюпорта');
+  assert.equal(key({ camX: 999, camY: -999 }), k0, 'пан камеры в ключ не входит — кэш только сдвигается');
+});
+
+test('gridCacheCovers: кэш с полями накрывает вьюпорт, сдвиг за поля — нет', () => {
+  assert.equal(M.gridCacheCovers({ x: -128, y: -128, w: 1256, h: 1056 }, 1000, 800), true);
+  assert.equal(M.gridCacheCovers({ x: 0, y: 0, w: 1000, h: 800 }, 1000, 800), true, 'ровно по границе — ещё накрывает');
+  assert.equal(M.gridCacheCovers({ x: 1, y: -128, w: 1256, h: 1056 }, 1000, 800), false, 'сдвинулись вправо — левая полоса открыта');
+  assert.equal(M.gridCacheCovers({ x: -128, y: 1, w: 1256, h: 1056 }, 1000, 800), false, 'сдвинулись вниз — верхняя полоса открыта');
+  assert.equal(M.gridCacheCovers({ x: -128, y: -128, w: 1127, h: 1056 }, 1000, 800), false, 'ширины не хватает');
+  assert.equal(M.gridCacheCovers({ x: -128, y: -128, w: 1256, h: 927 }, 1000, 800), false, 'высоты не хватает');
+  assert.equal(M.gridCacheCovers(null, 1000, 800), false);
+  assert.equal(M.gridCacheCovers({ x: 0, y: 0, w: 0, h: 0 }, 1000, 800), false);
+});
+
 test('table.js/app.js используют модель и больше не ограничивают число карт', () => {
   const table = fs.readFileSync('static/table.js', 'utf8');
   const app = fs.readFileSync('static/app.js', 'utf8');
