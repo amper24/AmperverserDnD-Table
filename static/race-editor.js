@@ -33,7 +33,8 @@ window.RaceEditor = (() => {
   const clone = x => JSON.parse(JSON.stringify(x));
   const M = () => window.Modules;
   const B = () => window.CharacterBuilder;
-  const num = (v, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
+  // Число или значение по умолчанию — общий помощник (static/common.js, window.numOr).
+  const num = window.numOr;
   const str = v => String(v === undefined || v === null ? '' : v);
   const norm = v => str(v).toLocaleLowerCase().replace(/ё/g, 'е').replace(/[«»"'.,;:()[\]×*]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -84,18 +85,6 @@ window.RaceEditor = (() => {
     const nodes = nodesOf(graph), links = linksOf(graph);
     graph.nodes = nodes.filter(n => n.id !== id);
     graph.links = links.filter(l => l.from?.node !== id && l.to?.node !== id);
-  }
-  /// Привести узлы типа type к списку wanted: лишние удаляются, нужные обновляются (id и связи сохраняются).
-  function syncNodes(graph, type, wanted, match) {
-    const existing = nodesOf(graph).filter(n => n.type === type);
-    const used = new Set();
-    for (const item of wanted) {
-      const found = existing.find(n => !used.has(n.id) && (!match || match(n, item)));
-      if (found) { found.params = { ...found.params, ...item.params }; used.add(found.id); continue; }
-      const node = { id: nodeId(type.split('.')[1] || 'rule'), type, params: clone(item.params), position: { x: 40, y: 40 + (nodesOf(graph).length % 12) * 60 } };
-      nodesOf(graph).push(node); used.add(node.id);
-    }
-    for (const n of existing) if (!used.has(n.id)) removeNode(graph, n.id);
   }
   /// Привести узлы rule.value одного вида (params.kind) к списку wanted: лишние удаляются,
   /// нужные обновляются (id и связи сохраняются). Узел всегда остаётся rule.value + kind.

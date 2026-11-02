@@ -25,7 +25,8 @@ window.BackgroundEditor = (() => {
   const ABIL_SHORT = { str: 'СИЛ', dex: 'ЛОВ', con: 'ТЕЛ', int: 'ИНТ', wis: 'МДР', cha: 'ХАР' };
   const clone = x => JSON.parse(JSON.stringify(x));
   const M = () => window.Modules;
-  const num = (v, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
+  // Число или значение по умолчанию — общий помощник (static/common.js, window.numOr).
+  const num = window.numOr;
   const str = v => String(v === undefined || v === null ? '' : v);
   const norm = v => str(v).toLocaleLowerCase().replace(/ё/g, 'е').replace(/[«»"'.,;:()[\]×*]/g, ' ').replace(/\s+/g, ' ').trim();
 

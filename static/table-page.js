@@ -232,7 +232,7 @@
     try {
       const inv = await API.post(`/api/campaigns/${cid}/invites`, { role });
       const url = location.origin + inv.url;
-      const copy = el('button', { class: 'small primary', onclick: () => { try { navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch { } } }, icon('copy'), ' Скопировать');
+      const copy = el('button', { class: 'small primary', onclick: () => copyText(url, 'Ссылка скопирована') }, icon('copy'), ' Скопировать');
       await modal('Ссылка-приглашение', el('div', {},
         el('p', { class: 'muted small' }, 'Отправьте ссылку — участник войдёт в кампанию с ролью «' + A.label(role) + '».'),
         el('input', { value: url, readonly: '' }),

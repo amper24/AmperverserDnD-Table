@@ -10,6 +10,8 @@
 </head>
 <body>
 <div id="app"></div>
+<!-- Порядок подключения важен: каждый файл создаёт свой window-объект сразу при
+     загрузке, поэтому зависимость всегда идёт раньше зависимого (слои 1 → 5). -->
 <!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, словари (SKILLS, ABIL), тема. -->
 <script src="/static/common.js"></script>
 <!-- Единая навигация (шапка, пункты, активный раздел) — общая для всех страниц. -->
@@ -30,8 +32,8 @@
 <script src="/static/node-registry.js"></script>
 <!-- Узлы графа механик: папка — категория, файл — класс узла (static/nodes/). -->
 <script src="/static/nodes/data/number.js"></script>
-  <script src="/static/nodes/data/boolean.js"></script>
-  <script src="/static/nodes/data/math.js"></script>
+<script src="/static/nodes/data/boolean.js"></script>
+<script src="/static/nodes/data/math.js"></script>
 <script src="/static/nodes/data/dice.js"></script>
 <script src="/static/nodes/data/stat.js"></script>
 <script src="/static/nodes/data/combine.js"></script>
@@ -92,7 +94,9 @@
 <!-- Модель стола (слои сцены, карты, сетка, линейка) — чистые функции, нужна до table.js. -->
 <script src="/static/table-model.js"></script>
 <script src="/static/table.js"></script>
-<!-- Страница: лобби и кампания/стол. -->
+<!-- Страницы вне стола: лобби, разделы, профиль, админка, приватность (window.Lobby). -->
+<script src="/static/lobby.js"></script>
+<!-- Страница: маршрутизация, вход и кампания/стол. -->
 <script src="/static/app.js"></script>
 </body>
 </html>

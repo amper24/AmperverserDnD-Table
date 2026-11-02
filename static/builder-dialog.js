@@ -606,8 +606,8 @@ window.newCharacterDialog = async function (defaults = {}) {
     ? `Совпало с модулями: ${overlap.map(o => `${o.name} (${o.granted})`).join(', ')} — отметьте вместо них другие навыки из списка класса.`
     : 'Одно и то же владение из двух источников не складывается: если навык уже даёт раса или предыстория, отметьте другой из списка класса.';
 
-  /// «1 навык», «2 навыка», «5 навыков» — счётчики в правилах D&D читаются словами.
-  function plural(n, one, few, many) { const n10 = n % 10, n100 = n % 100; return n100 >= 11 && n100 <= 14 ? many : n10 === 1 ? one : n10 >= 2 && n10 <= 4 ? few : many; }
+  // «1 навык», «2 навыка», «5 навыков» — общий помощник (static/common.js, window.pluralRu).
+  const plural = window.pluralRu;
   /// Источник навыка для метки: «предыстория · Прислужник».
   const sourceLabelOf = g => B.sourceLabel(g) || g.source || '';
   function proficiencySection() {

@@ -39,7 +39,7 @@ window.ClassEditor = (() => {
   const PB_BY_LEVEL = [2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6];
 
   // ---------- Чистые помощники данных ----------
-  const num = (v, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
+  const num = window.numOr;
   const str = v => String(v === undefined || v === null ? '' : v);
   const norm = v => str(v).toLocaleLowerCase().replace(/ё/g, 'е').replace(/[«»"'.,;:()[\]×*]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -78,7 +78,6 @@ window.ClassEditor = (() => {
   const featEntryOf = (catalog, key) => (catalog || []).find(e => featKey(e) === str(key)) || null;
   /// Ссылки подкласса (или класса) на черты: { уровень: { название: слаг } }.
   const featRefsOf = sub => (sub?.feature_feats && typeof sub.feature_feats === 'object' && !Array.isArray(sub.feature_feats) ? sub.feature_feats : {});
-  const featRefAt = (sub, level, name) => str((featRefsOf(sub)[str(level)] || {})[name]);
   /// Взять название и текст из записи справочника: текст перезаписывается, только если он пуст
   /// или остался прежним текстом той же записи (свои правки не теряются).
   function applyFeat(item, record, previous) {
@@ -868,7 +867,8 @@ window.ClassEditor = (() => {
     return box;
   }
 
-  function plural(n, one, few, many) { const n10 = n % 10, n100 = n % 100; return n100 >= 11 && n100 <= 14 ? many : n10 === 1 ? one : n10 >= 2 && n10 <= 4 ? few : many; }
+  // «1 умение», «2 умения», «5 умений» — общий помощник (static/common.js, window.pluralRu).
+  const plural = window.pluralRu;
 
   // ---------- Окно редактора ----------
   const ABIL_SHORT = { str: 'СИЛ', dex: 'ЛОВ', con: 'ТЕЛ', int: 'ИНТ', wis: 'МДР', cha: 'ХАР' };

@@ -16,7 +16,8 @@ window.Packs = (function () {
 
   function download(name, obj) { const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }); const a = el('a', { href: URL.createObjectURL(blob), download: name.replace(/[^\wа-яё\- ]/gi, '') + '.json' }); a.click(); }
   function shareURL(code) { return location.origin + '/packs/join/' + code; }
-  async function copyText(t) { try { await navigator.clipboard.writeText(t); toast('Скопировано'); } catch { prompt('Скопируйте ссылку', t); } }
+  // Копирование ссылки — общий помощник (static/common.js, window.copyText).
+  const copyText = window.copyText;
   function fmtDate(s) { if (!s) return ''; const d = new Date(s.replace(' ', 'T')); return isNaN(d) ? s : d.toLocaleDateString('ru-RU'); }
 
   // ---------- страница ----------

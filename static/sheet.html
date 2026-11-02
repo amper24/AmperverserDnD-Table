@@ -11,6 +11,8 @@
 </head>
 <body>
 <div id="app"></div>
+<!-- Порядок подключения важен: каждый файл создаёт свой window-объект сразу при
+     загрузке, поэтому зависимость всегда идёт раньше зависимого (слои 1 → 5). -->
 <!-- Слой 1 — фундамент: DOM-утилиты (el, modal), API-клиент, словари (SKILLS, ABIL), тема. -->
 <script src="/static/common.js"></script>
 <!-- Единая навигация; в embed=1 (лист поверх стола) шапка не рисуется. -->
@@ -28,8 +30,8 @@
 <script src="/static/node-registry.js"></script>
 <!-- Узлы графа механик: папка — категория, файл — класс узла (static/nodes/). -->
 <script src="/static/nodes/data/number.js"></script>
-  <script src="/static/nodes/data/boolean.js"></script>
-  <script src="/static/nodes/data/math.js"></script>
+<script src="/static/nodes/data/boolean.js"></script>
+<script src="/static/nodes/data/math.js"></script>
 <script src="/static/nodes/data/dice.js"></script>
 <script src="/static/nodes/data/stat.js"></script>
 <script src="/static/nodes/data/combine.js"></script>
