@@ -1968,3 +1968,6 @@ body.sheet-vars-open { overflow: hidden; }
 .sheet-page .dice-log-button { bottom: 74px; }
 /* «Журнал» стоит слева от боковой панели, а когда она свёрнута — у правого края. */
 body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
+/* Участники: кнопки действий не рвутся на строки, роли не дублируются. */
+.table-page .item button { white-space: nowrap; }
+.table-page .item select { min-width: 110px; }
