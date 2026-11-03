@@ -394,16 +394,19 @@ src/                    # Rust-сервер: axum + sqlx, слои по папк
 static/                 # фронтенд без бандлера (слои и карта файлов — docs/frontend.md)
   *.html                #   index.html (лобби+стол), sheet.html (лист), table.html (участники),
                         #   profile.html (профиль)
-  nav.js/nav.css        #   единая навигация; lobby.js (лендинг, разделы, профиль, админка),
-                        #   app.js (роутинг и кампания/стол), table.js (canvas-стол),
-                        #   sheet.js (лист), compendium.js (справочник), presets.js (наборы),
-                        #   character-builder.js + builder-dialog.js (создание персонажа),
-                        #   levelup.js (повышение уровня)
-  class-editor.js · race-editor.js · background-editor.js   # конструкторы записей
-  mechanics.js · mechanics-graph.js · node-registry.js · node-menu.js · node-params-form.js
-                        #   визуальное программирование: движок графа, реестр и меню узлов
-                        #   полный список модулей и их роли — docs/frontend.md
-  nodes/<категория>/    #   ООП-классы 46 типов узлов (файл = узел)
+  core/                 #   фундамент и движки: common.js, nav.js/nav.css, access.js, dice*.js,
+                        #   equipment.js, formulas.js, modules.js, class-rules.js,
+                        #   spell-rules.js, asset-kinds.js
+  css/                  #   style.css — общие стили и темы
+  editor/               #   визуальное программирование: mechanics-graph.js, mechanics.js,
+                        #   node-registry.js, node-menu.js, node-params-form.js
+    nodes/<категория>/  #     ООП-классы 46 типов узлов (файл = узел)
+  editors/              #   мастера и конструкторы: character-builder.js + builder-dialog.js,
+                        #   levelup.js, class-editor.js, race-editor.js, background-editor.js
+  pages/                #   страницы: lobby.js, app.js, compendium.js, packs.js, lss.js,
+                        #   presets.js, presets-editor.js, profile-page.js (+ .css)
+  sheet/                #   лист персонажа: sheet.js, sheet-vars.js, sheet-polish.css
+  table/                #   стол: table.js, table-model.js, table-page.js
   presets/              #   данные редактора: 46 шаблонов механик, 19 стартовых графов,
                         #   таблицы развития классов, правила рас/классов/черт (JSON, не код)
 data_seed/              # вшитый справочник: srd_2014.json + srd_2024.json (2 499 записей
@@ -424,6 +427,8 @@ deploy/pterodactyl-egg.json · Dockerfile · docker-compose.yml · run.sh · run
 ```
 
 ## Документация
+
+Полный указатель всех документов, сгруппированный по темам, — [docs/README.md](docs/README.md).
 
 | Документ | О чём |
 |---|---|
@@ -456,8 +461,8 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 Проверки перед коммитом (те же, что в CI):
 
 ```bash
-node --test "tests/*.test.cjs"            # 552 теста: юнит + интеграция, без браузера
-cargo test --release                      # 130 тестов сервера
+node --test "tests/*.test.cjs"            # 556 тестов: юнит + интеграция, без браузера
+cargo test --release                      # 133 теста сервера
 node tools/srd/integrity.cjs              # 0 ошибок, 12 исторических предупреждений
 node tools/srd/mechanics_summary.cjs --check   # сводка docs/mechanics-migration.json свежая
 node tests/equipment.browser.cjs          # браузерные сценарии: по файлу, нужен Playwright

@@ -861,7 +861,7 @@ mod size_limit_tests {
 
     #[test]
     fn kind_size_table_covers_asset_kinds() {
-        for kind in crate::assets::ASSET_KINDS {
+        for kind in crate::api::assets::ASSET_KINDS {
             assert!(KIND_SIZE_CLASS.iter().any(|(k, _)| k == kind), "нет лимита для типа {kind}");
         }
     }
@@ -870,7 +870,7 @@ mod size_limit_tests {
     fn asset_kinds_cover_kind_size_table() {
         // Обратная сверка: лимит без типа в ASSET_KINDS — ошибка (тип не принимается загрузкой).
         for (kind, _) in KIND_SIZE_CLASS {
-            assert!(crate::assets::ASSET_KINDS.contains(kind), "лимит для неизвестного типа {kind}");
+            assert!(crate::api::assets::ASSET_KINDS.contains(kind), "лимит для неизвестного типа {kind}");
         }
     }
 

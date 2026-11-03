@@ -180,7 +180,7 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
     if inv.len() > 2000 { return Err(AppError::bad("Слишком много предметов")); }
     let mut seen = HashSet::new(); let mut occupied = HashSet::new(); let mut worn_taken: HashSet<String> = HashSet::new();
     for it in inv {
-        if let Some(m) = it.get("mechanics") { crate::mechanics::validate(m)?; }
+        if let Some(m) = it.get("mechanics") { crate::domain::mechanics::validate(m)?; }
         if !it.is_object() { return Err(AppError::bad("Неверный предмет")); }
         if it["uid"].as_str().unwrap_or("").is_empty() { it["uid"] = json!(util::uid()); }
         if !seen.insert(it["uid"].as_str().unwrap().to_string()) { return Err(AppError::bad("Один UID предмета встречается дважды")); }
@@ -235,7 +235,7 @@ pub fn normalize(sheet: &mut Value) -> ApiResult<()> {
         if let Some(list)=sheet.pointer_mut(path) {
             let list=list.as_array_mut().ok_or_else(||AppError::bad("Модули должны быть списком"))?;
             if list.len()>2000 {return Err(AppError::bad("Слишком много модулей"));}let mut ids=HashSet::new();
-            for doc in list {if !doc.is_object(){return Err(AppError::bad("Неверный модуль"));}if doc["uid"].as_str().unwrap_or("").is_empty(){doc["uid"]=json!(util::uid());}if !ids.insert(doc["uid"].as_str().unwrap().to_string()){return Err(AppError::bad("Повторяющийся UID модуля"));}if let Some(m)=doc.get("mechanics"){crate::mechanics::validate(m)?;}}
+            for doc in list {if !doc.is_object(){return Err(AppError::bad("Неверный модуль"));}if doc["uid"].as_str().unwrap_or("").is_empty(){doc["uid"]=json!(util::uid());}if !ids.insert(doc["uid"].as_str().unwrap().to_string()){return Err(AppError::bad("Повторяющийся UID модуля"));}if let Some(m)=doc.get("mechanics"){crate::domain::mechanics::validate(m)?;}}
         }
     }
     if sheet["auto_armor"] == true { sheet["ac"] = json!(armor_class(sheet)); }
@@ -365,7 +365,7 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
     if let Some(m) = item.get("mechanics") {
         let pid = m["programs"].as_array().and_then(|a| a.iter().find(|p| p["trigger"] == "use")).and_then(|p| p["id"].as_str()).unwrap_or("").to_string();
         if pid.is_empty() { return Err(AppError::bad("У предмета нет исполняемого действия")); }
-        return crate::mechanics::execute(sheet, "item", uid, &pid, mode, false);
+        return crate::domain::mechanics::execute(sheet, "item", uid, &pid, mode, false);
     }
     if indices.len() > 8 || indices.iter().collect::<HashSet<_>>().len() != indices.len() { return Err(AppError::bad("Неверный набор действий")); }
     let actions = item["actions"].as_array().cloned().unwrap_or_default(); let mut selected = Vec::new();
@@ -402,11 +402,11 @@ pub fn use_item(sheet: &mut Value, uid: &str, indices: &[usize], mode: &str) -> 
         let Some(raw) = a["roll"].as_str().filter(|v| !v.is_empty()) else { continue };
         let kind = a["kind"].as_str().unwrap_or("other"); let mut expr = resolve(raw, &next)?;
         let roll_mode = if kind == "attack" { attack_mode(mode, penalty) } else { mode.to_string() };
-        expr = crate::realtime::with_dice_mode(&expr, &roll_mode);
+        expr = crate::ws::realtime::with_dice_mode(&expr, &roll_mode);
         let base = expr.clone(); let doubled = crit && kind == "damage";
-        if doubled { expr = crate::realtime::double_dice(&expr); }
-        let mut r = crate::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
-        let (nat20, nat1) = crate::realtime::nat_d20(&r);
+        if doubled { expr = crate::ws::realtime::double_dice(&expr); }
+        let mut r = crate::ws::realtime::roll_expression(&expr).ok_or_else(|| AppError::bad("Неверная формула действия. Расход отменён."))?;
+        let (nat20, nat1) = crate::ws::realtime::nat_d20(&r);
         if kind == "attack" { crit = nat20; }
         r["name"] = a["name"].clone(); r["kind"] = json!(kind); r["dtype"] = a["dtype"].clone(); r["doubled"] = json!(doubled); r["base_expr"] = json!(base);
         r["crit"] = json!(nat20 && kind == "attack"); r["fumble"] = json!(nat1 && !["damage", "heal"].contains(&kind)); rolls.push(r);
@@ -663,7 +663,7 @@ mod tests {
     #[test] fn hands_action_changes_the_sheet_and_strips_vanished_slots() {
         let mut s = hands_sheet(0);
         s["features"] = json!([{"uid":"f","name":"Третья рука","mechanics": hands_graph("add", 1)}]);
-        let result = crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        let result = crate::domain::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
         assert_eq!(s["extra_hands"], 1);
         assert_eq!(result["effects"][0]["kind"], "hands");
         assert_eq!(result["effects"][0]["extra_hands"], 1);
@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(s["inventory"][2]["hand_slot"], "extra1");
         // remove 1 снимает предмет с исчезнувшей руки и сообщает об этом эффектом
         s["features"][0]["mechanics"] = hands_graph("remove", 1);
-        let result = crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        let result = crate::domain::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
         assert_eq!(s["extra_hands"], 0);
         assert_eq!(s["inventory"][2]["equipped"], false);
         assert_eq!(s["inventory"][2]["qty"], 1);
@@ -679,15 +679,15 @@ mod tests {
         assert_eq!(result["effects"][0]["removed"][0]["slot"], "extra1");
         // set 6 — шесть рук, то есть четыре дополнительные; add упирается в максимум 4
         s["features"][0]["mechanics"] = hands_graph("set", 6);
-        crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        crate::domain::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
         assert_eq!(s["extra_hands"], MAX_EXTRA_HANDS);
         s["features"][0]["mechanics"] = hands_graph("add", 6);
-        crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
+        crate::domain::mechanics::execute(&mut s, "feature", "f", "use", "", false).unwrap();
         assert_eq!(s["extra_hands"], MAX_EXTRA_HANDS);
         // недопустимое число рук отклоняется до изменения листа
         s["features"][0]["mechanics"] = hands_graph("add", 7);
         let before = s.clone();
-        assert!(crate::mechanics::execute(&mut s, "feature", "f", "use", "", false).is_err());
+        assert!(crate::domain::mechanics::execute(&mut s, "feature", "f", "use", "", false).is_err());
         assert_eq!(s, before, "ошибка не меняет лист");
     }
 }

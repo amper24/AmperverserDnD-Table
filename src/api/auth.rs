@@ -531,7 +531,7 @@ async fn delete_me(State(st): State<AppState>, user: AuthUser, Json(body): Json<
             return Err(AppError::bad("Нельзя удалить единственного администратора"));
         }
     }
-    crate::admin::delete_by_id(&st.db, &user.id).await?;
+    crate::api::admin::delete_by_id(&st.db, &user.id).await?;
     Ok(json_with_cleared_cookies(json!({ "ok": true })))
 }
 
@@ -561,8 +561,8 @@ mod tests {
     async fn test_state() -> AppState {
         sqlx::any::install_default_drivers();
         let db = sqlx::any::AnyPoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
-        crate::db::migrate(&db, true).await.unwrap();
-        AppState { db, cfg: std::sync::Arc::new(crate::config::Config::default()), hub: crate::realtime::Hub::default(), is_sqlite: true }
+        crate::store::db::migrate(&db, true).await.unwrap();
+        AppState { db, cfg: std::sync::Arc::new(crate::config::Config::default()), hub: crate::ws::realtime::Hub::default(), is_sqlite: true }
     }
 
     async fn add_user(st: &AppState, id: &str, email: &str, name: &str, password: Option<&str>, is_root: bool) {

@@ -9,15 +9,15 @@
 
 | Слой | Что это | Файлы |
 |---|---|---|
-| 1. Фундамент | хранилище с согласием на cookie, API-клиент, DOM-помощники (`el`, `modal`, `floatWindow`, `toast`, `icon`), словари (`SKILLS`, `ABIL`, `EDITIONS`, `CAT_NAMES`), тема; права UI (`Access.can`) — зеркало `src/domain/access.rs`; единая навигация (пункты, активный раздел, шапка) | `common.js`, `access.js`, `nav.js` |
-| 2. Движки правил | физика и визуализация принятых бросков, движок кубиков и журнал; слоты экипировки (зеркало `src/domain/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `dice-physics.js`, `dice-visual.js`, `dice.js`, `equipment.js`, `mechanics.js`, `spell-rules.js` (только лист) |
-| 3. Данные | модель записей листа (предмет/заклинание/умение, карточки, чат, редакторы); справочник (поиск, редактор записи, перетаскивание); правила классов и таблицы развития — **сгенерированные данные** в `static/presets/`, не править вручную | `modules.js`, `compendium.js`, `class-rules.js` |
-| 4. Создание персонажа | правилное ядро (`CharacterBuilder`: проекции модулей, выборы «либо/либо», разбор снаряжения, сборка листа) и мастер-окно из восьми шагов (`newCharacterDialog`) — отдельно правила, отдельно UI | `character-builder.js`, `builder-dialog.js` |
-| 5. Возможности | мастерская наборов; импорт из Long Story Short; canvas-стол; повышение уровня | `packs.js`, `lss.js`, `table.js` (index), `levelup.js` (sheet) |
-| 6. Страницы | лендинг, панель пользователя и разделы; кампания/стол; лист персонажа | `lobby.js` (страницы вне стола), `app.js` (роутинг + кампания/стол, index.html), `sheet.js` (sheet.html) |
+| 1. Фундамент | хранилище с согласием на cookie, API-клиент, DOM-помощники (`el`, `modal`, `floatWindow`, `toast`, `icon`), словари (`SKILLS`, `ABIL`, `EDITIONS`, `CAT_NAMES`), тема; права UI (`Access.can`) — зеркало `src/domain/access.rs`; единая навигация (пункты, активный раздел, шапка) | `static/core/common.js`, `static/core/access.js`, `static/core/nav.js` |
+| 2. Движки правил | физика и визуализация принятых бросков, движок кубиков и журнал; слоты экипировки (зеркало `src/domain/inventory.rs`); декларативные механики умений; учёт ячеек заклинаний | `static/core/dice-physics.js`, `static/core/dice-visual.js`, `static/core/dice.js`, `static/core/equipment.js`, `static/editor/mechanics.js`, `static/core/spell-rules.js` (только лист) |
+| 3. Данные | модель записей листа (предмет/заклинание/умение, карточки, чат, редакторы); справочник (поиск, редактор записи, перетаскивание); правила классов и таблицы развития — **сгенерированные данные** в `static/presets/`, не править вручную | `static/core/modules.js`, `static/pages/compendium.js`, `static/core/class-rules.js` |
+| 4. Создание персонажа | правилное ядро (`CharacterBuilder`: проекции модулей, выборы «либо/либо», разбор снаряжения, сборка листа) и мастер-окно из восьми шагов (`newCharacterDialog`) — отдельно правила, отдельно UI | `static/editors/character-builder.js`, `static/editors/builder-dialog.js` |
+| 5. Возможности | мастерская наборов; импорт из Long Story Short; canvas-стол; повышение уровня | `static/pages/packs.js`, `static/pages/lss.js`, `static/table/table.js` (index), `static/editors/levelup.js` (sheet) |
+| 6. Страницы | лендинг, панель пользователя и разделы; кампания/стол; лист персонажа | `static/pages/lobby.js` (страницы вне стола), `static/pages/app.js` (роутинг + кампания/стол, index.html), `static/sheet/sheet.js` (sheet.html) |
 
 Правило зависимостей: слой ссылается только на более ранние слои. Если нижнему
-слою нужен верхний (например, `modules.js` использует редактор выборов
+слою нужен верхний (например, `static/core/modules.js` использует редактор выборов
 `CharacterBuilder`), обращение делается **лениво** — при вызове обработчика или
 через `window.X?.`, а не при загрузке файла.
 
@@ -25,52 +25,52 @@
 
 | Файл | Роль | Даёт |
 |---|---|---|
-| `common.js` | фундамент | `LS`, `Consent`, `API`, `Lang`, `el/modal/prompt2/floatWindow/toast/icon`, `Theme`, `SKILLS/ABIL/EDITIONS/CAT_NAMES`, `defaultEdition` |
-| `nav.js` | единая навигация без роутинга: пункты, активный раздел, шапка и компактное меню | `Nav` (`APP_NAME`, `ITEMS`, `activeKey`, `build`, `items`, `tableHref`, `header`, `menu`, `closeAll`) |
-| `nav.css` | оформление навигации: шапка, пункты, выпадающее меню, фокус; темы — через переменные `style.css` | стили |
-| `access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/domain/access.rs` | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`) |
-| `dice-physics.js` | симуляция костей | `DicePhysics` (без генерации/переброса результата) |
-| `dice-visual.js` | одна центральная площадка с устойчивой сеткой и canvas-рендером | `DiceVisualizer` |
-| `dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
-| `equipment.js` | правила инвентаря | `Equipment` |
-| `mechanics.js` | механики умений | `Mechanics` |
-| `mechanics-graph.js` | нодовая схема механик v3: типизированный ациклический граф, компилятор в план исполнения, редактор (холст, связи, действия) | `Mechanics` (расширяет движок `mechanics.js`) |
-| `node-registry.js` | базовый класс `GraphNode` и реестр узлов | `NodeRegistry`, `Nodes` |
+| `static/core/common.js` | фундамент | `LS`, `Consent`, `API`, `Lang`, `el/modal/prompt2/floatWindow/toast/icon`, `Theme`, `SKILLS/ABIL/EDITIONS/CAT_NAMES`, `defaultEdition` |
+| `static/core/nav.js` | единая навигация без роутинга: пункты, активный раздел, шапка и компактное меню | `Nav` (`APP_NAME`, `ITEMS`, `activeKey`, `build`, `items`, `tableHref`, `header`, `menu`, `closeAll`) |
+| `static/core/nav.css` | оформление навигации: шапка, пункты, выпадающее меню, фокус; темы — через переменные `static/css/style.css` | стили |
+| `static/core/access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/domain/access.rs` | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`) |
+| `static/core/dice-physics.js` | симуляция костей | `DicePhysics` (без генерации/переброса результата) |
+| `static/core/dice-visual.js` | одна центральная площадка с устойчивой сеткой и canvas-рендером | `DiceVisualizer` |
+| `static/core/dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
+| `static/core/equipment.js` | правила инвентаря | `Equipment` |
+| `static/editor/mechanics.js` | механики умений | `Mechanics` |
+| `static/editor/mechanics-graph.js` | нодовая схема механик v3: типизированный ациклический граф, компилятор в план исполнения, редактор (холст, связи, действия) | `Mechanics` (расширяет движок `static/editor/mechanics.js`) |
+| `static/editor/node-registry.js` | базовый класс `GraphNode` и реестр узлов | `NodeRegistry`, `Nodes` |
 | `nodes/<категория>/<файл>.js` | ООП-классы узлов графа: папка — категория, файл — узел (data / conditions / logic / flow / rules / actions / groups) | регистрируются в `NodeRegistry.NODE_DEFS` |
-| `node-menu.js` | всплывающее ПКМ-меню редактора: поиск по узлам, категории, быстрые подключения | `NodeMenu` |
-| `node-params-form.js` | формы параметров узла на карточке (без ручного JSON) | `NodeForm` |
-| `class-rules.js` | правила классов из данных: блок `data.caster` → узел `rule.class` → набор `class_rules` | `ClassRules` |
-| `formulas.js` | безопасный вычислитель формул (без `eval`) и реестр переменных | `Formulas` |
-| `asset-kinds.js` | реестр типов ассетов (карта, токен, объект, портрет, предмет) — зеркало `ASSET_KINDS` в `src/api/assets.rs` | `AssetKinds` |
-| `modules.js` | записи листа и редакторы | `Modules` |
-| `compendium.js` | справочник | `Compendium` |
-| `class-editor.js` | конструктор класса справочника (разделы: общее, уровни 1–20, навыки, языки, снаряжение, подклассы, заклинания) | `ClassEditor` |
-| `race-editor.js` | конструктор расы (общее, характеристики, языки, заклинания, навыки, владения, черты, подрасы) | `RaceEditor` |
-| `background-editor.js` | конструктор предыстории (общее, навыки, владения, языки, снаряжение, способности, характер) | `BackgroundEditor` |
-| `character-builder.js` | правила создания персонажа | `CharacterBuilder` |
-| `builder-dialog.js` | мастер создания (8 шагов) | `newCharacterDialog` |
-| `presets.js` | реестр наборов данных: стартовые графы, основы, таблицы развития (JSON в `static/presets/`) | `Presets` |
-| `presets-editor.js` | диалог «Наборы данных…»: импорт своих наборов и связывание записей справочника с элементами наборов | `PresetsEditor` |
-| `spell-rules.js` | учёт ячеек заклинаний | `SpellRules` |
-| `levelup.js` | повышение уровня | `LevelUp` |
-| `sheet-vars.js` | переменные листа `sheet.vars`: проверки имени/числа и нормализация без DOM | `SheetVars` |
-| `sheet-polish.css` | доводка листа: футер настроек, меню портрета, дропдаун мировоззрения, защита от залипших слоёв; подключается в `sheet.html` после `style.css` | стили |
-| `packs.js` | наборы | `Packs` |
-| `lss.js` | импорт из LSS | `LSS` |
-| `table-model.js` | модель стола без DOM: слои сцены, активная карта, сетка/привязка, линейка (`snapRuler`) | `TableModel` |
-| `table.js` | виртуальный стол | `Table` |
-| `table-page.js` | страница «Участники кампании» (`/table/<кампания>`): аккаунты участников (роль, онлайн, персонажи), персонажи («На стол»/«Убрать»/лист), токены сцены (HP, скрытность, владелец) | страница |
-| `lobby.js` | страницы вне стола: лендинг, панель пользователя и разделы, вход по приглашению, профиль, админка, приватность, диагностика входа | `Lobby.create(ctx)` → `renderLanding/renderHome/renderDiag/renderPrivacy/renderProfile/renderAdmin/renderJoin/renderSection` |
-| `app.js` | точка входа `index.html`: роутинг без сборщика, авторизация и страница кампании со столом (панели, меню «Создать», чат) | страница |
-| `sheet.js` | лист персонажа | страница |
-| `profile-page.js` | страница `/profile`: имя, аватар, смена почты по коду, смена пароля с завершением сессий, удаление аккаунта | страница |
+| `static/editor/node-menu.js` | всплывающее ПКМ-меню редактора: поиск по узлам, категории, быстрые подключения | `NodeMenu` |
+| `static/editor/node-params-form.js` | формы параметров узла на карточке (без ручного JSON) | `NodeForm` |
+| `static/core/class-rules.js` | правила классов из данных: блок `data.caster` → узел `rule.class` → набор `class_rules` | `ClassRules` |
+| `static/core/formulas.js` | безопасный вычислитель формул (без `eval`) и реестр переменных | `Formulas` |
+| `static/core/asset-kinds.js` | реестр типов ассетов (карта, токен, объект, портрет, предмет) — зеркало `ASSET_KINDS` в `src/api/assets.rs` | `AssetKinds` |
+| `static/core/modules.js` | записи листа и редакторы | `Modules` |
+| `static/pages/compendium.js` | справочник | `Compendium` |
+| `static/editors/class-editor.js` | конструктор класса справочника (разделы: общее, уровни 1–20, навыки, языки, снаряжение, подклассы, заклинания) | `ClassEditor` |
+| `static/editors/race-editor.js` | конструктор расы (общее, характеристики, языки, заклинания, навыки, владения, черты, подрасы) | `RaceEditor` |
+| `static/editors/background-editor.js` | конструктор предыстории (общее, навыки, владения, языки, снаряжение, способности, характер) | `BackgroundEditor` |
+| `static/editors/character-builder.js` | правила создания персонажа | `CharacterBuilder` |
+| `static/editors/builder-dialog.js` | мастер создания (8 шагов) | `newCharacterDialog` |
+| `static/pages/presets.js` | реестр наборов данных: стартовые графы, основы, таблицы развития (JSON в `static/presets/`) | `Presets` |
+| `static/pages/presets-editor.js` | диалог «Наборы данных…»: импорт своих наборов и связывание записей справочника с элементами наборов | `PresetsEditor` |
+| `static/core/spell-rules.js` | учёт ячеек заклинаний | `SpellRules` |
+| `static/editors/levelup.js` | повышение уровня | `LevelUp` |
+| `static/sheet/sheet-vars.js` | переменные листа `sheet.vars`: проверки имени/числа и нормализация без DOM | `SheetVars` |
+| `static/sheet/sheet-polish.css` | доводка листа: футер настроек, меню портрета, дропдаун мировоззрения, защита от залипших слоёв; подключается в `static/sheet.html` после `static/css/style.css` | стили |
+| `static/pages/packs.js` | наборы | `Packs` |
+| `static/pages/lss.js` | импорт из LSS | `LSS` |
+| `static/table/table-model.js` | модель стола без DOM: слои сцены, активная карта, сетка/привязка, линейка (`snapRuler`) | `TableModel` |
+| `static/table/table.js` | виртуальный стол | `Table` |
+| `static/table/table-page.js` | страница «Участники кампании» (`/table/<кампания>`): аккаунты участников (роль, онлайн, персонажи), персонажи («На стол»/«Убрать»/лист), токены сцены (HP, скрытность, владелец) | страница |
+| `static/pages/lobby.js` | страницы вне стола: лендинг, панель пользователя и разделы, вход по приглашению, профиль, админка, приватность, диагностика входа | `Lobby.create(ctx)` → `renderLanding/renderHome/renderDiag/renderPrivacy/renderProfile/renderAdmin/renderJoin/renderSection` |
+| `static/pages/app.js` | точка входа `static/index.html`: роутинг без сборщика, авторизация и страница кампании со столом (панели, меню «Создать», чат) | страница |
+| `static/sheet/sheet.js` | лист персонажа | страница |
+| `static/pages/profile-page.js` | страница `/profile`: имя, аватар, смена почты по коду, смена пароля с завершением сессий, удаление аккаунта | страница |
 
-Отдельные страницы: `index.html` (лобби и стол), `sheet.html` (лист
-персонажа, также встраивается в стол через iframe с `embed=1`), `table.html`
-(участники кампании; лёгкий набор скриптов, см. `docs/table.md`), `profile.html`
-(профиль). Все они подключают `nav.js`/`nav.css` после `common.js`/`style.css`.
+Отдельные страницы: `static/index.html` (лобби и стол), `static/sheet.html` (лист
+персонажа, также встраивается в стол через iframe с `embed=1`), `static/table.html`
+(участники кампании; лёгкий набор скриптов, см. `docs/table.md`), `static/profile.html`
+(профиль). Все они подключают `static/core/nav.js`/`static/core/nav.css` после `static/core/common.js`/`static/css/style.css`.
 Мастер создания нужен только страницам со списком персонажей, поэтому
-`builder-dialog.js` подключён лишь в `index.html`; листу достаточно правил
+`static/editors/builder-dialog.js` подключён лишь в `static/index.html`; листу достаточно правил
 `CharacterBuilder` (словари и редактор выборов в справочнике).
 
 ## Создание персонажа: правила отдельно от окна

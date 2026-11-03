@@ -8,79 +8,70 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{access, auth::AuthUser, campaigns::get_member, error::ApiResult, util, AppError, AppState};
+use crate::{domain::access, api::auth::AuthUser, api::campaigns::get_member, error::ApiResult, util, AppError, AppState};
 
 pub fn default_grid() -> Value { json!({ "size": 70, "type": "square", "visible": true, "color": "#00000055", "scale": "5 фт" }) }
-/// Туман войны хранится маской на карту: by_map = { "<id карты>": { shapes: [...] } }.
-/// Старый формат (глобальный shapes) клиент переносит в маску карты при загрузке.
+/// Туман войны хранится бинарной растровой маской на карту:
+/// by_map = { "<id карты>": { x, y, cell, cols, rows, data: [[0|100, …], …] } }.
+/// 100 — клетка открыта, 0 — скрыта; записи нет (или она вся из 0) — карта полностью скрыта.
+/// Старый векторный формат (shapes) клиент растеризует в маску при загрузке.
 pub fn default_fog() -> Value { json!({ "enabled": false, "by_map": {} }) }
 
-pub const FOG_MAX_SHAPES_PER_MAP: usize = 200;
+pub const FOG_MAX_DIM: usize = 512;   // предел cols/rows маски (столько же на клиенте)
 pub const FOG_MAX_MAP_ID: usize = 64;
-const FOG_MAX_POINTS: usize = 2048;
 const FOG_MAX_COORD: f64 = 1e7;
-const FOG_MAX_WIDTH: f64 = 10000.0;
+const FOG_MIN_CELL: f64 = 1.0;
+const FOG_MAX_CELL: f64 = 10000.0;
 
-/// Координата фигуры тумана: конечное число в разумных пределах.
+/// Координата/размер маски: конечное число в разумных пределах.
 fn fog_coord(v: f64) -> Option<f64> { if v.is_finite() && v.abs() <= FOG_MAX_COORD { Some(v) } else { None } }
-/// Целые координаты пишем целыми — JSON маски остаётся компактным.
+/// Целые числа пишем целыми — JSON маски остаётся компактным.
 fn fog_number(v: f64) -> Value { if v.fract() == 0.0 { json!(v as i64) } else { json!(v) } }
 
-/// Одна фигура тумана: { shape, mode, points, width? }. None — фигура битая.
-fn normalize_fog_shape(raw: &Value) -> Option<Value> {
-    let kind = raw.get("shape")?.as_str()?.trim().to_lowercase();
-    // 'poly' — старое имя многоугольника, дальше живёт только 'polygon'.
-    let shape = if kind == "poly" { "polygon" } else { kind.as_str() };
-    if !matches!(shape, "rect" | "circle" | "polygon" | "path") {
-        return None;
-    }
-    let mode = raw.get("mode")?.as_str()?.trim().to_lowercase();
-    if mode != "reveal" && mode != "hide" {
-        return None;
-    }
-    let points_in = raw.get("points")?.as_array()?;
-    let (min, max) = match shape { "rect" | "circle" => (2, 2), "polygon" => (3, 256), _ => (2, FOG_MAX_POINTS) };
-    if points_in.len() < min || points_in.len() > max {
-        return None;
-    }
-    let mut points = Vec::with_capacity(points_in.len());
-    for p in points_in {
-        let pair = p.as_array()?;
-        if pair.len() < 2 {
-            return None;
+/// Бинарная растровая маска карты из произвольного JSON. None — маска битая или вся из 0
+/// (такую запись не храним: нет записи = карта полностью скрыта).
+fn normalize_mask(raw: &Value) -> Option<Value> {
+    let obj = raw.as_object()?;
+    let x = fog_coord(obj.get("x")?.as_f64()?)?;
+    let y = fog_coord(obj.get("y")?.as_f64()?)?;
+    let cell = obj.get("cell")?.as_f64()?;
+    if !(FOG_MIN_CELL..=FOG_MAX_CELL).contains(&cell) { return None; }
+    let cols = obj.get("cols")?.as_u64()? as usize;
+    let rows = obj.get("rows")?.as_u64()? as usize;
+    if cols == 0 || rows == 0 || cols > FOG_MAX_DIM || rows > FOG_MAX_DIM { return None; }
+    let data_in = obj.get("data")?.as_array()?;
+    if data_in.len() != rows { return None; }
+    let mut all_zero = true;
+    let mut data = Vec::with_capacity(rows);
+    for row_in in data_in {
+        let row_in = row_in.as_array()?;
+        if row_in.len() != cols { return None; }
+        let mut row = Vec::with_capacity(cols);
+        for v in row_in {
+            let b = if v.as_i64() == Some(100) { 100 } else { 0 }; // строго 0/100, прочее → 0
+            if b == 100 { all_zero = false; }
+            row.push(json!(b));
         }
-        let x = fog_coord(pair[0].as_f64()?)?;
-        let y = fog_coord(pair[1].as_f64()?)?;
-        points.push(json!([fog_number(x), fog_number(y)]));
+        data.push(Value::Array(row));
     }
-    let mut out = json!({ "shape": shape, "mode": mode, "points": points });
-    if shape == "path" {
-        let w = fog_coord(raw.get("width")?.as_f64()?)?;
-        if w <= 0.0 || w > FOG_MAX_WIDTH {
-            return None;
-        }
-        out["width"] = fog_number(w);
-    }
-    Some(out)
+    if all_zero { return None; }
+    Some(json!({ "x": fog_number(x), "y": fog_number(y), "cell": fog_number(cell), "cols": cols, "rows": rows, "data": data }))
 }
 
 /// Валидация `scene.fog` с клиента. None — это не новый формат (fog не меняем):
-/// старый глобальный shapes сервер не читает, его переносит клиент при загрузке.
+/// старый векторный shapes сервер не читает, его растеризует клиент при загрузке.
 pub fn normalize_fog(v: &Value) -> Option<Value> {
     let obj = v.as_object()?;
     let by_map = obj.get("by_map")?.as_object()?;
     let mut out = serde_json::Map::new();
     for (id, mask) in by_map {
-        // id карты — до 64 символов; битые записи просто не рассылаем.
+        // id карты — до 64 символов; битые/нулевые маски просто не рассылаем.
         if id.is_empty() || id.len() > FOG_MAX_MAP_ID {
             continue;
         }
-        let Some(shapes_in) = mask.get("shapes").and_then(|s| s.as_array()) else { continue };
-        let shapes: Vec<Value> = shapes_in.iter().filter_map(normalize_fog_shape).take(FOG_MAX_SHAPES_PER_MAP).collect();
-        if shapes.is_empty() {
-            continue;
+        if let Some(m) = normalize_mask(mask) {
+            out.insert(id.clone(), m);
         }
-        out.insert(id.clone(), json!({ "shapes": shapes }));
     }
     Some(json!({
         "enabled": obj.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false),
@@ -377,13 +368,15 @@ mod layer_tests {
     }
 }
 
-/// Туман войны: маска на карту (scene.fog.by_map) — та же схема, что в table-model.js.
+/// Туман войны: бинарная растровая маска на карту (scene.fog.by_map) — та же схема, что в table-model.js.
 #[cfg(test)]
 mod fog_tests {
     use super::*;
 
-    fn rect(mode: &str, pts: Value) -> Value { json!({ "shape": "rect", "mode": mode, "points": pts }) }
-    fn shapes_of(fog: &Value, map: &str) -> Vec<Value> { fog["by_map"][map]["shapes"].as_array().cloned().unwrap_or_default() }
+    fn mask(cols: usize, rows: usize, data: Value) -> Value {
+        json!({ "x": 0, "y": 0, "cell": 70, "cols": cols, "rows": rows, "data": data })
+    }
+    fn mask_of(fog: &Value, map: &str) -> Value { fog["by_map"][map].clone() }
 
     #[test]
     fn default_fog_is_an_empty_by_map_mask() {
@@ -391,59 +384,67 @@ mod fog_tests {
     }
 
     #[test]
-    fn normalize_fog_accepts_the_by_map_contract() {
+    fn normalize_fog_accepts_the_binary_raster_contract() {
         let raw = json!({
             "enabled": true,
             "by_map": {
-                "map-a": { "shapes": [rect("reveal", json!([[0, 0], [100, 50]]))] },
-                "map-b": { "shapes": [
-                    { "shape": "circle", "mode": "hide", "points": [[10, 10], [20, 10]] },
-                    { "shape": "poly", "mode": "reveal", "points": [[0, 0], [10, 0], [10, 10]] },
-                    { "shape": "path", "mode": "reveal", "points": [[0, 0], [5, 5]], "width": 70 },
-                ] },
+                "map-a": mask(2, 2, json!([[100, 0], [0, 100]])),
+                "map-b": mask(3, 1, json!([[100, 100, 100]])),
             },
         });
         let out = normalize_fog(&raw).expect("валидный туман");
         assert_eq!(out["enabled"], true);
-        assert_eq!(out["by_map"]["map-a"]["shapes"].as_array().unwrap().len(), 1);
-        let b = shapes_of(&out, "map-b");
-        assert_eq!(b.len(), 3);
-        assert_eq!(b[1]["shape"], "polygon", "старое имя poly нормализуется");
-        assert_eq!(b[2]["width"], 70);
-        assert_eq!(b[0]["points"], json!([[10, 10], [20, 10]]));
+        let a = mask_of(&out, "map-a");
+        assert_eq!(a["cols"], 2);
+        assert_eq!(a["rows"], 2);
+        assert_eq!(a["cell"], 70);
+        assert_eq!(a["data"], json!([[100, 0], [0, 100]]), "значения строго 0/100");
+        assert_eq!(mask_of(&out, "map-b")["data"], json!([[100, 100, 100]]));
+    }
+
+    #[test]
+    fn normalize_fog_coerces_values_to_binary_and_drops_zero_masks() {
+        // Прочие числа приводятся к 0/100 (только 100 остаётся 100), нечисловые — к 0.
+        let out = normalize_fog(&json!({ "by_map": { "m": mask(3, 1, json!([[100, 50, "x"]])) } })).unwrap();
+        assert_eq!(out["by_map"]["m"]["data"], json!([[100, 0, 0]]), "строго бинарные значения");
+        // Вся нулевая маска не хранится: нет записи = карта полностью скрыта.
+        let zero = normalize_fog(&json!({ "by_map": { "m": mask(2, 2, json!([[0, 0], [0, 0]])) } })).unwrap();
+        assert!(zero["by_map"].as_object().unwrap().is_empty());
     }
 
     #[test]
     fn normalize_fog_rejects_legacy_and_broken_input() {
-        // Старый формат сервер не читает: миграцию делает клиент.
-        assert!(normalize_fog(&json!({ "enabled": true, "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] })).is_none());
+        // Старый векторный формат сервер не читает: растеризацию делает клиент.
+        assert!(normalize_fog(&json!({ "enabled": true, "shapes": [{ "shape": "rect", "mode": "reveal", "points": [[0, 0], [10, 10]] }] })).is_none());
+        let legacy_map = normalize_fog(&json!({ "by_map": { "m": { "shapes": [{ "shape": "rect", "mode": "reveal", "points": [[0, 0], [1, 1]] }] } } })).unwrap();
+        assert!(legacy_map["by_map"].as_object().unwrap().is_empty(), "per-map shapes тоже не читается");
         for bad in [json!(null), json!([]), json!("туман"), json!({ "enabled": true }), json!({ "by_map": [] })] {
             assert!(normalize_fog(&bad).is_none(), "принял {bad}");
         }
-        let broken = normalize_fog(&json!({ "by_map": { "m": { "shapes": [
-            rect("open", json!([[0, 0], [10, 10]])),             // неизвестный режим
-            { "shape": "line", "mode": "reveal", "points": [[0, 0], [1, 1]] },
-            rect("reveal", json!([[0, 0]])),                      // мало точек
-            rect("reveal", json!([[0, 0], [1e9, 10]])),           // координата вне пределов
-            { "shape": "path", "mode": "reveal", "points": [[0, 0], [1, 1]] }, // мазку нужна ширина
-            rect("reveal", json!([[0, 0], [10, 10]])),            // единственная валидная
-        ] } } })).expect("формат by_map");
-        let kept = shapes_of(&broken, "m");
-        assert_eq!(kept.len(), 1, "битые фигуры отброшены, валидная осталась");
-        assert_eq!(kept[0]["mode"], "reveal");
-        // Пустая маска не создаёт запись карты.
-        let empty = normalize_fog(&json!({ "by_map": { "m": { "shapes": [] } } })).unwrap();
-        assert!(empty["by_map"].as_object().unwrap().is_empty());
-        // Слишком длинный id карты отбрасывается.
-        let long = normalize_fog(&json!({ "by_map": { "x".repeat(65): { "shapes": [rect("reveal", json!([[0, 0], [1, 1]]))] } } })).unwrap();
-        assert!(long["by_map"].as_object().unwrap().is_empty());
+        // Битые маски отбрасываются, валидная соседняя остаётся.
+        let mixed = normalize_fog(&json!({ "by_map": {
+            "ok": mask(1, 1, json!([[100]])),
+            "bad-dims": mask(600, 1, json!([[100]])),                                    // cols > FOG_MAX_DIM
+            "bad-cell": json!({ "x": 0, "y": 0, "cell": 0, "cols": 1, "rows": 1, "data": [[100]] }),
+            "ragged": mask(2, 2, json!([[100, 0], [100]])),                                // строка короче cols
+            "rows-mismatch": mask(1, 2, json!([[100]])),                                   // строк меньше rows
+            "no-data": json!({ "x": 0, "y": 0, "cell": 70, "cols": 1, "rows": 1 }),
+            "far-coord": json!({ "x": 1e9, "y": 0, "cell": 70, "cols": 1, "rows": 1, "data": [[100]] }),
+            "x".repeat(65): mask(1, 1, json!([[100]])),                                    // длинный id карты
+        } })).unwrap();
+        let maps = mixed["by_map"].as_object().unwrap();
+        assert_eq!(maps.len(), 1, "осталась только валидная маска: {maps:?}");
+        assert!(maps.contains_key("ok"));
     }
 
     #[test]
-    fn normalize_fog_caps_shapes_per_map() {
-        let many: Vec<Value> = (0..(FOG_MAX_SHAPES_PER_MAP + 25)).map(|i| rect("reveal", json!([[i, 0], [i + 1, 1]]))).collect();
-        let out = normalize_fog(&json!({ "by_map": { "m": { "shapes": many } } })).unwrap();
-        assert_eq!(shapes_of(&out, "m").len(), FOG_MAX_SHAPES_PER_MAP);
+    fn normalize_fog_accepts_dimension_boundary() {
+        assert_eq!(FOG_MAX_DIM, 512);
+        let row: Vec<Value> = (0..FOG_MAX_DIM).map(|_| json!(100)).collect();
+        let ok = normalize_fog(&json!({ "by_map": { "m": mask(FOG_MAX_DIM, 1, json!([row])) } })).unwrap();
+        assert_eq!(ok["by_map"]["m"]["cols"], FOG_MAX_DIM as u64);
+        let over = normalize_fog(&json!({ "by_map": { "m": mask(FOG_MAX_DIM + 1, 1, json!([[100]])) } })).unwrap();
+        assert!(over["by_map"].as_object().unwrap().is_empty());
     }
 
     #[test]
@@ -451,8 +452,8 @@ mod fog_tests {
         let fog = normalize_fog(&json!({
             "enabled": true,
             "by_map": {
-                "map-a": { "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] },
-                "deleted-map": { "shapes": [rect("reveal", json!([[0, 0], [10, 10]]))] },
+                "map-a": mask(1, 1, json!([[100]])),
+                "deleted-map": mask(1, 1, json!([[100]])),
             },
         })).unwrap();
         let out = restrict_fog_to_maps(&fog, &["map-a".to_string()]);

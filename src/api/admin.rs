@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{AnyPool, Row};
 
-use crate::{auth::{self, AuthUser}, error::ApiResult, util, AppError, AppState};
+use crate::{api::auth::{self, AuthUser}, error::ApiResult, util, AppError, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -88,8 +88,8 @@ async fn stats(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Val
 /// Пересоздать базовый справочник из вшитого seed (удаляет базовые записи и заливает заново).
 async fn reseed(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
     user.require_root()?;
-    crate::seed::reset(&st.db).await.map_err(|e| AppError::internal(e.to_string()))?;
-    crate::seed::seed(&st.db, &st.cfg.images).await.map_err(|e| AppError::internal(e.to_string()))?;
+    crate::store::seed::reset(&st.db).await.map_err(|e| AppError::internal(e.to_string()))?;
+    crate::store::seed::seed(&st.db, &st.cfg.images).await.map_err(|e| AppError::internal(e.to_string()))?;
     let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").fetch_one(&st.db).await?.get("n");
     Ok(Json(json!({ "ok": true, "entries": n })))
 }
@@ -743,7 +743,7 @@ async fn users_create(db: &AnyPool, args: &[String], mode: CliMode) -> anyhow::R
     let p = parse(args, &[F_NAME, F_ROOT, F_PASSWORD, F_HELP])?;
     if p.has("help") { println!("{HELP_CREATE}"); return Ok(()); }
     let raw_email = p.need(0, "почта", format!("{PROG} users create <email> <пароль> [--name <имя>] [--root]"))?;
-    let email = crate::auth::check_email(raw_email)
+    let email = crate::api::auth::check_email(raw_email)
         .map_err(|_| CliError::usage(format!("Некорректная почта: {raw_email}")).hint("Нужен вид name@domain.tld — вход на сервер выполняется по этой же почте"))?;
     if let Some(u) = find_user(db, &email).await? {
         let root = u.get::<i64, _>("is_root") != 0;
@@ -887,8 +887,8 @@ async fn reseed_cmd(db: &AnyPool, args: &[String], mode: CliMode, img_cfg: &crat
     }
     let base = "SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL";
     let before: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
-    crate::seed::reset(db).await?;
-    crate::seed::seed(db, img_cfg).await?;
+    crate::store::seed::reset(db).await?;
+    crate::store::seed::seed(db, img_cfg).await?;
     let after: i64 = sqlx::query(base).fetch_one(db).await?.get("n");
     println!("Базовый справочник пересоздан: было {before} записей, стало {after}");
     Ok(())

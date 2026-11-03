@@ -131,9 +131,10 @@ jobs:
       - name: Browser tests
         run: |
           set -e
-          for t in class-choices dice editors equipment forms-create levelup mechanics-graph nav node-card node-connections node-editor presets-manager profile-page table table-page; do
-            echo "== $t"
-            node "tests/$t.browser.cjs"
+          # Все tests/*.browser.cjs — glob, а не ручной список: иначе новый файл молча не гоняется.
+          for t in tests/*.browser.cjs; do
+            echo "== $(basename "$t")"
+            node "$t"
           done
 
   windows:

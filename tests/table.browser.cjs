@@ -362,12 +362,12 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     });
     assert.equal(idleFrames, 0, 'в покое кадры не рисуются — coalescing работает');
 
-    // ---- туман войны: маска на карту, инструменты, отмена, предпросмотр ----
+    // ---- туман войны: бинарная растровая маска на карту (0/100), инструменты, отмена, предпросмотр ----
     const fogScene = await page.evaluate(() => {
       window.sent = [];
       Table.setScene({
         id: 'scene-fog', name: 'Туман', grid: { size: 70, type: 'square', visible: true, color: '#00000055', scale: '5 фт' },
-        // Старый формат: shapes глобальные — при загрузке должны переехать в маску активной карты.
+        // Старый формат: глобальный shapes — при загрузке растеризуется в бинарную маску активной карты.
         active_map_id: 'map-a',
         fog: { enabled: false, shapes: [{ shape: 'rect', mode: 'reveal', points: [[100, 100], [200, 200]] }] },
         items: [
@@ -377,11 +377,21 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
       });
       const st = Table.state(); st.cam.x = 0; st.cam.y = 0; st.cam.k = 1;
       const r = st.canvas.getBoundingClientRect();
-      return { x: r.x, y: r.y, maps: Object.keys(Table.getFog().by_map), mask: Table.getFogMask('map-a').length };
+      const mask = Table.getFogMask('map-a');
+      return {
+        x: r.x, y: r.y,
+        maps: Object.keys(Table.getFog().by_map),
+        cols: mask?.cols, rows: mask?.rows,
+        revealed: mask ? mask.data.flat().filter(v => v === 100).length : 0,
+        binary: mask ? mask.data.flat().every(v => v === 0 || v === 100) : false,
+      };
     });
-    assert.deepEqual(fogScene.maps, ['map-a'], 'старый fog.shapes мигрировал в маску активной карты');
-    assert.equal(fogScene.mask, 1);
-    assert.equal(await page.evaluate(() => 'shapes' in Table.getFog()), false, 'после миграции старого поля нет');
+    assert.deepEqual(fogScene.maps, ['map-a'], 'старый fog.shapes растеризован в маску активной карты');
+    assert.equal(fogScene.cols, 10, 'карта 700×700 при клетке 70 → маска 10×10');
+    assert.equal(fogScene.rows, 10);
+    assert.equal(fogScene.revealed, 4, 'rect 100..200 открыл клетки 2×2');
+    assert.equal(fogScene.binary, true, 'все значения маски строго 0/100');
+    assert.equal(await page.evaluate(() => 'shapes' in Table.getFog()), false, 'старого поля shapes после миграции нет');
 
     await page.keyboard.press('f');
     assert.equal(await page.evaluate(() => Table.state().tool), 'fog', 'F включает туман');
@@ -397,9 +407,9 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     assert.deepEqual(preview.hover, { x: 250, y: 250 }, 'предпросмотр следует за курсором');
     assert.equal(preview.temp, null, 'до нажатия мазка нет');
     assert.deepEqual([preview.tool, preview.cells, preview.width], ['brush', 3, 210], 'кисть 3 клетки = 210 px');
-    assert.ok(preview.hint.includes('кисть') && preview.hint.includes('фигур 1/200'), 'подсказка показывает инструмент и число фигур');
+    assert.ok(preview.hint.includes('кисть') && preview.hint.includes('маска 10×10'), 'подсказка: инструмент и размер маски');
 
-    // Кисть: протяжка по карте A.
+    // Кисть: протяжка по карте A — клетки маски становятся 100.
     await page.mouse.move(canvasBox.x + 250, canvasBox.y + 250);
     await page.mouse.down();
     await page.mouse.move(canvasBox.x + 420, canvasBox.y + 330, { steps: 6 });
@@ -407,33 +417,44 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
     const brushed = await page.evaluate(() => {
       const mask = Table.getFogMask('map-a');
       const fogSent = window.sent.filter(m => m.type === 'scene_update' && m.fog);
-      return { mask, enabled: Table.getFog().enabled, sent: fogSent.length, last: fogSent[fogSent.length - 1]?.fog };
+      return {
+        revealed: mask.data.flat().filter(v => v === 100).length,
+        binary: mask.data.flat().every(v => v === 0 || v === 100),
+        enabled: Table.getFog().enabled,
+        sent: fogSent.length,
+        hasData: Array.isArray(fogSent[fogSent.length - 1]?.fog?.by_map?.['map-a']?.data),
+      };
     });
-    assert.equal(brushed.mask.length, 2, 'мазок добавился к мигрировавшей фигуре');
-    assert.equal(brushed.mask[1].shape, 'path');
-    assert.equal(brushed.mask[1].mode, 'reveal');
-    assert.equal(brushed.mask[1].width, 210, 'ширина мазка — размер кисти');
+    assert.ok(brushed.revealed > 4, 'мазок открыл ещё клетки');
+    assert.equal(brushed.binary, true, 'после мазка маска строго бинарная (0/100)');
     assert.equal(brushed.enabled, true, 'мазок включает «Показать игрокам»');
-    assert.ok(brushed.sent >= 1 && brushed.last?.by_map?.['map-a'].shapes.length === 2, 'маска уходит в scene_update');
+    assert.ok(brushed.sent >= 1 && brushed.hasData, 'маска уходит в scene_update как растр data');
 
-    // Прямоугольник: кнопка панели + протяжка.
+    // Прямоугольник: кнопка панели + протяжка — растеризуется в ту же единую маску.
     await page.click('[data-fog="tool-rect"]');
     assert.equal(await page.evaluate(() => Table.state().fogTool), 'rect', 'кнопка панели выбирает прямоугольник');
     await page.mouse.move(canvasBox.x + 500, canvasBox.y + 400);
     await page.mouse.down();
     await page.mouse.move(canvasBox.x + 650, canvasBox.y + 500, { steps: 4 });
     await page.mouse.up();
-    const rected = await page.evaluate(() => Table.getFogMask('map-a'));
-    assert.equal(rected.length, 3);
-    assert.equal(rected[2].shape, 'rect');
-    assert.deepEqual(rected[2].points.map(p => p.map(Math.round)), [[500, 400], [650, 500]], 'прямоугольник по протяжке');
+    const rected = await page.evaluate(() => {
+      const mask = Table.getFogMask('map-a');
+      return {
+        revealed: mask.data.flat().filter(v => v === 100).length,
+        at: TableModel.isRevealed(Table.getFog(), 'map-a', 550, 450, TableModel.boundsOf(Table.getActiveMap())),
+      };
+    });
+    assert.ok(rected.revealed > brushed.revealed, 'прямоугольник добавил открытые клетки');
+    assert.equal(rected.at, true, 'внутри прямоугольника открыто');
 
-    // Ctrl+Z отменяет последний мазок (прямоугольник).
+    // Ctrl+Z отменяет последний мазок (прямоугольник) — пиксели маски возвращаются.
     await page.evaluate(() => { window.sent = []; });
     await page.keyboard.press('Control+z');
-    const undone = await page.evaluate(() => ({ mask: Table.getFogMask('map-a'), sent: window.sent.filter(m => m.type === 'scene_update' && m.fog).length }));
-    assert.equal(undone.mask.length, 2, 'Ctrl+Z отменил прямоугольник');
-    assert.equal(undone.mask[1].shape, 'path');
+    const undone = await page.evaluate(() => ({
+      revealed: Table.getFogMask('map-a').data.flat().filter(v => v === 100).length,
+      sent: window.sent.filter(m => m.type === 'scene_update' && m.fog).length,
+    }));
+    assert.equal(undone.revealed, brushed.revealed, 'отмена вернула число открытых клеток к состоянию до прямоугольника');
     assert.ok(undone.sent >= 1, 'отмена тоже синхронизируется');
 
     // Переключение карты: у каждой карты своя маска.
@@ -442,20 +463,25 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
       const st = Table.state(); st.cam.x = -1650; st.cam.y = 0; st.cam.k = 1;
       window.sent = [];
     });
-    const onB = await page.evaluate(() => ({ b: Table.getFogMask('map-b').length, a: Table.getFogMask('map-a').length, hint: Table.state().hint.textContent, checked: document.querySelector('[data-fog="players"]').checked }));
-    assert.equal(onB.b, 0, 'у карты B своя (пустая) маска');
-    assert.equal(onB.a, 2, 'маска карты A не изменилась');
-    assert.ok(onB.hint.includes('Карта B') && onB.hint.includes('фигур 0/200'), 'панель показывает маску активной карты');
+    const onB = await page.evaluate(() => ({
+      b: Table.getFogMask('map-b'),
+      a: Table.getFogMask('map-a')?.data.flat().filter(v => v === 100).length,
+      hint: Table.state().hint.textContent,
+      checked: document.querySelector('[data-fog="players"]').checked,
+    }));
+    assert.equal(onB.b, null, 'у карты B своей маски нет — она вся скрыта');
+    assert.equal(onB.a, brushed.revealed, 'маска карты A не изменилась при переключении');
+    assert.ok(onB.hint.includes('Карта B') && onB.hint.includes('маски нет'), 'панель показывает маску активной карты');
     assert.equal(onB.checked, true, 'галочка «Показать игрокам» — общий флаг сцены (его включил мазок)');
 
-    // Кисть по карте B (после прямоугольника на карте A инструмент снова кисть).
+    // Кисть по карте B (мир x = экран + 1650: карта B занимает 1650..2350).
     await page.click('[data-fog="tool-brush"]');
     assert.equal(await page.evaluate(() => Table.state().fogTool), 'brush', '1 — кисть (кнопка панели)');
     await page.mouse.move(canvasBox.x + 150, canvasBox.y + 200);
     await page.mouse.down();
     await page.mouse.move(canvasBox.x + 300, canvasBox.y + 260, { steps: 5 });
     await page.mouse.up();
-    // Прямоугольник, выходящий за правую границу карты B (граница — мир x=2350).
+    // Прямоугольник, выходящий за правую границу карты B (мир x=2350), — обрезается по карте.
     await page.click('[data-fog="tool-rect"]');
     await page.mouse.move(canvasBox.x + 550, canvasBox.y + 300);
     await page.mouse.down();
@@ -466,46 +492,62 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
       const b = TableModel.boundsOf(Table.getActiveMap());
       const fog = Table.getFog();
       return {
-        mask, b,
+        cols: mask?.cols,
+        revealed: mask ? mask.data.flat().filter(v => v === 100).length : 0,
+        binary: mask ? mask.data.flat().every(v => v === 0 || v === 100) : true,
         inside: TableModel.isRevealed(fog, 'map-b', 1750, 220, b),
+        rightEdge: TableModel.isRevealed(fog, 'map-b', 2330, 350, b),
         outsideMap: TableModel.isRevealed(fog, 'map-b', 2500, 350, b),
       };
     });
-    assert.equal(onB2.mask.length, 2, 'мазок и прямоугольник на карте B');
-    assert.deepEqual(onB2.mask[1].points.map(p => p.map(Math.round)), [[2200, 300], [2350, 400]], 'фигура обрезана по правой границе карты B');
+    assert.equal(onB2.cols, 10, 'маска карты B: 10×10 клеток');
+    assert.ok(onB2.revealed > 0, 'мазки на карте B открыли клетки');
+    assert.equal(onB2.binary, true, 'маска карты B строго бинарная');
     assert.equal(onB2.inside, true, 'мазок открывает точку внутри карты');
-    assert.equal(onB2.outsideMap, false, 'за границей карты маски нет');
+    assert.equal(onB2.rightEdge, true, 'клетка у правой границы открыта (прямоугольник дошёл до края)');
+    assert.equal(onB2.outsideMap, false, 'за границей карты маски нет — обрезка по карте');
 
-    // Фигура целиком вне карты не добавляется.
-    await page.mouse.move(canvasBox.x + 400, canvasBox.y + 100); // мир x=2050 — внутри
-    await page.mouse.move(canvasBox.x + 780, canvasBox.y + 620); // мир x=2430, y=620 — вне карты B
+    // Мазок целиком вне карты ничего не меняет.
+    const beforeOutside = await page.evaluate(() => Table.getFogMask('map-b').data.flat().filter(v => v === 100).length);
+    await page.mouse.move(canvasBox.x + 780, canvasBox.y + 100);  // мир x=2430 — за картой B
     await page.mouse.down();
-    await page.mouse.move(canvasBox.x + 850, canvasBox.y + 680, { steps: 3 });
+    await page.mouse.move(canvasBox.x + 850, canvasBox.y + 180, { steps: 3 }); // мир x=2500
     await page.mouse.up();
-    assert.equal(await page.evaluate(() => Table.getFogMask('map-b').length), 2, 'фигура вне карты не создаёт эффекта');
+    const afterOutside = await page.evaluate(() => Table.getFogMask('map-b').data.flat().filter(v => v === 100).length);
+    assert.equal(afterOutside, beforeOutside, 'мазок вне карты не создаёт эффекта');
 
-    // «Открыть всё» по активной карте.
+    // «Открыть всё» по активной карте: вся маска становится 100.
     await page.click('[data-fog="all"]');
     const allB = await page.evaluate(() => {
       const mask = Table.getFogMask('map-b'), b = TableModel.boundsOf(Table.getActiveMap()), fog = Table.getFog();
-      return { mask, b, center: TableModel.isRevealed(fog, 'map-b', 2000, 350, b), outside: TableModel.isRevealed(fog, 'map-b', 2400, 350, b) };
+      return {
+        revealed: mask.data.flat().filter(v => v === 100).length, total: mask.cols * mask.rows,
+        center: TableModel.isRevealed(fog, 'map-b', 2000, 350, b),
+        outside: TableModel.isRevealed(fog, 'map-b', 2400, 350, b),
+      };
     });
-    assert.equal(allB.mask.length, 1);
-    assert.deepEqual(allB.mask[0].points.map(p => p.map(Math.round)), [[1650, 0], [2350, 700]], 'прямоугольник по границам карты B');
+    assert.equal(allB.revealed, allB.total, '«Открыть всё» — все клетки маски 100');
     assert.equal(allB.center, true, 'вся карта открыта');
     assert.equal(allB.outside, false, 'за картой по-прежнему скрыто');
 
     // «Показать игрокам» снимается — маска остаётся, но игроки её не видят.
     await page.locator('[data-fog="players"]').uncheck();
-    const hidden = await page.evaluate(() => ({ enabled: Table.getFog().enabled, sent: window.sent.filter(m => m.type === 'scene_update' && m.fog).slice(-1)[0]?.fog.enabled, mask: Table.getFogMask('map-b').length }));
+    const hidden = await page.evaluate(() => ({
+      enabled: Table.getFog().enabled,
+      sent: window.sent.filter(m => m.type === 'scene_update' && m.fog).slice(-1)[0]?.fog.enabled,
+      mask: !!Table.getFogMask('map-b'),
+    }));
     assert.equal(hidden.enabled, false);
     assert.equal(hidden.sent, false, 'признак уходит на сервер');
-    assert.equal(hidden.mask, 1, 'сама маска не пропала');
+    assert.equal(hidden.mask, true, 'сама маска не пропала');
 
     // Возврат на карту A: маска сохранилась, подсказка снова про неё.
     await page.evaluate(() => { Table.setActiveMap('map-a'); const st = Table.state(); st.cam.x = 0; st.cam.y = 0; st.cam.k = 1; });
-    const backA = await page.evaluate(() => ({ mask: Table.getFogMask('map-a').length, hint: Table.state().hint.textContent }));
-    assert.equal(backA.mask, 2, 'маска карты A на месте');
+    const backA = await page.evaluate(() => ({
+      revealed: Table.getFogMask('map-a').data.flat().filter(v => v === 100).length,
+      hint: Table.state().hint.textContent,
+    }));
+    assert.equal(backA.revealed, brushed.revealed, 'маска карты A на месте после переключения туда-сюда');
     assert.ok(backA.hint.includes('Карта A'), 'панель переключилась на карту A');
 
     // ======================= Размер canvas при скрытии боковой панели =======================

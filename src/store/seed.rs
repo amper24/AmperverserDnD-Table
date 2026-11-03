@@ -9,7 +9,7 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 use sqlx::{AnyPool, Row};
 
-use crate::{config::ImagesCfg, i18n, images, util};
+use crate::{config::ImagesCfg, i18n, api::images, util};
 
 #[derive(RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/data_seed/"]
@@ -77,7 +77,7 @@ async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
     for (source, entries) in batches {
         for e in entries {
             if let Some(m) = e.data.get("mechanics") {
-                crate::mechanics::validate(m).map_err(|err| anyhow::anyhow!("Некорректная механика {}: {err:?}", e.slug))?;
+                crate::domain::mechanics::validate(m).map_err(|err| anyhow::anyhow!("Некорректная механика {}: {err:?}", e.slug))?;
             }
             let name = util::truncate(&e.name, 128);
             sqlx::query("INSERT INTO compendium (id, campaign_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)")

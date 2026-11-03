@@ -148,7 +148,8 @@ test('версия в Cargo.toml совпадает с верхней запис
   const cargo = /^version\s*=\s*"([^"]+)"/m.exec(read('Cargo.toml'))[1];
   const changelog = /^## (\d+\.\d+\.\d+)/m.exec(read('CHANGELOG.md'))[1];
   assert.equal(cargo, changelog);
-  assert.match(read('docs/node-system-v3-audit.md'), /HEAD 0\.8\.0/);
+  const headRef = new RegExp('HEAD ' + cargo.replace(/\./g, '\\.'));
+  assert.match(read('docs/node-system-v3-audit.md'), headRef, 'audit ссылается на ту же версию');
 });
 
 test('docs/db.md: 27 индексов (19 прежних + 8 новых) совпадают с src/store/db.rs', () => {

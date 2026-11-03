@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use tokio::sync::{mpsc, RwLock};
 
-use crate::{access, auth, campaigns::get_member, util, AppState};
+use crate::{domain::access, api::auth, api::campaigns::get_member, util, AppState};
 
 #[derive(Clone)]
 struct Client {
@@ -532,7 +532,7 @@ async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str,
                 .bind(scene_id).fetch_all(&st.db).await.ok()
                 .map(|rows| rows.iter().map(|r| r.get::<String, _>("id")).collect())
                 .unwrap_or_default();
-            crate::scenes::normalize_fog(&msg["fog"]).map(|f| crate::scenes::restrict_fog_to_maps(&f, &map_ids))
+            crate::api::scenes::normalize_fog(&msg["fog"]).map(|f| crate::api::scenes::restrict_fog_to_maps(&f, &map_ids))
         }
     } else {
         None
@@ -540,7 +540,7 @@ async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str,
     let fog = fog_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "fog"));
     let name = msg["name"].as_str().map(|s| util::truncate(s, 128)).unwrap_or_else(|| row.get::<String, _>("name"));
     // Слои — часть сцены: валидный массив заменяет список, битый игнорируется.
-    let layers_out = msg.get("layers").and_then(crate::scenes::normalize_layers);
+    let layers_out = msg.get("layers").and_then(crate::api::scenes::normalize_layers);
     let layers = layers_out.as_ref().map(|v| v.to_string()).unwrap_or_else(|| util::text(&row, "layers"));
     // Активная карта: null очищает, строка (до 32 символов) задаёт, иначе — без изменений.
     let current_map = util::text(&row, "active_map_id");
@@ -558,7 +558,7 @@ async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str,
     }
     // Туман отдаём всегда — текущий из сцены, чтобы клиенты не теряли маску,
     // когда scene_update приходит без поля fog (имя, сетка, слои).
-    out["fog"] = serde_json::from_str::<Value>(&fog).unwrap_or_else(|_| crate::scenes::default_fog());
+    out["fog"] = serde_json::from_str::<Value>(&fog).unwrap_or_else(|_| crate::api::scenes::default_fog());
     if let Some(v) = layers_out { out["layers"] = v; }
     if msg.get("active_map_id").is_some() { out["active_map_id"] = json!(active_map_id); }
     st.hub.broadcast(cid, &out, None).await;

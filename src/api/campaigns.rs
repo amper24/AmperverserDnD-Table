@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{access, auth::AuthUser, error::ApiResult, util, AppError, AppState};
+use crate::{domain::access, api::auth::AuthUser, error::ApiResult, util, AppError, AppState};
 
 pub struct Member { pub role: String }
 impl Member { pub fn is_gm(&self) -> bool { self.role == "gm" } }
@@ -76,7 +76,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Cam
     sqlx::query("INSERT INTO campaign_members (campaign_id, user_id, role, joined_at) VALUES (?, ?, 'gm', ?)")
         .bind(&cid).bind(&user.id).bind(&now).execute(&st.db).await?;
     sqlx::query("INSERT INTO scenes (id, campaign_id, name, grid, fog, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(&sid).bind(&cid).bind("Первая сцена").bind(crate::scenes::default_grid().to_string()).bind(crate::scenes::default_fog().to_string()).bind(&now)
+        .bind(&sid).bind(&cid).bind("Первая сцена").bind(crate::api::scenes::default_grid().to_string()).bind(crate::api::scenes::default_fog().to_string()).bind(&now)
         .execute(&st.db).await?;
     let row = fetch_campaign(&st, &cid).await?;
     Ok(Json(campaign_json(&row, Some("gm"))))
