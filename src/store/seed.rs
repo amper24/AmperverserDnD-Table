@@ -55,10 +55,9 @@ pub async fn seed(pool: &AnyPool, img_cfg: &ImagesCfg) -> anyhow::Result<()> {
 
 async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
     let stamp = fingerprint();
-    // CAST AS CHAR: в MySQL колонка TEXT приходит как BLOB и не декодируется в String,
-    // а CAST(... AS CHAR) — как обычная строка; в SQLite CAST AS CHAR — тот же TEXT.
-    let stored: Option<String> = sqlx::query("SELECT CAST(`value` AS CHAR) AS `value` FROM seed_state WHERE `key` = 'compendium'")
-        .fetch_optional(pool).await?.map(|r| r.get("value"));
+    // util::text: в MySQL TEXT-колонка приходит как BLOB и не декодируется в String напрямую.
+    let stored: Option<String> = sqlx::query("SELECT `value` FROM seed_state WHERE `key` = 'compendium'")
+        .fetch_optional(pool).await?.map(|r| util::text(&r, "value"));
     if stored.as_deref() == Some(stamp.as_str()) {
         return Ok(());
     }
