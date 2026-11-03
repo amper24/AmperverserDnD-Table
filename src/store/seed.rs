@@ -42,7 +42,7 @@ fn fingerprint() -> String {
 pub async fn reset(pool: &AnyPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM seed_state WHERE key = 'compendium'").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM seed_state WHERE `key` = 'compendium'").execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -55,7 +55,7 @@ pub async fn seed(pool: &AnyPool, img_cfg: &ImagesCfg) -> anyhow::Result<()> {
 
 async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
     let stamp = fingerprint();
-    let stored: Option<String> = sqlx::query("SELECT value FROM seed_state WHERE key = 'compendium'")
+    let stored: Option<String> = sqlx::query("SELECT `value` FROM seed_state WHERE `key` = 'compendium'")
         .fetch_optional(pool).await?.map(|r| r.get("value"));
     if stored.as_deref() == Some(stamp.as_str()) {
         return Ok(());
@@ -87,8 +87,8 @@ async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
             total += 1;
         }
     }
-    sqlx::query("DELETE FROM seed_state WHERE key = 'compendium'").execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO seed_state (key, value) VALUES ('compendium', ?)").bind(&stamp).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM seed_state WHERE `key` = 'compendium'").execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO seed_state (`key`, `value`) VALUES ('compendium', ?)").bind(&stamp).execute(&mut *tx).await?;
     tx.commit().await?;
     tracing::info!("Справочник: залито {total} записей из вшитых файлов");
     Ok(())

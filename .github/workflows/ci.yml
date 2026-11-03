@@ -130,12 +130,26 @@ jobs:
           echo "NODE_PATH=$RUNNER_TEMP/browser/node_modules" >> "$GITHUB_ENV"
       - name: Browser tests
         run: |
-          set -e
+          set -e -o pipefail
           # Все tests/*.browser.cjs — glob, а не ручной список: иначе новый файл молча не гоняется.
           for t in tests/*.browser.cjs; do
             echo "== $(basename "$t")"
-            node "$t"
+            node "$t" 2>&1 | tee -a browser.log
           done
+      - name: Report logs to issue (on failure)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure (browser): run ${{ github.run_id }} (${{ github.sha }})"
+            echo; echo '#### browser.log'; echo '```'
+            tail -n 300 browser.log | cut -c1-400
+            echo '```'
+          } > report.md
+          NUM=$(gh issue list --state open --search "CI build log in:title" --json number --jq '.[0].number')
+          if [ -z "$NUM" ]; then NUM=$(gh issue create --title "CI build log" --body "Автоматические отчёты CI" | grep -oE '[0-9]+$'); fi
+          gh issue comment "$NUM" --body-file report.md
 
   windows:
     name: Windows build + run.bat

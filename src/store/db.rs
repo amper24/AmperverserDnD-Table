@@ -198,8 +198,8 @@ CREATE TABLE IF NOT EXISTS builtin_seeds (
   file VARCHAR(128) PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS seed_state (
-  key VARCHAR(32) PRIMARY KEY,
-  value TEXT NOT NULL
+  `key` VARCHAR(32) PRIMARY KEY,
+  `value` TEXT NOT NULL
 );
 "#;
 

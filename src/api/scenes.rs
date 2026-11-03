@@ -421,17 +421,17 @@ mod fog_tests {
         for bad in [json!(null), json!([]), json!("туман"), json!({ "enabled": true }), json!({ "by_map": [] })] {
             assert!(normalize_fog(&bad).is_none(), "принял {bad}");
         }
-        // Битые маски отбрасываются, валидная соседняя остаётся.
-        let mixed = normalize_fog(&json!({ "by_map": {
-            "ok": mask(1, 1, json!([[100]])),
-            "bad-dims": mask(600, 1, json!([[100]])),                                    // cols > FOG_MAX_DIM
-            "bad-cell": json!({ "x": 0, "y": 0, "cell": 0, "cols": 1, "rows": 1, "data": [[100]] }),
-            "ragged": mask(2, 2, json!([[100, 0], [100]])),                                // строка короче cols
-            "rows-mismatch": mask(1, 2, json!([[100]])),                                   // строк меньше rows
-            "no-data": json!({ "x": 0, "y": 0, "cell": 70, "cols": 1, "rows": 1 }),
-            "far-coord": json!({ "x": 1e9, "y": 0, "cell": 70, "cols": 1, "rows": 1, "data": [[100]] }),
-            "x".repeat(65): mask(1, 1, json!([[100]])),                                    // длинный id карты
-        } })).unwrap();
+        // Битые маски отбрасываются, валидная соседняя остаётся (длинный id — отдельным insert: в json! ключ — только литерал).
+        let mut by_map = serde_json::Map::new();
+        by_map.insert("ok".to_string(), mask(1, 1, json!([[100]])));
+        by_map.insert("bad-dims".to_string(), mask(600, 1, json!([[100]])));              // cols > FOG_MAX_DIM
+        by_map.insert("bad-cell".to_string(), json!({ "x": 0, "y": 0, "cell": 0, "cols": 1, "rows": 1, "data": [[100]] }));
+        by_map.insert("ragged".to_string(), mask(2, 2, json!([[100, 0], [100]])));          // строка короче cols
+        by_map.insert("rows-mismatch".to_string(), mask(1, 2, json!([[100]])));             // строк меньше rows
+        by_map.insert("no-data".to_string(), json!({ "x": 0, "y": 0, "cell": 70, "cols": 1, "rows": 1 }));
+        by_map.insert("far-coord".to_string(), json!({ "x": 1e9, "y": 0, "cell": 70, "cols": 1, "rows": 1, "data": [[100]] }));
+        by_map.insert("x".repeat(65), mask(1, 1, json!([[100]])));                          // длинный id карты
+        let mixed = normalize_fog(&json!({ "by_map": Value::Object(by_map) })).unwrap();
         let maps = mixed["by_map"].as_object().unwrap();
         assert_eq!(maps.len(), 1, "осталась только валидная маска: {maps:?}");
         assert!(maps.contains_key("ok"));
