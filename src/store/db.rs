@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS campaigns (
   id VARCHAR(32) PRIMARY KEY,
   name VARCHAR(128) NOT NULL,
-  description TEXT NOT NULL,
+  description {LONGTEXT} NOT NULL,
   owner_id VARCHAR(32) NOT NULL,
   active_scene_id VARCHAR(32) NULL,
   created_at VARCHAR(40) NOT NULL,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS scenes (
   id VARCHAR(32) PRIMARY KEY,
   campaign_id VARCHAR(32) NOT NULL,
   name VARCHAR(128) NOT NULL,
-  grid TEXT NOT NULL,
+  grid {LONGTEXT} NOT NULL,
   fog {MEDIUMTEXT} NOT NULL,
   layers {MEDIUMTEXT} NULL,
   active_map_id VARCHAR(32) NULL,
@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   campaign_id VARCHAR(32) NOT NULL,
   user_id VARCHAR(32) NOT NULL,
   kind VARCHAR(16) NOT NULL DEFAULT 'text',
-  payload TEXT NOT NULL,
+  payload {LONGTEXT} NOT NULL,
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 );
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS packs (
   id VARCHAR(32) PRIMARY KEY,
   owner_id VARCHAR(32) NOT NULL,
   name VARCHAR(128) NOT NULL,
-  description TEXT NOT NULL,
+  description {LONGTEXT} NOT NULL,
   is_public BIGINT NOT NULL DEFAULT 0,
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
@@ -199,7 +199,7 @@ CREATE TABLE IF NOT EXISTS builtin_seeds (
 );
 CREATE TABLE IF NOT EXISTS seed_state (
   `key` VARCHAR(32) PRIMARY KEY,
-  `value` TEXT NOT NULL
+  `value` {LONGTEXT} NOT NULL
 );
 "#;
 
@@ -214,7 +214,7 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE users ADD COLUMN avatar_asset_id VARCHAR(32) NULL",
     "ALTER TABLE packs ADD COLUMN share_code VARCHAR(32) NULL",
     "ALTER TABLE packs ADD COLUMN cover_asset_id VARCHAR(32) NULL",
-    "ALTER TABLE packs ADD COLUMN folders TEXT NULL",
+    "ALTER TABLE packs ADD COLUMN folders {LONGTEXT} NULL",
     "ALTER TABLE packs ADD COLUMN tags VARCHAR(255) NULL",
     "ALTER TABLE packs ADD COLUMN edition VARCHAR(8) NULL",
     "ALTER TABLE packs ADD COLUMN updated_at VARCHAR(40) NULL",
@@ -222,7 +222,7 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE packs ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
     // локализация наборов: базовый язык записей (ru|en) и переводы названия/описания {"en": {"name", "description"}}
     "ALTER TABLE packs ADD COLUMN locale VARCHAR(8) NULL",
-    "ALTER TABLE packs ADD COLUMN i18n TEXT NULL",
+    "ALTER TABLE packs ADD COLUMN i18n {LONGTEXT} NULL",
     // слои сцены (JSON-массив {id,name,order,...}) и активная карта (id элемента слоя map)
     "ALTER TABLE scenes ADD COLUMN layers MEDIUMTEXT NULL",
     "ALTER TABLE scenes ADD COLUMN active_map_id VARCHAR(32) NULL",
@@ -278,7 +278,8 @@ pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {
         sqlx::query(&stmt).execute(pool).await?;
     }
     for stmt in ALTERS {
-        if let Err(e) = sqlx::query(stmt).execute(pool).await {
+        let stmt = stmt.replace("{LONGTEXT}", longtext).replace("{MEDIUMTEXT}", mediumtext);
+        if let Err(e) = sqlx::query(&stmt).execute(pool).await {
             let msg = e.to_string();
             if !(msg.contains("Duplicate") || msg.contains("duplicate") || msg.contains("1060")) {
                 return Err(e.into());
