@@ -208,7 +208,7 @@ jobs:
           $comp = Invoke-RestMethod "http://127.0.0.1:8123/api/compendium?q=Fireball&limit=5" -Headers @{ Authorization = "Bearer $($login.token)" }
           if ($comp.Count -lt 1) { throw "compendium empty" }
           $html = Invoke-WebRequest http://127.0.0.1:8123/ -UseBasicParsing
-          if ($html.Content -notmatch "static/app.js") { throw "index.html not embedded" }
+          if ($html.Content -notmatch "static/pages/app.js") { throw "index.html not embedded" }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Get-Process dnd-table -ErrorAction SilentlyContinue | Stop-Process -Force
           "Windows OK"

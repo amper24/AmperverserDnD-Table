@@ -94,18 +94,7 @@ const assert = require('node:assert/strict');
     assert.deepEqual(slotStyles[2], slotStyles[0], 'armor uses the same card style as hand slots');
 
     await page.getByLabel('Основная рука',{exact:true}).selectOption('bow');
-    try {
-      await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===1&&!document.querySelector('.sheet').inert);
-    } catch (e) {
-      const dbg = await page.evaluate(() => ({
-        inert: document.querySelector('.sheet')?.inert,
-        filled: document.querySelectorAll('.hand-slot.filled').length,
-        status: document.querySelector('.sheet-status, .status, [class*=status]')?.textContent,
-        toasts: [...document.querySelectorAll('.toast, [class*=toast]')].map(x => x.textContent).slice(0, 5),
-      }));
-      console.log('DEBUG equip: node-side ops=', JSON.stringify(ops), 'server sheet._revision=', sheet._revision, 'pageerrors=', JSON.stringify(errors), 'page=', JSON.stringify(dbg));
-      throw e;
-    }
+    await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===1&&!document.querySelector('.sheet').inert);
     assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,3);
     await page.locator('[data-uid="bow"] .act-btn.all').evaluate(b=>{b.click();b.click();});
     await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'));

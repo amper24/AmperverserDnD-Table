@@ -148,11 +148,12 @@
   // ---------- Операции инвентаря и механики умений ----------
   async function inventoryOp(operation, retry = false, note = '') {
     if (readonly || inventoryBusy) return;
-    // Перед действием убеждаемся, что лист не изменили на сервере (передача предмета и т. п.).
-    if (!retry && !(await ensureFresh())) return;
-    if (pendingOperation && !retry) return toast('Сначала повторите незавершённую операцию тем же запросом.');
+    // Флаг busy — синхронно, до первого await: иначе двойной клик успевает запустить две операции.
     inventoryBusy = true; render();
     try {
+      // Перед действием убеждаемся, что лист не изменили на сервере (передача предмета и т. п.).
+      if (!retry && !(await ensureFresh())) return;
+      if (pendingOperation && !retry) return toast('Сначала повторите незавершённую операцию тем же запросом.');
       // Persist edits and legacy migration before using the authoritative item definition.
       if (!retry) { dirty = true; await flush(); pendingOperation = { ...operation, request_id: crypto.randomUUID() }; }
       const response = await API.post('/api/characters/' + id + '/inventory', pendingOperation);
