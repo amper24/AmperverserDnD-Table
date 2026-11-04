@@ -269,6 +269,7 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'table/table-model', 'table/
         (st.w - st.cam.x) / st.cam.k, (st.h - st.cam.y) / st.cam.k, st.scene.grid);
       return { built, stats, range, cam: { x: st.cam.x, y: st.cam.y, k: st.cam.k }, w: st.w, h: st.h };
     });
+    console.log('HEXPERF_DEBUG ' + JSON.stringify(hexPerf));
     assert.equal(hexPerf.range.count, 60298, 'модель видимого диапазона совпадает с замером старого drawGrid');
     assert.ok(hexPerf.built.rebuilds >= 1 && hexPerf.built.rebuilds <= 3, 'кэш сетки построен один раз');
     assert.ok(hexPerf.built.visibleCells >= hexPerf.range.count, 'в кэш попадает видимый диапазон (плюс поля)');
