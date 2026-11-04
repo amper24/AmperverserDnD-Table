@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, compendium::CATEGORIES, error::ApiResult, i18n, util, AppError, AppState};
+use crate::{api::auth::AuthUser, api::campaigns::{get_member, require_gm}, api::compendium::CATEGORIES, error::ApiResult, i18n, util, AppError, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -368,7 +368,7 @@ async fn insert_entries(st: &AppState, pid: &str, source: &str, entries: &[Value
         let cat = e["category"].as_str().unwrap_or("");
         let Some(nm) = e["name"].as_str() else { continue };
         if !CATEGORIES.contains(&cat) { continue; }
-        let slug = e["slug"].as_str().map(|s| s.to_string()).unwrap_or_else(|| crate::compendium::slugify(nm));
+        let slug = e["slug"].as_str().map(|s| s.to_string()).unwrap_or_else(|| crate::api::compendium::slugify(nm));
         i18n::validate(&e["data"]).map_err(|m| AppError::bad(format!("Запись «{nm}»: {m}")))?;
         let name_lc = i18n::search_key(nm, &e["data"]);
         sqlx::query("INSERT INTO compendium (id, campaign_id, pack_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")

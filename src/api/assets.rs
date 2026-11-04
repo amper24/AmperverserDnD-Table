@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::get_member, error::ApiResult, images, util, AppError, AppState};
+use crate::{api::auth::AuthUser, api::campaigns::get_member, error::ApiResult, api::images, util, AppError, AppState};
 
 /// `max_upload` — предельный размер загружаемого файла (images.max_upload_mb в config.yml).
 pub fn router(max_upload: usize) -> Router<AppState> {

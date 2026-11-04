@@ -1,7 +1,7 @@
 //! Bounded declarative programs. Only stored definitions execute; caller owns the CAS transaction.
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use crate::{AppError, error::ApiResult, inventory, util};
+use crate::{AppError, error::ApiResult, domain::inventory, util};
 // `save` остаётся в схеме только для старых записей: при выполнении он превращается в правило для мастера.
 const KINDS: &[&str] = &["consume","attack","damage","heal","temp_hp","roll","grant_item","condition","adjust","require","manual","passive","setvar","hands"];
 fn text<'a>(v: &'a Value, k: &str) -> &'a str { v[k].as_str().unwrap_or("") }
@@ -14,11 +14,11 @@ fn validate_nested(m: &Value, depth: usize) -> ApiResult<()> {
     if depth > 4 { return Err(AppError::bad("Слишком глубокая вложенность механик")); }
     match m["version"].as_i64() {
         Some(2) => {
-            crate::mechanics_graph::validate(m)?;
+            crate::domain::mechanics_graph::validate(m)?;
             // Незавершённый поток («Начало → Конец») плану не мешает: проверяем блоки, как только
             // исправлены все прочие проблемы (см. plan_checks_apply).
-            if !crate::mechanics_graph::plan_checks_apply(m) { return Ok(()); }
-            validate_plan(&crate::mechanics_graph::to_v1(m), depth)
+            if !crate::domain::mechanics_graph::plan_checks_apply(m) { return Ok(()); }
+            validate_plan(&crate::domain::mechanics_graph::to_v1(m), depth)
         }
         _ => Err(AppError::bad("Механики должны быть графом версии 2")),
     }
@@ -108,8 +108,8 @@ fn validate_plan(m: &Value, depth: usize) -> ApiResult<()> {
                 // Переменная: имя и область те же, что у узлов action.setvar/data.var; значение —
                 // число или (в рантайме) провод value_src.
                 "setvar" => {
-                    if !crate::mechanics_graph::valid_var_name(text(b,"name")) { return Err(AppError::bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
-                    if !crate::mechanics_graph::valid_var_scope(text(b,"scope")) { return Err(AppError::bad("Переменная: область action или sheet.")); }
+                    if !crate::domain::mechanics_graph::valid_var_name(text(b,"name")) { return Err(AppError::bad("Переменная: имя из латинских букв, цифр и «_» (1–32).")); }
+                    if !crate::domain::mechanics_graph::valid_var_scope(text(b,"scope")) { return Err(AppError::bad("Переменная: область action или sheet.")); }
                     if let Some(value) = b.get("value") { if !value.as_f64().is_some_and(f64::is_finite) { return Err(AppError::bad("Переменная: значение должно быть конечным числом.")); } }
                     if let Some(source) = b.get("value_src") { if !source.as_str().is_some_and(|source| !source.is_empty() && source.chars().count() <= 100) { return Err(AppError::bad("Переменная: некорректный источник значения.")); } }
                 }
@@ -128,7 +128,7 @@ fn formula(b: &Value) -> ApiResult<String> {
     // Каноничный вид формулы — как Mechanics.expression: нулевой бонус не пишется, «1d20+@atk_str»,
     // «2d8+@spell_mod», «@dex», «5». Иначе игрок видел «1d20+0+@atk_str».
     // Сборка общая с узлом «Бросок» графа (mechanics_graph::dice_formula_text).
-    Ok(crate::mechanics_graph::dice_formula_text(count, sides, bonus, stat))
+    Ok(crate::domain::mechanics_graph::dice_formula_text(count, sides, bonus, stat))
 }
 /// Ячейка нужного круга: обычная, а если её нет — ячейка Договора того же круга.
 /// Возвращает `(имя для ответа, остаток)`.
@@ -339,8 +339,8 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         // Формулы и data.sheet видят круг только на время выполнения: лист его не хранит.
         s["cast"]=cast.clone();
     }
-    if !crate::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(AppError::bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
-    let m = crate::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
+    if !crate::domain::mechanics_graph::is_executable(&doc["mechanics"]) { return Err(AppError::bad("Граф механики содержит ошибки: исправьте провода в редакторе.")); }
+    let m = crate::domain::mechanics_graph::to_v1_with_context(&doc["mechanics"], &graph_context);
     validate_plan(&m, 0)?;
     // Граф нужен для condition_src: условие блока считается в рантайме по листу и результатам.
     let graph = m["graph"].clone();
@@ -367,7 +367,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         let mut context = graph_context.clone();
         context["runtime"] = json!({"sheet": &s, "results": &results, "vars": Value::Object(vars.clone())});
         if let Some(source) = b["condition_src"].as_str() {
-            let value = crate::mechanics_graph::node_value(&graph, source, &context)?;
+            let value = crate::domain::mechanics_graph::node_value(&graph, source, &context)?;
             let skip = match &value { Value::Bool(value) => !*value, Value::Number(number) => number.as_f64() == Some(0.0), _ => false };
             if skip { continue; }
         }
@@ -376,7 +376,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         // Записать переменную: значение с провода value считается в рантайме, без провода — 0.
         if kind=="setvar" {
             let raw = match b["value_src"].as_str() {
-                Some(source) => crate::mechanics_graph::node_value(&graph, source, &context)?,
+                Some(source) => crate::domain::mechanics_graph::node_value(&graph, source, &context)?,
                 None => b["value"].clone(),
             };
             let value = raw.as_f64().filter(|value| value.is_finite()).ok_or_else(||AppError::bad("Переменная: значение входа value должно быть конечным числом"))?;
@@ -406,9 +406,9 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             let mut expr=inventory::resolve(&raw,&s)?;
             // Двуручное оружие в одной руке: помеха только на броски атаки предмета.
             let roll_mode=if kind=="attack" {inventory::attack_mode(mode,category=="item"&&inventory::one_hand_penalty(&doc))} else {mode.to_string()};
-            expr=crate::realtime::with_dice_mode(&expr,&roll_mode);
-            let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::realtime::double_dice(&expr);}
-            let mut r=crate::realtime::roll_expression(&expr).ok_or_else(||AppError::bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::realtime::nat_d20(&r);
+            expr=crate::ws::realtime::with_dice_mode(&expr,&roll_mode);
+            let base=expr.clone();let doubled=kind=="damage"&&crit;if doubled{expr=crate::ws::realtime::double_dice(&expr);}
+            let mut r=crate::ws::realtime::roll_expression(&expr).ok_or_else(||AppError::bad("Некорректная формула. Все изменения отменены"))?;total=num(&r,"total");let(n20,n1)=crate::ws::realtime::nat_d20(&r);
             // Попадание решает ДМ: промах только на натуральной 1, а если задан КД — результат должен его достичь.
             if kind=="attack" {crit=n20;let dc=num(b,"dc");hit=Some(n20||(!n1&&(dc<=0||total>=dc)));}
             last_total=Some(total);
@@ -692,7 +692,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
         assert_eq!(s["speed"],31,"условие читает переменную, записанную этим же действием");
         assert!(s.get("vars").is_none(),"переменная действия не сохраняется в лист");
         // План блока: имя и область из узла, статическая оценка провода и его источник для рантайма.
-        let compiled = crate::mechanics_graph::to_v1(&s["features"][0]["mechanics"]);
+        let compiled = crate::domain::mechanics_graph::to_v1(&s["features"][0]["mechanics"]);
         let block = &compiled["programs"][0]["blocks"][0];
         assert_eq!(block["kind"],"setvar");
         assert_eq!(block["name"],"tmp");
@@ -750,7 +750,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             if let Some(b)=b { nodes.push(node("b","data.number",json!({"value":b}))); links.push(wire("b","value","mf","b")); }
             if let Some(c)=c { nodes.push(node("c","data.number",json!({"value":c}))); links.push(wire("c","value","mf","c")); }
             let graph = mech(nodes, links);
-            let plan = crate::mechanics_graph::to_v1(&graph);
+            let plan = crate::domain::mechanics_graph::to_v1(&graph);
             let blocks = plan["programs"][0]["blocks"].as_array().unwrap();
             assert_eq!(blocks[0]["value"].as_f64(), Some(*expected), "операция {op}");
         }
@@ -758,7 +758,7 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             node("p","action.program",json!({"program_id":"use","name":"Математика","trigger":"use"})),
             node("mf","data.mathfun",json!({"op":"root"})),
         ], vec![link("p","mf")]);
-        assert!(crate::mechanics_graph::validate(&unknown).unwrap_err().1.contains("Математика"));
+        assert!(crate::domain::mechanics_graph::validate(&unknown).unwrap_err().1.contains("Математика"));
     }
     /// Ссылка на статический числовой узел работает при исполнении, а цикл ссылок отклоняется.
     #[test] fn data_ref_reads_a_number_and_rejects_cycles() {
@@ -776,19 +776,19 @@ pub fn execute_with_slot(sheet: &mut Value, category: &str, uid: &str, program: 
             node("r2","data.ref",json!({"node":"r1"})),
             node("end","flow.end",json!({})),
         ], vec![link("p","end")]);
-        assert!(crate::mechanics_graph::validate(&cycle).unwrap_err().1.contains("Циклическая ссылка"));
+        assert!(crate::domain::mechanics_graph::validate(&cycle).unwrap_err().1.contains("Циклическая ссылка"));
         let self_ref = mech(vec![
             node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
             node("r","data.ref",json!({"node":"r"})),
             node("end","flow.end",json!({})),
         ], vec![link("p","end")]);
-        assert!(crate::mechanics_graph::validate(&self_ref).unwrap_err().1.contains("не может ссылаться на себя"));
+        assert!(crate::domain::mechanics_graph::validate(&self_ref).unwrap_err().1.contains("не может ссылаться на себя"));
         let missing = mech(vec![
             node("p","action.program",json!({"program_id":"use","name":"Ссылка","trigger":"use"})),
             node("r","data.ref",json!({"node":"ghost"})),
             node("end","flow.end",json!({})),
         ], vec![link("p","end")]);
-        assert!(crate::mechanics_graph::validate(&missing).unwrap_err().1.contains("не найден"));
+        assert!(crate::domain::mechanics_graph::validate(&missing).unwrap_err().1.contains("не найден"));
     }
 }
 

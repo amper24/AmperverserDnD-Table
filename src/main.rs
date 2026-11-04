@@ -9,11 +9,8 @@ mod error;
 mod i18n;
 mod util;
 
-// Плоские имена сохранены: код по-прежнему пишет crate::auth, crate::mechanics и т. п.
-pub use api::{admin, assets, auth, campaigns, characters, compendium, images, packs, scenes};
-pub use domain::{access, inventory, mechanics, mechanics_graph};
-pub use store::{db, seed};
-pub use ws::realtime;
+// Слои по папкам: api/ — HTTP-эндпоинты, domain/ — правила, store/ — БД и сид,
+// ws/ — realtime. Везде полные пути вида crate::api::auth, crate::domain::mechanics.
 
 use std::sync::Arc;
 
@@ -34,7 +31,7 @@ pub use error::AppError;
 pub struct AppState {
     pub db: sqlx::AnyPool,
     pub cfg: Arc<config::Config>,
-    pub hub: realtime::Hub,
+    pub hub: ws::realtime::Hub,
     pub is_sqlite: bool,
 }
 
@@ -88,36 +85,36 @@ async fn main() -> anyhow::Result<()> {
     config::set_current(&loaded);
     let cfg = Arc::new(loaded.cfg.clone());
 
-    let (db, is_sqlite) = db::connect(&cfg.database.url, cfg.database.max_connections).await?;
-    db::migrate(&db, is_sqlite).await?;
-    seed::seed(&db, &cfg.images).await?;
-    admin::ensure_root_from_config(&db, &cfg.root).await?;
+    let (db, is_sqlite) = store::db::connect(&cfg.database.url, cfg.database.max_connections).await?;
+    store::db::migrate(&db, is_sqlite).await?;
+    store::seed::seed(&db, &cfg.images).await?;
+    api::admin::ensure_root_from_config(&db, &cfg.root).await?;
 
     // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход
     // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
-    match admin::run_cli(&db, &args, admin::CliMode::Cli, &cfg.images).await {
+    match api::admin::run_cli(&db, &args, api::admin::CliMode::Cli, &cfg.images).await {
         Ok(true) => return Ok(()),
         Ok(false) => {}
-        Err(e) => admin::exit_cli_error(&e),
+        Err(e) => api::admin::exit_cli_error(&e),
     }
 
     // Первый запуск: без администратора в веб-интерфейс не войти — подсказываем прямо в консоли.
     let roots: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users WHERE is_root = 1").fetch_one(&db).await?.get("n");
 
     let state_db = db.clone();
-    let state = AppState { db, cfg: cfg.clone(), hub: realtime::Hub::default(), is_sqlite };
+    let state = AppState { db, cfg: cfg.clone(), hub: ws::realtime::Hub::default(), is_sqlite };
 
     let app = Router::new()
         .route("/api/health", get(|| async { axum::Json(serde_json::json!({"ok": true})) }))
-        .merge(auth::router())
-        .merge(admin::router())
-        .merge(campaigns::router())
-        .merge(scenes::router())
-        .merge(assets::router(cfg.images.max_upload_bytes()))
-        .merge(characters::router())
-        .merge(compendium::router())
-        .merge(packs::router())
-        .merge(realtime::router())
+        .merge(api::auth::router())
+        .merge(api::admin::router())
+        .merge(api::campaigns::router())
+        .merge(api::scenes::router())
+        .merge(api::assets::router(cfg.images.max_upload_bytes()))
+        .merge(api::characters::router())
+        .merge(api::compendium::router())
+        .merge(api::packs::router())
+        .merge(ws::realtime::router())
         .route("/static/*path", get(static_handler))
         .route("/sheet/:id", get(|| async { serve_embedded("sheet.html", None) }))
         // Страница «Участники стола» (токены, HP, скрытность, владелец).
@@ -145,16 +142,16 @@ async fn main() -> anyhow::Result<()> {
         println!("      users create admin@example.com <пароль> --root");
         println!("    или заполните root.email и root.password в {} и перезапустите сервер.", config::display_path(&loaded.path));
     }
-    admin::spawn_console(state_db, cfg.images.clone());
-    // РћСЃС‚Р°РЅРѕРІРєР° С‚РѕР»СЊРєРѕ РїРѕ Ctrl+C (РёР»Рё СЏРІРЅРѕР№ РєРѕРјР°РЅРґРµ stop): РїРёС€РµРј РїСЂРёС‡РёРЅСѓ РІ Р»РѕРі.
+    api::admin::spawn_console(state_db, cfg.images.clone());
+    // Остановка только по Ctrl+C (или явной команде stop): отметка в логе.
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;
-        tracing::warn!("РџРѕР»СѓС‡РµРЅ Ctrl+C вЂ” СЃРµСЂРІРµСЂ РѕСЃС‚Р°РЅР°РІР»РёРІР°РµС‚СЃСЏ");
-        eprintln!("РџРѕР»СѓС‡РµРЅ Ctrl+C вЂ” СЃРµСЂРІРµСЂ РѕСЃС‚Р°РЅР°РІР»РёРІР°РµС‚СЃСЏ");
+        tracing::warn!("Получен Ctrl+C — сервер останавливается");
+        eprintln!("Получен Ctrl+C — сервер останавливается");
     };
     axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
-    tracing::warn!("РЎРµСЂРІРµСЂ Р·Р°РІРµСЂС€РёР» СЂР°Р±РѕС‚Сѓ (serve РІРµСЂРЅСѓР» Ok)");
-    eprintln!("РЎРµСЂРІРµСЂ Р·Р°РІРµСЂС€РёР» СЂР°Р±РѕС‚Сѓ");
+    tracing::warn!("Сервер завершил работу (serve вернул Ok)");
+    eprintln!("Сервер завершил работу");
     Ok(())
 }
 
@@ -163,35 +160,74 @@ async fn static_handler(uri: Uri, headers: axum::http::HeaderMap) -> Response {
     serve_embedded(path, headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()))
 }
 
-fn serve_embedded(path: &str, if_none_match: Option<&str>) -> Response {
-    match StaticFiles::get(path) {
-        Some(file) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            // Всегда перепроверять (ETag по хэшу содержимого): после обновления сервера клиент не должен жить со старым JS
-            let etag = format!("\"{}\"", file.metadata.sha256_hash()[..8].iter().map(|b| format!("{b:02x}")).collect::<String>());
-            if if_none_match.map(|v| v == etag).unwrap_or(false) {
-                return Response::builder().status(StatusCode::NOT_MODIFIED).header(header::ETAG, etag).header(header::CACHE_CONTROL, "no-cache").body(Body::empty()).unwrap();
-            }
-            let mut data = file.data.into_owned();
-            if path.ends_with(".html") {
-                // Версионируем ссылки на скрипты/стили хэшем содержимого — браузер никогда не подхватит устаревший JS
-                let mut html = String::from_utf8_lossy(&data).into_owned();
-                for name in StaticFiles::iter() {
-                    if let Some(f) = StaticFiles::get(&name) {
-                        let h = f.metadata.sha256_hash()[..4].iter().map(|b| format!("{b:02x}")).collect::<String>();
-                        html = html.replace(&format!("\"/static/{name}\""), &format!("\"/static/{name}?v={h}\""));
-                    }
-                }
-                data = html.into_bytes();
-            }
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, mime.as_ref())
-                .header(header::CACHE_CONTROL, "no-cache")
-                .header(header::ETAG, etag)
-                .body(Body::from(data))
-                .unwrap()
-        }
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+/// Кэш встроенных файлов: они вкомпилированы при сборке и не меняются, поэтому ETag,
+/// MIME и версионированный HTML считаем один раз за процесс, а не на каждый запрос
+/// (раньше каждый HTML-запрос проходил все ~115 файлов: sha256 + строковые замены).
+struct CachedAsset {
+    etag: String,
+    mime: String,
+    body: axum::body::Bytes,
+}
+
+fn asset_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, Arc<CachedAsset>>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Arc<CachedAsset>>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Хэши (4 байта, hex) всех встроенных файлов — для версионирования ссылок `?v=` в HTML; считаются один раз.
+fn asset_hashes() -> &'static std::collections::HashMap<String, String> {
+    static HASHES: std::sync::OnceLock<std::collections::HashMap<String, String>> = std::sync::OnceLock::new();
+    HASHES.get_or_init(|| {
+        StaticFiles::iter()
+            .filter_map(|name| {
+                StaticFiles::get(&name).map(|f| {
+                    let h = f.metadata.sha256_hash()[..4].iter().map(|b| format!("{b:02x}")).collect::<String>();
+                    (name.to_string(), h)
+                })
+            })
+            .collect()
+    })
+}
+
+fn cached_asset(path: &str) -> Option<Arc<CachedAsset>> {
+    if let Some(asset) = asset_cache().lock().unwrap().get(path) {
+        return Some(asset.clone());
     }
+    let file = StaticFiles::get(path)?;
+    // Всегда перепроверять (ETag по хэшу содержимого): после обновления сервера клиент не должен жить со старым JS
+    let etag = format!("\"{}\"", file.metadata.sha256_hash()[..8].iter().map(|b| format!("{b:02x}")).collect::<String>());
+    let mime = mime_guess::from_path(path).first_or_octet_stream().to_string();
+    let mut data = file.data.into_owned();
+    if path.ends_with(".html") {
+        // Версионируем ссылки на скрипты/стили хэшем содержимого — браузер никогда не подхватит устаревший JS
+        let mut html = String::from_utf8_lossy(&data).into_owned();
+        for (name, h) in asset_hashes().iter() {
+            html = html.replace(&format!("\"/static/{name}\""), &format!("\"/static/{name}?v={h}\""));
+        }
+        data = html.into_bytes();
+    }
+    let asset = Arc::new(CachedAsset { etag, mime, body: axum::body::Bytes::from(data) });
+    asset_cache().lock().unwrap().insert(path.to_string(), asset.clone());
+    Some(asset)
+}
+
+fn serve_embedded(path: &str, if_none_match: Option<&str>) -> Response {
+    let Some(asset) = cached_asset(path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    if if_none_match.map(|v| v == asset.etag).unwrap_or(false) {
+        return Response::builder()
+            .status(StatusCode::NOT_MODIFIED)
+            .header(header::ETAG, asset.etag.as_str())
+            .header(header::CACHE_CONTROL, "no-cache")
+            .body(Body::empty())
+            .unwrap();
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, asset.mime.as_str())
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::ETAG, asset.etag.as_str())
+        .body(Body::from(asset.body.clone()))
+        .unwrap()
 }

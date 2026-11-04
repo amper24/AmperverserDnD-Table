@@ -100,6 +100,8 @@ window.Table = (function () {
     wrap.append(S.canvas);
     S.ctx2d = S.canvas.getContext('2d');
     S.fogCanvas = document.createElement('canvas');
+    S.fogBuf = null;      // кэш буферов тумана (размытый край + жёсткая середина), см. fogBuffers
+    S.fogVersion = 0;     // инкремент при любой смене fog — сбрасывает кэш буферов
     // propsBox и hint создаём до buildTools: setTool() пишет в S.hint и вызывается из buildTools.
     S.propsBox = el('div', { class: 'props hidden' });
     S.hint = el('div', { class: 'hint' }, 'ЛКМ — выбрать/тащить, колесо — зум, ПКМ/пробел — панорама');
@@ -118,17 +120,26 @@ window.Table = (function () {
     requestDraw();
   }
 
-  /// Сцена при загрузке: старый scene.fog.shapes переезжает в маску активной/единственной карты.
-  /// Дальше код читает только scene.fog.by_map (см. table-model.js).
+  /// Сцена при загрузке: старый scene.fog.shapes (глобальный или per-map) растеризуется
+  /// в бинарную маску активной/единственной карты. Дальше код читает только scene.fog.by_map.
+  function fogNormalizeOpts(scene) {
+    return {
+      activeMapId: T.activeMapId(scene),
+      mapIds: T.mapItems(scene?.items).map(m => m.id),
+      cell: T.gridSize(scene?.grid),
+      boundsByMap: Object.fromEntries(T.mapItems(scene?.items).map(m => [m.id, T.boundsOf(m)]).filter(([, b]) => b)),
+    };
+  }
   function adoptScene(scene) {
     if (!scene || typeof scene !== 'object') return scene;
     if (!Array.isArray(scene.items)) scene.items = [];
-    scene.fog = T.normalizeFog(scene.fog, { activeMapId: T.activeMapId(scene), mapIds: T.mapItems(scene.items).map(m => m.id) });
+    scene.fog = T.normalizeFog(scene.fog, fogNormalizeOpts(scene));
     return scene;
   }
 
   function setScene(scene) {
     S.scene = adoptScene(scene); S.sel = null; S.temp = null; S.fogUndo = {}; S.pending = new Set();
+    S.fogVersion++; S.fogBuf = null;
     S.layers = T.normalize(scene?.layers);
     // Активный слой мог исчезнуть в новой сцене — фолбэк на prop, как и у элементов.
     S.activeLayer = T.resolve(S.layers, S.activeLayer).id;
@@ -570,9 +581,43 @@ window.Table = (function () {
     else if (sh.shape === 'polygon') { c.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) c.lineTo(q[0], q[1]); c.closePath(); }
     else { c.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) c.lineTo(q[0], q[1]); }
   }
-  /// Маска тумана активной карты: рисуется только внутри её прямоугольника.
-  /// Мастер видит полупрозрачный оверлей (и контуры фигур) — игроки получают только результат маски,
-  /// причём лишь когда включено «Показать игрокам» (scene.fog.enabled).
+  /// Буферы тумана по мировому размеру карты (кэшируются до смены маски/карты/границ — S.fogVersion):
+  /// blur — маска с размытыми краями (радиус в мировых px, поэтому на экране край масштабируется
+  /// с зумом), interior — жёстко непрозрачные клетки строго внутри скрытой области (там всегда 0/100).
+  function fogBuffers(mask, b) {
+    const key = [S.fogVersion, mask.cell, mask.cols, mask.rows, mask.x, mask.y, b.x, b.y, b.w, b.h].join('|');
+    if (S.fogBuf && S.fogBuf.key === key) return S.fogBuf;
+    const cell = mask.cell, w = Math.max(1, Math.ceil(b.w)), h = Math.max(1, Math.ceil(b.h));
+    // Жёсткая основа: вся карта скрыта, открытые клетки (100) вырезаны — строгие 0/100 внутри областей.
+    const hard = document.createElement('canvas'); hard.width = w; hard.height = h;
+    const hc = hard.getContext('2d');
+    hc.fillStyle = '#000'; hc.fillRect(0, 0, w, h);
+    hc.globalCompositeOperation = 'destination-out';
+    for (let row = 0; row < mask.rows; row++) for (let col = 0; col < mask.cols; col++) {
+      if (mask.data[row][col] !== 100) continue;
+      hc.fillRect(col * cell, row * cell, cell, cell);
+    }
+    hc.globalCompositeOperation = 'source-over';
+    // Жёсткая середина поверх размытия: клетка строго внутри скрытой области — всегда непрозрачна.
+    const interior = document.createElement('canvas'); interior.width = w; interior.height = h;
+    const ic = interior.getContext('2d');
+    ic.fillStyle = '#000';
+    const r = Math.max(1, Math.ceil(T.fogBlurWorld(cell) / cell));
+    for (let row = 0; row < mask.rows; row++) for (let col = 0; col < mask.cols; col++) {
+      if (T.isInteriorCell(mask, col, row, r)) ic.fillRect(col * cell, row * cell, cell, cell);
+    }
+    // Размытый край: blur в мировых px (буфер мирового размера → при отрисовке с зумом край растёт вместе с ним).
+    const blur = document.createElement('canvas'); blur.width = w; blur.height = h;
+    const bc = blur.getContext('2d');
+    if ('filter' in bc) { bc.filter = `blur(${T.fogBlurWorld(cell)}px)`; bc.drawImage(hard, 0, 0); bc.filter = 'none'; }
+    else bc.drawImage(hard, 0, 0); // без поддержки filter край просто жёсткий
+    S.fogBuf = { key, blur, interior };
+    return S.fogBuf;
+  }
+  /// Туман активной карты из бинарной маски: рисуется только внутри её прямоугольника.
+  /// Внутри маски строго 0/100 (жёсткие клетки), размывается только край (мировой радиус × зум).
+  /// Полупрозрачен только GM-оверлей; игроки видят туман непрозрачным и только когда
+  /// включено «Показать игрокам» (scene.fog.enabled).
   function drawFog(c) {
     const fog = S.scene?.fog;
     const map = activeMap();
@@ -581,7 +626,9 @@ window.Table = (function () {
     const showPlayers = T.fogEnabled(fog);
     const editing = S.canFog && S.tool === 'fog';
     if (!showPlayers && !editing) return;
-    const shapes = T.maskShapes(fog, map.id);
+    const mask = T.maskForMap(fog, map.id, b, T.gridSize(S.scene.grid));
+    if (!mask) return;
+    const buf = fogBuffers(mask, b);
     const fc = S.fogCanvas;
     // Пересоздаём буфер только при смене размера: иначе каждый кадр терял бы состояние.
     if (fc.width !== S.canvas.width || fc.height !== S.canvas.height) { fc.width = S.canvas.width; fc.height = S.canvas.height; }
@@ -590,30 +637,18 @@ window.Table = (function () {
     x.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     x.save();
     x.translate(S.cam.x, S.cam.y); x.scale(S.cam.k, S.cam.k);
-    // Обрезка по карте: всё, что нарисовано за её пределами, не darkened и не открывается.
+    // Обрезка по карте: туман живёт только внутри её прямоугольника.
     x.beginPath(); x.rect(b.x, b.y, b.w, b.h); x.clip();
-    x.fillStyle = S.canFog ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
-    x.fillRect(b.x, b.y, b.w, b.h);
-    for (const sh of shapes) {
-      x.globalCompositeOperation = sh.mode === 'reveal' ? 'destination-out' : 'source-over';
-      x.fillStyle = x.strokeStyle = S.isGM ? 'rgba(0,0,0,0.55)' : '#0b0b0e';
-      x.lineCap = x.lineJoin = 'round';
-      x.beginPath(); fogPath(x, sh);
-      if (sh.shape === 'path') { x.lineWidth = sh.width; x.stroke(); }
-      else x.fill();
-    }
+    x.globalAlpha = S.isGM ? 0.55 : 1; // GM-оверлей полупрозрачен, игроки видят непрозрачный туман
+    x.drawImage(buf.blur, b.x, b.y);
+    x.drawImage(buf.interior, b.x, b.y);
     x.restore();
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(fc, 0, 0); c.restore();
-    // GM-оверлей: границы карты и контуры нарисованных фигур — только у мастера и только в режиме тумана.
+    // GM-оверлей в режиме редактирования: жёлтая рамка активной карты.
     if (editing) {
       c.save();
       c.strokeStyle = 'rgba(255,213,79,0.85)'; c.lineWidth = 2 / S.cam.k; c.setLineDash([10 / S.cam.k, 6 / S.cam.k]);
       c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
-      for (const sh of shapes) {
-        c.strokeStyle = sh.mode === 'reveal' ? 'rgba(70,167,88,0.9)' : 'rgba(229,72,77,0.9)';
-        c.lineWidth = (sh.shape === 'path' ? 1 : 1.5) / S.cam.k; c.setLineDash([8 / S.cam.k, 5 / S.cam.k]);
-        c.beginPath(); fogPath(c, sh); c.stroke(); c.setLineDash([]);
-      }
       c.restore();
     }
   }
@@ -720,59 +755,57 @@ window.Table = (function () {
   /// Записать fog в сцену и отправить мастерам/игрокам тем же каналом, что сетку и слои.
   function commitFog(fog) {
     S.scene.fog = fog;
+    S.fogVersion++; S.fogBuf = null; // маска сменилась — буферы тумана пересоберутся
     sendScene({ fog: S.scene.fog });
     syncFogPanel();
     requestDraw();
   }
-  /// Снимок маски карты в стек отмены (до T.FOG_UNDO_MAX шагов на карту).
-  function pushFogUndo(mapId) { S.fogUndo[mapId] = T.pushUndo(S.fogUndo[mapId], T.maskShapes(S.scene.fog, mapId)); }
+  /// Снимок маски карты в стек отмены (до T.FOG_UNDO_MAX шагов на карту; null — маски не было).
+  function pushFogUndo(mapId) { S.fogUndo[mapId] = T.pushUndo(S.fogUndo[mapId], T.maskOf(S.scene.fog, mapId)); }
   function selectFogTool(k) { S.fogTool = k; S.temp = null; syncFogCursor(); syncFogPanel(); requestDraw(); }
   function setFogMode(m) { S.fogMode = m === 'hide' ? 'hide' : 'reveal'; syncFogPanel(); requestDraw(); }
   function setFogCells(n) { S.fogCells = T.clampBrush(n); syncFogPanel(); requestDraw(); }
   function setFogPlayers(on) { commitFog(T.setFogEnabled(S.scene.fog, on)); }
   function openAllFog() {
     const t = fogTarget(); if (!t) return;
-    const shapes = T.revealAllShapes(t.bounds); if (!shapes.length) return;
+    const mask = T.revealAllMask(t.bounds, T.gridSize(S.scene.grid)); if (!mask) return;
     pushFogUndo(t.map.id);
-    commitFog(T.setMaskShapes({ ...S.scene.fog, enabled: true }, t.map.id, shapes));
+    commitFog(T.setMask({ ...S.scene.fog, enabled: true }, t.map.id, mask));
   }
-  /** Скрыть всё: маска пустая — карта снова целиком скрыта. */
+  /** Скрыть всё: запись маски удаляется — карта снова целиком скрыта. */
   function hideAllFog() {
     const t = fogTarget(); if (!t) return;
     pushFogUndo(t.map.id);
-    commitFog(T.setMaskShapes({ ...S.scene.fog, enabled: true }, t.map.id, []));
+    commitFog(T.setMask({ ...S.scene.fog, enabled: true }, t.map.id, null));
   }
   function undoFog() {
     const t = fogTarget(); if (!t) return;
     const step = T.undoStep(S.fogUndo[t.map.id]);
-    if (!step.shapes) { toast('Нечего отменять'); return; }
+    if (step.mask === undefined) { toast('Нечего отменять'); return; }
     S.fogUndo[t.map.id] = step.stack;
-    commitFog(T.setMaskShapes(S.scene.fog, t.map.id, step.shapes));
+    commitFog(T.setMask(S.scene.fog, t.map.id, step.mask)); // null — вернуть «маски не было»
   }
-  /// Включить мазок в маску активной карты (с обрезкой по карте и лимитом фигур).
+  /// Растеризовать мазок в единую бинарную маску активной карты (обрезка по её границам — в модели).
   function addFogShape(tool, points, mode) {
     const target = fogTarget(); if (!target) return;
     const shape = T.fogShape(tool, points, { mode, cells: S.fogCells, gridSize: grid() });
     if (!shape) return;
-    const res = T.addMaskShape({ ...S.scene.fog, enabled: true }, target.map.id, shape, target.bounds);
-    if (!res.added) {
-      const cur = T.maskShapes(S.scene.fog, target.map.id).length;
-      toast(cur >= T.FOG_MAX_SHAPES ? `Лимит фигур на карту: ${T.FOG_MAX_SHAPES}` : 'Мазок вне карты — туман обрезается по её границам');
-      return;
-    }
+    const res = T.addMaskStroke({ ...S.scene.fog, enabled: true }, target.map.id, shape, target.bounds, T.gridSize(S.scene.grid));
+    if (!res.added) { toast('Мазок вне карты — туман обрезается по её границам'); return; }
     pushFogUndo(target.map.id);
     commitFog(res.fog);
   }
   function fogHintText() {
     const map = activeMap();
-    const shapes = map ? T.maskShapes(S.scene.fog, map.id) : [];
+    const mask = map ? T.maskOf(S.scene.fog, map.id) : null;
     const tool = { brush: 'кисть', rect: 'прямоугольник', circle: 'круг', eraser: 'ластик' }[S.fogTool] || S.fogTool;
     const size = S.fogTool === 'brush' || S.fogTool === 'eraser' ? ` ${S.fogCells} кл.` : '';
     const effective = S.fogTool === 'eraser' ? (S.fogMode === 'reveal' ? 'hide' : 'reveal') : S.fogMode;
     const mode = effective === 'reveal' ? 'открывает' : 'скрывает';
     const mapName = map ? (map.data?.name || 'без имени') : 'нет активной карты';
     const players = T.fogEnabled(S.scene.fog) ? 'игроки видят туман' : 'игроки тумана не видят';
-    return `Туман: ${tool}${size} ${mode} · карта «${mapName}» · фигур ${shapes.length}/${T.FOG_MAX_SHAPES} · ${players} · 1–4 инструмент, [ ] размер, Shift — наоборот, Ctrl+Z отмена`;
+    const maskInfo = mask ? `маска ${mask.cols}×${mask.rows} кл.` : 'маски нет (карта скрыта)';
+    return `Туман: ${tool}${size} ${mode} · карта «${mapName}» · ${maskInfo} · ${players} · 1–4 инструмент, [ ] размер, Shift — наоборот, Ctrl+Z отмена`;
   }
   function updateFogHint() { if (S.tool === 'fog' && S.hint) S.hint.textContent = fogHintText(); }
   /// У кисти/ластика системный курсор прячем: роль курсора играет нарисованный кружок (drawFogPreview).
@@ -1180,8 +1213,12 @@ window.Table = (function () {
       case 'items_bulk': for (const u of m.items) { const it = S.scene.items.find(i => i.id === u.id); if (it) { Object.assign(it.data, u.data); if (u.z !== undefined) it.z = u.z; if (u.layer) it.layer = u.layer; } } break;
       case 'scene_update':
         if (m.grid) { S.scene.grid = m.grid; syncScale(); }
-        // Туман — маска на карту: сервер присылает валидный by_map, применяем как есть.
-        if (m.fog) { S.scene.fog = T.normalizeFog(m.fog, { activeMapId: activeMapId() }); syncFogPanel(); }
+        // Туман — растровая маска на карту: сервер присылает валидный by_map, применяем как есть.
+        if (m.fog) {
+          S.scene.fog = T.normalizeFog(m.fog, fogNormalizeOpts(S.scene));
+          S.fogVersion++; S.fogBuf = null; // маска сменилась — буферы тумана пересоберутся
+          syncFogPanel();
+        }
         if (m.name) S.scene.name = m.name;
         // Слои и активная карта — часть сцены: приходят от мастера и применяются у всех.
         if (m.layers !== undefined) S.layers = T.normalize(m.layers);
@@ -1387,7 +1424,7 @@ window.Table = (function () {
     setActiveMap, focusMap, fitToMap, getActiveMapId: activeMapId, getActiveMap: activeMap, getMapItems,
     // туман войны: маска на карту, инструменты и отмена (см. docs/table.md)
     getFog: () => S.scene?.fog || null,
-    getFogMask: (mapId) => T.maskShapes(S.scene?.fog, mapId || activeMapId()),
+    getFogMask: (mapId) => T.maskOf(S.scene?.fog, mapId || activeMapId()),
     getFogState: () => ({ tool: S.fogTool, mode: S.fogMode, cells: S.fogCells, enabled: T.fogEnabled(S.scene?.fog) }),
     selectFogTool, setFogMode, setFogCells, setFogPlayers,
     openAllFog, hideAllFog, undoFog,

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{access, auth::AuthUser, campaigns::get_member, error::ApiResult, util, AppError, AppState};
+use crate::{domain::access, api::auth::AuthUser, api::campaigns::get_member, error::ApiResult, util, AppError, AppState};
 
 pub fn default_sheet(name: &str) -> Value {
     json!({
@@ -81,15 +81,15 @@ async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<Str
     } else {
         new_inv[pos]["qty"] = json!(have - qty);
         item["qty"] = json!(qty);
-        crate::inventory::partition_charges(&mut new_inv[pos], &mut item, qty, have);
+        crate::domain::inventory::partition_charges(&mut new_inv[pos], &mut item, qty, have);
     }
     item["uid"] = json!(util::uid());
-    crate::inventory::reset_state(&mut item);
+    crate::domain::inventory::reset_state(&mut item);
     src_sheet["inventory"] = json!(new_inv);
     let mut dst_inv = dst_sheet["inventory"].as_array().cloned().unwrap_or_default();
     dst_inv.push(item.clone());
     dst_sheet["inventory"] = json!(dst_inv);
-    crate::inventory::normalize(&mut src_sheet)?; crate::inventory::normalize(&mut dst_sheet)?;
+    crate::domain::inventory::normalize(&mut src_sheet)?; crate::domain::inventory::normalize(&mut dst_sheet)?;
     let mut tx = st.db.begin().await?;
     // Deterministic lock order avoids inverse transfers locking characters in opposite order.
     if id < body.to_character_id {
@@ -108,7 +108,7 @@ async fn transfer(State(st): State<AppState>, user: AuthUser, Path(id): Path<Str
         st.hub.broadcast(cid, &json!({ "type": "character_update", "character": a }), None).await;
         st.hub.broadcast(cid, &json!({ "type": "character_update", "character": b }), None).await;
         let text = format!("{} передал(а) «{}»{} → {}", user.name, item["name"].as_str().unwrap_or("предмет"), if qty > 1 { format!(" ×{qty}") } else { String::new() }, b["name"].as_str().unwrap_or(""));
-        if let Some(m) = crate::realtime::system_message(&st, cid, &user, &text).await {
+        if let Some(m) = crate::ws::realtime::system_message(&st, cid, &user, &text).await {
             st.hub.broadcast(cid, &m, None).await;
         }
     }
@@ -150,7 +150,7 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Cha
             sheet[k] = v;
         }
     }
-    crate::inventory::normalize(&mut sheet)?;
+    crate::domain::inventory::normalize(&mut sheet)?;
     sheet.as_object_mut().unwrap().remove("_revision");
     let id = util::uid();
     sqlx::query("INSERT INTO characters (id, campaign_id, owner_id, name, portrait_asset_id, sheet, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -207,7 +207,7 @@ async fn patch(State(st): State<AppState>, user: AuthUser, Path(id): Path<String
     if let Some(s) = &body.sheet {
         if let Some(n) = s["name"].as_str() { if !n.is_empty() { name = util::truncate(n, 128); } }
         if s["_revision"].as_i64() != c["revision"].as_i64() { return Err(conflict()); }
-        let mut next = s.clone(); crate::inventory::normalize(&mut next)?;
+        let mut next = s.clone(); crate::domain::inventory::normalize(&mut next)?;
         next.as_object_mut().unwrap().remove("_revision");
         sheet = next.to_string();
     }
@@ -299,18 +299,18 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
         let result = util::json_value(&util::text(&r, "result")); tx.rollback().await?;
         return Ok(Json(json!({ "character": char_json(&load_row(&st, &id).await?), "result": result, "replayed": true })));
     }
-    let mut sheet = c["sheet"].clone(); crate::inventory::normalize(&mut sheet)?;
+    let mut sheet = c["sheet"].clone(); crate::domain::inventory::normalize(&mut sheet)?;
     let mut result = json!({ "op": body.op }); let mut scene_event = None;
     match body.op.as_str() {
         "program" => {
-            result=crate::mechanics::execute_with_slot(&mut sheet,&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged,body.slot_level)?;
+            result=crate::domain::mechanics::execute_with_slot(&mut sheet,&body.source_kind,&body.source_uid,&body.program_id,&body.mode,body.acknowledged,body.slot_level)?;
             result["request_id"]=json!(body.request_id);result["gm_only"]=json!(body.gm_only);
             result["program_use"]=json!({"character_id":id,"source_kind":body.source_kind,"source_uid":body.source_uid,"program_id":body.program_id,"mode":body.mode,"slot_level":body.slot_level,"gm_only":body.gm_only});
         }
-        "equip" => crate::inventory::equip(&mut sheet, &body.item_uid, &body.slot)?,
-        "split" => { result["new_uid"] = json!(crate::inventory::split(&mut sheet, &body.item_uid, body.qty)?); }
+        "equip" => crate::domain::inventory::equip(&mut sheet, &body.item_uid, &body.slot)?,
+        "split" => { result["new_uid"] = json!(crate::domain::inventory::split(&mut sheet, &body.item_uid, body.qty)?); }
         "use" => {
-            result = crate::inventory::use_item(&mut sheet, &body.item_uid, &body.actions, &body.mode)?;
+            result = crate::domain::inventory::use_item(&mut sheet, &body.item_uid, &body.actions, &body.mode)?;
             result["request_id"] = json!(body.request_id); result["gm_only"] = json!(body.gm_only);
             result["item_use"] = json!({ "character_id": id, "item_uid": body.item_uid, "actions": body.actions, "mode": body.mode, "gm_only": body.gm_only });
         }
@@ -319,7 +319,7 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             let inv = sheet["inventory"].as_array_mut().unwrap();
             let pos = inv.iter().position(|i| i["uid"] == body.item_uid).ok_or_else(|| AppError::not_found("Предмет уже отсутствует"))?;
             let mut item = inv.remove(pos); if item["qty"].as_i64().unwrap_or(0) < 1 { return Err(AppError::bad("Пустую стопку нельзя выложить")); }
-            crate::inventory::reset_state(&mut item);
+            crate::domain::inventory::reset_state(&mut item);
             let loot_id = util::uid(); let data = json!({ "type": "loot", "loot": true, "managed_loot": true, "item": item, "x": body.x, "y": body.y, "w": body.size.clamp(10.0, 1000.0), "h": body.size.clamp(10.0, 1000.0), "name": item["name"], "owner_id": user.id });
             sqlx::query("INSERT INTO scene_items (id, scene_id, layer, z, data, updated_at) VALUES (?, ?, 'prop', 5, ?, ?)")
                 .bind(&loot_id).bind(&body.scene_id).bind(data.to_string()).bind(util::now()).execute(&mut *tx).await?;
@@ -331,13 +331,13 @@ async fn inventory_operation(State(st): State<AppState>, user: AuthUser, Path(id
             if data["loot"] != true || !data["item"].is_object() { return Err(AppError::bad("Это не предмет на столе")); }
             let deleted = sqlx::query("DELETE FROM scene_items WHERE id = ? AND scene_id = ? AND data = ?").bind(&body.loot_id).bind(&body.scene_id).bind(raw).execute(&mut *tx).await?;
             if deleted.rows_affected() != 1 { return Err(conflict()); }
-            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::inventory::reset_state(&mut item);
-            sheet["inventory"].as_array_mut().unwrap().push(item); crate::inventory::normalize(&mut sheet)?;
+            let mut item = data["item"].clone(); item["uid"] = json!(util::uid()); crate::domain::inventory::reset_state(&mut item);
+            sheet["inventory"].as_array_mut().unwrap().push(item); crate::domain::inventory::normalize(&mut sheet)?;
             scene_event = Some(json!({ "type": "item_delete", "scene_id": body.scene_id, "id": body.loot_id }));
         }
         _ => return Err(AppError::bad("Неизвестная операция инвентаря")),
     }
-    crate::inventory::normalize(&mut sheet)?;
+    crate::domain::inventory::normalize(&mut sheet)?;
     cas_sheet(&mut tx, &id, c["revision"].as_i64().unwrap(), &sheet).await?;
     let mut message = None;
     if body.op == "use" || body.op == "program" {

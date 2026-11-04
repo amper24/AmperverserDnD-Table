@@ -153,10 +153,12 @@ async function main() {
       assert.match(await char.locator('.home-card-meta').innerText(), /Кампания: Кампания теней/);
       assert.equal(await char.locator('a[href="/sheet/char1"][target="_blank"]').count(), 1, '«Лист» открывает лист');
 
-      // Быстрые действия и рабочее «Присоединиться по коду».
-      for (const name of ['Новая кампания', 'Новый персонаж', 'Присоединиться по коду']) {
+      // Быстрые действия: на главной остались «Новая кампания» и «Новый персонаж»;
+      // присоединение по коду убрано — только по ссылке-приглашению из раздела «Кампании».
+      for (const name of ['Новая кампания', 'Новый персонаж']) {
         assert.equal(await page.getByRole('button', { name, exact: true }).count(), 1, `быстрое действие «${name}»`);
       }
+      assert.equal(await page.getByRole('button', { name: 'Присоединиться по коду', exact: true }).count(), 0, 'присоединения по коду на главной нет');
       // «Новая кампания» открывает диалог названия (проверяем и отменяем без запроса).
       await page.getByRole('button', { name: 'Новая кампания', exact: true }).click();
       const campDialog = page.locator('.modal');
@@ -165,7 +167,11 @@ async function main() {
       await campDialog.getByRole('button', { name: 'Отмена', exact: true }).click();
       assert.equal(await page.locator('.modal').count(), 0, 'диалог закрылся без создания');
 
-      await page.getByRole('button', { name: 'Присоединиться по коду', exact: true }).click();
+      // Присоединение по ссылке-приглашению — из раздела «Кампании».
+      await page.locator('.edge-nav a[data-nav=campaigns]').click();
+      await page.waitForURL(/\/campaigns$/);
+      await page.locator('h1', { hasText: 'Кампании' }).waitFor();
+      await page.getByRole('button', { name: 'Присоединиться по ссылке', exact: true }).click();
       const dialog = page.locator('.modal');
       await dialog.waitFor();
       await dialog.locator('input').fill(HOST + '/join/abc123');
@@ -174,7 +180,7 @@ async function main() {
       await page.getByRole('heading', { name: 'Приглашение' }).waitFor();
       assert.match(await page.locator('.card.auth').innerText(), /Кампания теней/, 'страница приглашения открылась');
       assert.deepEqual(errors, [], 'главная без ошибок страницы');
-      results.push('главная: карточки кампаний/персонажей, быстрые действия, переход по коду');
+      results.push('главная: карточки кампаний/персонажей, быстрые действия, присоединение по ссылке-приглашению');
       await page.close();
     }
 

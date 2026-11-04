@@ -9,7 +9,7 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 use sqlx::{AnyPool, Row};
 
-use crate::{config::ImagesCfg, i18n, images, util};
+use crate::{config::ImagesCfg, i18n, api::images, util};
 
 #[derive(RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/data_seed/"]
@@ -42,7 +42,7 @@ fn fingerprint() -> String {
 pub async fn reset(pool: &AnyPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM seed_state WHERE key = 'compendium'").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM seed_state WHERE `key` = 'compendium'").execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -55,8 +55,9 @@ pub async fn seed(pool: &AnyPool, img_cfg: &ImagesCfg) -> anyhow::Result<()> {
 
 async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
     let stamp = fingerprint();
-    let stored: Option<String> = sqlx::query("SELECT value FROM seed_state WHERE key = 'compendium'")
-        .fetch_optional(pool).await?.map(|r| r.get("value"));
+    // util::text: в MySQL TEXT-колонка приходит как BLOB и не декодируется в String напрямую.
+    let stored: Option<String> = sqlx::query("SELECT `value` FROM seed_state WHERE `key` = 'compendium'")
+        .fetch_optional(pool).await?.map(|r| util::text(&r, "value"));
     if stored.as_deref() == Some(stamp.as_str()) {
         return Ok(());
     }
@@ -77,7 +78,7 @@ async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
     for (source, entries) in batches {
         for e in entries {
             if let Some(m) = e.data.get("mechanics") {
-                crate::mechanics::validate(m).map_err(|err| anyhow::anyhow!("Некорректная механика {}: {err:?}", e.slug))?;
+                crate::domain::mechanics::validate(m).map_err(|err| anyhow::anyhow!("Некорректная механика {}: {err:?}", e.slug))?;
             }
             let name = util::truncate(&e.name, 128);
             sqlx::query("INSERT INTO compendium (id, campaign_id, category, slug, name, name_lc, source, data) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)")
@@ -87,8 +88,8 @@ async fn seed_compendium(pool: &AnyPool) -> anyhow::Result<()> {
             total += 1;
         }
     }
-    sqlx::query("DELETE FROM seed_state WHERE key = 'compendium'").execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO seed_state (key, value) VALUES ('compendium', ?)").bind(&stamp).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM seed_state WHERE `key` = 'compendium'").execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO seed_state (`key`, `value`) VALUES ('compendium', ?)").bind(&stamp).execute(&mut *tx).await?;
     tx.commit().await?;
     tracing::info!("Справочник: залито {total} записей из вшитых файлов");
     Ok(())

@@ -13,7 +13,7 @@
 
 use serde_json::{json, Value};
 
-use crate::{campaigns::Member, error::ApiResult, AppError, AppState};
+use crate::{api::campaigns::Member, error::ApiResult, AppError, AppState};
 
 // ---- Возможности (capabilities) ----
 pub const CAMPAIGN_READ: &str = "campaign.read";
@@ -115,7 +115,7 @@ pub fn require(role: &str, cap: &str) -> Result<(), AppError> {
 /// Участник кампании с проверкой возможности: 403 и посторонним, и участникам
 /// без нужной роли (чужой — тот же 403, что и раньше).
 pub async fn require_cap(st: &AppState, cid: &str, uid: &str, cap: &str) -> ApiResult<Member> {
-    let member = crate::campaigns::get_member(st, cid, uid).await?;
+    let member = crate::api::campaigns::get_member(st, cid, uid).await?;
     require(&member.role, cap)?;
     Ok(member)
 }

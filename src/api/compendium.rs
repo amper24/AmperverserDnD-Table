@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{auth::AuthUser, campaigns::{get_member, require_gm}, error::ApiResult, i18n, packs, util, AppError, AppState};
+use crate::{api::auth::AuthUser, api::campaigns::{get_member, require_gm}, error::ApiResult, i18n, api::packs, util, AppError, AppState};
 
 pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore", "skill"];
 
@@ -160,8 +160,8 @@ fn strip_map_token(body: &mut EntryIn) {
 /// Проверка записи перед записью: механики, выборы и слои перевода.
 fn validate_entry(body: &mut EntryIn) -> ApiResult<()> {
     strip_map_token(body);
-    if let Some(m) = body.data.get("mechanics") { crate::mechanics::validate(m)?; }
-    if let Some(c) = body.data.get("choices") { crate::mechanics::validate_choices(c)?; }
+    if let Some(m) = body.data.get("mechanics") { crate::domain::mechanics::validate(m)?; }
+    if let Some(c) = body.data.get("choices") { crate::domain::mechanics::validate_choices(c)?; }
     i18n::validate(&body.data).map_err(AppError::bad)
 }
 
