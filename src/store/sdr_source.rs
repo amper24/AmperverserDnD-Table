@@ -12,6 +12,11 @@ use std::path::{Path, PathBuf};
 /// Папка репозитория с данными справочника — единственное, что нужно от Git.
 pub const SDR_DIR: &str = "data_seed";
 
+/// Шаблон sparse-checkout (режим `--no-cone`): в рабочем дереве кэша остаётся только папка данных.
+/// Конусный режим (`--sparse` по умолчанию) всегда оставляет файлы верхнего уровня (`Cargo.toml`,
+/// `README.md`, `*.bat`), поэтому шаблон задаётся явно.
+pub const SDR_SPARSE: &str = "data_seed/";
+
 /// Когда обновлять кэш Git.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SdrUpdate {
@@ -104,7 +109,8 @@ impl GitSdrSource {
     }
 
     /// Разреженный (sparse) клон: в рабочем дереве только `data_seed/`.
-    /// `--filter=blob:none` не даёт скачивать файлы, которых нет среди выбранных путей.
+    /// `--filter=blob:none` не даёт скачивать блобы, которых нет среди выбранных путей
+    /// (`.git` такого клона — единицы мегабайт вместо истории всего проекта).
     fn clone_data(&self) -> Result<()> {
         let dir = self.clone_dir.to_string_lossy().into_owned();
         git_ok(
@@ -121,7 +127,7 @@ impl GitSdrSource {
                 &dir,
             ],
         )?;
-        git_ok(Some(&self.clone_dir), &["sparse-checkout", "set", SDR_DIR])?;
+        git_ok(Some(&self.clone_dir), &["sparse-checkout", "set", "--no-cone", SDR_SPARSE])?;
         Ok(())
     }
 
@@ -148,13 +154,14 @@ impl GitSdrSource {
         if !self.is_own_shallow_clone() {
             return;
         }
-        let sparse = git_output(Some(&self.clone_dir), &["config", "--get", "core.sparseCheckout"]);
-        if sparse.as_deref().map(|s| s.trim() == "true").unwrap_or(false) {
+        // Уже сужен этим же шаблоном — ничего не делаем (иначе лишний вызов git на каждый старт).
+        let patterns = git_output(Some(&self.clone_dir), &["sparse-checkout", "list"]);
+        if patterns.as_deref().map(str::trim) == Some(SDR_SPARSE) {
             return;
         }
-        match git_ok(Some(&self.clone_dir), &["sparse-checkout", "set", SDR_DIR]) {
-            Ok(()) => tracing::info!("кэш SDR сужен до {SDR_DIR}: исходники проекта из кэша убраны"),
-            Err(e) => tracing::warn!("не удалось сузить кэш SDR до {SDR_DIR} ({e:#}) — оставляю как есть"),
+        match git_ok(Some(&self.clone_dir), &["sparse-checkout", "set", "--no-cone", SDR_SPARSE]) {
+            Ok(()) => tracing::info!("кэш SDR сужен до {SDR_SPARSE}: файлов проекта в кэше больше нет"),
+            Err(e) => tracing::warn!("не удалось сузить кэш SDR до {SDR_SPARSE} ({e:#}) — оставляю как есть"),
         }
     }
 
