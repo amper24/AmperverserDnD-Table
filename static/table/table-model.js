@@ -271,7 +271,7 @@ window.TableModel = (() => {
   function rulerLabel(points, grid, ft, name) {
     const cells = rulerCells(points, grid);
     const total = Math.round(cells * (Number(ft) || 5));
-    return `${total} фт` + (name ? ' — ' + name : '');
+    return `${total} фт (${Math.round(cells * 10) / 10} кл.)` + (name ? ' — ' + name : '');
   }
 
   // ---------- туман войны ----------

@@ -205,8 +205,8 @@ CREATE TABLE IF NOT EXISTS campaign_roles (
   id VARCHAR(32) PRIMARY KEY,
   campaign_id VARCHAR(32) NOT NULL,
   name VARCHAR(64) NOT NULL,
-  description {LONGTEXT} NOT NULL DEFAULT '',
-  capabilities {LONGTEXT} NOT NULL DEFAULT '[]',
+  description {LONGTEXT} NOT NULL,
+  capabilities {LONGTEXT} NOT NULL,
   is_system BIGINT NOT NULL DEFAULT 0,
   created_at VARCHAR(40) NOT NULL,
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -250,7 +250,7 @@ const ALTERS: &[&str] = &[
     "ALTER TABLE scenes ADD COLUMN layers MEDIUMTEXT NULL",
     "ALTER TABLE scenes ADD COLUMN active_map_id VARCHAR(32) NULL",
     // Собственные роли и права на слои
-    "CREATE TABLE IF NOT EXISTS campaign_roles (id VARCHAR(32) PRIMARY KEY, campaign_id VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, description {LONGTEXT} NOT NULL DEFAULT '', capabilities {LONGTEXT} NOT NULL DEFAULT '[]', is_system BIGINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE, UNIQUE (campaign_id, name))",
+    "CREATE TABLE IF NOT EXISTS campaign_roles (id VARCHAR(32) PRIMARY KEY, campaign_id VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, description {LONGTEXT} NOT NULL, capabilities {LONGTEXT} NOT NULL, is_system BIGINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE, UNIQUE (campaign_id, name))",
     "CREATE TABLE IF NOT EXISTS layer_permissions (id VARCHAR(32) PRIMARY KEY, campaign_id VARCHAR(32) NOT NULL, role_id VARCHAR(32) NOT NULL, layer_id VARCHAR(32) NOT NULL, can_read BIGINT NOT NULL DEFAULT 1, can_write BIGINT NOT NULL DEFAULT 0, can_create BIGINT NOT NULL DEFAULT 0, FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE, FOREIGN KEY (role_id) REFERENCES campaign_roles(id) ON DELETE CASCADE, UNIQUE (campaign_id, role_id, layer_id))",
 ];
 

@@ -164,7 +164,7 @@ GMID=$(gm "$B/api/auth/me" | J "d['id']")
 PLID=$(pl "$B/api/auth/me" | J "d['id']")
 # GET кампании отдаёт роль и права роли: мастер — всё, игрок — только свои возможности.
 gm "$B/api/campaigns/$CID" | J "d['role']" | grep -qx gm
-gm "$B/api/campaigns/$CID" | J "len(d['permissions'])" | grep -qx 16
+gm "$B/api/campaigns/$CID" | J "len(d['permissions'])" | grep -qx 18
 [ "$(pl "$B/api/campaigns/$CID" | J "len(d['permissions'])")" = "7" ]
 gm "$B/api/campaigns/$CID" | J "'campaign.manage_members' in d['permissions'] and 'character.edit_any' in d['permissions'] and 'table.manage_fog' in d['permissions']" | grep -qx True
 pl "$B/api/campaigns/$CID" | J "'campaign.manage_members' not in d['permissions'] and 'table.manage_fog' not in d['permissions'] and 'table.place_any_character' not in d['permissions'] and 'character.edit_any' not in d['permissions']" | grep -qx True

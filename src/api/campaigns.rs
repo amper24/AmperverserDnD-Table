@@ -2,7 +2,7 @@
 //! собственные роли и права на слои.
 use axum::{
     extract::{Path, Query, State},
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -294,7 +294,7 @@ async fn create_role(State(st): State<AppState>, user: AuthUser, Path(cid): Path
     sqlx::query("INSERT INTO campaign_roles (id, campaign_id, name, description, capabilities, is_system, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)")
         .bind(&rid).bind(&cid).bind(&name).bind(&body.description).bind(&caps_json).bind(&now).execute(&st.db).await?;
     // Права на слои по умолчанию: все слои читать, запись/создание только на не-карт слоях.
-    for (lid, read, write, create) in access::DEFAULT_PLAYER_LAYER_PERMS {
+    for &(lid, read, write, create) in access::DEFAULT_PLAYER_LAYER_PERMS {
         let lid2 = util::uid();
         sqlx::query("INSERT INTO layer_permissions (id, campaign_id, role_id, layer_id, can_read, can_write, can_create) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(&lid2).bind(&cid).bind(&rid).bind(lid).bind(read as i64).bind(write as i64).bind(create as i64).execute(&st.db).await?;
@@ -335,8 +335,19 @@ async fn delete_role(State(st): State<AppState>, user: AuthUser, Path((cid, rid)
 }
 
 // ---- Права на слои ----
+fn default_true() -> bool { true }
+
 #[derive(Deserialize)]
-pub struct LayerPermIn { pub role_id: String, pub layer_id: String, #[serde(default = "true")] pub can_read: bool, #[serde(default = "false")] pub can_write: bool, #[serde(default = "false")] pub can_create: bool }
+pub struct LayerPermIn {
+    pub role_id: String,
+    pub layer_id: String,
+    #[serde(default = "default_true")]
+    pub can_read: bool,
+    #[serde(default)]
+    pub can_write: bool,
+    #[serde(default)]
+    pub can_create: bool,
+}
 
 async fn list_layer_perms(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
     access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;

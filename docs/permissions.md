@@ -28,7 +28,7 @@
 
 ## Роли
 
-* `gm` — мастер: все 16 возможностей.
+* `gm` — мастер: все 18 возможностей.
 * `player` — игрок: `campaign.read`, `character.read_own`, `character.read_shared`,
   `character.edit_own`, `table.read`, `table.place_character`, `table.move_own_token`.
 * Посторонний (нет строки в `campaign_members`, неизвестная роль в БД) — ничего:
