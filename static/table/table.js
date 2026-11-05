@@ -1520,6 +1520,8 @@ window.Table = (function () {
       const curW = Math.round((d.w / g) * 10) / 10, curH = Math.round((d.h / g) * 10) / 10;
       box.append(el('div', { class: 'field' }, el('label', {}, 'Ширина (клеток)'), el('input', { type: 'number', value: curW, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.w = g * (+e.target.value || 0.1); save(); } })));
       box.append(el('div', { class: 'field' }, el('label', {}, 'Высота (клеток)'), el('input', { type: 'number', value: curH, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.h = g * (+e.target.value || 0.1); save(); } })));
+      box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto', onchange: e => { d.lockAspect = e.target.checked; save(); } }), ' Сцепить пропорции')));
       if (onMap) {
         box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
           el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto', onchange: e => { d.lockAspect = e.target.checked; save(); } }), ' Сцепить пропорции')));
