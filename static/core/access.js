@@ -64,11 +64,19 @@
   const state = { layerPerms: new Map() };
 
   /// Сохранить права на слои для кампании (из ответа сервера).
+  /// Ключ — имя роли (`role_name`), потому что права спрашивают по нему: `camp.role`
+  /// в столе и на странице участников. Раньше кэш хранился по `role_id`, и права
+  /// своих ролей на клиенте не применялись никогда — всегда брались умолчания.
+  /// `role_id` тоже кладём ключом: у страницы прав под рукой бывает только id.
   function setLayerPerms(campaignId, perms) {
     const m = new Map();
     for (const p of perms || []) {
-      if (!m.has(p.role_id)) m.set(p.role_id, new Map());
-      m.get(p.role_id).set(p.layer_id, { read: !!p.can_read, write: !!p.can_write, create: !!p.can_create });
+      const value = { read: !!p.can_read, write: !!p.can_write, create: !!p.can_create };
+      for (const key of [p.role_name, p.role_id]) {
+        if (!key) continue;
+        if (!m.has(key)) m.set(key, new Map());
+        m.get(key).set(p.layer_id, value);
+      }
     }
     state.layerPerms.set(campaignId, m);
   }

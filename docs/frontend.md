@@ -28,7 +28,8 @@
 | `static/core/common.js` | фундамент | `LS`, `Consent`, `API`, `Lang`, `el/modal/prompt2/floatWindow/toast/icon`, `Theme`, `SKILLS/ABIL/EDITIONS/CAT_NAMES`, `defaultEdition` |
 | `static/core/nav.js` | единая навигация без роутинга: пункты, активный раздел, шапка и компактное меню | `Nav` (`APP_NAME`, `ITEMS`, `activeKey`, `build`, `items`, `tableHref`, `header`, `menu`, `closeAll`) |
 | `static/core/nav.css` | оформление навигации: шапка, пункты, выпадающее меню, фокус; темы — через переменные `static/css/style.css` | стили |
-| `static/core/access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/domain/access.rs` | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`) |
+| `static/core/access.js` | права UI без DOM: возможности ролей и `can()` — дословное зеркало `src/domain/access.rs`; кэш прав на слои по имени роли | `Access` (`ALL`, `PLAYER`, `CAP`, `perms`, `can`, `label`, `setLayerPerms`, `canLayerRead/Write/Create`) |
+| `static/core/permissions-ui.js` | интерфейс системы прав: карточки ролей, диалог роли с 18 возможностями по группам и быстрыми наборами, матрица «слой × роль» (Ч/З/С) с сохранением по клику | `Permissions` (`GROUPS`, `PRESETS`, `LAYERS`, `allCaps`, `label`, `hint`, `summary`, `presetCaps`, `mount`) |
 | `static/core/dice-physics.js` | симуляция костей | `DicePhysics` (без генерации/переброса результата) |
 | `static/core/dice-visual.js` | одна центральная площадка с устойчивой сеткой и canvas-рендером | `DiceVisualizer` |
 | `static/core/dice.js` | кубики и журнал | `DiceEngine`, `rollDice` |
@@ -59,7 +60,7 @@
 | `static/pages/lss.js` | импорт из LSS | `LSS` |
 | `static/table/table-model.js` | модель стола без DOM: слои сцены, активная карта, сетка/привязка, линейка (`snapRuler`) | `TableModel` |
 | `static/table/table.js` | виртуальный стол | `Table` |
-| `static/table/table-page.js` | страница «Участники кампании» (`/table/<кампания>`): аккаунты участников (роль, онлайн, персонажи), персонажи («На стол»/«Убрать»/лист), токены сцены (HP, скрытность, владелец) | страница |
+| `static/table/table-page.js` | страница «Участники кампании» (`/table/<кампания>`): аккаунты участников (роль, онлайн, персонажи), раздел «Права» (`Permissions.mount`), персонажи («На стол»/«Убрать»/лист), токены сцены (HP, скрытность, владелец) | страница |
 | `static/pages/lobby.js` | страницы вне стола: лендинг, панель пользователя и разделы, вход по приглашению, профиль, админка, приватность, диагностика входа | `Lobby.create(ctx)` → `renderLanding/renderHome/renderDiag/renderPrivacy/renderProfile/renderAdmin/renderJoin/renderSection` |
 | `static/pages/app.js` | точка входа `static/index.html`: роутинг без сборщика, авторизация и страница кампании со столом (панели, меню «Создать», чат) | страница |
 | `static/sheet/sheet.js` | лист персонажа | страница |

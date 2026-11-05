@@ -9,7 +9,19 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/asset-kinds', 'table/table-model', 'table/table-page'];
+// Роли кампании и права на слои (ответы /roles и /layer-permissions).
+const ROLES = [
+  {
+    id: 'r1', name: 'Смотритель карты', description: 'Двигает карту, листов не трогает', is_system: false,
+    capabilities: ['campaign.read', 'character.read_own', 'character.read_shared', 'table.read', 'table.move_any_token'],
+  },
+];
+const LAYER_PERMS = [
+  { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'map', can_read: true, can_write: false, can_create: false },
+  { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'character', can_read: true, can_write: false, can_create: false },
+];
+
+const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/asset-kinds', 'core/permissions-ui', 'table/table-model', 'table/table-page'];
 
 // Права берём из static/core/access.js — того же модуля, что и страница.
 function accessModule() {
@@ -48,6 +60,8 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   const sent = [];
+  const patched = [];       // PATCH /layer-permissions и /roles — что ушло на сервер
+  const created = [];       // POST /roles — какие роли создавали
   page.on('pageerror', error => errors.push(error.message));
 
   const answers = {
@@ -57,6 +71,8 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
     [`/api/campaigns/${camp.id}/scenes/sc1`]: { ...SCENE, items: sceneItems },
     [`/api/characters?campaign_id=${camp.id}`]: characters,
     '/api/assets?kind=token': [{ id: 'tok-a', name: 'NPC' }],
+    [`/api/campaigns/${camp.id}/roles`]: ROLES,
+    [`/api/campaigns/${camp.id}/layer-permissions`]: LAYER_PERMS,
   };
 
   await page.route('https://table-page.test/**', route => {
@@ -70,6 +86,19 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 'abc123', role: body.role || 'player', url: '/join/abc123' }) });
     }
     if (url.pathname.startsWith('/api/campaigns/') && url.pathname.includes('/members/')) {
+      return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' });
+    }
+    // Права: матрица слоёв (PATCH) и роли (POST/PATCH) — записываем тела, отвечаем ok.
+    if (url.pathname.endsWith('/layer-permissions') && route.request().method() === 'PATCH') {
+      patched.push(JSON.parse(route.request().postData() || '{}'));
+      return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' });
+    }
+    if (url.pathname.endsWith('/roles') && route.request().method() === 'POST') {
+      created.push(JSON.parse(route.request().postData() || '{}'));
+      return route.fulfill({ contentType: 'application/json', body: '{"id":"r2","ok":true}' });
+    }
+    if (/\/roles\/[\w-]+$/.test(url.pathname) && route.request().method() === 'PATCH') {
+      patched.push(JSON.parse(route.request().postData() || '{}'));
       return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' });
     }
     if (!url.pathname.startsWith('/api/')) {
@@ -93,7 +122,7 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
 
   await page.goto('https://table-page.test/table/' + camp.id);
   await page.waitForSelector('[data-sec=members] .item');
-  return { page, errors, sent };
+  return { page, errors, sent, patched, created };
 }
 
 async function waitSent(pred, message, tries = 60) {
@@ -212,6 +241,46 @@ async function waitSent(pred, message, tries = 60) {
       assert.deepEqual([place.item.data.x, place.item.data.y], [350, 350], 'токен ровно в центре активной карты');
       assert.deepEqual(empty.errors, [], 'нет ошибок страницы');
     }
+    // ======================= Права: роли, участники и матрица слоёв =======================
+    {
+      const rulesCamp = {
+        id: 'camp-1', name: 'Тестовая кампания', role: 'gm', owner_id: 'u1', active_scene_id: 'sc1',
+        permissions: GM_PERMS,
+        members: [...MEMBERS, { user_id: 'u4', name: 'Смотритель', email: 'watch@test', role: 'Смотритель карты' }],
+      };
+      const rp = await openPage(browser, {
+        me: { id: 'u1', name: 'Мастер', email: 'gm@test' }, camp: rulesCamp,
+        characters: CHARACTERS_GM, sceneItems: SCENE.items, presence: [],
+      });
+      const { page, errors, patched } = rp;
+      // Раздел «Права» живёт на странице участников (раньше — модалка со стола).
+      const rules = page.locator('[data-sec=rules]');
+      assert.equal(await rules.isVisible(), true, 'раздел «Права» виден мастеру');
+      const card = rules.locator('.role-card[data-role="r1"]');
+      await card.waitFor({ timeout: 5000 });
+      const cardText = await card.innerText();
+      assert.ok(cardText.includes('Смотритель карты'), 'своя роль в списке');
+      assert.ok(cardText.includes('5 из 18'), 'сводка возможностей роли');
+      assert.ok(cardText.includes('1 участник'), 'участники роли посчитаны');
+      assert.equal(await rules.locator('.role-card.system').count(), 2, 'системные роли показаны для справки');
+
+      // Роль участника: в списке есть своя роль и она выбрана.
+      const watchRow = page.locator('[data-sec=members] .item', { hasText: 'watch@test' });
+      assert.equal(await watchRow.locator('select').inputValue(), 'Смотритель карты', 'участник со своей ролью');
+      assert.equal(await watchRow.locator('select option[value="Смотритель карты"]').count(), 1, 'своя роль в списке назначения');
+
+      // Матрица: строка «Карта», столбец роли. «З» сразу включает изменение слоя и сохраняет.
+      const mapCell = rules.locator('.perms-matrix td[data-role="r1"][data-layer="map"]');
+      const writeBtn = mapCell.locator('[data-flag=write]');
+      assert.equal(await writeBtn.getAttribute('class'), 'perm-toggle', 'по умолчанию карту менять нельзя');
+      await writeBtn.click();
+      await waitSent(() => patched.length > 0, 'PATCH прав на слой не ушёл');
+      assert.deepEqual(patched[0], { role_id: 'r1', layer_id: 'map', can_read: true, can_write: true, can_create: false }, 'включили «изменять» на карте');
+      assert.equal(await writeBtn.getAttribute('class'), 'perm-toggle on', 'переключатель сразу показывает новое состояние');
+      assert.equal(await mapCell.locator('[data-flag=read]').getAttribute('class'), 'perm-toggle on', 'чтение остаётся включённым');
+      assert.deepEqual(errors, [], 'нет ошибок страницы');
+    }
+
     const plCamp = {
       id: 'camp-1', name: 'Тестовая кампания', role: 'player', owner_id: 'u1', active_scene_id: 'sc1',
       permissions: PLAYER_PERMS,
@@ -244,6 +313,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.equal(await page.locator('[data-sec=members] select').count(), 0, 'смена роли недоступна игроку');
       assert.equal(await page.locator('[data-sec=members] [title="Исключить из кампании"]').count(), 0, 'исключение недоступно игроку');
       assert.equal(await page.getByRole('button', { name: /Пригласить/ }).isVisible(), false, 'приглашение скрыто у игрока');
+      assert.equal(await page.locator('[data-sec=rules]').isVisible(), false, 'раздел «Права» скрыт без возможности «Роли и права»');
 
       // ---- персонажи: только свои и расшаренные, «На стол» только для своего ----
       const chars = page.locator('[data-sec=characters] .item');
@@ -267,7 +337,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.deepEqual(errors, [], 'нет ошибок страницы');
     }
 
-    console.log('PASS table page browser: участники-аккаунты (имя/email/роль/онлайн), персонажи, «На стол» у мастера для чужого и у игрока для своего, действия мастера, приглашение');
+    console.log('PASS table page browser: участники-аккаунты (имя/email/роль/онлайн), раздел «Права» (свои роли, назначение роли, матрица слоёв), персонажи, «На стол» у мастера для чужого и у игрока для своего, действия мастера, приглашение');
   } finally {
     await browser.close();
   }
