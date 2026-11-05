@@ -308,9 +308,20 @@ window.Lobby = {
       const stats = await API.get('/api/admin/stats');
       const statRow = el('div', { class: 'stats' }, ...[['Пользователи', stats.users], ['Кампании', stats.campaigns], ['Персонажи', stats.characters], ['Ассеты', stats.assets + ' (встр. ' + stats.assets_builtin + ')'], ['Базовый справочник', stats.compendium_base], ['Наборы', stats.packs]]
         .map(([k, v]) => el('div', { class: 'card stat' }, el('div', { class: 'muted small' }, k), el('b', {}, v))));
-      page.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Администрирование'),
-        el('button', { style: 'flex:0;white-space:nowrap', onclick: async () => { if (confirm('Удалить все базовые записи справочника и залить их заново из встроенного набора? Ваши правки базовых записей будут потеряны.')) { const r = await API.post('/api/admin/reseed'); toast('Справочник пересоздан: ' + r.entries + ' записей'); } } }, 'Пересоздать базовый справочник')), statRow);
-      page.append(el('p', { class: 'muted small' }, 'Как root вы можете редактировать и удалять записи базового справочника и любых наборов прямо в разделе «Справочник», а в «Библиотеке ресурсов» — загружать встроенные ассеты и удалять любые.'));
+      // Пересоздание справочника: из текущего источника (кэш / локальная папка / встроенный seed)…
+      const reseedBtn = el('button', { style: 'flex:0;white-space:nowrap', onclick: async e => {
+        if (!confirm('Удалить все базовые записи справочника и залить их заново из текущего источника? Ваши правки базовых записей будут потеряны.')) return;
+        const b = e.target; b.disabled = true;
+        try { const r = await API.post('/api/admin/reseed'); toast('Справочник пересоздан: ' + r.entries + ' записей'); } catch (err) { toast('Ошибка: ' + err.message, 5000); } finally { b.disabled = false; }
+      } }, 'Пересоздать базовый справочник');
+      // …и переподгрузка данных из Git: единственное место, где кэш обновляется в режиме sdr.update: once.
+      const syncBtn = el('button', { style: 'flex:0;white-space:nowrap', onclick: async e => {
+        if (!confirm('Забрать свежие данные справочника из Git (папка data_seed) и залить их заново? Правки базовых записей будут потеряны.')) return;
+        const b = e.target, label = b.textContent; b.disabled = true; b.textContent = 'Загрузка…';
+        try { const r = await API.post('/api/admin/sdr'); toast('Данные из Git загружены: ' + r.entries + ' записей'); } catch (err) { toast('Ошибка: ' + err.message, 5000); } finally { b.disabled = false; b.textContent = label; }
+      } }, 'Обновить из Git');
+      page.append(el('div', { class: 'row', style: 'margin-bottom:14px' }, el('h1', { style: 'flex:1' }, 'Администрирование'), reseedBtn, syncBtn), statRow);
+      page.append(el('p', { class: 'muted small' }, 'Как root вы можете редактировать и удалять записи базового справочника и любых наборов прямо в разделе «Справочник», а в «Библиотеке ресурсов» — загружать встроенные ассеты и удалять любые. «Обновить из Git» забирает свежую папку ', el('code', {}, 'data_seed'), ' из репозитория ', el('code', {}, 'sdr.git_url'), ' и заливает справочник заново — при ', el('code', {}, 'sdr.update: once'), ' это единственный способ обновить данные без перезапуска и пересборки.'));
       // пользователи
       const tbl = el('table', { class: 'tbl' });
       const box = el('div', { class: 'card', style: 'margin-top:16px' }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, 'Пользователи'),

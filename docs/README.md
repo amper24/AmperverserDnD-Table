@@ -10,6 +10,7 @@
 | [db.md](db.md) | БД: индексы, планы запросов (EXPLAIN), замеры; 27 индексов в `src/store/db.rs` |
 | [permissions.md](permissions.md) | права: возможности `campaign.*`/`character.*`/`table.*`, роли, HTTP/WS-проверки — единый источник `src/domain/access.rs` |
 | [integrity.md](integrity.md) | `tools/srd/integrity.cjs`: что значит «0 ошибок и 12 предупреждений», таблица всех предупреждений |
+| [sdr-source.md](sdr-source.md) | базовый справочник: источник (Git / папка / встроенный), кэш только с `data_seed/`, `sdr.update: once|always`, кнопка «Обновить из Git» на странице root |
 | [localization.md](localization.md) | переводы записей: базовый язык, слои `data.i18n.<язык>`, алгоритм слияния `merge`, `i18n_view`/`raw=1` |
 
 ## Фронтенд и стол

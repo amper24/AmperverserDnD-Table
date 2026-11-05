@@ -118,8 +118,11 @@ pub struct SdrCfg {
     pub git_url: String,
     /// Ветка репозитория.
     pub git_branch: String,
-    /// Локальная папка для клона репозитория (относительно рабочей директории сервера).
+    /// Локальная папка кэша (относительно рабочей директории сервера). В неё попадает только `data_seed/`.
     pub clone_dir: String,
+    /// Когда забирать данные из Git: `once` (по умолчанию — только если кэша ещё нет) или `always`
+    /// (дотягивать при каждом запуске). Обновление вручную — кнопка на странице root.
+    pub update: String,
     /// Локальная папка с данными SDR, если git отключён (fallback).
     pub local_path: String,
 }
@@ -170,8 +173,17 @@ impl Default for SdrCfg {
         git_url: "https://github.com/amper24/AmperverserDnD-Table.git".into(),
         git_branch: "main".into(),
         clone_dir: ".sdr_cache".into(),
+        update: "once".into(),
         local_path: "data_seed".into(),
     } }
+}
+
+impl SdrCfg {
+    /// `sdr.update: always` — обновлять кэш из Git при каждом запуске. Всё остальное (и `once`)
+    /// означает «забрать один раз, дальше — вручную со страницы root».
+    pub fn always_update(&self) -> bool {
+        matches!(self.update.trim().to_ascii_lowercase().as_str(), "always" | "true" | "yes" | "1")
+    }
 }
 
 /// Как подключаться к SMTP-серверу.
@@ -567,6 +579,7 @@ impl Config {
         e.string(&mut self.sdr.git_url, "sdr.git_url", "SDR_GIT_URL");
         e.string(&mut self.sdr.git_branch, "sdr.git_branch", "SDR_GIT_BRANCH");
         e.string(&mut self.sdr.clone_dir, "sdr.clone_dir", "SDR_CLONE_DIR");
+        e.string(&mut self.sdr.update, "sdr.update", "SDR_UPDATE");
         e.string(&mut self.sdr.local_path, "sdr.local_path", "SDR_LOCAL_PATH");
 
         e.overrides
@@ -620,6 +633,15 @@ impl Config {
         clamp(&mut self.images.max_upload_mb, 1, 1024, "images.max_upload_mb", w);
         clamp(&mut self.images.map_max_side, 64, 16384, "images.map_max_side", w);
         clamp(&mut self.images.token_max_side, 64, 16384, "images.token_max_side", w);
+
+        self.sdr.update = self.sdr.update.trim().to_lowercase();
+        if !matches!(self.sdr.update.as_str(), "once" | "always") {
+            w.push(format!(
+                "sdr.update = «{}» — допустимо once или always; используется once.",
+                self.sdr.update
+            ));
+            self.sdr.update = "once".into();
+        }
 
         if self.logging.level.trim().is_empty() {
             self.logging.level = LoggingCfg::default().level;
@@ -789,6 +811,8 @@ images:
 # --- Базовый справочник (SDR / SRD) ------------------------------------------
 # Стартовые данные (справочник монстров, черт, навыков, встроенные ассеты)
 # загружаются из Git-репозитория при первом запуске и НЕ вшиваются в бинарник.
+# Из репозитория берётся только папка data_seed/ (sparse-checkout): исходники проекта
+# в кэш не попадают.
 sdr:
   # Загружать SDR извне при старте. false — только встроенный fallback.
   # Переменная: SDR_ENABLED
@@ -799,9 +823,15 @@ sdr:
   # Ветка репозитория.
   # Переменная: SDR_GIT_BRANCH
   git_branch: {sdr_git_branch}
-  # Локальная папка для клона репозитория.
+  # Локальная папка кэша (только data_seed/).
   # Переменная: SDR_CLONE_DIR
   clone_dir: {sdr_clone_dir}
+  # Когда забирать данные из Git:
+  #   once   — один раз, если кэша ещё нет (по умолчанию); дальше обновление вручную
+  #            кнопкой «Обновить из Git» на странице /admin;
+  #   always — дотягивать свежие данные при каждом запуске.
+  # Переменная: SDR_UPDATE
+  update: {sdr_update}
   # Локальная папка с данными SDR, если Git отключён.
   # Переменная: SDR_LOCAL_PATH
   local_path: {sdr_local_path}
@@ -839,6 +869,7 @@ logging:
         sdr_git_url = q(&c.sdr.git_url),
         sdr_git_branch = q(&c.sdr.git_branch),
         sdr_clone_dir = q(&c.sdr.clone_dir),
+        sdr_update = q(&c.sdr.update),
         sdr_local_path = q(&c.sdr.local_path),
         log_level = q(&c.logging.level),
     )
