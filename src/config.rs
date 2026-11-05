@@ -43,6 +43,9 @@ pub struct Config {
     pub root: RootCfg,
     pub images: ImagesCfg,
     pub logging: LoggingCfg,
+    /// Источник базового справочника (SDR): Git-репозиторий или локальная папка.
+    /// По умолчанию загружается из Git при первом запуске, не вшивается в бинарник.
+    pub sdr: SdrCfg,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +107,23 @@ pub struct LoggingCfg {
     pub level: String,
 }
 
+/// Источник базового справочника (SRD / SDR): способы загрузки стартовых данных.
+/// По умолчанию — из Git-репозитория при первом запуске; данные не вшиты в бинарник.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrCfg {
+    /// Включить загрузку SDR извне (Git / локальная папка). false — только встроенный fallback.
+    pub enabled: bool,
+    /// URL Git-репозитория с данными SDR (data_seed/).
+    pub git_url: String,
+    /// Ветка репозитория.
+    pub git_branch: String,
+    /// Локальная папка для клона репозитория (относительно рабочей директории сервера).
+    pub clone_dir: String,
+    /// Локальная папка с данными SDR, если git отключён (fallback).
+    pub local_path: String,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -142,6 +162,15 @@ impl Default for ImagesCfg {
 }
 impl Default for LoggingCfg {
     fn default() -> Self { Self { level: "info,sqlx=warn".into() } }
+}
+impl Default for SdrCfg {
+    fn default() -> Self { Self {
+        enabled: true,
+        git_url: "https://github.com/amper24/AmperverserDnD-Table.git".into(),
+        git_branch: "main".into(),
+        clone_dir: ".sdr_cache".into(),
+        local_path: "data_seed".into(),
+    } }
 }
 
 /// Как подключаться к SMTP-серверу.
@@ -531,6 +560,14 @@ impl Config {
         e.parse(&mut self.images.token_max_side, "images.token_max_side", "TOKEN_MAX_SIDE");
 
         e.string(&mut self.logging.level, "logging.level", "RUST_LOG");
+
+        // --- Источник SDR (справочник) ---
+        e.flag(&mut self.sdr.enabled, "sdr.enabled", "SDR_ENABLED");
+        e.string(&mut self.sdr.git_url, "sdr.git_url", "SDR_GIT_URL");
+        e.string(&mut self.sdr.git_branch, "sdr.git_branch", "SDR_GIT_BRANCH");
+        e.string(&mut self.sdr.clone_dir, "sdr.clone_dir", "SDR_CLONE_DIR");
+        e.string(&mut self.sdr.local_path, "sdr.local_path", "SDR_LOCAL_PATH");
+
         e.overrides
     }
 
@@ -748,6 +785,26 @@ images:
   map_max_side: {img_map}
   token_max_side: {img_token}
 
+# --- Базовый справочник (SDR / SRD) ------------------------------------------
+# Стартовые данные (справочник монстров, черт, навыков, встроенные ассеты)
+# загружаются из Git-репозитория при первом запуске и НЕ вшиваются в бинарник.
+sdr:
+  # Загружать SDR извне при старте. false — только встроенный fallback.
+  # Переменная: SDR_ENABLED
+  enabled: {sdr_enabled}
+  # Git-репозиторий с данными SDR (папка data_seed/).
+  # Переменная: SDR_GIT_URL
+  git_url: {sdr_git_url}
+  # Ветка репозитория.
+  # Переменная: SDR_GIT_BRANCH
+  git_branch: {sdr_git_branch}
+  # Локальная папка для клона репозитория.
+  # Переменная: SDR_CLONE_DIR
+  clone_dir: {sdr_clone_dir}
+  # Локальная папка с данными SDR, если Git отключён.
+  # Переменная: SDR_LOCAL_PATH
+  local_path: {sdr_local_path}
+
 # --- Логи --------------------------------------------------------------------
 logging:
   # error | warn | info | debug | trace; можно по модулям: "debug,sqlx=warn".
@@ -777,6 +834,11 @@ logging:
         img_upload = c.images.max_upload_mb,
         img_map = c.images.map_max_side,
         img_token = c.images.token_max_side,
+        sdr_enabled = c.sdr.enabled,
+        sdr_git_url = q(&c.sdr.git_url),
+        sdr_git_branch = q(&c.sdr.git_branch),
+        sdr_clone_dir = q(&c.sdr.clone_dir),
+        sdr_local_path = q(&c.sdr.local_path),
         log_level = q(&c.logging.level),
     )
 }

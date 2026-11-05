@@ -7,6 +7,7 @@
 .env
 .venv/
 __pycache__/
+/.sdr_cache/
 /config.yml
 /config.yml.bak
 # Готовая сборка для переноса (exe, config.yml рядом с ним, zip) — собирается локально

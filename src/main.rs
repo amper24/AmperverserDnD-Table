@@ -9,6 +9,8 @@ mod error;
 mod i18n;
 mod util;
 
+use crate::store::sdr_source::make_source;
+
 // Слои по папкам: api/ — HTTP-эндпоинты, domain/ — правила, store/ — БД и сид,
 // ws/ — realtime. Везде полные пути вида crate::api::auth, crate::domain::mechanics.
 
@@ -87,7 +89,12 @@ async fn main() -> anyhow::Result<()> {
 
     let (db, is_sqlite) = store::db::connect(&cfg.database.url, cfg.database.max_connections).await?;
     store::db::migrate(&db, is_sqlite).await?;
-    store::seed::seed(&db, &cfg.images).await?;
+    let sdr_source = make_source(&loaded.cfg);
+    tracing::info!(
+        "SDR: источник = {}",
+        if loaded.cfg.sdr.enabled { "Git" } else { "локальная папка / встроенный fallback" }
+    );
+    store::seed::seed(&db, &cfg.images, sdr_source.as_ref()).await?;
     api::admin::ensure_root_from_config(&db, &cfg.root).await?;
 
     // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход
