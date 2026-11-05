@@ -247,7 +247,6 @@ window.Compendium = (function () {
     const nav = el('div', { class: 'comp-nav' });
     const facetBar = el('div', { class: 'comp-facets', 'aria-label': 'Дополнительные фильтры' });
     const lst = el('div', { class: 'list lst comp-list' });
-    const count = el('span', { class: 'muted small comp-count' }, 'Загружаем…');
     const addButton = el('button', { class: 'primary small', onclick: () => createRecord() }, '+ Своя запись');
     side.append(el('div', { class: 'comp-side-title' }, icon('book', 18), el('b', {}, 'Справочник')),
       el('label', { class: 'comp-filter-label' }, 'ИСТОЧНИК', srcSel),
@@ -255,14 +254,13 @@ window.Compendium = (function () {
       el('label', { class: 'comp-filter-label' }, 'РЕДАКЦИЯ', edSel),
       el('label', { class: 'comp-filter-label' }, 'ЯЗЫК', Lang.select()),
       el('div', { class: 'pack-folder-h' }, 'Категории'), nav);
-    const toolbar = el('div', { class: 'comp-toolbar' }, q, count, sort, addButton);
+    const toolbar = el('div', { class: 'comp-toolbar' }, q, sort, addButton);
     main.append(toolbar, facetBar, lst);
     root.append(side, main, det);
 
     const state = { source: '', packTag: '', category: '', folder: '', query: '', sort: 'name', facets: {} };
     let timer, request = 0, rawItems = [], packNames = {}, packTags = {}, folders = [], folderLists = {}, activeId = null;
     const sourceKey = e => e.pack_id ? 'pack:' + e.pack_id : e.campaign_id ? 'hb' : 'srd';
-    const countLabel = n => { const n100 = n % 100, n10 = n % 10; const word = n100 >= 11 && n100 <= 14 ? 'записей' : n10 === 1 ? 'запись' : n10 >= 2 && n10 <= 4 ? 'записи' : 'записей'; return `${n} ${word}`; };
     const sourceLabel = e => e.pack_id ? (packNames[e.pack_id] || e.pack_name || 'Набор') : e.campaign_id ? 'Homebrew кампании' : 'Базовый SRD';
     const packTagList = p => String(p.tags || '').split(',').map(t => t.trim()).filter(Boolean);
     const foldersFor = items => {
@@ -474,7 +472,6 @@ window.Compendium = (function () {
     function renderList() {
       const items = filteredItems();
       lst.replaceChildren();
-      count.textContent = countLabel(items.length);
       if (!items.length) {
         activeId = null;
         det.replaceChildren(el('div', { class: 'comp-empty' }, icon('book', 30), el('b', {}, 'Пустая рубрика'), el('span', { class: 'muted small' }, 'Измените фильтры или добавьте запись в набор.')));
@@ -500,7 +497,6 @@ window.Compendium = (function () {
 
     async function load() {
       const version = ++request;
-      count.textContent = 'Загружаем…';
       const params = new URLSearchParams({ limit: '3000' });
       if (q.value.trim()) params.set('q', q.value.trim());
       if (edSel.value) params.set('edition', edSel.value);
@@ -526,7 +522,6 @@ window.Compendium = (function () {
         renderList();
       } catch (e) {
         if (version !== request) return;
-        count.textContent = 'Ошибка загрузки';
         lst.replaceChildren(el('div', { class: 'comp-no-results' }, el('b', {}, 'Не удалось загрузить справочник'), el('span', { class: 'muted small' }, e.message), el('button', { class: 'small', onclick: load }, 'Повторить')));
       }
     }
