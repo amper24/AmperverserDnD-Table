@@ -500,6 +500,7 @@ window.Table = (function () {
     const hpHigh = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-high').trim() || '#46a758';
     const hpMed = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-med').trim() || '#f5a524';
     const hpLow = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-low').trim() || '#e5484d';
+    const hpText = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-text').trim() || '#fff';
     const condBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-bg').trim() || '#ffd77a';
     const condText = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-text').trim() || '#000';
     for (const it of highlighted) {
@@ -674,15 +675,24 @@ window.Table = (function () {
         // рамка владельца, имя, хиты, состояния
         if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? ownerSelf : ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
         if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
-        // HP-бар над токеном: фон, рамка, цвет по остатку хп
+        // HP-бар над токеном: скруглённый фон, рамка, цвет по остатку хп, подпись cur/max
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
-          const bw = d.w * 0.9, bh = Math.max(4 / S.cam.k, d.h * 0.07), y = -d.h / 2 - bh - 5;
-          c.fillStyle = hpBg; c.fillRect(-bw / 2, y, bw, bh);
-          c.strokeStyle = nameStroke; c.lineWidth = 1.5 / S.cam.k; c.strokeRect(-bw / 2, y, bw, bh);
+          const bw = d.w * 0.85, bh = Math.max(5 / S.cam.k, d.h * 0.09), y = -d.h / 2 - bh - 6;
+          const r = bh / 2;
+          c.beginPath(); c.roundRect(-bw / 2, y, bw, bh, r);
+          c.fillStyle = hpBg; c.fill();
+          c.strokeStyle = nameStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
-          c.fillStyle = p > 0.5 ? hpHigh : p > 0.25 ? hpMed : hpLow;
-          const pad = 1.5 / S.cam.k;
-          c.fillRect(-bw / 2 + pad, y + pad, Math.max(0, bw * p - pad * 2), bh - pad * 2);
+          c.beginPath(); c.roundRect(-bw / 2 + 1.5 / S.cam.k, y + 1.5 / S.cam.k, Math.max(0, bw - 3 / S.cam.k) * p, bh - 3 / S.cam.k, Math.max(0, r - 1.5 / S.cam.k));
+          c.fillStyle = p > 0.66 ? hpHigh : p > 0.33 ? hpMed : hpLow;
+          c.fill();
+          // Подпись хп посередине полоски
+          c.font = `bold ${Math.max(9 / S.cam.k, bh * 0.7)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.strokeStyle = '#000a'; c.lineWidth = 3 / S.cam.k;
+          const label = `${Math.round(d.hp.cur)}/${d.hp.max}`;
+          c.strokeText(label, 0, y + bh / 2);
+          c.fillStyle = hpText;
+          c.fillText(label, 0, y + bh / 2);
         }
         // Состояния — цветные круглые бейджи с иконкой под именем, по центру
         if (d.conditions?.length) {
