@@ -135,6 +135,7 @@ impl Default for Config {
             root: RootCfg::default(),
             images: ImagesCfg::default(),
             logging: LoggingCfg::default(),
+            sdr: SdrCfg::default(),
         }
     }
 }

@@ -89,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (db, is_sqlite) = store::db::connect(&cfg.database.url, cfg.database.max_connections).await?;
     store::db::migrate(&db, is_sqlite).await?;
-    let sdr_source = make_source(&loaded.cfg);
+    let sdr_source: Arc<dyn store::sdr_source::SdrSource> = Arc::from(make_source(&loaded.cfg));
     tracing::info!(
         "SDR: источник = {}",
         if loaded.cfg.sdr.enabled { "Git" } else { "локальная папка / встроенный fallback" }
@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход
     // с понятным сообщением и кодом 2 (неверное использование) или 1 (ошибка выполнения).
-    match api::admin::run_cli(&db, &args, api::admin::CliMode::Cli, &cfg.images).await {
+    match api::admin::run_cli(&db, &args, api::admin::CliMode::Cli, &cfg.images, sdr_source.as_ref()).await {
         Ok(true) => return Ok(()),
         Ok(false) => {}
         Err(e) => api::admin::exit_cli_error(&e),
@@ -149,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
         println!("      users create admin@example.com <пароль> --root");
         println!("    или заполните root.email и root.password в {} и перезапустите сервер.", config::display_path(&loaded.path));
     }
-    api::admin::spawn_console(state_db, cfg.images.clone());
+    api::admin::spawn_console(state_db, cfg.images.clone(), sdr_source);
     // Остановка только по Ctrl+C (или явной команде stop): отметка в логе.
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;

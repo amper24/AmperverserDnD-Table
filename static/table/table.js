@@ -1862,6 +1862,4 @@ window.Table = (function () {
     requestDraw, gridStats: gridStatsSnapshot, resetGridStats,
     dropLootAtCenter, placeTokenAtCenter,
   };
-
-
-});
+})();
