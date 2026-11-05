@@ -354,7 +354,7 @@ window.Table = (function () {
     // Подпись текущего поворота над ручкой.
     if (d.rotation) {
       c.font = `${Math.max(10 / k, 10)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'bottom';
-      c.fillStyle = rotateColor; c.strokeStyle = '#000a'; c.lineWidth = 3 / k;
+      c.fillStyle = rotateColor; c.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--tok-text-stroke').trim() || '#000a'; c.lineWidth = 3 / k;
       const label = Math.round(d.rotation || 0) + '°';
       c.strokeText(label, rx, ry - hh - 3 / k); c.fillText(label, rx, ry - hh - 3 / k);
     }
@@ -472,7 +472,7 @@ window.Table = (function () {
     // Подсветка активной карты — только мастеру и только когда карт несколько.
     if (S.isGM && T.mapItems(S.scene.items).length > 1) {
       const b = T.boundsOf(activeMap());
-      if (b) { c.strokeStyle = '#ffd54f'; c.lineWidth = 2 / S.cam.k; c.setLineDash([10 / S.cam.k, 6 / S.cam.k]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]); }
+      if (b) { c.strokeStyle = rotateColor; c.lineWidth = 2 / S.cam.k; c.setLineDash([10 / S.cam.k, 6 / S.cam.k]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]); }
     }
     drawFog(c);
     drawFogPreview(c);
@@ -488,6 +488,14 @@ window.Table = (function () {
     const handleBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-bg').trim() || '#ffffff';
     const handleSize = +(getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-size').trim() || '7');
     const rotateColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-rotate').trim() || '#ffd54f';
+    const selBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-sel-bg').trim() || 'rgba(124,92,255,0.12)';
+    const ownerSelf = getComputedStyle(document.documentElement).getPropertyValue('--tok-owner-self').trim() || '#46a758';
+    const ownerOther = getComputedStyle(document.documentElement).getPropertyValue('--tok-owner-other').trim() || '#3e9bff';
+    const nameStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-name-stroke').trim() || '#000c';
+    const deadColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-dead').trim() || '#e5484d';
+    const lootStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-loot-stroke').trim() || '#f5a524';
+    const itemStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-item-stroke').trim() || '#000c';
+    const textStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-text-stroke').trim() || '#000a';
     for (const it of highlighted) {
       const b = itemBounds(it);
       c.strokeStyle = selColor; c.lineWidth = selLine / S.cam.k; c.setLineDash(selDash.map(d => d / S.cam.k));
@@ -499,8 +507,8 @@ window.Table = (function () {
     }
     if (S.selBox) {
       const b = marqueeBounds();
-      c.fillStyle = 'rgba(124,92,255,0.12)';
-      c.strokeStyle = '#7c5cff'; c.lineWidth = 1 / S.cam.k;
+      c.fillStyle = selBg;
+      c.strokeStyle = selColor; c.lineWidth = 1 / S.cam.k;
       c.fillRect(b.x, b.y, b.w, b.h); c.strokeRect(b.x, b.y, b.w, b.h);
     }
     // пинги
@@ -658,8 +666,8 @@ window.Table = (function () {
       c.rotate(-(d.rotation || 0) * Math.PI / 180);
       if (it.layer === LAYER.character || it.layer === LAYER.mount) {
         // рамка владельца, имя, хиты, состояния
-        if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? '#46a758' : '#3e9bff'; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
-        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = '#000c'; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
+        if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? ownerSelf : ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
+        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
           const bw = d.w * 0.9, bh = Math.max(4 / S.cam.k, d.h * 0.07), y = -d.h / 2 - bh - 2;
           c.fillStyle = '#000a'; c.fillRect(-bw / 2, y, bw, bh);
@@ -667,23 +675,23 @@ window.Table = (function () {
           c.fillStyle = p > 0.5 ? '#46a758' : p > 0.25 ? '#f5a524' : '#e5484d'; c.fillRect(-bw / 2, y, bw * p, bh);
         }
         if (d.conditions?.length) { c.font = `bold ${d.h * 0.14}px sans-serif`; c.textAlign = 'left'; c.fillStyle = '#ffd77a'; c.fillText(d.conditions.map(x => condIcon(x)).join(' '), -d.w / 2, -d.h / 2 + d.h * 0.18); }
-        if (d.dead) { c.strokeStyle = '#e5484d'; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
+        if (d.dead) { c.strokeStyle = deadColor; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
       }
     } else if (d.type === 'loot') {
       // мешочек с лутом: иконка предмета на подложке
       c.translate(d.x, d.y);
       const r = Math.min(d.w, d.h) / 2;
-      c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || '#f5a524') : '#f5a524'; c.lineWidth = 3 / S.cam.k; c.stroke();
+      c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || lootStroke) : lootStroke; c.lineWidth = 3 / S.cam.k; c.stroke();
       const li = d.item?.token_asset_id || d.item?.asset_id ? assetImage(d.item.token_asset_id || d.item.asset_id) : null;
       if (li) watchImage(li);
       if (li && li.complete && li.naturalWidth) { c.save(); c.beginPath(); c.roundRect(-r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r, r * 0.25); c.clip(); c.drawImage(li, -r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r); c.restore(); }
       else { c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05); }
       const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
-      c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = '#000c'; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
+      c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = itemStroke; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
     } else if (d.type === 'drawing') {
       drawShape(c, d);
     } else if (d.type === 'text') {
-      c.font = `bold ${d.size || 24}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = d.color || '#fff'; c.strokeStyle = '#000a'; c.lineWidth = 3; c.strokeText(d.text, d.x, d.y); c.fillText(d.text, d.x, d.y);
+      c.font = `bold ${d.size || 24}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = d.color || '#fff'; c.strokeStyle = textStroke; c.lineWidth = 3; c.strokeText(d.text, d.x, d.y); c.fillText(d.text, d.x, d.y);
     }
     c.restore();
   }
@@ -699,8 +707,8 @@ window.Table = (function () {
   function drawTemp(c, t, uid) {
     if (t.kind === 'ruler') {
       const [a, b] = t.points;
-      c.strokeStyle = '#ffd54f'; c.lineWidth = 3 / S.cam.k; c.setLineDash([8 / S.cam.k, 6 / S.cam.k]); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]);
-      c.font = `bold ${16 / S.cam.k}px sans-serif`; c.fillStyle = '#ffd54f'; c.strokeStyle = '#000'; c.lineWidth = 4 / S.cam.k; c.textAlign = 'center';
+      c.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--tok-rotate').trim() || '#ffd54f'; c.lineWidth = 3 / S.cam.k; c.setLineDash([8 / S.cam.k, 6 / S.cam.k]); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]);
+      c.font = `bold ${16 / S.cam.k}px sans-serif`; c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--tok-rotate').trim() || '#ffd54f'; c.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--tok-text-stroke').trim() || '#000a'; c.lineWidth = 4 / S.cam.k; c.textAlign = 'center';
       // Длина в футах и клетках: концы привязаны к сетке, если не зажат Ctrl (см. snapRuler).
       const label = T.rulerLabel(t.points, S.scene.grid, S.gridScaleFt, t.name);
       c.strokeText(label, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 12 / S.cam.k); c.fillText(label, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 12 / S.cam.k);
