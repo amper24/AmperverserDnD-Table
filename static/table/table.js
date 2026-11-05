@@ -465,13 +465,32 @@ window.Table = (function () {
     const c = S.ctx2d; c.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     c.clearRect(0, 0, S.w, S.h);
     c.save(); c.translate(S.cam.x, S.cam.y); c.scale(S.cam.k, S.cam.k);
+    const css = getComputedStyle(document.documentElement);
+    const tokenColors = {
+      rotate: css.getPropertyValue('--tok-rotate').trim() || '#ffd54f',
+      ownerSelf: css.getPropertyValue('--tok-owner-self').trim() || '#46a758',
+      ownerOther: css.getPropertyValue('--tok-owner-other').trim() || '#3e9bff',
+      nameStroke: css.getPropertyValue('--tok-name-stroke').trim() || '#000c',
+      dead: css.getPropertyValue('--tok-dead').trim() || '#e5484d',
+      lootStroke: css.getPropertyValue('--tok-loot-stroke').trim() || '#f5a524',
+      itemStroke: css.getPropertyValue('--tok-item-stroke').trim() || '#000c',
+      textStroke: css.getPropertyValue('--tok-text-stroke').trim() || '#000a',
+      hpBg: css.getPropertyValue('--tok-hp-bg').trim() || 'rgba(0,0,0,.7)',
+      hpHigh: css.getPropertyValue('--tok-hp-high').trim() || '#46a758',
+      hpMed: css.getPropertyValue('--tok-hp-med').trim() || '#f5a524',
+      hpLow: css.getPropertyValue('--tok-hp-low').trim() || '#e5484d',
+      hpText: css.getPropertyValue('--tok-hp-text').trim() || '#fff',
+      condBg: css.getPropertyValue('--tok-cond-bg').trim() || '#ffd77a',
+      condText: css.getPropertyValue('--tok-cond-text').trim() || '#000',
+    };
+    const rotateColor = tokenColors.rotate;
     const items = visibleItems();
     // Линии сетки — над всеми картами слоя map, но под остальными объектами.
     let gridAt = 0;
     for (let i = 0; i < items.length; i++) if (layerOf(items[i]) === LAYER.map) gridAt = i + 1;
     for (let i = 0; i < items.length; i++) {
       if (i === gridAt) drawGridTimed(c);
-      drawItem(c, items[i], S.isGM && layerHidden(layerOf(items[i])));
+      drawItem(c, items[i], S.isGM && layerHidden(layerOf(items[i])), tokenColors);
     }
     if (gridAt >= items.length) drawGridTimed(c);
     // Подсветка активной карты — только мастеру и только когда карт несколько.
@@ -492,22 +511,7 @@ window.Table = (function () {
     const handleColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-handle').trim() || '#7c5cff';
     const handleBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-bg').trim() || '#ffffff';
     const handleSize = +(getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-size').trim() || '7');
-    const rotateColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-rotate').trim() || '#ffd54f';
     const selBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-sel-bg').trim() || 'rgba(124,92,255,0.12)';
-    const ownerSelf = getComputedStyle(document.documentElement).getPropertyValue('--tok-owner-self').trim() || '#46a758';
-    const ownerOther = getComputedStyle(document.documentElement).getPropertyValue('--tok-owner-other').trim() || '#3e9bff';
-    const nameStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-name-stroke').trim() || '#000c';
-    const deadColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-dead').trim() || '#e5484d';
-    const lootStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-loot-stroke').trim() || '#f5a524';
-    const itemStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-item-stroke').trim() || '#000c';
-    const textStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-text-stroke').trim() || '#000a';
-    const hpBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-bg').trim() || 'rgba(0,0,0,.7)';
-    const hpHigh = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-high').trim() || '#46a758';
-    const hpMed = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-med').trim() || '#f5a524';
-    const hpLow = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-low').trim() || '#e5484d';
-    const hpText = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-text').trim() || '#fff';
-    const condBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-bg').trim() || '#ffd77a';
-    const condText = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-text').trim() || '#000';
     for (const it of highlighted) {
       const b = itemBounds(it);
       c.strokeStyle = selColor; c.lineWidth = selLine / S.cam.k; c.setLineDash(selDash.map(d => d / S.cam.k));
@@ -665,7 +669,7 @@ window.Table = (function () {
     img.addEventListener('load', () => { watchedImages.delete(img); requestDraw(); }, { once: true });
     img.addEventListener('error', () => { watchedImages.delete(img); }, { once: true });
   }
-  function drawItem(c, it, dim) {
+  function drawItem(c, it, dim, colors) {
     const d = it.data;
     c.save();
     if (d.hidden || dim) c.globalAlpha = 0.45;
@@ -678,25 +682,25 @@ window.Table = (function () {
       c.rotate(-(d.rotation || 0) * Math.PI / 180);
       if (it.layer === LAYER.character || it.layer === LAYER.mount) {
         // рамка владельца, имя, хиты, состояния
-        if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? ownerSelf : ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
-        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
+        if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? colors.ownerSelf : colors.ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
+        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = colors.nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
         // HP-бар над токеном: скруглённый фон, рамка, цвет по остатку хп, подпись cur/max
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
           const bw = d.w * 0.85, bh = Math.max(5 / S.cam.k, d.h * 0.09), y = -d.h / 2 - bh - 6;
           const r = bh / 2;
           c.beginPath(); c.roundRect(-bw / 2, y, bw, bh, r);
-          c.fillStyle = hpBg; c.fill();
-          c.strokeStyle = nameStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
+          c.fillStyle = colors.hpBg; c.fill();
+          c.strokeStyle = colors.nameStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
           c.beginPath(); c.roundRect(-bw / 2 + 1.5 / S.cam.k, y + 1.5 / S.cam.k, Math.max(0, bw - 3 / S.cam.k) * p, bh - 3 / S.cam.k, Math.max(0, r - 1.5 / S.cam.k));
-          c.fillStyle = p > 0.66 ? hpHigh : p > 0.33 ? hpMed : hpLow;
+          c.fillStyle = p > 0.66 ? colors.hpHigh : p > 0.33 ? colors.hpMed : colors.hpLow;
           c.fill();
           // Подпись хп посередине полоски
           c.font = `bold ${Math.max(9 / S.cam.k, bh * 0.7)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
           c.strokeStyle = '#000a'; c.lineWidth = 3 / S.cam.k;
           const label = `${Math.round(d.hp.cur)}/${d.hp.max}`;
           c.strokeText(label, 0, y + bh / 2);
-          c.fillStyle = hpText;
+          c.fillStyle = colors.hpText;
           c.fillText(label, 0, y + bh / 2);
         }
         // Состояния — цветные круглые бейджи с иконкой под именем, по центру
@@ -707,30 +711,30 @@ window.Table = (function () {
           for (const key of d.conditions) {
             const icon = condIcon(key);
             c.beginPath(); c.arc(x + chip / 2, y, chip / 2, 0, Math.PI * 2);
-            c.fillStyle = condBg; c.fill(); c.strokeStyle = condText; c.lineWidth = 1.5 / S.cam.k; c.stroke();
+            c.fillStyle = colors.condBg; c.fill(); c.strokeStyle = colors.condText; c.lineWidth = 1.5 / S.cam.k; c.stroke();
             c.font = `bold ${chip * 0.65}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-            c.fillStyle = condText; c.fillText(icon, x + chip / 2, y);
+            c.fillStyle = colors.condText; c.fillText(icon, x + chip / 2, y);
             x += chip + gap;
           }
         }
         // Мёртвый — жирный крест поверх токена
-        if (d.dead) { c.strokeStyle = deadColor; c.lineWidth = d.w * 0.12; c.beginPath(); c.moveTo(-d.w / 2.4, -d.h / 2.4); c.lineTo(d.w / 2.4, d.h / 2.4); c.moveTo(d.w / 2.4, -d.h / 2.4); c.lineTo(-d.w / 2.4, d.h / 2.4); c.stroke(); }
+        if (d.dead) { c.strokeStyle = colors.dead; c.lineWidth = d.w * 0.12; c.beginPath(); c.moveTo(-d.w / 2.4, -d.h / 2.4); c.lineTo(d.w / 2.4, d.h / 2.4); c.moveTo(d.w / 2.4, -d.h / 2.4); c.lineTo(-d.w / 2.4, d.h / 2.4); c.stroke(); }
       }
     } else if (d.type === 'loot') {
       // мешочек с лутом: иконка предмета на подложке
       c.translate(d.x, d.y);
       const r = Math.min(d.w, d.h) / 2;
-      c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || lootStroke) : lootStroke; c.lineWidth = 3 / S.cam.k; c.stroke();
+      c.beginPath(); c.roundRect(-r, -r, 2 * r, 2 * r, r * 0.3); c.fillStyle = '#2b2416ee'; c.fill(); c.strokeStyle = d.item?.rarity && d.item.rarity !== 'Обычный' ? (Modules.RARITY_COLORS[d.item.rarity] || colors.lootStroke) : colors.lootStroke; c.lineWidth = 3 / S.cam.k; c.stroke();
       const li = d.item?.token_asset_id || d.item?.asset_id ? assetImage(d.item.token_asset_id || d.item.asset_id) : null;
       if (li) watchImage(li);
       if (li && li.complete && li.naturalWidth) { c.save(); c.beginPath(); c.roundRect(-r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r, r * 0.25); c.clip(); c.drawImage(li, -r * 0.85, -r * 0.85, 1.7 * r, 1.7 * r); c.restore(); }
       else { c.font = `${r * 1.1}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(d.item?.icon ? String(d.item.icon).slice(0, 2) : { weapon: 'W', armor: 'A', consumable: 'C', magic: 'M', treasure: '$', tool: 'T', ammo: 'A' }[d.item?.type] || 'L', 0, r * 0.05); }
       const label = (d.item?.name || 'Предмет') + (d.item?.qty > 1 ? ' ×' + d.item.qty : '');
-      c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = itemStroke; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
+      c.font = `bold ${Math.max(11 / S.cam.k, r * 0.3)}px sans-serif`; c.textBaseline = 'alphabetic'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = colors.itemStroke; c.fillStyle = '#ffd77a'; c.strokeText(label, 0, r + r * 0.4); c.fillText(label, 0, r + r * 0.4);
     } else if (d.type === 'drawing') {
       drawShape(c, d);
     } else if (d.type === 'text') {
-      c.font = `bold ${d.size || 24}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = d.color || '#fff'; c.strokeStyle = textStroke; c.lineWidth = 3; c.strokeText(d.text, d.x, d.y); c.fillText(d.text, d.x, d.y);
+      c.font = `bold ${d.size || 24}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = d.color || '#fff'; c.strokeStyle = colors.textStroke; c.lineWidth = 3; c.strokeText(d.text, d.x, d.y); c.fillText(d.text, d.x, d.y);
     }
     c.restore();
   }
