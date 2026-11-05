@@ -588,7 +588,25 @@ async fn layer_perms(st: &AppState, cid: &str, role: &str, layer: &str) -> (bool
     }
 }
 
-const PLAYER_FIELDS: &[&str] = &["x", "y", "rotation", "hp", "conditions", "attachments", "dead"];
+/// Поля, которые владелец токена (и соавтор/лут) меняет без прав мастера.
+/// `w`/`h` здесь обязательны: иначе ресайз рамкой у игрока «дёргался» и откатывался —
+/// клиент менял размер локально, а сервер сохранял старые значения.
+const PLAYER_FIELDS: &[&str] = &["x", "y", "w", "h", "rotation", "hp", "conditions", "attachments", "dead"];
+
+/// Слить правку владельца токена в сохранённые данные: меняются только `PLAYER_FIELDS`,
+/// остальные поля (имя, скрытность, закрепление, владелец) остаются мастерскими.
+/// `w`/`h` в списке — иначе ресайз рамкой у игрока откатывался при ответе сервера.
+fn merge_player_fields(old: &Value, incoming: &Value) -> Value {
+    let mut merged = old.clone();
+    if let (Some(dst), Some(src)) = (merged.as_object_mut(), incoming.as_object()) {
+        for key in PLAYER_FIELDS {
+            if let Some(v) = src.get(*key) {
+                dst.insert(key.to_string(), v.clone());
+            }
+        }
+    }
+    merged
+}
 
 /// Можно ли применять входящий item_upsert к строке сцены.
 /// id нет — обычное создание (id выдаст сервер, ответ разошлют всем).
@@ -644,14 +662,7 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
                 z = z_in.unwrap_or(z);
                 data
             } else {
-                // владельцу токена разрешено менять только позицию/поворот/хиты/состояния
-                let mut m = old.clone();
-                if let (Some(dst), Some(src)) = (m.as_object_mut(), data.as_object()) {
-                    for k in PLAYER_FIELDS {
-                        if let Some(v) = src.get(*k) { dst.insert(k.to_string(), v.clone()); }
-                    }
-                }
-                m
+                merge_player_fields(&old, &data)
             };
             let id = id.unwrap();
             let updated = sqlx::query("UPDATE scene_items SET layer = ?, z = ?, data = ?, updated_at = ? WHERE id = ?")
@@ -837,6 +848,19 @@ mod item_upsert_tests {
         // Без id — обычное создание, id выдаст сервер.
         assert!(may_apply(None, false, false));
         assert!(may_apply(None, true, false));
+    }
+
+    #[test]
+    fn player_fields_keep_the_new_size_but_not_master_fields() {
+        let old = json!({ "type": "image", "x": 100, "y": 100, "w": 70, "h": 70, "name": "Ария", "hidden": true, "owner_id": "u1" });
+        let incoming = json!({ "type": "image", "x": 140, "y": 100, "w": 140, "h": 210, "name": "Взлом", "hidden": false, "owner_id": "u2" });
+        let merged = merge_player_fields(&old, &incoming);
+        assert_eq!(merged["w"], 140, "ширина из ручки ресайза сохраняется");
+        assert_eq!(merged["h"], 210, "высота из ручки ресайза сохраняется");
+        assert_eq!(merged["x"], 140, "позиция двигается");
+        assert_eq!(merged["name"], "Ария", "имя меняет только мастер");
+        assert_eq!(merged["hidden"], true, "скрытность — право мастера");
+        assert_eq!(merged["owner_id"], "u1", "владельца меняет только мастер");
     }
 
     #[test]
