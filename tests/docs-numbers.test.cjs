@@ -152,14 +152,14 @@ test('версия в Cargo.toml совпадает с верхней запис
   assert.match(read('docs/node-system-v3-audit.md'), headRef, 'audit ссылается на ту же версию');
 });
 
-test('docs/db.md: 27 индексов (19 прежних + 8 новых) совпадают с src/store/db.rs', () => {
+test('docs/db.md: 30 индексов (19 прежних + 11 новых) совпадают с src/store/db.rs', () => {
   const statements = read('src/store/db.rs').split(/\r?\n/)
     .filter(line => /CREATE (UNIQUE )?INDEX/.test(line) && !/\.replace\(/.test(line));
   const names = statements.map(line => /INDEX(?: IF NOT EXISTS)?\s+(\w+)/.exec(line)[1]);
-  assert.equal(names.length, 27, 'CREATE INDEX в src/store/db.rs');
-  assert.equal(new Set(names).size, 27, 'имена индексов не повторяются');
-  const added = ['idx_chars_campaign_updated', 'idx_chars_owner_updated', 'idx_scenes_campaign_created', 'idx_items_scene_z', 'idx_comp_category_name', 'idx_comp_pack_cat_name', 'idx_pack_editors_user', 'idx_campaign_packs_pack'];
+  assert.equal(names.length, 30, 'CREATE INDEX в src/store/db.rs');
+  assert.equal(new Set(names).size, 30, 'имена индексов не повторяются');
+  const added = ['idx_chars_campaign_updated', 'idx_chars_owner_updated', 'idx_scenes_campaign_created', 'idx_items_scene_z', 'idx_comp_category_name', 'idx_comp_pack_cat_name', 'idx_pack_editors_user', 'idx_campaign_packs_pack', 'idx_campaign_roles_campaign', 'idx_layer_perms_campaign', 'idx_layer_perms_role'];
   for (const name of added) assert.ok(names.includes(name), `новый индекс ${name}`);
   assert.equal(names.length - added.length, 19, 'прежних индексов');
-  assert.match(read('docs/db.md'), /19 индексов → 27 после старта/);
+  assert.match(read('docs/db.md'), /19 индексов → 30 после старта/);
 });
