@@ -461,7 +461,7 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 Проверки перед коммитом (те же, что в CI):
 
 ```bash
-node --test "tests/*.test.cjs"            # 556 тестов: юнит + интеграция, без браузера
+node --test "tests/*.test.cjs"            # 562 теста: юнит + интеграция, без браузера
 cargo test --release                      # 133 теста сервера
 node tools/srd/integrity.cjs              # 0 ошибок, 12 исторических предупреждений
 node tools/srd/mechanics_summary.cjs --check   # сводка docs/mechanics-migration.json свежая

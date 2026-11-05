@@ -51,7 +51,11 @@ const API = {
   '/api/characters': () => [characterSummary()],
   '/api/characters?campaign_id=camp1': () => [],
   '/api/characters/char1': () => character(),
-  '/api/join/abc123': () => ({ campaign_id: 'camp1', campaign_name: 'Кампания теней', role: 'player' }),
+  // Приглашение: GET — форма ответа сервера (src/api/campaigns.rs::invite_info),
+  // POST — подтверждение с campaign_id, по нему страница уходит на стол.
+  '/api/join/abc123': method => (method === 'POST'
+    ? { ok: true, campaign_id: 'camp1' }
+    : { campaign: { id: 'camp1', name: 'Кампания теней', description: 'Подземелья и драконы' }, role: 'player' }),
   '/api/assets': () => [],
   '/api/assets?kind=portrait': () => [],
   '/api/compendium': () => [],
@@ -91,7 +95,7 @@ async function openPage(browser, options = {}) {
       return route.fulfill({ contentType: 'text/html', body: fs.readFileSync(pageFile(url.pathname), 'utf8') });
     }
     const handler = API[url.pathname + url.search] || API[url.pathname];
-    if (handler) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(handler()) });
+    if (handler) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(handler(request.method())) });
     if (url.pathname.startsWith('/api/assets/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data_b64: PNG, encoding: 'identity', mime: 'image/png' }) });
     return route.fulfill({ contentType: 'application/json', body: '[]' });
   });
@@ -180,7 +184,11 @@ async function main() {
       await page.getByRole('heading', { name: 'Приглашение' }).waitFor();
       assert.match(await page.locator('.card.auth').innerText(), /Кампания теней/, 'страница приглашения открылась');
       assert.deepEqual(errors, [], 'главная без ошибок страницы');
-      results.push('главная: карточки кампаний/персонажей, быстрые действия, присоединение по ссылке-приглашению');
+      // «Присоединиться» ведёт на стол кампании, а не на /c/undefined с окном «Нет доступа».
+      await page.getByRole('button', { name: 'Присоединиться', exact: true }).click();
+      await page.waitForURL(/\/c\/camp1$/);
+      assert.doesNotMatch(page.url(), /undefined/, 'адрес стола собран из кампании приглашения');
+      results.push('главная: карточки кампаний/персонажей, быстрые действия, присоединение по ссылке-приглашению → стол');
       await page.close();
     }
 
