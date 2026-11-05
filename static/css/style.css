@@ -1983,3 +1983,37 @@ body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
 .inline-roll svg { width: 12px; height: 12px; flex: 0 0 auto; }
 /* На столе док кубиков поднят над нижней панелью; «Журнал» остаётся внизу справа. */
 body:has(#table) .dice-dock { bottom: 74px; }
+/* ---------- переделана панель свойств (props) ---------- */
+.props { position: absolute; right: 10px; top: 10px; width: 370px; max-height: 92vh; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
+.props .section { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); overflow: hidden; display: flex; flex-direction: column; }
+.props .section.collapsed .section-body { display: none; }
+.props .section-header { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--overlay); cursor: pointer; user-select: none; font-size: 12px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
+.props .section-header:hover { background: var(--border); }
+.props .section-header.collapsed { border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; }
+.props .section-header .chevron { flex: 0 0 16px; font-size: 10px; line-height: 1; }
+.props .section-body { padding: 8px 10px 10px; }
+.props .field { margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.props .field label { font-size: 11px; color: var(--muted); }
+.props .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+.props .actions { display: flex; gap: 6px; margin: 6px 0 8px; }
+.props .actions .btn { flex: 1; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); color: var(--text); cursor: pointer; }
+.props .actions .btn:hover { background: var(--hover); }
+.props .actions .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.props .actions .btn.primary:hover { opacity: 0.9; }
+.props .actions .btn.secondary { background: var(--panel2); }
+.props .hp-wrap { margin-top: 6px; }
+.props .hp-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.props .hp-bar { height: 10px; background: rgba(0,0,0,0.25); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+.props .hp-fill { height: 100%; transition: width 0.2s ease, background-color 0.2s ease; }
+.props .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin: 2px 4px 2px 0; }
+.props .chip b { color: inherit; cursor: pointer; }
+.props .chip b:hover { text-decoration: underline; }
+.props h2, .props h3 { font-size: 13px; margin: 0 0 6px 0; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
+.props .danger-btn { background: var(--danger); color: white; border: none; padding: 9px; border-radius: var(--radius); font-weight: 600; width: 100%; cursor: pointer; margin-top: 4px; }
+.props .danger-btn:hover { opacity: 0.85; }
+.props .gm-section { border-color: var(--warn); }
+.props .gm-section .section-header { background: rgba(230, 126, 34, 0.12); color: var(--warn); border-bottom-color: var(--warn); }
+.props .readonly { opacity: 0.55; pointer-events: none; }
+.props .transform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.props .muted { font-size: 11px; color: var(--muted); margin: 4px 0; }
+.props .select-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }

@@ -1516,23 +1516,102 @@ window.Table = (function () {
   }
 
   /// Панель свойств группы: «Выбрано N» и общие действия, разрешённые правами.
+  // ---------- хелперы панели свойств ----------
+
+  /// Секция с заголовком и свёрткой.
+  function section(title, bodyEls, { collapsible = true, open = true, gm = false, id } = {}) {
+    const cls = ['section', gm ? 'gm-section' : '', collapsible && !open ? 'collapsed' : ''].filter(Boolean).join(' ');
+    const wrap = el('div', { class: cls, id });
+    const header = el('div', { class: 'section-header' + (collapsible && !open ? ' collapsed' : '') },
+      el('span', { class: 'chevron' }, collapsible ? (open ? '▾' : '▸') : ''),
+      el('span', {}, title));
+    const body = el('div', { class: 'section-body' + (open ? ' open' : '') }, ...bodyEls);
+    if (collapsible) {
+      header.onclick = () => {
+        const isCollapsed = wrap.classList.toggle('collapsed');
+        body.classList.toggle('open', !isCollapsed);
+        header.querySelector('.chevron').textContent = isCollapsed ? '▸' : '▾';
+      };
+    }
+    wrap.append(header, body);
+    return wrap;
+  }
+
+  /// Поле с подписью и входом.
+  function field(label, input) {
+    return el('div', { class: 'field' }, el('label', {}, label), input);
+  }
+
+  /// Визуальный HP-бар с цветом по остатку.
+  function hpBar(cur, max) {
+    const pct = max > 0 ? Math.round((cur / max) * 100) : 0;
+    const color = pct > 66 ? '#4ade80' : pct > 33 ? '#facc15' : '#f87171';
+    return el('div', { class: 'hp-wrap' },
+      el('div', { class: 'hp-label' },
+        el('span', {}, `HP: ${cur} / ${max}`),
+        el('span', {}, `${pct}%`)),
+      el('div', { class: 'hp-bar' },
+        el('div', { class: 'hp-fill', style: `width:${pct}%;background-color:${color}` })));
+  }
+
+  /// Кнопка действия в панели.
+  function actionBtn(label, onclick, { primary = false, danger = false, cls = '' } = {}) {
+    return el('button', {
+      class: 'btn ' + (primary ? 'primary' : '') + (danger ? ' danger' : '') + ' ' + cls,
+      onclick
+    }, label);
+  }
+
+  // ---------- панель свойств группы ----------
+
   function renderGroupProps(items) {
     const box = S.propsBox;
     box.classList.remove('hidden');
-    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-      el('b', { style: 'flex:1' }, `Выбрано ${items.length}`), el('span', { class: 'badge' }, 'группа')));
     const editable = items.filter(canEdit);
-    if (!editable.length) { box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование')); return; }
-    box.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-bottom:8px' },
-      ...items.slice(0, 8).map(it => el('span', { class: 'chip' }, it.data.name || it.data.text || 'элемент'))));
-    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-      el('button', { class: 'small', style: 'flex:1', onclick: () => eachSelected(it => { it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1; }) }, 'На передний план'),
-      el('button', { class: 'small', style: 'flex:1', onclick: () => eachSelected(it => { it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1; }) }, 'На задний план')));
-    if (S.isGM) {
-      box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-        el('button', { class: 'small', style: 'flex:1', onclick: () => { const hide = !items.every(i => i.data.hidden); eachSelected(it => { it.data.hidden = hide; }); } }, items.every(i => i.data.hidden) ? 'Показать' : 'Скрыть'),
-        el('button', { class: 'small', style: 'flex:1', onclick: () => setSelection([]) }, 'Снять выделение')));
+    box.append(el('div', { class: 'row', style: 'margin-bottom:4px' },
+      el('b', { style: 'flex:1' }, `Выбрано ${items.length}`), el('span', { class: 'badge' }, 'группа')));
+    if (!editable.length) {
+      box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование этих элементов'));
+      box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${items.length})`));
+      S.onSelect && S.onSelect(null);
+      return;
     }
+    box.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-bottom:8px' },
+      ...items.map(it => el('span', { class: 'chip' }, it.data.name || it.data.text || 'элемент'))));
+
+    // Действия
+    const actions1 = el('div', { class: 'actions' },
+      actionBtn('На передний план', () => {
+        eachSelected(it => {
+          it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1;
+          upsert(it);
+        });
+      }),
+      actionBtn('На задний план', () => {
+        eachSelected(it => {
+          it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1;
+          upsert(it);
+        });
+      })
+    );
+    box.append(actions1);
+
+    const actions2 = el('div', { class: 'actions' },
+      actionBtn('Скрыть всё', () => {
+        eachSelected(it => { it.data.hidden = true; upsert(it); });
+      }, { primary: true }),
+      actionBtn('Показать всё', () => {
+        eachSelected(it => { it.data.hidden = false; upsert(it); });
+      }, { primary: true })
+    );
+    box.append(actions2);
+
+    if (S.isGM) {
+      box.append(el('div', { class: 'row' },
+        actionBtn('Снять выделение', () => setSelection([]), { cls: 'secondary' }),
+        actionBtn('Удалить все', deleteSel, { danger: true })));
+    }
+
     box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${editable.length})`));
     S.onSelect && S.onSelect(null);
   }
@@ -1550,67 +1629,200 @@ window.Table = (function () {
     const d = it.data, editable = canEdit(it);
     const save = () => upsert(it);
     const layerNameOf = T.resolve(layers(), it.layer).name;
-    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' }, el('b', { style: 'flex:1' }, d.name || d.text || layerNameOf || 'Элемент'), el('span', { class: 'badge' }, layerNameOf)));
-    if (!editable) { box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование')); return; }
+    const isMap = layerOf(it) === LAYER.map;
+
+    // Заголовок
+    box.append(el('div', { class: 'row', style: 'align-items:center;gap:8px;min-height:36px' },
+      el('b', { style: 'flex:1' }, d.name || d.text || layerNameOf || 'Элемент'),
+      el('span', { class: 'badge' }, layerNameOf),
+      editable ? el('span', { class: 'badge muted small', style: 'font-size:10px' }, 'редактируемо') : el('span', { class: 'badge muted small', style: 'font-size:10px' }, 'только чтение')));
+
+    if (!editable) {
+      box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование этого элемента'));
+      box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)'));
+      return;
+    }
+
+    // ---------- Основное ----------
+    const mainFields = [];
     if (d.type === 'image') {
-      const onMap = layerOf(it) === LAYER.map;
-      box.append(el('div', { class: 'field' }, el('label', {}, 'Имя'), el('input', { value: d.name || '', onchange: e => { d.name = e.target.value; save(); } })));
+      mainFields.push(field('Имя', el('input', {
+        value: d.name || '',
+        onchange: e => { d.name = e.target.value; save(); }
+      })));
+    } else if (d.type === 'text') {
+      mainFields.push(field('Текст', el('input', {
+        value: d.text || '',
+        onchange: e => { d.text = e.target.value; save(); }
+      })));
+    }
+    box.append(section('Основное', mainFields, { id: 'props-main', open: true }));
+
+    // ---------- Внешний вид ----------
+    const lookFields = [];
+    if (d.type === 'image') {
       const g = grid();
       const curW = Math.round((d.w / g) * 10) / 10, curH = Math.round((d.h / g) * 10) / 10;
-      box.append(el('div', { class: 'field' }, el('label', {}, 'Ширина (клеток)'), el('input', { type: 'number', value: curW, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.w = g * (+e.target.value || 0.1); save(); } })));
-      box.append(el('div', { class: 'field' }, el('label', {}, 'Высота (клеток)'), el('input', { type: 'number', value: curH, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.h = g * (+e.target.value || 0.1); save(); } })));
-      box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto', onchange: e => { d.lockAspect = e.target.checked; save(); } }), ' Сцепить пропорции')));
-      if (onMap) {
-        box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-          el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto', onchange: e => { d.lockAspect = e.target.checked; save(); } }), ' Сцепить пропорции')));
-        const isActive = activeMapId() === it.id;
-        box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-          el('button', { class: 'small' + (isActive ? ' active' : ''), style: 'flex:1', onclick: () => { setActiveMap(it.id); updateProps(); } }, isActive ? '✓ Активная карта' : 'Сделать активной'),
-          el('button', { class: 'small', onclick: () => focusMap(it.id) }, 'Вписать')));
-        box.append(el('div', { class: 'muted small', style: 'margin-bottom:8px' }, 'По активной карте считаются «Вписать», «Открыть всё» и туман войны.'));
-      }
-      if (it.layer === LAYER.character || it.layer === LAYER.mount) {
-          const hp = d.hp || { cur: 0, max: 0 };
-          box.append(el('div', { class: 'field' }, el('label', {}, 'Хиты'), el('div', { class: 'row' },
-            el('input', { type: 'number', value: hp.cur, onchange: e => { d.hp = { ...hp, cur: +e.target.value }; save(); } }), el('span', { style: 'flex:0' }, '/'),
-            el('input', { type: 'number', value: hp.max, onchange: e => { d.hp = { ...hp, max: +e.target.value }; save(); } }))));
-          box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-            el('button', { class: 'small', onclick: () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; save(); } }, '− Урон'),
-            el('button', { class: 'small', onclick: () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max, d.hp.cur + v); save(); } }, '+ Лечение')));
-          const conds = d.conditions || [];
-          const cbox = el('div', { style: 'margin-bottom:8px' });
-          const sel = el('select', { onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } } }, el('option', { value: '' }, '+ состояние'), ...condKeys().map(k => el('option', { value: k }, condIcon(k) + ' ' + condShort(k))));
-          cbox.append(el('div', {}, ...conds.map(c => el('span', { class: 'chip' }, condShort(c), el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '×')))), sel);
-          box.append(cbox);
-          box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-            el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto', onchange: e => { d.dead = e.target.checked; save(); } }), ' Мёртв'),
-            el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.show_hp ? '' : null, style: 'width:auto', onchange: e => { d.show_hp = e.target.checked; save(); } }), ' HP всем')));
-          if (d.character_id) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, 'Лист персонажа'));
-          if (d.monster) box.append(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, 'Статблок'));
-        }
-        box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-          el('button', { class: 'small', onclick: () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); } }, 'Повернуть'),
-          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) + 1; save(); } }, 'Выше'),
-          el('button', { class: 'small', onclick: () => { it.z = (it.z || 0) - 1; save(); } }, 'Ниже')));
-      if (S.isGM) {
-        box.append(el('div', { class: 'field' }, el('label', {}, 'Слой'), el('select', { onchange: e => { it.layer = e.target.value; save(); } }, ...layers().map(l => el('option', { value: l.id, selected: it.layer === l.id ? '' : null }, l.name)))));
-        box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
-          el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.hidden ? '' : null, style: 'width:auto', onchange: e => { d.hidden = e.target.checked; save(); } }), ' Скрыт'),
-          el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.locked ? '' : null, style: 'width:auto', onchange: e => { d.locked = e.target.checked; save(); } }), ' Закреплён')));
-        if (it.layer === LAYER.character || it.layer === LAYER.mount) {
-          const members = S.campaign.members || [];
-          box.append(el('div', { class: 'field' }, el('label', {}, 'Владелец (игрок)'), el('select', { onchange: e => { d.owner_id = e.target.value || undefined; save(); } }, el('option', { value: '' }, '— мастер —'), ...members.map(m => el('option', { value: m.user_id, selected: d.owner_id === m.user_id ? '' : null }, m.name + (m.role === 'gm' ? ' (ГМ)' : ''))))));
-        }
-      }
+      lookFields.push(field('Ширина (клеток)', el('input', {
+        type: 'number', value: curW, step: 0.1, min: 0.1, style: 'width:90px',
+        onchange: e => { d.w = g * (+e.target.value || 0.1); save(); }
+      })));
+      lookFields.push(field('Высота (клеток)', el('input', {
+        type: 'number', value: curH, step: 0.1, min: 0.1, style: 'width:90px',
+        onchange: e => { d.h = g * (+e.target.value || 0.1); save(); }
+      })));
+      lookFields.push(el('div', { class: 'row' },
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto',
+          onchange: e => { d.lockAspect = e.target.checked; save(); }
+        })), ' Сцепить пропорции'));
+      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        actionBtn('Вписать в сетку', () => {
+          const g2 = grid();
+          d.w = Math.round(d.w / g2) * g2 || g2;
+          d.h = Math.round(d.h / g2) * g2 || g2;
+          save();
+        }, { cls: 'secondary' }),
+        actionBtn('Квадрат', () => {
+          const g2 = grid();
+          const s = Math.max(d.w, d.h);
+          d.w = s; d.h = s;
+          save();
+        }, { cls: 'secondary' })));
     } else if (d.type === 'text') {
-      box.append(el('div', { class: 'field' }, el('label', {}, 'Текст'), el('input', { value: d.text, onchange: e => { d.text = e.target.value; save(); } })));
-      box.append(el('div', { class: 'field' }, el('label', {}, 'Размер'), el('input', { type: 'number', value: d.size, onchange: e => { d.size = +e.target.value; save(); } })));
+      lookFields.push(field('Размер', el('input', {
+        type: 'number', value: d.size || 28,
+        onchange: e => { d.size = +e.target.value || 28; save(); }
+      })));
+      lookFields.push(field('Цвет', el('input', {
+        type: 'color', value: d.color || '#ffffff',
+        onchange: e => { d.color = e.target.value; save(); }
+      })));
     } else if (d.type === 'drawing') {
-      box.append(el('div', { class: 'row', style: 'margin-bottom:8px' }, el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.fill ? '' : null, style: 'width:auto', onchange: e => { d.fill = e.target.checked; save(); } }), ' Заливка')));
+      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.fill ? '' : null, style: 'width:auto',
+          onchange: e => { d.fill = e.target.checked; save(); }
+        })), ' Заливка'));
     }
-    box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)'));
+    box.append(section('Внешний вид', lookFields, { id: 'props-look', open: true }));
+
+    // ---------- Позиция ----------
+    const posFields = [];
+    posFields.push(el('div', { class: 'transform-grid' },
+      field('X', el('input', {
+        type: 'number', value: Math.round(d.x || 0), step: 1,
+        onchange: e => { d.x = +e.target.value || 0; save(); }
+      })),
+      field('Y', el('input', {
+        type: 'number', value: Math.round(d.y || 0), step: 1,
+        onchange: e => { d.y = +e.target.value || 0; save(); }
+      }))));
+    posFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+      actionBtn('Повернуть +90\u00B0', () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); }, { cls: 'secondary' }),
+      actionBtn('З выше', () => { it.z = (it.z || 0) + 1; save(); }, { cls: 'secondary' }),
+      actionBtn('З ниже', () => { it.z = (it.z || 0) - 1; save(); }, { cls: 'secondary' })));
+    box.append(section('Позиция', posFields, { id: 'props-pos', open: false }));
+
+    // ---------- HP / Состояния ----------
+    if (it.layer === LAYER.character || it.layer === LAYER.mount) {
+      const hpFields = [];
+      const hp = d.hp || { cur: 0, max: 0 };
+      hpFields.push(field('Хиты', el('div', { class: 'row', gap: 8 },
+        el('input', {
+          type: 'number', value: hp.cur,
+          onchange: e => { d.hp = { ...hp, cur: +e.target.value || 0 }; save(); }
+        }, { style: 'flex:1' }),
+        el('span', { style: 'flex:0;color:var(--muted)' }, '/'),
+        el('input', {
+          type: 'number', value: hp.max,
+          onchange: e => { d.hp = { ...hp, max: +e.target.value || 0 }; save(); }
+        }, { style: 'flex:1' }))));
+      hpFields.push(hpBar(hp.cur, hp.max));
+      hpFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        actionBtn('\u2212 Урон', () => {
+          const v = +prompt('Урон:', '0') || 0;
+          d.hp = { ...(d.hp || { cur: 0, max: 0 }) };
+          d.hp.cur -= v;
+          save();
+        }, { cls: 'secondary' }),
+        actionBtn('+ Лечение', () => {
+          const v = +prompt('Лечение:', '0') || 0;
+          d.hp = { ...(d.hp || { cur: 0, max: 0 }) };
+          d.hp.cur = Math.min(d.hp.max, d.hp.cur + v);
+          save();
+        }, { cls: 'secondary' })));
+      const conds = d.conditions || [];
+      hpFields.push(el('div', { style: 'margin-top:6px' },
+        el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'Состояния'),
+        el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px' },
+          ...conds.map(c => el('span', { class: 'chip' },
+            condShort(c),
+            el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '\u00D7')))),
+        el('div', { class: 'select-row' },
+          el('select', {
+            onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } }
+          }, el('option', { value: '' }, '+ \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435'), ...condKeys().map(k => el('option', { value: k }, condIcon(k) + ' ' + condShort(k)))))));
+      hpFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto',
+          onchange: e => { d.dead = e.target.checked; save(); }
+        }, { style: 'flex:1' })), '\u041c\u044c\u0435\u0440\u0442\u0432',
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.show_hp ? '' : null, style: 'width:auto',
+          onchange: e => { d.show_hp = e.target.checked; save(); }
+        }, { style: 'flex:1' })), ' HP \u0432\u0441\u0435\u043c'
+      ));
+      if (d.character_id) {
+        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, '\u041b\u0438\u0441\u0442 \u043f\u0435\u0440\u0441\u043e\u043d\u0430\u0436\u0430'));
+      }
+      if (d.monster) {
+        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, '\u0421\u0442\u0430\u0442\u0431\u043b\u043e\u043a'));
+      }
+      box.append(section('HP / \u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u044f', hpFields, { id: 'props-hp', open: true }));
+    }
+
+    // ---------- Карта ----------
+    if (isMap) {
+      const mapFields = [];
+      const isActive = activeMapId() === it.id;
+      mapFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        actionBtn(isActive ? '\u2713 \u0410\u043a\u0442\u0438\u0432\u043d\u0430\u044f \u043a\u0430\u0440\u0442\u0430' : '\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439', () => { setActiveMap(it.id); updateProps(); }, { primary: true }),
+        actionBtn('\u0412\u043f\u0438\u0441\u0430\u0442\u044c \u043a\u0430\u0440\u0442\u0443', () => focusMap(it.id), { cls: 'secondary' })));
+      mapFields.push(el('div', { class: 'muted small', style: 'margin-bottom:0' }, '\u041f\u043e \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439 \u043a\u0430\u0440\u0442\u0435 \u0441\u0447\u0438\u0442\u0430\u044e\u0442\u0441\u044f \u00ab\u0412\u043f\u0438\u0441\u0430\u0442\u044c\u00bb, \u00ab\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0432\u0441\u0435\u00bb \u0438 \u0442\u0443\u043c\u0430\u043d \u0432\u043e\u0439\u043d\u044b.'));
+      box.append(section('\u041a\u0430\u0440\u0442\u0430', mapFields, { id: 'props-map', open: true }));
+    }
+
+    // ---------- ГМ-администрирование ----------
+    if (S.isGM) {
+      const gmFields = [];
+      gmFields.push(field('\u0421\u043b\u043e\u0439', el('select', {
+        onchange: e => { it.layer = e.target.value; save(); }
+      }, ...layers().map(l => el('option', { value: l.id, selected: it.layer === l.id ? '' : null }, l.name)))));
+      gmFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.hidden ? '' : null, style: 'width:auto',
+          onchange: e => { d.hidden = e.target.checked; save(); }
+        }, { style: 'flex:1' })), '\u0421\u043a\u0440ыт',
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.locked ? '' : null, style: 'width:auto',
+          onchange: e => { d.locked = e.target.checked; save(); }
+        }, { style: 'flex:1' })), ' \u0417\u0430\u043a\u0440\u0435\u043f\u043b\u0435\u043d'
+      ));
+      if (it.layer === LAYER.character || it.layer === LAYER.mount) {
+        const members = S.campaign.members || [];
+        gmFields.push(field('\u0412\u043b\u0430\u0434\u0435\u043b\u0435\u0446 (\u0438\u0433\u0440\u043e\u043a)', el('select', {
+          onchange: e => { d.owner_id = e.target.value || undefined; save(); }
+        }, el('option', { value: '' }, '\u2014 \u043c\u0430\u0441\u0442\u0435\u0440 \u2014'), ...members.map(m => el('option', {
+          value: m.user_id, selected: d.owner_id === m.user_id ? '' : null
+        }, m.name + (m.role === 'gm' ? ' (\u0413\u041c)' : ''))))));
+      }
+      box.append(section('\u0413\u041c-\u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435', gmFields, { id: 'props-gm', open: false, gm: true }));
+    }
+
+    box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, '\u0423\u0434\u0430\u043b\u0438\u0442\u044c (Del)'));
   }
+
   // ---------- Публичный API (window.Table) ----------
   /// Выбор слоя для клика/загрузки: неизвестный id фолбэчится на prop (см. table-model.js).
   function setActiveLayer(l) { S.activeLayer = T.resolve(layers(), l).id; }
