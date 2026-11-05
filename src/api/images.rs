@@ -21,30 +21,37 @@ pub struct Compressed {
 
 pub fn compress_image(raw: &[u8], max_side: u32, quality: u8) -> anyhow::Result<Compressed> {
     let img = image::load_from_memory(raw)?;
-    let has_alpha = img.color().has_alpha() && image_has_transparency(&img);
+    let format = image::guess_format(raw).unwrap_or(ImageFormat::Png);
     let (w, h) = img.dimensions();
     let img = if w.max(h) > max_side { img.resize(max_side, max_side, FilterType::Lanczos3) } else { img };
-    let (w, h) = img.dimensions();
+    let (w2, h2) = img.dimensions();
 
+    // GIF сохраняем в исходном формате, чтобы не потерять анимацию.
     let mut encoded = Vec::new();
-    let mime = if has_alpha {
-        img.to_rgba8().write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)?;
-        "image/png"
+    let mime = if format == ImageFormat::Gif {
+        img.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Gif)?;
+        "image/gif".to_string()
     } else {
-        let rgb = img.to_rgb8();
-        let mut cursor = Cursor::new(&mut encoded);
-        let enc = JpegEncoder::new_with_quality(&mut cursor, quality);
-        rgb.write_with_encoder(enc)?;
-        "image/jpeg"
+        let has_alpha = img.color().has_alpha() && image_has_transparency(&img);
+        if has_alpha {
+            img.to_rgba8().write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)?;
+            "image/png".to_string()
+        } else {
+            let rgb = img.to_rgb8();
+            let mut cursor = Cursor::new(&mut encoded);
+            let enc = JpegEncoder::new_with_quality(&mut cursor, quality);
+            rgb.write_with_encoder(enc)?;
+            "image/jpeg".to_string()
+        }
     };
 
     let mut z = ZlibEncoder::new(Vec::new(), Compression::best());
     z.write_all(&encoded)?;
     let packed = z.finish()?;
     Ok(Compressed {
-        mime: mime.to_string(),
-        width: w as i64,
-        height: h as i64,
+        mime,
+        width: w2 as i64,
+        height: h2 as i64,
         encoding: "deflate".into(),
         data_b64: base64::engine::general_purpose::STANDARD.encode(&packed),
         raw_size: raw.len(),
