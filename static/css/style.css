@@ -3,13 +3,13 @@
   --bg: #111316; --panel: #191c21; --panel2: #21252c; --border: #2e333c; --text: #e2e4e8; --muted: #8b919c;
   --accent: #8fa8d0; --accent-soft: #232b3a; --accent-line: #3b4a66; --on-accent: #0f1216; --accent2: #7c8cff; --danger: #d64545; --ok: #3f9a5a; --info: #3e8ed0;
   --overlay: rgba(0,0,0,.55); --shadow: 0 8px 30px rgba(0,0,0,.5); --canvas-bg: #0b0c0f; --radius: 3px; --radius-lg: 4px;
---tok-sel: #7c5cff; --tok-sel-line: 2; --tok-sel-dash: 6 4; --tok-sel-bg: rgba(124,92,255,0.12); --tok-handle: #7c5cff; --tok-handle-bg: #ffffff; --tok-handle-size: 7; --tok-rotate: #ffd54f; --tok-rotate-line: #ffd54f; --tok-owner-self: #46a758; --tok-owner-other: #3e9bff; --tok-name-stroke: #000c; --tok-dead: #e5484d; --tok-loot-stroke: #f5a524; --tok-item-stroke: #000c; --tok-text-stroke: #000a; --tok-hp-bg: rgba(0,0,0,.7); --tok-hp-high: #46a758; --tok-hp-med: #f5a524; --tok-hp-low: #e5484d; --tok-cond-bg: #ffd77a; --tok-cond-text: #000; --tok-hp-text: #fff;
+--tok-sel: #7c5cff; --tok-sel-line: 2; --tok-sel-dash: 6 4; --tok-sel-bg: rgba(124,92,255,0.12); --tok-handle: #7c5cff; --tok-handle-bg: #ffffff; --tok-handle-size: 7; --tok-rotate: #ffd54f; --tok-rotate-line: #ffd54f; --tok-name-stroke: #000c; --tok-dead: #e5484d; --tok-loot-stroke: #f5a524; --tok-item-stroke: #000c; --tok-text-stroke: #000a; --tok-hp-bg: rgba(0,0,0,.7); --tok-hp-high: #46a758; --tok-hp-med: #f5a524; --tok-hp-low: #e5484d; --tok-cond-bg: #ffd77a; --tok-cond-text: #000; --tok-hp-text: #fff;
 }
 [data-theme="light"] {
   color-scheme: light;
   --bg: #f2f3f5; --panel: #ffffff; --panel2: #eaecef; --border: #d3d7dd; --text: #1c1f24; --muted: #646b76;
   --accent: #2f4f80; --accent-soft: #e3e9f3; --accent-line: #a9b9d6; --on-accent: #ffffff; --accent2: #4a5bd6; --danger: #b82f2f; --ok: #2b7a43; --info: #2470ad;
-  --overlay: rgba(20,24,32,.45); --shadow: 0 8px 30px rgba(20,24,32,.18); --canvas-bg: #d9dce1; --tok-sel: #7c5cff; --tok-sel-line: 2; --tok-sel-dash: 6 4; --tok-sel-bg: rgba(124,92,255,0.12); --tok-handle: #7c5cff; --tok-handle-bg: #ffffff; --tok-handle-size: 7; --tok-rotate: #ffd54f; --tok-rotate-line: #ffd54f; --tok-owner-self: #46a758; --tok-owner-other: #3e9bff; --tok-name-stroke: #000c; --tok-dead: #e5484d; --tok-loot-stroke: #f5a524; --tok-item-stroke: #000c; --tok-text-stroke: #000a; --tok-hp-bg: rgba(0,0,0,.7); --tok-hp-high: #46a758; --tok-hp-med: #f5a524; --tok-hp-low: #e5484d; --tok-cond-bg: #ffd77a; --tok-cond-text: #000; --tok-hp-text: #fff;
+  --overlay: rgba(20,24,32,.45); --shadow: 0 8px 30px rgba(20,24,32,.18); --canvas-bg: #d9dce1; --tok-sel: #7c5cff; --tok-sel-line: 2; --tok-sel-dash: 6 4; --tok-sel-bg: rgba(124,92,255,0.12); --tok-handle: #7c5cff; --tok-handle-bg: #ffffff; --tok-handle-size: 7; --tok-rotate: #ffd54f; --tok-rotate-line: #ffd54f; --tok-name-stroke: #000c; --tok-dead: #e5484d; --tok-loot-stroke: #f5a524; --tok-item-stroke: #000c; --tok-text-stroke: #000a; --tok-hp-bg: rgba(0,0,0,.7); --tok-hp-high: #46a758; --tok-hp-med: #f5a524; --tok-hp-low: #e5484d; --tok-cond-bg: #ffd77a; --tok-cond-text: #000; --tok-hp-text: #fff;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -1984,14 +1984,17 @@ body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
 /* На столе док кубиков поднят над нижней панелью; «Журнал» остаётся внизу справа. */
 body:has(#table) .dice-dock { bottom: 74px; }
 /* ---------- переделана панель свойств (props) ---------- */
-.props { position: absolute; right: 10px; top: 10px; width: 370px; max-height: 92vh; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
-.props .section { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); overflow: hidden; display: flex; flex-direction: column; }
-.props .section.collapsed .section-body { display: none; }
-.props .section-header { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--overlay); cursor: pointer; user-select: none; font-size: 12px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
-.props .section-header:hover { background: var(--border); }
-.props .section-header.collapsed { border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; }
-.props .section-header .chevron { flex: 0 0 16px; font-size: 10px; line-height: 1; }
-.props .section-body { padding: 8px 10px 10px; }
+.props { position: absolute; right: 10px; top: 10px; width: 370px; max-height: 92vh; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 0; z-index: 20; }
+/* Панель свойств — одна секция: липкая шапка и один блок с подразделами без свёрток
+   (аккордеон схлопывался при каждом обновлении панели — «меню постоянно закрывается»). */
+.props-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--panel); border-bottom: 1px solid var(--border); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.props-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.props-close { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+.props-close:hover { color: var(--text); border-color: var(--accent); }
+.props-single { margin: 10px 12px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); display: flex; flex-direction: column; gap: 2px; }
+.props-block + .props-block { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.props-block h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.props .chips { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
 .props .field { margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
 .props .field label { font-size: 11px; color: var(--muted); }
 .props .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
@@ -2011,8 +2014,6 @@ body:has(#table) .dice-dock { bottom: 74px; }
 .props h2, .props h3 { font-size: 13px; margin: 0 0 6px 0; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
 .props .danger-btn { background: var(--danger); color: white; border: none; padding: 9px; border-radius: var(--radius); font-weight: 600; width: 100%; cursor: pointer; margin-top: 4px; }
 .props .danger-btn:hover { opacity: 0.85; }
-.props .gm-section { border-color: var(--warn); }
-.props .gm-section .section-header { background: rgba(230, 126, 34, 0.12); color: var(--warn); border-bottom-color: var(--warn); }
 .props .readonly { opacity: 0.55; pointer-events: none; }
 .props .transform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .props .muted { font-size: 11px; color: var(--muted); margin: 4px 0; }

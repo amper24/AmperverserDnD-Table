@@ -145,7 +145,8 @@ pub async fn require_cap(st: &AppState, cid: &str, uid: &str, cap: &str) -> ApiR
 pub enum ItemWrite {
     /// Полная замена (мастер): layer/z/data как пришли.
     Full,
-    /// Только игровые поля (x, y, rotation, hp, conditions, …) — владелец токена и лут.
+    /// Только игровые поля (x, y, w, h, rotation, hp, conditions, …) — владелец токена и лут:
+    /// двигает и меняет размер своего токена, но не переименовывает и не скрывает его.
     PlayerFields,
     /// Нельзя ни менять, ни удалять.
     Deny,

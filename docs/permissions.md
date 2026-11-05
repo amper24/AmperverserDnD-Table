@@ -110,7 +110,7 @@
 | `chat`, `card`, `roll`, `multi` | ✔ | ✔ | нет соединения |
 | `pointer`, `ruler`, `cursor`, `ping` | ✔ | ✔ | нет соединения |
 | `item_upsert` (новый элемент) | любой слой | только свои токены/рисунки/надписи и лут (`table.place_character`) | — |
-| `item_upsert` (существующий) | полная замена (`table.move_any_token`), кроме физического лута | только игровые поля своего токена (`x`, `y`, `rotation`, `hp`, `conditions`, `attachments`, `dead`); лут и «соавторы» токена — тоже | — |
+| `item_upsert` (существующий) | полная замена (`table.move_any_token`), кроме физического лута | только игровые поля своего токена (`x`, `y`, `w`, `h`, `rotation`, `hp`, `conditions`, `attachments`, `dead`); лут и «соавторы» токена — тоже. `w`/`h` — чтобы владелец мог менять размер токена рамкой | — |
 | `item_delete` | любой элемент | свой токен, лут, «соавтор» | — |
 | `items_bulk` | ✔ (`table.move_any_token`) | — | — |
 | `scene_update` (сцена, сетка, имя, слои, активная карта) | ✔ (`table.manage_scene`) | — | — |

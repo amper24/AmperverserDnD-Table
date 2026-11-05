@@ -230,6 +230,44 @@ window.TableModel = (() => {
     return { x: Math.round((x - g / 2) / g) * g + g / 2, y: Math.round((y - g / 2) / g) * g + g / 2 };
   }
 
+  // ---------- ресайз объекта за ручку ----------
+  /// Прямоугольник после протяжки ручки. start = { x, y, w, h } — центр и размеры на
+  /// момент нажатия; dx/dy — ход курсора от точки нажатия (не от прошлого события!);
+  /// handle — 'nw','n','ne','e','se','s','sw','w'. Противоположная ручке сторона стоит
+  /// на месте, поэтому ручка идёт за курсором ровно, а размер меняется на весь ход.
+  /// opts.lockAspect — сцепленные пропорции (ведёт потянутая ось); opts.min — минимум в px.
+  function resizeRect(start, handle, dx, dy, opts = {}) {
+    const min = Number(opts.min) > 0 ? Number(opts.min) : 8;
+    const h = String(handle || '');
+    const west = h.includes('w'), east = h.includes('e');
+    const north = h.includes('n'), south = h.includes('s');
+    let w = start.w, ht = start.h;
+    if (west) w = Math.max(min, start.w - dx);
+    if (east) w = Math.max(min, start.w + dx);
+    if (north) ht = Math.max(min, start.h - dy);
+    if (south) ht = Math.max(min, start.h + dy);
+    if (opts.lockAspect) {
+      const aspect = start.w / Math.max(start.h, 1);
+      if (west || east) ht = Math.max(min, w / aspect);
+      else if (north || south) w = Math.max(min, ht * aspect);
+    }
+    return {
+      x: start.x + ((west || east) ? dx / 2 : 0),
+      y: start.y + (north ? (start.h - ht) / 2 : south ? (ht - start.h) / 2 : 0),
+      w, h: ht,
+    };
+  }
+
+  /// Угол поворота объекта после протяжки ручки поворота.
+  /// startAng — угол «центр → точка нажатия» (градусы), curAng — «центр → курсор»;
+  /// step > 1 — шаг привязки (45° по Shift, 15° по Ctrl+Shift); base — угол на нажатии.
+  /// Результат всегда в 0..360.
+  function rotateAngle(startAng, curAng, step = 1, base = 0) {
+    let delta = curAng - startAng;
+    if (step > 1) delta = Math.round((base + delta) / step) * step - base;
+    return ((base + delta) % 360 + 360) % 360;
+  }
+
   // ---------- размещение ассетов ----------
   /// Прямоугольник новой карты: размер — пиксели картинки (карта занимает столько клеток,
   /// сколько у неё пикселей при текущем размере сетки; нет размеров — 10×10 клеток).
@@ -574,7 +612,7 @@ window.TableModel = (() => {
     defaultLayers, normalize, find, resolve, orderOf, addLayer, removeLayer, renameLayer, moveLayer, setLayerFlag,
     countItems, sortItems,
     isMap, mapItems, findMap, activeMapId, activeMap, boundsOf, unionBounds, boardBounds, fitView,
-    gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner, snapCenter,
+    gridSize, isHex, hexMetrics, hexCenter, hexAt, hexVisibleRange, hexRowRange, gridCacheKey, gridCacheCovers, snapPos, snapCorner, snapCenter, resizeRect, rotateAngle,
     mapRect,
     snapRuler, rulerCells, scaleFt, rulerLabel,
     // туман войны: бинарная растровая маска на карту (scene.fog.by_map), значения строго 0/100

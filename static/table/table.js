@@ -85,8 +85,11 @@ window.Table = (function () {
       // Мультивыделение: sel — «главный» элемент для панели свойств, selSet — все выбранные.
       selSet: new Set(), selBox: null,
       // Ресайз / поворот выделенного токена (ручки по краям, как в Owlbear Rodeo).
-      resize: null,        // {kind:'resize'|'rotate', handle, it, x0,y0,w0,h0,r0, mx,my}
+      resize: null,        // {kind:'resize'|'rotate', handle, it, x0,y0,w0,h0,r0, sx,sy} — sx/sy: точка нажатия
       resizeHandleSize: 14 / window.devicePixelRatio,
+      // Последняя правка из панели свойств: свой ответ сервера не перерисовывает панель
+      // (иначе сбрасывались прокрутка, фокус и открытые списки — «меню закрывается»).
+      propsEcho: null,
       // Объекты, показанные локально до подтверждения сервером (create с готовым id):
       // подтверждение снимает id из набора, отказ сервера — убирает объект со стола.
       pending: new Set(),
@@ -107,7 +110,7 @@ window.Table = (function () {
     S.fogVersion = 0;     // инкремент при любой смене fog — сбрасывает кэш буферов
     // propsBox и hint создаём до buildTools: setTool() пишет в S.hint и вызывается из buildTools.
     S.propsBox = el('div', { class: 'props hidden' });
-    S.hint = el('div', { class: 'hint' }, 'ЛКМ — выбрать/тащить, колесо — зум, ПКМ/пробел — панорама');
+    S.hint = el('div', { class: 'hint' }, 'ЛКМ — выбрать/тащить, колесо — зум, ПКМ/пробел — панорама; Ctrl при отпускании — без привязки к сетке');
     buildTools(wrap);
     wrap.append(S.propsBox);
     wrap.append(S.hint);
@@ -392,45 +395,27 @@ window.Table = (function () {
     return null;
   }
 
-  /// Ресайз токена за выбранную ручку: расширяем от противоположного края (как Owlbear).
-  function applyResize(w, e) {
+  /// Ресайз токена за выбранную ручку. Геометрия — в TableModel.resizeRect (чистая
+  /// функция с тестами): противоположная сторона на месте, ручка идёт за курсором.
+  /// Ход считается от точки нажатия, а не от прошлого события: раньше в размер
+  /// попадал только последний шаг мыши — объект «дёргался» и не менялся.
+  function applyResize(w) {
     const r = S.resize, d = r.it.data;
-    const dx = w.x - r.mx, dy = w.y - r.my;
-    let nw = r.w0, nh = r.h0, nx = r.x0, ny = r.y0;
-    const h = r.handle;
-    const min = 8;
-    const lockAspect = d.lockAspect;
-    const aspect = r.w0 / Math.max(r.h0, 1);
-    // Горизонтальные ручки.
-    if (h.includes('w')) { nw = Math.max(min, r.w0 - dx); nx = r.x0 + (r.w0 - nw); }
-    if (h.includes('e')) { nw = Math.max(min, r.w0 + dx); }
-    // Вертикальные ручки.
-    if (h.includes('n')) { nh = Math.max(min, r.h0 - dy); ny = r.y0 + (r.h0 - nh); }
-    if (h.includes('s')) { nh = Math.max(min, r.h0 + dy); }
-    // Сцепленные пропорции (для карт): сохраняем соотношение сторон.
-    if (lockAspect) {
-      const changedW = h.includes('w') || h.includes('e');
-      const changedH = h.includes('n') || h.includes('s');
-      if (changedW && changedH) {
-        // Диагональ — ведёт ширина, высота по пропорции.
-        nh = Math.max(min, Math.round(nw / aspect));
-      } else if (changedW) {
-        nh = Math.max(min, Math.round(nw / aspect));
-        if (h.includes('n')) ny = r.y0 + (r.h0 - nh);
-      } else if (changedH) {
-        nw = Math.max(min, Math.round(nh * aspect));
-        if (h.includes('w')) nx = r.x0 + (r.w0 - nw);
-      }
-    }
-    d.w = nw; d.h = nh; d.x = nx; d.y = ny;
-    r.mx = w.x; r.my = w.y;
+    const next = T.resizeRect({ x: r.x0, y: r.y0, w: r.w0, h: r.h0 }, r.handle, w.x - r.sx, w.y - r.sy, { lockAspect: !!d.lockAspect });
+    d.x = next.x; d.y = next.y; d.w = next.w; d.h = next.h;
     requestDraw();
   }
 
-  function finishResize() {
+  /// Отпустили ручку: размер фиксируем, позицию привязываем к сетке (Ctrl — свободно).
+  /// Карту не притягиваем: её клетки должны совпадать с клетками стола, а не центр.
+  function finishResize(ev) {
     const r = S.resize, d = r.it.data;
-    if (r.handle !== 'rotate') {
-      // Привязка к сетке по центру токена.
+    d.w = Math.max(8, Math.round(d.w));
+    d.h = Math.max(8, Math.round(d.h));
+    // Карту не притягиваем вовсе: она растёт от того края, который тянули, а её клетки
+    // должны совпадать с клетками стола. Ctrl (Cmd) — свободное размещение и у токенов.
+    const free = !!ev && (ev.ctrlKey || ev.metaKey);
+    if (r.handle !== 'rotate' && layerOf(r.it) !== LAYER.map && S.snap && !free) {
       const p = snapPos(d.x, d.y, d.w, d.h);
       d.x = p.x; d.y = p.y;
     }
@@ -440,23 +425,16 @@ window.Table = (function () {
   }
 
   /// Поворот токена мышкой: угол от центра токена к курсору.
-  /// Shift — шаг 45°, Ctrl+Shift — шаг 15°.
+  /// Shift — шаг 45°, Ctrl+Shift — шаг 15°. Опорный угол — точка нажатия (не прошлое
+  /// событие), поэтому поворот идёт за курсором, а не суммой мелких шагов.
   function applyRotate(w, ev) {
     const r = S.resize, d = r.it.data;
     const b = itemBounds(r.it);
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const curAng = Math.atan2(w.y - cy, w.x - cx) * 180 / Math.PI;
-    const startAng = Math.atan2(r.my - cy, r.mx - cx) * 180 / Math.PI;
-    let delta = curAng - startAng;
-    let step = 1;
-    if (ev && ev.shiftKey && ev.ctrlKey) step = 15;   // Ctrl+Shift — 15°
-    else if (ev && ev.shiftKey) step = 45;             // Shift — 45°
-    if (step > 1) {
-      const total = r.r0 + delta;
-      const snapped = Math.round(total / step) * step;
-      delta = snapped - r.r0;
-    }
-    d.rotation = ((r.r0 + delta) % 360 + 360) % 360;
+    const startAng = Math.atan2(r.sy - cy, r.sx - cx) * 180 / Math.PI;
+    const step = ev && ev.shiftKey ? (ev.ctrlKey ? 15 : 45) : 1;
+    d.rotation = T.rotateAngle(startAng, curAng, step, r.r0);
     requestDraw();
   }
 
@@ -468,8 +446,6 @@ window.Table = (function () {
     const css = getComputedStyle(document.documentElement);
     const tokenColors = {
       rotate: css.getPropertyValue('--tok-rotate').trim() || '#ffd54f',
-      ownerSelf: css.getPropertyValue('--tok-owner-self').trim() || '#46a758',
-      ownerOther: css.getPropertyValue('--tok-owner-other').trim() || '#3e9bff',
       nameStroke: css.getPropertyValue('--tok-name-stroke').trim() || '#000c',
       dead: css.getPropertyValue('--tok-dead').trim() || '#e5484d',
       lootStroke: css.getPropertyValue('--tok-loot-stroke').trim() || '#f5a524',
@@ -681,8 +657,7 @@ window.Table = (function () {
       else { c.fillStyle = '#333'; c.fillRect(-d.w / 2, -d.h / 2, d.w, d.h); }
       c.rotate(-(d.rotation || 0) * Math.PI / 180);
       if (it.layer === LAYER.character || it.layer === LAYER.mount) {
-        // рамка владельца, имя, хиты, состояния
-        if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? colors.ownerSelf : colors.ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
+        // имя, хиты, состояния (обводки «принадлежности» нет: владелец виден в панели свойств)
         if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = colors.nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
         // HP-бар над токеном: скруглённый фон, рамка, цвет по остатку хп, подпись cur/max
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
@@ -909,7 +884,7 @@ window.Table = (function () {
     S.canvas.className = 'tool-' + t;
     syncFogCursor();
     S.subbox.innerHTML = '';
-    const hints = { select: 'ЛКМ — выбрать/тащить, двойной клик по токену — лист, Delete — удалить; ПКМ — панорама, колесо — пинг', pan: 'Тяните для панорамирования (или ПКМ)', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: '' };
+    const hints = { select: 'ЛКМ — выбрать/тащить, ручки — размер и поворот, Ctrl при отпускании — без привязки к сетке; двойной клик по токену — лист, Delete — удалить; ПКМ — панорама, колесо — пинг', pan: 'Тяните для панорамирования (или ПКМ)', ruler: 'Тяните для измерения (видят все). Ctrl (Cmd) — без привязки к сетке', draw: 'Рисуйте на карте', text: 'Клик — добавить текст', pointer: 'Клик — пинг для всех', fog: '' };
     S.hint.textContent = hints[t] || '';
     if (t === 'draw') {
       const shapes = [['path', icon('path')], ['line', icon('line')], ['rect', icon('rect')], ['circle', icon('circle')], ['poly', icon('poly')]];
@@ -1066,7 +1041,8 @@ window.Table = (function () {
           S.resize = {
             kind: handle.kind, handle: handle.handle, it: itSel,
             x0: d.x, y0: d.y, w0: d.w, h0: d.h, r0: d.rotation || 0,
-            mx: w.x, my: w.y,
+            // Точка нажатия в мировых координатах: ход ручки считается от неё.
+            sx: w.x, sy: w.y,
           };
           S.drag = { kind: 'resize', sx: e.clientX, sy: e.clientY };
           requestDraw();
@@ -1139,7 +1115,7 @@ window.Table = (function () {
         S.drag.moved = true;
       } else if (S.drag.kind === 'marquee' && S.selBox) { S.selBox.x1 = w.x; S.selBox.y1 = w.y; }
       else if (S.drag.kind === 'resize' && S.resize) {
-        if (S.resize.handle === 'rotate') applyRotate(w, e); else applyResize(w, e);
+        if (S.resize.handle === 'rotate') applyRotate(w, e); else applyResize(w);
       }
       else if (S.drag.kind === 'temp' && S.temp) {
         if (S.temp.kind === 'ruler') moveRuler(w, e.ctrlKey || e.metaKey);
@@ -1154,19 +1130,21 @@ window.Table = (function () {
     cv.addEventListener('pointerleave', () => { S.hover = null; requestDraw(); });
     cv.addEventListener('pointerup', e => {
       requestDraw();
+      // Ctrl (Cmd) при отпускании — свободное размещение: без привязки к сетке.
+      const free = e.ctrlKey || e.metaKey;
       if (S.drag?.kind === 'move' && S.drag.moved) {
         // Привязка к сетке — каждому элементу группы отдельно, затем один upsert на элемент.
         for (const entry of S.drag.items) {
           const it = entry.it, d = it.data;
-          if (d.type === 'image' && it.layer !== LAYER.drawing) {
+          if (d.type === 'image' && it.layer !== LAYER.drawing && S.snap && !free) {
             // Карту привязываем левым верхним углом (её сетка должна совпадать с клетками).
-            if (layerOf(it) === LAYER.map && S.snap && !isHex()) { const c = T.snapCorner(d.x - d.w / 2, d.y - d.h / 2, S.scene.grid); d.x = c.x + d.w / 2; d.y = c.y + d.h / 2; }
+            if (layerOf(it) === LAYER.map && !isHex()) { const c = T.snapCorner(d.x - d.w / 2, d.y - d.h / 2, S.scene.grid); d.x = c.x + d.w / 2; d.y = c.y + d.h / 2; }
             else { const p = snapPos(d.x, d.y, d.w, d.h); d.x = p.x; d.y = p.y; }
           }
           upsert(it);
         }
       }
-      if (S.drag?.kind === 'resize' && S.resize) { finishResize(); }
+      if (S.drag?.kind === 'resize' && S.resize) { finishResize(e); }
       if (S.drag?.kind === 'marquee') finishMarquee();
       if (S.drag?.kind === 'temp' && S.temp) finishTemp();
       // ПКМ без движения — обычный клик: выделяем элемент и показываем меню.
@@ -1411,7 +1389,7 @@ window.Table = (function () {
   function onMessage(m) {
     if (m.scene_id && m.scene_id !== S.scene.id && m.type !== 'active_scene') return;
     switch (m.type) {
-      case 'item_upsert': { S.pending.delete(m.item.id); const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
+      case 'item_upsert': { S.pending.delete(m.item.id); const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id && !isOwnPropsEcho(m.item)) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
       // Отказ сервера (права, запись в базу): без этого сообщения действие просто «исчезало».
       case 'error': rollbackPending(m.message); break;
       case 'item_delete': {
@@ -1519,27 +1497,7 @@ window.Table = (function () {
     setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
   }
 
-  /// Панель свойств группы: «Выбрано N» и общие действия, разрешённые правами.
   // ---------- хелперы панели свойств ----------
-
-  /// Секция с заголовком и свёрткой.
-  function section(title, bodyEls, { collapsible = true, open = true, gm = false, id } = {}) {
-    const cls = ['section', gm ? 'gm-section' : '', collapsible && !open ? 'collapsed' : ''].filter(Boolean).join(' ');
-    const wrap = el('div', { class: cls, id });
-    const header = el('div', { class: 'section-header' + (collapsible && !open ? ' collapsed' : '') },
-      el('span', { class: 'chevron' }, collapsible ? (open ? '▾' : '▸') : ''),
-      el('span', {}, title));
-    const body = el('div', { class: 'section-body' + (open ? ' open' : '') }, ...bodyEls);
-    if (collapsible) {
-      header.onclick = () => {
-        const isCollapsed = wrap.classList.toggle('collapsed');
-        body.classList.toggle('open', !isCollapsed);
-        header.querySelector('.chevron').textContent = isCollapsed ? '▸' : '▾';
-      };
-    }
-    wrap.append(header, body);
-    return wrap;
-  }
 
   /// Поле с подписью и входом.
   function field(label, input) {
@@ -1566,185 +1524,146 @@ window.Table = (function () {
     }, label);
   }
 
-  // ---------- панель свойств группы ----------
+  // ---------- панель свойств ----------
+  // Панель — одна секция без свёрток. Раньше это был аккордеон («Основное»,
+  // «Внешний вид», «Позиция», «HP», «Карта», «ГМ»), а панель перерисовывается на
+  // любой ответ сервера: раскрытые секции схлопывались, прокрутка сбрасывалась —
+  // «меню атрибутов постоянно закрывается». Теперь блоки всегда видны, а прокрутка
+  // и поле в фокусе переживают перерисовку; свой же ответ на правку панель вообще
+  // не перерисовывает (см. isOwnPropsEcho).
 
+  /// Блок панели с подзаголовком (без свёртки — ничего не «закрывается»).
+  function propsBlock(title, nodes) {
+    return el('div', { class: 'props-block' }, title ? el('h4', {}, title) : null, ...nodes);
+  }
+
+  /// Липкая шапка панели: что выбрано, слой/вид и «снять выделение».
+  function propsHead(title, badge) {
+    return el('div', { class: 'props-head' },
+      el('b', { class: 'props-title' }, title),
+      badge || null,
+      el('button', {
+        class: 'props-close', title: 'Снять выделение (Esc)', 'aria-label': 'Снять выделение',
+        onclick: () => setSelection([]),
+      }, '×'));
+  }
+
+  /// Состояние панели перед перерисовкой: прокрутка и поле в фокусе (по порядку полей).
+  function captureProps() {
+    const box = S.propsBox, a = document.activeElement;
+    const nodes = box.querySelectorAll('input,select,textarea');
+    const idx = a && box.contains(a) ? Array.prototype.indexOf.call(nodes, a) : -1;
+    return { scroll: box.scrollTop, idx, start: idx >= 0 ? a.selectionStart : null, end: idx >= 0 ? a.selectionEnd : null };
+  }
+  /// Вернуть прокрутку и фокус после перерисовки — панель не прыгает и не теряет ввод.
+  function restoreProps(st) {
+    if (!st) return;
+    const box = S.propsBox;
+    box.scrollTop = st.scroll || 0;
+    if (st.idx < 0) return;
+    const node = box.querySelectorAll('input,select,textarea')[st.idx];
+    if (!node) return;
+    node.focus({ preventScroll: true });
+    try { if (st.start != null && node.setSelectionRange) node.setSelectionRange(st.start, st.end); } catch { }
+  }
+
+  /// Свой ответ сервера на правку из панели: значения уже показаны — не перерисовываем.
+  function isOwnPropsEcho(item) {
+    const echo = S.propsEcho;
+    return !!echo && echo.id === item.id && echo.data === JSON.stringify(item.data);
+  }
+
+  /// Панель свойств группы: «Выбрано N» и общие действия, разрешённые правами.
   function renderGroupProps(items) {
     const box = S.propsBox;
     box.classList.remove('hidden');
     const editable = items.filter(canEdit);
-    box.append(el('div', { class: 'row', style: 'margin-bottom:4px' },
-      el('b', { style: 'flex:1' }, `Выбрано ${items.length}`), el('span', { class: 'badge' }, 'группа')));
+    box.append(propsHead(`Выбрано ${items.length}`, el('span', { class: 'badge' }, 'группа')));
     if (!editable.length) {
-      box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование этих элементов'));
-      box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${items.length})`));
+      box.append(el('div', { class: 'props-single' },
+        el('div', { class: 'muted' }, 'Нет прав на редактирование этих элементов'),
+        el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${items.length})`)));
       S.onSelect && S.onSelect(null);
       return;
     }
-    box.append(el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-bottom:8px' },
-      ...items.map(it => el('span', { class: 'chip' }, it.data.name || it.data.text || 'элемент'))));
-
-    // Действия
-    const actions1 = el('div', { class: 'actions' },
-      actionBtn('На передний план', () => {
-        eachSelected(it => {
-          it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1;
-          upsert(it);
-        });
-      }),
-      actionBtn('На задний план', () => {
-        eachSelected(it => {
-          it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1;
-          upsert(it);
-        });
-      })
-    );
-    box.append(actions1);
-
-    const actions2 = el('div', { class: 'actions' },
-      actionBtn('Скрыть всё', () => {
-        eachSelected(it => { it.data.hidden = true; upsert(it); });
-      }, { primary: true }),
-      actionBtn('Показать всё', () => {
-        eachSelected(it => { it.data.hidden = false; upsert(it); });
-      }, { primary: true })
-    );
-    box.append(actions2);
-
-    if (S.isGM) {
-      box.append(el('div', { class: 'row' },
-        actionBtn('Снять выделение', () => setSelection([]), { cls: 'secondary' }),
-        actionBtn('Удалить все', deleteSel, { danger: true })));
-    }
-
-    box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${editable.length})`));
+    box.append(el('div', { class: 'props-single' },
+      el('div', { class: 'chips' }, ...items.map(it => el('span', { class: 'chip' }, it.data.name || it.data.text || 'элемент'))),
+      propsBlock('Порядок', [
+        el('div', { class: 'actions' },
+          actionBtn('На передний план', () => {
+            eachSelected(it => {
+              it.z = Math.max(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) + 1;
+              upsert(it);
+            });
+          }),
+          actionBtn('На задний план', () => {
+            eachSelected(it => {
+              it.z = Math.min(0, ...S.scene.items.filter(i => i.layer === it.layer).map(i => i.z || 0)) - 1;
+              upsert(it);
+            });
+          })),
+      ]),
+      propsBlock('Видимость', [
+        el('div', { class: 'actions' },
+          actionBtn('Скрыть всё', () => eachSelected(it => { it.data.hidden = true; upsert(it); }), { primary: true }),
+          actionBtn('Показать всё', () => eachSelected(it => { it.data.hidden = false; upsert(it); }), { primary: true })),
+      ]),
+      S.isGM ? propsBlock('', [el('div', { class: 'actions' }, actionBtn('Удалить все', deleteSel, { danger: true }))]) : null,
+      el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, `Убрать со стола (${editable.length})`)));
     S.onSelect && S.onSelect(null);
   }
 
   // ---------- панель свойств выбранного элемента ----------
   function updateProps() {
-    const box = S.propsBox; box.innerHTML = '';
+    const box = S.propsBox;
+    const view = captureProps();
+    box.innerHTML = '';
     // Мультивыделение: панель группы вместо свойств одного элемента.
     const group = selectionItems();
-    if (group.length > 1) { renderGroupProps(group); return; }
+    if (group.length > 1) { renderGroupProps(group); restoreProps(view); return; }
     const it = S.scene.items.find(i => i.id === S.sel);
     S.onSelect && S.onSelect(it);
     if (!it) { box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
     const d = it.data, editable = canEdit(it);
-    const save = () => upsert(it);
+    // Запоминаем отправленное состояние: свой ответ сервера не перерисовывает панель.
+    const save = () => { S.propsEcho = { id: it.id, data: JSON.stringify(it.data) }; upsert(it); };
     const layerNameOf = T.resolve(layers(), it.layer).name;
     const isMap = layerOf(it) === LAYER.map;
+    const isToken = it.layer === LAYER.character || it.layer === LAYER.mount;
 
-    // Заголовок
-    box.append(el('div', { class: 'row', style: 'align-items:center;gap:8px;min-height:36px' },
-      el('b', { style: 'flex:1' }, d.name || d.text || layerNameOf || 'Элемент'),
-      el('span', { class: 'badge' }, layerNameOf),
-      editable ? el('span', { class: 'badge muted small', style: 'font-size:10px' }, 'редактируемо') : el('span', { class: 'badge muted small', style: 'font-size:10px' }, 'только чтение')));
+    box.append(propsHead(d.name || d.text || layerNameOf || 'Элемент', el('span', { class: 'badge' }, layerNameOf)));
+    const card = el('div', { class: 'props-single' });
+    box.append(card);
 
     if (!editable) {
-      box.append(el('div', { class: 'muted' }, 'Нет прав на редактирование этого элемента'));
-      box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)'));
+      card.append(propsBlock('', [
+        el('div', { class: 'muted' }, 'Нет прав на редактирование этого элемента'),
+        el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)')]));
+      restoreProps(view);
       return;
     }
 
-    // ---------- Основное ----------
+    // ---------- Имя / текст ----------
     const mainFields = [];
     if (d.type === 'image') {
-      mainFields.push(field('Имя', el('input', {
-        value: d.name || '',
-        onchange: e => { d.name = e.target.value; save(); }
-      })));
+      mainFields.push(field('Имя', el('input', { value: d.name || '', onchange: e => { d.name = e.target.value; save(); } })));
     } else if (d.type === 'text') {
-      mainFields.push(field('Текст', el('input', {
-        value: d.text || '',
-        onchange: e => { d.text = e.target.value; save(); }
-      })));
+      mainFields.push(field('Текст', el('input', { value: d.text || '', onchange: e => { d.text = e.target.value; save(); } })));
     }
-    box.append(section('Основное', mainFields, { id: 'props-main', open: true }));
+    if (mainFields.length) card.append(propsBlock(isToken ? 'Токен' : 'Основное', mainFields));
 
-    // ---------- Внешний вид ----------
-    const lookFields = [];
-    if (d.type === 'image') {
-      const g = grid();
-      const curW = Math.round((d.w / g) * 10) / 10, curH = Math.round((d.h / g) * 10) / 10;
-      lookFields.push(field('Ширина (клеток)', el('input', {
-        type: 'number', value: curW, step: 0.1, min: 0.1, style: 'width:90px',
-        onchange: e => { d.w = g * (+e.target.value || 0.1); save(); }
-      })));
-      lookFields.push(field('Высота (клеток)', el('input', {
-        type: 'number', value: curH, step: 0.1, min: 0.1, style: 'width:90px',
-        onchange: e => { d.h = g * (+e.target.value || 0.1); save(); }
-      })));
-      lookFields.push(el('div', { class: 'row' },
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto',
-          onchange: e => { d.lockAspect = e.target.checked; save(); }
-        })), ' Сцепить пропорции'));
-      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        actionBtn('Вписать в сетку', () => {
-          const g2 = grid();
-          d.w = Math.round(d.w / g2) * g2 || g2;
-          d.h = Math.round(d.h / g2) * g2 || g2;
-          save();
-        }, { cls: 'secondary' }),
-        actionBtn('Квадрат', () => {
-          const g2 = grid();
-          const s = Math.max(d.w, d.h);
-          d.w = s; d.h = s;
-          save();
-        }, { cls: 'secondary' })));
-    } else if (d.type === 'text') {
-      lookFields.push(field('Размер', el('input', {
-        type: 'number', value: d.size || 28,
-        onchange: e => { d.size = +e.target.value || 28; save(); }
-      })));
-      lookFields.push(field('Цвет', el('input', {
-        type: 'color', value: d.color || '#ffffff',
-        onchange: e => { d.color = e.target.value; save(); }
-      })));
-    } else if (d.type === 'drawing') {
-      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.fill ? '' : null, style: 'width:auto',
-          onchange: e => { d.fill = e.target.checked; save(); }
-        })), ' Заливка'));
-    }
-    box.append(section('Внешний вид', lookFields, { id: 'props-look', open: true }));
-
-    // ---------- Позиция ----------
-    const posFields = [];
-    posFields.push(el('div', { class: 'transform-grid' },
-      field('X', el('input', {
-        type: 'number', value: Math.round(d.x || 0), step: 1,
-        onchange: e => { d.x = +e.target.value || 0; save(); }
-      })),
-      field('Y', el('input', {
-        type: 'number', value: Math.round(d.y || 0), step: 1,
-        onchange: e => { d.y = +e.target.value || 0; save(); }
-      }))));
-    posFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-      actionBtn('Повернуть +90\u00B0', () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); }, { cls: 'secondary' }),
-      actionBtn('З выше', () => { it.z = (it.z || 0) + 1; save(); }, { cls: 'secondary' }),
-      actionBtn('З ниже', () => { it.z = (it.z || 0) - 1; save(); }, { cls: 'secondary' })));
-    box.append(section('Позиция', posFields, { id: 'props-pos', open: false }));
-
-    // ---------- HP / Состояния ----------
-    if (it.layer === LAYER.character || it.layer === LAYER.mount) {
+    // ---------- Хиты и состояния (первым делом у токенов) ----------
+    if (isToken) {
       const hpFields = [];
       const hp = d.hp || { cur: 0, max: 0 };
       hpFields.push(field('Хиты', el('div', { class: 'row', gap: 8 },
-        el('input', {
-          type: 'number', value: hp.cur,
-          onchange: e => { d.hp = { ...hp, cur: +e.target.value || 0 }; save(); }
-        }, { style: 'flex:1' }),
+        el('input', { type: 'number', value: hp.cur, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, cur: +e.target.value || 0 }; save(); } }),
         el('span', { style: 'flex:0;color:var(--muted)' }, '/'),
-        el('input', {
-          type: 'number', value: hp.max,
-          onchange: e => { d.hp = { ...hp, max: +e.target.value || 0 }; save(); }
-        }, { style: 'flex:1' }))));
+        el('input', { type: 'number', value: hp.max, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, max: +e.target.value || 0 }; save(); } }))));
       hpFields.push(hpBar(hp.cur, hp.max));
       hpFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        actionBtn('\u2212 Урон', () => {
+        actionBtn('− Урон', () => {
           const v = +prompt('Урон:', '0') || 0;
           d.hp = { ...(d.hp || { cur: 0, max: 0 }) };
           d.hp.cur -= v;
@@ -1757,74 +1676,109 @@ window.Table = (function () {
           save();
         }, { cls: 'secondary' })));
       const conds = d.conditions || [];
+      const condPick = el('select', { onchange: e => { if (e.target.value) { d.conditions = [...(d.conditions || []), e.target.value]; save(); } } },
+        el('option', { value: '' }, '+ состояние'),
+        ...condKeys().map(k => el('option', { value: k }, condIcon(k) + ' ' + condShort(k))));
       hpFields.push(el('div', { style: 'margin-top:6px' },
         el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'Состояния'),
-        el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px' },
-          ...conds.map(c => el('span', { class: 'chip' },
-            condShort(c),
-            el('b', { onclick: () => { d.conditions = conds.filter(x => x !== c); save(); } }, '\u00D7')))),
-        el('div', { class: 'select-row' },
-          el('select', {
-            onchange: e => { if (e.target.value) { d.conditions = [...conds, e.target.value]; save(); } }
-          }, el('option', { value: '' }, '+ \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435'), ...condKeys().map(k => el('option', { value: k }, condIcon(k) + ' ' + condShort(k)))))));
+        el('div', { class: 'chips' }, ...conds.map(c => el('span', { class: 'chip' },
+          condShort(c),
+          el('b', { onclick: () => { d.conditions = (d.conditions || []).filter(x => x !== c); save(); } }, '×')))),
+        el('div', { class: 'select-row' }, condPick)));
       hpFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto',
-          onchange: e => { d.dead = e.target.checked; save(); }
-        }, { style: 'flex:1' })), '\u041c\u044c\u0435\u0440\u0442\u0432',
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.show_hp ? '' : null, style: 'width:auto',
-          onchange: e => { d.show_hp = e.target.checked; save(); }
-        }, { style: 'flex:1' })), ' HP \u0432\u0441\u0435\u043c'
-      ));
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.dead ? '' : null, style: 'width:auto', onchange: e => { d.dead = e.target.checked; save(); } }), ' Мёртв'),
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.show_hp ? '' : null, style: 'width:auto', onchange: e => { d.show_hp = e.target.checked; save(); } }), ' HP всем')));
       if (d.character_id) {
-        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, '\u041b\u0438\u0441\u0442 \u043f\u0435\u0440\u0441\u043e\u043d\u0430\u0436\u0430'));
+        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => S.onOpenSheet(d.character_id) }, 'Лист персонажа'));
       }
       if (d.monster) {
-        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, '\u0421\u0442\u0430\u0442\u0431\u043b\u043e\u043a'));
+        hpFields.push(el('button', { class: 'small', style: 'width:100%;margin-bottom:6px', onclick: () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }) }, 'Статблок'));
       }
-      box.append(section('HP / \u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u044f', hpFields, { id: 'props-hp', open: true }));
+      card.append(propsBlock('Хиты и состояния', hpFields));
     }
+
+    // ---------- Размер и вид ----------
+    const lookFields = [];
+    if (d.type === 'image') {
+      const g = grid();
+      const curW = Math.round((d.w / g) * 10) / 10, curH = Math.round((d.h / g) * 10) / 10;
+      lookFields.push(el('div', { class: 'transform-grid' },
+        field('Ширина (клеток)', el('input', {
+          type: 'number', value: curW, step: 0.1, min: 0.1,
+          onchange: e => { d.w = g * (+e.target.value || 0.1); save(); },
+        })),
+        field('Высота (клеток)', el('input', {
+          type: 'number', value: curH, step: 0.1, min: 0.1,
+          onchange: e => { d.h = g * (+e.target.value || 0.1); save(); },
+        }))));
+      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        el('label', { style: 'flex:1' }, el('input', {
+          type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto',
+          onchange: e => { d.lockAspect = e.target.checked; save(); },
+        }), ' Сцепить пропорции'),
+        actionBtn('В сетку', () => {
+          const g2 = grid();
+          d.w = Math.round(d.w / g2) * g2 || g2;
+          d.h = Math.round(d.h / g2) * g2 || g2;
+          save();
+        }, { cls: 'secondary' }),
+        actionBtn('Квадрат', () => {
+          const s = Math.max(d.w, d.h);
+          d.w = s; d.h = s;
+          save();
+        }, { cls: 'secondary' })));
+    } else if (d.type === 'text') {
+      lookFields.push(field('Размер', el('input', { type: 'number', value: d.size || 28, onchange: e => { d.size = +e.target.value || 28; save(); } })));
+      lookFields.push(field('Цвет', el('input', { type: 'color', value: d.color || '#ffffff', onchange: e => { d.color = e.target.value; save(); } })));
+    } else if (d.type === 'drawing') {
+      lookFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.fill ? '' : null, style: 'width:auto', onchange: e => { d.fill = e.target.checked; save(); } }), ' Заливка')));
+    }
+    if (lookFields.length) card.append(propsBlock('Размер и вид', lookFields));
+
+    // ---------- Позиция и поворот ----------
+    card.append(propsBlock('Позиция', [
+      el('div', { class: 'transform-grid' },
+        field('X', el('input', { type: 'number', value: Math.round(d.x || 0), step: 1, onchange: e => { d.x = +e.target.value || 0; save(); } })),
+        field('Y', el('input', { type: 'number', value: Math.round(d.y || 0), step: 1, onchange: e => { d.y = +e.target.value || 0; save(); } })),
+        field('Поворот (°)', el('input', { type: 'number', value: Math.round(d.rotation || 0), step: 1, onchange: e => { d.rotation = ((+e.target.value || 0) % 360 + 360) % 360; save(); } })),
+        field('Порядок (z)', el('input', { type: 'number', value: it.z || 0, step: 1, onchange: e => { it.z = +e.target.value || 0; save(); } }))),
+      el('div', { class: 'row', style: 'margin-bottom:0' },
+        actionBtn('Повернуть +90°', () => { d.rotation = ((d.rotation || 0) + 90) % 360; save(); }, { cls: 'secondary' }),
+        actionBtn('Выше', () => { it.z = (it.z || 0) + 1; save(); }, { cls: 'secondary' }),
+        actionBtn('Ниже', () => { it.z = (it.z || 0) - 1; save(); }, { cls: 'secondary' })),
+    ]));
 
     // ---------- Карта ----------
     if (isMap) {
-      const mapFields = [];
       const isActive = activeMapId() === it.id;
-      mapFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        actionBtn(isActive ? '\u2713 \u0410\u043a\u0442\u0438\u0432\u043d\u0430\u044f \u043a\u0430\u0440\u0442\u0430' : '\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439', () => { setActiveMap(it.id); updateProps(); }, { primary: true }),
-        actionBtn('\u0412\u043f\u0438\u0441\u0430\u0442\u044c \u043a\u0430\u0440\u0442\u0443', () => focusMap(it.id), { cls: 'secondary' })));
-      mapFields.push(el('div', { class: 'muted small', style: 'margin-bottom:0' }, '\u041f\u043e \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439 \u043a\u0430\u0440\u0442\u0435 \u0441\u0447\u0438\u0442\u0430\u044e\u0442\u0441\u044f \u00ab\u0412\u043f\u0438\u0441\u0430\u0442\u044c\u00bb, \u00ab\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0432\u0441\u0435\u00bb \u0438 \u0442\u0443\u043c\u0430\u043d \u0432\u043e\u0439\u043d\u044b.'));
-      box.append(section('\u041a\u0430\u0440\u0442\u0430', mapFields, { id: 'props-map', open: true }));
+      card.append(propsBlock('Карта', [
+        el('div', { class: 'actions' },
+          actionBtn(isActive ? '✓ Активная карта' : 'Сделать активной', () => { setActiveMap(it.id); updateProps(); }, { primary: true }),
+          actionBtn('Вписать карту', () => focusMap(it.id), { cls: 'secondary' })),
+        el('div', { class: 'muted small', style: 'margin-bottom:0' }, 'По активной карте считаются «Вписать», «Открыть все» и туман войны.'),
+      ]));
     }
 
-    // ---------- ГМ-администрирование ----------
+    // ---------- Мастер ----------
     if (S.isGM) {
       const gmFields = [];
-      gmFields.push(field('\u0421\u043b\u043e\u0439', el('select', {
-        onchange: e => { it.layer = e.target.value; save(); }
-      }, ...layers().map(l => el('option', { value: l.id, selected: it.layer === l.id ? '' : null }, l.name)))));
-      gmFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.hidden ? '' : null, style: 'width:auto',
-          onchange: e => { d.hidden = e.target.checked; save(); }
-        }, { style: 'flex:1' })), '\u0421\u043a\u0440ыт',
-        el('label', { style: 'flex:1' }, el('input', {
-          type: 'checkbox', checked: d.locked ? '' : null, style: 'width:auto',
-          onchange: e => { d.locked = e.target.checked; save(); }
-        }, { style: 'flex:1' })), ' \u0417\u0430\u043a\u0440\u0435\u043f\u043b\u0435\u043d'
-      ));
-      if (it.layer === LAYER.character || it.layer === LAYER.mount) {
+      gmFields.push(field('Слой', el('select', { onchange: e => { it.layer = e.target.value; save(); } },
+        ...layers().map(l => el('option', { value: l.id, selected: it.layer === l.id ? '' : null }, l.name)))));
+      gmFields.push(el('div', { class: 'row' },
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.hidden ? '' : null, style: 'width:auto', onchange: e => { d.hidden = e.target.checked; save(); } }), ' Скрыт'),
+        el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.locked ? '' : null, style: 'width:auto', onchange: e => { d.locked = e.target.checked; save(); } }), ' Закреплён')));
+      if (isToken) {
         const members = S.campaign.members || [];
-        gmFields.push(field('\u0412\u043b\u0430\u0434\u0435\u043b\u0435\u0446 (\u0438\u0433\u0440\u043e\u043a)', el('select', {
-          onchange: e => { d.owner_id = e.target.value || undefined; save(); }
-        }, el('option', { value: '' }, '\u2014 \u043c\u0430\u0441\u0442\u0435\u0440 \u2014'), ...members.map(m => el('option', {
-          value: m.user_id, selected: d.owner_id === m.user_id ? '' : null
-        }, m.name + (m.role === 'gm' ? ' (\u0413\u041c)' : ''))))));
+        gmFields.push(field('Владелец (игрок)', el('select', { onchange: e => { d.owner_id = e.target.value || undefined; save(); } },
+          el('option', { value: '' }, '— мастер —'),
+          ...members.map(m => el('option', { value: m.user_id, selected: d.owner_id === m.user_id ? '' : null }, m.name + (m.role === 'gm' ? ' (ГМ)' : ''))))));
       }
-      box.append(section('\u0413\u041c-\u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435', gmFields, { id: 'props-gm', open: false, gm: true }));
+      card.append(propsBlock('Мастер', gmFields));
     }
 
-    box.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, '\u0423\u0434\u0430\u043b\u0438\u0442\u044c (Del)'));
+    card.append(el('button', { class: 'small danger', style: 'width:100%', onclick: deleteSel }, 'Удалить (Del)'));
+    restoreProps(view);
   }
 
   // ---------- Публичный API (window.Table) ----------

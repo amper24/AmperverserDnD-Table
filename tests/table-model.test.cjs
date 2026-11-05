@@ -149,6 +149,51 @@ test('snapPos: центр клетки для мелкого, угол для к
   assert.deepEqual(plain(M.snapPos(33, 33, 70, 70, { grid: hex, snap: true })), plain(M.hexCenter(c.q, c.r, hex)), 'гексы — центр гекса');
 });
 
+test('resizeRect: размер меняется на весь ход курсора, ручка идёт за ним', () => {
+  const start = { x: 350, y: 350, w: 70, h: 70 };
+  // Тянем правую нижнюю ручку на 70 px вправо и вниз — токен становится 2×2 клетки.
+  assert.deepEqual(plain(M.resizeRect(start, 'se', 70, 70)), { x: 385, y: 385, w: 140, h: 140 });
+  // Ручка «e»: высота не меняется, левый край на месте, центр сдвигается на половину хода.
+  assert.deepEqual(plain(M.resizeRect(start, 'e', 70, 33)), { x: 385, y: 350, w: 140, h: 70 });
+  // Ручка «nw»: правый нижний угол на месте (350+35=385, 350+35=385).
+  const nw = M.resizeRect(start, 'nw', 35, 35);
+  assert.equal(nw.w, 35); assert.equal(nw.h, 35);
+  assert.equal(nw.x + nw.w / 2, 385, 'правый край стоит на месте');
+  assert.equal(nw.y + nw.h / 2, 385, 'нижний край стоит на месте');
+  // Ход мыши накапливается от точки нажатия: 10 шагов по 7 px — это те же 70 px.
+  const steps = Array.from({ length: 10 }, (_, i) => M.resizeRect(start, 'se', 7 * (i + 1), 7 * (i + 1)));
+  assert.equal(steps[steps.length - 1].w, 140, 'последний шаг — итоговый размер, а не последние 7 px');
+  assert.equal(steps[0].w, 77);
+});
+
+test('resizeRect: минимум, сцепленные пропорции и ручки без движения', () => {
+  const start = { x: 100, y: 100, w: 70, h: 70 };
+  // Минимум 8 px: ручку можно «схлопнуть», но не в ноль и не в минус.
+  assert.equal(M.resizeRect(start, 'e', -500, 0).w, 8);
+  assert.equal(M.resizeRect(start, 'e', -500, 0).w, 8);
+  // Сцепленные пропорции: ведёт потянутая ось, вторая считается по соотношению сторон.
+  const wide = { x: 0, y: 0, w: 140, h: 70 };
+  assert.deepEqual(plain(M.resizeRect(wide, 'e', 140, 0, { lockAspect: true })), { x: 70, y: 0, w: 280, h: 140 });
+  assert.deepEqual(plain(M.resizeRect(wide, 's', 0, 70, { lockAspect: true })), { x: 0, y: 35, w: 280, h: 140 });
+  // Ручки «n»/«s» ширину не трогают, «w»/«e» — высоту.
+  assert.equal(M.resizeRect(start, 'n', 0, 30).w, 70);
+  assert.equal(M.resizeRect(start, 'w', 30, 0).h, 70);
+});
+
+test('rotateAngle: поворот от точки нажатия, шаг 45° и 15°', () => {
+  // Курсор ушёл на 90° против часовой стрелки — токен повернулся на те же 90°, без накопления.
+  assert.equal(M.rotateAngle(0, 90), 90);
+  assert.equal(M.rotateAngle(0, -45), 315, 'угол всегда 0..360');
+  // Shift — шаг 45°: 40° превращаются в 45°, 20° — в 0°.
+  assert.equal(M.rotateAngle(0, 40, 45), 45);
+  assert.equal(M.rotateAngle(0, 20, 45), 0);
+  // Ctrl+Shift — шаг 15°.
+  assert.equal(M.rotateAngle(0, 40, 15), 45);
+  // Базовый угол (уже выставленный поворот) прибавляется к ходу и тоже округляется.
+  assert.equal(M.rotateAngle(0, 40, 15, 30), 75, '30° + ход 40° → 75° по шагу 15');
+  assert.equal(M.rotateAngle(10, 10, 15, 30), 30, 'без движения угол не меняется');
+});
+
 test('snapRuler: без Ctrl — к сетке, с Ctrl — свободно (и пересчёт при движении)', () => {
   const g = grid(70);
   assert.deepEqual(plain(M.snapRuler([[103, 97], [281, 349]], g, false)), [[105, 105], [315, 315]], 'квадраты: к центрам клеток');

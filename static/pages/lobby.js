@@ -3,13 +3,31 @@
 // (кампании, персонажи, справочник, библиотека, наборы), вход по приглашению,
 // профиль, администрирование, приватность и диагностика входа.
 // Даёт: window.Lobby.create(ctx) → { renderLanding, renderHome, renderDiag,
-//       renderPrivacy, renderProfile, renderAdmin, renderJoin, renderSection }.
+//       renderPrivacy, renderProfile, renderAdmin, renderJoin, renderSection };
+//       window.Lobby.inviteTarget(info) → { id, name, role } (разбор ответа /api/join/:code).
 // Зависимости: common.js, asset-kinds.js, packs.js; в index.html — до app.js.
 // ---------------------------------------------------------------------------
 // Модуль не держит собственного состояния: точку входа static/app.js он получает
 // контекстом (контейнер #app, шапка, текущий пользователь) и возвращает рендереры,
 // поэтому маршрутизация и проверка входа остаются в одном месте.
+
+// Приглашение: ответ GET /api/join/:code — { campaign: { id, name, description }, role },
+// поэтому идентификатор кампании лежит во вложенном объекте. Плоские
+// campaign_id/campaign_name поддержаны как совместимость со старыми сборками
+// клиента. Разбор — отдельной функцией: по ней кнопка «Присоединиться» ведёт сразу
+// на стол кампании (/c/:id), а не на /c/undefined с окном «Нет доступа».
+function inviteTarget(info) {
+  const src = info || {};
+  const camp = src.campaign || {};
+  return {
+    id: String(camp.id || src.campaign_id || '').trim(),
+    name: camp.name || src.campaign_name || 'Кампания',
+    role: src.role || camp.role || 'player',
+  };
+}
+
 window.Lobby = {
+  inviteTarget,
   create({ app, me, topbar, avatarEl, lobbyLibrary, APP_NAME, PW_MIN, CAN_REGISTER, SECTION_CARDS }) {
     // ================= Главная: лендинг (гость) =================
     function sectionCards() { return el('div', { class: 'sections' }, ...SECTION_CARDS.map(([href, t, d]) => el('a', { href: me ? href : '/login?next=' + encodeURIComponent(href), class: 'card section-card' }, el('b', {}, t), el('p', {}, d), el('span', { class: 'go' }, icon('arrow'))))); }
@@ -319,12 +337,34 @@ window.Lobby = {
     }
 
     // ================= Присоединение =================
+    // Вход по ссылке-приглашению: показываем кампанию и роль, по кнопке — POST
+    // /api/join/:code и сразу переход на стол (/c/:id). Идентификатор берём из
+    // ответа POST, иначе из приглашения (inviteTarget): раньше страница читала
+    // несуществующее info.campaign_id и уводила на /c/undefined — «Нет доступа»,
+    // хотя участником пользователь уже стал.
     async function renderJoin(codeStr) {
       app.innerHTML = '';
       try {
-        const info = await API.get('/api/join/' + codeStr);
-        app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Приглашение'), el('p', {}, 'Кампания ', el('b', {}, info.campaign_name), ' · роль: ', info.role === 'gm' ? 'мастер' : 'игрок'),
-          el('button', { class: 'primary wide', onclick: async () => { await API.post('/api/join/' + codeStr); go('/c/' + info.campaign_id); } }, 'Присоединиться'), el('p', {}, el('a', { href: '/' }, 'На главную')))));
+        const target = inviteTarget(await API.get('/api/join/' + codeStr));
+        const err = el('div', { class: 'auth-err' });
+        const btn = el('button', { class: 'primary wide' }, 'Присоединиться');
+        btn.addEventListener('click', async () => {
+          if (btn.disabled) return;
+          btn.disabled = true; btn.textContent = 'Присоединяемся…'; err.textContent = '';
+          try {
+            const res = (await API.post('/api/join/' + codeStr)) || {};
+            const cid = String(res.campaign_id || target.id || '').trim();
+            if (!cid) throw new Error('Приглашение без кампании — откройте ссылку заново');
+            go('/c/' + cid);
+          } catch (e) {
+            // Остаёмся на странице приглашения: роль уже выдана или ссылка исчерпана.
+            btn.disabled = false; btn.textContent = 'Присоединиться';
+            err.textContent = e.message || 'Не удалось присоединиться';
+          }
+        });
+        app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Приглашение'),
+          el('p', {}, 'Кампания ', el('b', {}, target.name), ' · роль: ', target.role === 'gm' ? 'мастер' : 'игрок'),
+          btn, err, el('p', {}, el('a', { href: '/' }, 'На главную')))));
       } catch (e) { app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Ошибка'), el('p', {}, e.message), el('a', { href: '/' }, 'На главную')))); }
     }
 
