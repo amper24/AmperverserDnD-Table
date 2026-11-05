@@ -1,7 +1,8 @@
-//! Кампании, участники (мастер/игрок), ссылки-приглашения, история чата.
+//! Кампании, участники (мастер/игрок), ссылки-приглашения, история чата,
+//! собственные роли и права на слои.
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -11,7 +12,30 @@ use sqlx::Row;
 use crate::{domain::access, api::auth::AuthUser, error::ApiResult, util, AppError, AppState};
 
 pub struct Member { pub role: String }
-impl Member { pub fn is_gm(&self) -> bool { self.role == "gm" } }
+impl Member {
+    pub fn is_gm(&self) -> bool { self.role == "gm" }
+    /// Возможности роли участника: системные роли — из констант, кастомные — из БД.
+    pub async fn capabilities(st: &AppState, cid: &str, role: &str) -> Vec<String> {
+        match role {
+            "gm" => access::ALL.iter().map(|s| s.to_string()).collect(),
+            "player" => access::PLAYER.iter().map(|s| s.to_string()).collect(),
+            _ => {
+                if let Ok(row) = sqlx::query("SELECT capabilities FROM campaign_roles WHERE campaign_id = ? AND name = ? AND is_system = 0")
+                    .bind(cid).bind(role).fetch_optional(&st.db).await
+                {
+                    if let Some(r) = row {
+                        let caps: String = r.get("capabilities");
+                        serde_json::from_str::<Vec<String>>(&caps).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+    }
+}
 
 pub async fn get_member(st: &AppState, cid: &str, uid: &str) -> ApiResult<Member> {
     let row = sqlx::query("SELECT role FROM campaign_members WHERE campaign_id = ? AND user_id = ?")
@@ -50,6 +74,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/campaigns", get(list).post(create))
         .route("/api/campaigns/:cid", get(get_one).patch(update).delete(delete_one))
         .route("/api/campaigns/:cid/active-scene", post(set_active_scene))
+        // Собственные роли кампании
+        .route("/api/campaigns/:cid/roles", get(list_roles).post(create_role))
+        .route("/api/campaigns/:cid/roles/:rid", patch(update_role).delete(delete_role))
+        // Права на слои для ролей
+        .route("/api/campaigns/:cid/layer-permissions", get(list_layer_perms).patch(set_layer_perms))
         .route("/api/campaigns/:cid/invites", get(list_invites).post(create_invite))
         .route("/api/campaigns/:cid/invites/:code", axum::routing::delete(delete_invite))
         .route("/api/campaigns/:cid/members/:uid", axum::routing::patch(set_role).delete(kick))
@@ -83,8 +112,6 @@ async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<Cam
 }
 
 async fn get_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
-    // Кампания и роль участника — одним запросом (было: get_member + fetch_campaign).
-    // Нет строки — пользователь не участник (как и раньше: сначала проверялся участник).
     let row = sqlx::query("SELECT c.*, m.role AS member_role FROM campaigns c JOIN campaign_members m ON m.campaign_id = c.id AND m.user_id = ? WHERE c.id = ?")
         .bind(&user.id).bind(&cid).fetch_optional(&st.db).await?
         .ok_or_else(|| AppError::forbidden("Вы не участник этой кампании"))?;
@@ -115,7 +142,6 @@ async fn delete_one(State(st): State<AppState>, user: AuthUser, Path(cid): Path<
     if row.get::<String, _>("owner_id") != user.id {
         return Err(AppError::forbidden("Удалить может только владелец"));
     }
-    // SQLite/MySQL каскад по FK; на всякий случай чистим явно зависимые без FK-каскада
     sqlx::query("DELETE FROM campaigns WHERE id = ?").bind(&cid).execute(&st.db).await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -170,12 +196,11 @@ async fn set_role(State(st): State<AppState>, user: AuthUser, Path((cid, uid)): 
         return Err(AppError::bad("Владелец всегда мастер"));
     }
     get_member(&st, &cid, &uid).await?;
-    sqlx::query("UPDATE campaign_members SET role = ? WHERE campaign_id = ? AND user_id = ?").bind(norm_role(&body.role)).bind(&cid).bind(&uid).execute(&st.db).await?;
+    sqlx::query("UPDATE campaign_members SET role = ? WHERE campaign_id = ? AND user_id = ?").bind(body.role).bind(&cid).bind(&uid).execute(&st.db).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
 async fn kick(State(st): State<AppState>, user: AuthUser, Path((cid, uid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    // Выйти из кампании самому можно всегда, исключить другого — только с правом manage_members.
     if uid != user.id {
         access::require_cap(&st, &cid, &user.id, access::CAMPAIGN_MANAGE_MEMBERS).await?;
     }
@@ -233,4 +258,120 @@ async fn join(State(st): State<AppState>, user: AuthUser, Path(code): Path<Strin
         sqlx::query("UPDATE invites SET uses = uses + 1 WHERE code = ?").bind(&code).execute(&st.db).await?;
     }
     Ok(Json(json!({ "ok": true, "campaign_id": cid })))
+}
+
+// ---- Собственные роли кампании ----
+#[derive(Deserialize)]
+pub struct RoleDefIn { pub name: String, #[serde(default)] pub description: String, #[serde(default)] pub capabilities: Vec<String> }
+
+async fn list_roles(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let rows = sqlx::query("SELECT id, name, description, capabilities, is_system, created_at FROM campaign_roles WHERE campaign_id = ? ORDER BY is_system DESC, name")
+        .bind(&cid).fetch_all(&st.db).await?;
+    Ok(Json(rows.iter().map(|r| {
+        let caps: String = r.get("capabilities");
+        json!({
+            "id": r.get::<String, _>("id"),
+            "name": r.get::<String, _>("name"),
+            "description": util::text(&r, "description"),
+            "capabilities": serde_json::from_str::<Vec<String>>(&caps).unwrap_or_default(),
+            "is_system": r.get::<i64, _>("is_system") != 0,
+            "created_at": r.get::<String, _>("created_at"),
+        })
+    }).collect()))
+}
+
+async fn create_role(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Json(body): Json<RoleDefIn>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let name = util::trim_to(&body.name, 64);
+    if name.is_empty() { return Err(AppError::bad("Имя роли не может быть пустым")); }
+    let exists: i64 = sqlx::query("SELECT COUNT(*) AS n FROM campaign_roles WHERE campaign_id = ? AND name = ?")
+        .bind(&cid).bind(&name).fetch_one(&st.db).await?.get("n");
+    if exists > 0 { return Err(AppError::bad("Роль с таким именем уже существует")); }
+    let rid = util::uid();
+    let now = util::now();
+    let caps_json = serde_json::to_string(&body.capabilities).unwrap_or_else(|_| "[]".to_string());
+    sqlx::query("INSERT INTO campaign_roles (id, campaign_id, name, description, capabilities, is_system, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)")
+        .bind(&rid).bind(&cid).bind(&name).bind(&body.description).bind(&caps_json).bind(&now).execute(&st.db).await?;
+    // Права на слои по умолчанию: все слои читать, запись/создание только на не-карт слоях.
+    for (lid, read, write, create) in access::DEFAULT_PLAYER_LAYER_PERMS {
+        let lid2 = util::uid();
+        sqlx::query("INSERT INTO layer_permissions (id, campaign_id, role_id, layer_id, can_read, can_write, can_create) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(&lid2).bind(&cid).bind(&rid).bind(lid).bind(read as i64).bind(write as i64).bind(create as i64).execute(&st.db).await?;
+    }
+    Ok(Json(json!({ "id": rid, "ok": true })))
+}
+
+async fn update_role(State(st): State<AppState>, user: AuthUser, Path((cid, rid)): Path<(String, String)>, Json(body): Json<RoleDefIn>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let row = sqlx::query("SELECT is_system FROM campaign_roles WHERE id = ? AND campaign_id = ?")
+        .bind(&rid).bind(&cid).fetch_optional(&st.db).await?
+        .ok_or_else(|| AppError::not_found("Роль не найдена"))?;
+    if row.get::<i64, _>("is_system") != 0 {
+        return Err(AppError::bad("Системную роль нельзя редактировать"));
+    }
+    let name = util::trim_to(&body.name, 64);
+    if name.is_empty() { return Err(AppError::bad("Имя роли не может быть пустым")); }
+    let caps_json = serde_json::to_string(&body.capabilities).unwrap_or_else(|_| "[]".to_string());
+    sqlx::query("UPDATE campaign_roles SET name = ?, description = ?, capabilities = ? WHERE id = ? AND campaign_id = ?")
+        .bind(&name).bind(&body.description).bind(&caps_json).bind(&rid).bind(&cid).execute(&st.db).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn delete_role(State(st): State<AppState>, user: AuthUser, Path((cid, rid)): Path<(String, String)>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let row = sqlx::query("SELECT is_system FROM campaign_roles WHERE id = ? AND campaign_id = ?")
+        .bind(&rid).bind(&cid).fetch_optional(&st.db).await?
+        .ok_or_else(|| AppError::not_found("Роль не найдена"))?;
+    if row.get::<i64, _>("is_system") != 0 {
+        return Err(AppError::bad("Системную роль нельзя удалить"));
+    }
+    // Перевести участников этой роли на player.
+    sqlx::query("UPDATE campaign_members SET role = 'player' WHERE campaign_id = ? AND role = (SELECT name FROM campaign_roles WHERE id = ? AND campaign_id = ?)")
+        .bind(&cid).bind(&rid).bind(&cid).execute(&st.db).await?;
+    sqlx::query("DELETE FROM layer_permissions WHERE campaign_id = ? AND role_id = ?").bind(&cid).bind(&rid).execute(&st.db).await?;
+    sqlx::query("DELETE FROM campaign_roles WHERE id = ? AND campaign_id = ?").bind(&rid).bind(&cid).execute(&st.db).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ---- Права на слои ----
+#[derive(Deserialize)]
+pub struct LayerPermIn { pub role_id: String, pub layer_id: String, #[serde(default = "true")] pub can_read: bool, #[serde(default = "false")] pub can_write: bool, #[serde(default = "false")] pub can_create: bool }
+
+async fn list_layer_perms(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let rows = sqlx::query("SELECT lp.role_id, r.name AS role_name, lp.layer_id, lp.can_read, lp.can_write, lp.can_create FROM layer_permissions lp JOIN campaign_roles r ON r.id = lp.role_id WHERE lp.campaign_id = ? ORDER BY r.name, lp.layer_id")
+        .bind(&cid).fetch_all(&st.db).await?;
+    Ok(Json(rows.iter().map(|r| json!({
+        "role_id": r.get::<String, _>("role_id"),
+        "role_name": r.get::<String, _>("role_name"),
+        "layer_id": r.get::<String, _>("layer_id"),
+        "can_read": r.get::<i64, _>("can_read") != 0,
+        "can_write": r.get::<i64, _>("can_write") != 0,
+        "can_create": r.get::<i64, _>("can_create") != 0,
+    })).collect()))
+}
+
+async fn set_layer_perms(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>, Json(body): Json<LayerPermIn>) -> ApiResult<Json<Value>> {
+    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    let role_row = sqlx::query("SELECT is_system FROM campaign_roles WHERE id = ? AND campaign_id = ?")
+        .bind(&body.role_id).bind(&cid).fetch_optional(&st.db).await?
+        .ok_or_else(|| AppError::not_found("Роль не найдена"))?;
+    if role_row.get::<i64, _>("is_system") != 0 {
+        return Err(AppError::bad("Права системной роли нельзя менять через этот endpoint"));
+    }
+    let existing: Option<String> = sqlx::query("SELECT id FROM layer_permissions WHERE campaign_id = ? AND role_id = ? AND layer_id = ?")
+        .bind(&cid).bind(&body.role_id).bind(&body.layer_id).fetch_optional(&st.db).await.ok().flatten()
+        .map(|r| r.get("id"));
+    match existing {
+        Some(id) => {
+            sqlx::query("UPDATE layer_permissions SET can_read = ?, can_write = ?, can_create = ? WHERE id = ?")
+                .bind(body.can_read as i64).bind(body.can_write as i64).bind(body.can_create as i64).bind(&id).execute(&st.db).await?;
+        }
+        None => {
+            sqlx::query("INSERT INTO layer_permissions (id, campaign_id, role_id, layer_id, can_read, can_write, can_create) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                .bind(&util::uid()).bind(&cid).bind(&body.role_id).bind(&body.layer_id).bind(body.can_read as i64).bind(body.can_write as i64).bind(body.can_create as i64).execute(&st.db).await?;
+        }
+    }
+    Ok(Json(json!({ "ok": true })))
 }

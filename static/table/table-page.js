@@ -35,6 +35,13 @@
 
   // ---------- права (с сервера; локальная матрица — запасной вариант) ----------
   let perms = A.perms(camp);
+  if (camp.role !== 'gm' && camp.role !== 'player') {
+    try {
+      const roles = await API.get(`/api/campaigns/${cid}/roles`).then(r => r || []);
+      const myRole = roles.find(r => r.name === camp.role);
+      if (myRole) perms = myRole.capabilities || [];
+    } catch { /* оставить локальные права по роли */ }
+  }
   let can = cap => A.can(perms, cap);
   let isGM = () => can(A.CAP.manageScene);
 

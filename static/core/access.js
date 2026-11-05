@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // access.js — модель прав интерфейса: те же строки возможностей, что и
-// src/access.rs. Даёт: window.Access = { ALL, PLAYER, ROLES, CAP, perms,
-// can, label }.
+// src/domain/access.rs. Даёт: window.Access = { ALL, PLAYER, ROLES, CAP, perms,
+// can, label, setLayerPerms, layerPerms, canLayerRead, canLayerWrite, canLayerCreate }.
 // Зависимости: нет. Загружается до table-page.js, app.js и table.js.
-// Источник правды — сервер: GET кампании отдаёт role и permissions. Локальная
-// матрица ролей нужна только как запасной вариант (если пришла одна role),
-// а can() — единственный способ гейтить кнопки на клиенте.
+// Источник правды — сервер: GET кампании отдаёт role и permissions.
+// Кастомные роли и права на слои загружаются отдельно (GET /api/campaigns/:cid/roles,
+// GET /api/campaigns/:cid/layer-permissions) и кэшируются в Access.state.
 // ---------------------------------------------------------------------------
 (function () {
-  // Возможности — дословно как в src/access.rs (тест tests/access.test.cjs сверяет списки).
+  // Возможности — дословно как в src/domain/access.rs.
   const ALL = [
     'campaign.read',
     'campaign.manage_members',
@@ -26,6 +26,8 @@
     'table.manage_scene',
     'table.manage_fog',
     'table.manage_members_tokens',
+    'table.manage_roles',
+    'table.manage_layers',
   ];
   const PLAYER = [
     'campaign.read',
@@ -37,7 +39,6 @@
     'table.move_own_token',
   ];
   const ROLES = { gm: ALL, player: PLAYER };
-  // Именованные константы, чтобы код читался: Access.CAP.manageFog.
   const CAP = {
     campaignRead: 'campaign.read',
     manageMembers: 'campaign.manage_members',
@@ -55,7 +56,45 @@
     manageScene: 'table.manage_scene',
     manageFog: 'table.manage_fog',
     manageMembersTokens: 'table.manage_members_tokens',
+    manageRoles: 'table.manage_roles',
+    manageLayers: 'table.manage_layers',
   };
+
+  // Кэш прав на слои: { campaignId: { roleName: { layerId: {read,write,create} } } }
+  const state = { layerPerms: new Map() };
+
+  /// Сохранить права на слои для кампании (из ответа сервера).
+  function setLayerPerms(campaignId, perms) {
+    const m = new Map();
+    for (const p of perms || []) {
+      if (!m.has(p.role_id)) m.set(p.role_id, new Map());
+      m.get(p.role_id).set(p.layer_id, { read: !!p.can_read, write: !!p.can_write, create: !!p.can_create });
+    }
+    state.layerPerms.set(campaignId, m);
+  }
+
+  /// Права на слой для роли: {read, write, create}. gm — всё на всём.
+  function layerPerms(campaignId, role, layerId) {
+    if (role === 'gm') return { read: true, write: true, create: true };
+    const m = state.layerPerms.get(campaignId);
+    if (!m) return defaultLayerPerms(layerId);
+    const r = m.get(role);
+    if (!r) return defaultLayerPerms(layerId);
+    return r.get(layerId) || defaultLayerPerms(layerId);
+  }
+
+  /// Дефолт: читать всё, писать/создавать всё кроме карты.
+  function defaultLayerPerms(layerId) {
+    const isMap = layerId === 'map';
+    return { read: true, write: !isMap, create: !isMap };
+  }
+
+  /// Можно ли читать слой.
+  function canLayerRead(campaignId, role, layerId) { return layerPerms(campaignId, role, layerId).read; }
+  /// Можно ли писать в слой.
+  function canLayerWrite(campaignId, role, layerId) { return layerPerms(campaignId, role, layerId).write; }
+  /// Можно ли создавать в слой.
+  function canLayerCreate(campaignId, role, layerId) { return layerPerms(campaignId, role, layerId).create; }
 
   /// Список возможностей из ответа сервера (кампания или готовый массив) либо по роли.
   function perms(source) {
@@ -73,5 +112,5 @@
   function label(role) {
     return role === 'gm' ? 'Мастер' : role === 'player' ? 'Игрок' : 'Гость';
   }
-  window.Access = { ALL, PLAYER, ROLES, CAP, perms, can, label };
+  window.Access = { ALL, PLAYER, ROLES, CAP, perms, can, label, setLayerPerms, layerPerms, canLayerRead, canLayerWrite, canLayerCreate };
 })();

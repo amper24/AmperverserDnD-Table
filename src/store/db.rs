@@ -201,6 +201,29 @@ CREATE TABLE IF NOT EXISTS seed_state (
   `key` VARCHAR(32) PRIMARY KEY,
   `value` {LONGTEXT} NOT NULL
 );
+CREATE TABLE IF NOT EXISTS campaign_roles (
+  id VARCHAR(32) PRIMARY KEY,
+  campaign_id VARCHAR(32) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  description {LONGTEXT} NOT NULL DEFAULT '',
+  capabilities {LONGTEXT} NOT NULL DEFAULT '[]',
+  is_system BIGINT NOT NULL DEFAULT 0,
+  created_at VARCHAR(40) NOT NULL,
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  UNIQUE (campaign_id, name)
+);
+CREATE TABLE IF NOT EXISTS layer_permissions (
+  id VARCHAR(32) PRIMARY KEY,
+  campaign_id VARCHAR(32) NOT NULL,
+  role_id VARCHAR(32) NOT NULL,
+  layer_id VARCHAR(32) NOT NULL,
+  can_read BIGINT NOT NULL DEFAULT 1,
+  can_write BIGINT NOT NULL DEFAULT 0,
+  can_create BIGINT NOT NULL DEFAULT 0,
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES campaign_roles(id) ON DELETE CASCADE,
+  UNIQUE (campaign_id, role_id, layer_id)
+);
 "#;
 
 /// Миграции для уже существующих баз (ошибки "колонка уже есть" игнорируются).
@@ -226,6 +249,9 @@ const ALTERS: &[&str] = &[
     // слои сцены (JSON-массив {id,name,order,...}) и активная карта (id элемента слоя map)
     "ALTER TABLE scenes ADD COLUMN layers MEDIUMTEXT NULL",
     "ALTER TABLE scenes ADD COLUMN active_map_id VARCHAR(32) NULL",
+    // Собственные роли и права на слои
+    "CREATE TABLE IF NOT EXISTS campaign_roles (id VARCHAR(32) PRIMARY KEY, campaign_id VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, description {LONGTEXT} NOT NULL DEFAULT '', capabilities {LONGTEXT} NOT NULL DEFAULT '[]', is_system BIGINT NOT NULL DEFAULT 0, created_at VARCHAR(40) NOT NULL, FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE, UNIQUE (campaign_id, name))",
+    "CREATE TABLE IF NOT EXISTS layer_permissions (id VARCHAR(32) PRIMARY KEY, campaign_id VARCHAR(32) NOT NULL, role_id VARCHAR(32) NOT NULL, layer_id VARCHAR(32) NOT NULL, can_read BIGINT NOT NULL DEFAULT 1, can_write BIGINT NOT NULL DEFAULT 0, can_create BIGINT NOT NULL DEFAULT 0, FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE, FOREIGN KEY (role_id) REFERENCES campaign_roles(id) ON DELETE CASCADE, UNIQUE (campaign_id, role_id, layer_id))",
 ];
 
 const INDEXES: &[&str] = &[
@@ -260,6 +286,10 @@ const INDEXES: &[&str] = &[
     // Обратные выборки, которых не покрывал UNIQUE(campaign_id|pack_id, …):
     "CREATE INDEX idx_pack_editors_user ON pack_editors(user_id)",
     "CREATE INDEX idx_campaign_packs_pack ON campaign_packs(pack_id)",
+    // Права на роли и слои
+    "CREATE INDEX idx_campaign_roles_campaign ON campaign_roles(campaign_id)",
+    "CREATE INDEX idx_layer_perms_campaign ON layer_permissions(campaign_id)",
+    "CREATE INDEX idx_layer_perms_role ON layer_permissions(role_id)",
 ];
 
 pub async fn migrate(pool: &AnyPool, is_sqlite: bool) -> anyhow::Result<()> {

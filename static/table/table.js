@@ -236,8 +236,8 @@ window.Table = (function () {
     for (const it of items) {
       if (it.data.locked && S.tool === 'select' && !S.isGM) continue;
       const lid = layerOf(it);
-      if (lid === LAYER.map && !S.isGM) continue;
-      if (layerLocked(lid) && !S.isGM) continue; // заблокированный слой двигает только мастер
+      if (lid === LAYER.map && !S.isGM && !Access.canLayerWrite(S.campaign.id, S.campaign.role, lid)) continue;
+      if (layerLocked(lid) && !S.isGM && !Access.canLayerWrite(S.campaign.id, S.campaign.role, lid)) continue; // заблокированный слой двигает только мастер
       const b = itemBounds(it);
       if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
         if (lid === LAYER.map && S.activeLayer !== LAYER.map) continue; // карту трогаем только на слое карты
@@ -250,12 +250,17 @@ window.Table = (function () {
   function visibleItems() {
     const items = S.scene.items.filter(i => {
       const lid = layerOf(i);
+      if (!S.isGM && !Access.canLayerRead(S.campaign.id, S.campaign.role, lid)) return false; // нет права читать слой
       if (!S.isGM && layerHidden(lid)) return false; // скрытый слой игроки не видят
       return S.isGM || !i.data.hidden;
     });
     return T.sortItems(items, layers());
   }
-  function canEdit(it) { return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id) || !!it.data.loot; }
+  function canEdit(it) {
+    const lid = layerOf(it);
+    if (!S.isGM && !Access.canLayerWrite(S.campaign.id, S.campaign.role, lid)) return false; // нет права писать в слой
+    return S.isGM || it.data.owner_id === S.user.id || (it.data.editors || []).includes(S.user.id) || !!it.data.loot;
+  }
 
   // ---------- мультивыделение (рамка, группа) ----------
   /// Элементы, которые можно выделить рамкой: слои персонажей/объектов и только свои.
@@ -1298,7 +1303,7 @@ window.Table = (function () {
   function placeAsset(a, w) {
     const g = grid();
     let layer = AssetKinds.layerOf(a.kind);
-    if (!S.isGM && layer !== LAYER.character) layer = LAYER.character;
+    if (!S.isGM && !Access.canLayerCreate(S.campaign.id, S.campaign.role, layer)) layer = LAYER.character;
     // Скрытый или заблокированный слой карты не должен «съедать» новую карту: показываем и снимаем блок.
     if (layer === LAYER.map) {
       const list = getLayers();

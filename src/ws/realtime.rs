@@ -474,8 +474,14 @@ async fn handle_scene_items(st: &AppState, cid: &str, conn_id: u64, user: &auth:
             let row = sqlx::query("SELECT data, layer FROM scene_items WHERE id = ? AND scene_id = ?").bind(id).bind(scene_id).fetch_optional(&st.db).await.ok().flatten();
             if let Some(row) = row {
                 let data = util::json_value(&util::text(&row, "data"));
+                let item_layer: String = row.get("layer");
                 if access::item_write(role, &data, &user.id) == access::ItemWrite::Deny {
                     st.hub.forbidden(cid, conn_id, "Нет прав удалять этот элемент стола").await;
+                    return;
+                }
+                let (_read, can_write, _create) = layer_perms(st, cid, role, &item_layer).await;
+                if !can_write {
+                    st.hub.forbidden(cid, conn_id, "Нет прав удалять элементы на этом слое").await;
                     return;
                 }
                 let _ = sqlx::query("DELETE FROM scene_items WHERE id = ?").bind(id).execute(&st.db).await;
@@ -564,6 +570,24 @@ async fn handle_scene_update(st: &AppState, cid: &str, conn_id: u64, role: &str,
     st.hub.broadcast(cid, &out, None).await;
 }
 
+/// Права роли на слой: (can_read, can_write, can_create).
+/// gm имеет все права на все слои; для остащих смотрим layer_permissions из БД.
+/// Если явного правила нет — дефолт: все слои читать, запись/создание только вне map.
+async fn layer_perms(st: &AppState, cid: &str, role: &str, layer: &str) -> (bool, bool, bool) {
+    if access::allows(role, access::TABLE_MOVE_ANY_TOKEN) {
+        return (true, true, true);
+    }
+    let row = sqlx::query("SELECT lp.can_read, lp.can_write, lp.can_create FROM layer_permissions lp JOIN campaign_roles cr ON cr.id = lp.role_id WHERE lp.campaign_id = ? AND cr.name = ? AND lp.layer_id = ?")
+        .bind(cid).bind(role).bind(layer).fetch_optional(&st.db).await.ok().flatten();
+    match row {
+        Some(r) => (r.get::<i64, _>("can_read") != 0, r.get::<i64, _>("can_write") != 0, r.get::<i64, _>("can_create") != 0),
+        None => {
+            let is_map = layer == "map";
+            (true, !is_map, !is_map)
+        }
+    }
+}
+
 const PLAYER_FIELDS: &[&str] = &["x", "y", "rotation", "hp", "conditions", "attachments", "dead"];
 
 /// Можно ли применять входящий item_upsert к строке сцены.
@@ -608,6 +632,13 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
                 st.hub.forbidden(cid, conn_id, "Нет прав менять этот элемент стола").await;
                 return;
             }
+            // Проверяем право записи в целевой слой (при смене слоя или существующем).
+            let target_layer = layer_in.as_deref().unwrap_or(&layer);
+            let (_read, can_write, _create) = layer_perms(st, cid, role, target_layer).await;
+            if !can_write {
+                st.hub.forbidden(cid, conn_id, "Нет прав менять элементы на этом слое").await;
+                return;
+            }
             let merged = if mode == access::ItemWrite::Full {
                 layer = layer_in.unwrap_or(layer);
                 z = z_in.unwrap_or(z);
@@ -630,7 +661,8 @@ async fn item_upsert(st: &AppState, cid: &str, conn_id: u64, scene_id: &str, use
         }
         None => {
             let layer = layer_in.unwrap_or_else(|| "character".into());
-            if !access::can_create_item(role, &layer, &data, &user.id) {
+            let (_read, _write, can_create) = layer_perms(st, cid, role, &layer).await;
+            if !access::can_create_item(role, &layer, &data, &user.id, can_create) {
                 st.hub.forbidden(cid, conn_id, "Игрок ставит на стол только своих персонажей").await;
                 return;
             }

@@ -173,12 +173,25 @@
     const isGM = camp.role === 'gm';
     // Права приходят с сервера (GET кампании: role + permissions) — панели и кнопки
     // гейтим по ним, а не по роли: сервер всё равно ответит 403/ошибкой WS.
-    const perms = Access.perms(camp);
+    // Для кастомных ролей права подгружаются из /api/campaigns/:cid/roles.
+    let roles = [], layerPerms = [];
+    let perms = Access.perms(camp);
+    if (camp.role !== 'gm' && camp.role !== 'player') {
+      try { roles = await API.get(`/api/campaigns/${cid}/roles`).then(r => r || []); } catch { roles = []; }
+      const myRole = roles.find(r => r.name === camp.role);
+      if (myRole) perms = myRole.capabilities || [];
+    }
     const can = cap => Access.can(perms, cap);
     const canScene = can(Access.CAP.manageScene);
     const canFog = can(Access.CAP.manageFog);
     const canMembers = can(Access.CAP.manageMembers);
     const canInvite = can(Access.CAP.invite);
+    const canManageRoles = can(Access.CAP.manageRoles);
+    const canManageLayers = can(Access.CAP.manageLayers);
+    // Загружаем права на слои для панели прав (и для таблицы прав на слои).
+    if (canManageRoles || canManageLayers) {
+      try { layerPerms = await API.get(`/api/campaigns/${cid}/layer-permissions`).then(r => r || []); Access.setLayerPerms(cid, layerPerms); } catch { layerPerms = []; }
+    }
     window.TABLE_CTX = { isGM, canFog, permissions: perms, campaign: camp, user: me, roll: (expr, label, gm_only) => DiceEngine.submit({ type: 'roll', expr, label, gm_only }), ws: { send: (m) => ws.send(m) } };
     document.title = camp.name + ' — ' + APP_NAME;
     // Последняя открытая кампания: по ней общий пункт «Стол» ведёт на стол, а не в список.
@@ -196,7 +209,7 @@
     function refreshLayerSel() {
       const list = Table.state() ? Table.getLayers() : [];
       const cur = Table.state() ? Table.getActiveLayer() : AssetKinds.LAYER.character;
-      const shown = list.filter(l => canScene || l.id === AssetKinds.LAYER.character);
+      const shown = list.filter(l => canScene || Access.canLayerRead(cid, camp.role, l.id));
       layerSel.innerHTML = '';
       for (const l of shown) layerSel.append(el('option', { value: l.id, selected: l.id === cur ? '' : null }, l.name));
       if (!shown.length) layerSel.append(el('option', { value: AssetKinds.LAYER.character }, Table.LAYER_NAMES[AssetKinds.LAYER.character]));
@@ -210,7 +223,8 @@
     const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
     // Отдельная страница «Участники кампании»: аккаунты, персонажи, токены, HP, скрытность.
     const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Участники кампании: роли, персонажи, токены, HP, скрытность' }, icon('users'), ' Участники');
-    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, membersBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
+    const permsBtn = canManageRoles ? el('button', { class: 'btn small', title: 'Роли и права на слои', onclick: () => openPermissionsModal() }, icon('shield'), ' Права') : null;
+    bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, membersBtn, permsBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
     const canvasWrap = el('div', { id: 'canvasWrap' });
@@ -273,6 +287,122 @@
       }
       if (!sel.options.length) { toast('Нет доступных персонажей'); return null; }
       return modal(title, el('div', { class: 'field' }, sel), [{ label: 'Ок', cls: 'primary', fn: () => sel.value }]);
+    }
+
+    // ---- модальное окно прав (роли + права на слои) ----
+    async function openPermissionsModal() {
+      document.querySelectorAll('.ctxmenu').forEach(m => m.remove());
+      // Перезагружаем актуальные данные.
+      let rolesData = [], permsData = [];
+      try { rolesData = await API.get(`/api/campaigns/${cid}/roles`).then(r => r || []); } catch {}
+      try { permsData = await API.get(`/api/campaigns/${cid}/layer-permissions`).then(r => r || []); Access.setLayerPerms(cid, permsData); } catch {}
+
+      const wrap = el('div', { class: 'modal', style: 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55)' });
+      const panel = el('div', { class: 'card', style: 'min-width:520px;max-width:90vw;max-height:85vh;overflow:auto;background:var(--card)' });
+      wrap.append(panel);
+      panel.append(el('h2', { style: 'margin:0 0 12px' }, 'Роли и права на слои'));
+
+      const tabs = el('div', { class: 'tabs', style: 'display:flex;gap:8px;margin-bottom:12px' });
+      const tabRoles = el('button', { class: 'tab active', style: 'flex:1' }, 'Роли');
+      const tabLayers = el('button', { class: 'tab', style: 'flex:1' }, 'Права на слои');
+      tabs.append(tabRoles, tabLayers);
+      panel.append(tabs);
+
+      const content = el('div', { style: 'display:flex;flex-direction:column;gap:10px' });
+      panel.append(content);
+
+      function showRoles() {
+        content.innerHTML = '';
+        // Список ролей.
+        content.append(el('h4', { style: 'margin:0 0 6px;color:var(--fg-muted)' }, 'Собственные роли'));
+        const list = el('div', { style: 'display:flex;flex-direction:column;gap:6px' });
+        for (const role of rolesData) {
+          const row = el('div', { class: 'row', style: 'display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px' });
+          row.append(el('strong', {}, role.name), el('span', { class: 'muted small' }, role.is_system ? 'системная' : role.description || '—'), el('span', { style: 'flex:1' }), el('span', { class: 'badge muted', style: 'font-size:11px' }, (role.capabilities || []).length + ' возможностей'));
+          const delBtn = role.is_system ? null : el('button', { class: 'small danger', title: 'Удалить роль', onclick: async () => { if (!confirm('Удалить роль «' + role.name + '»? Участники этой роли станут игроками.')) return; await API.delete(`/api/campaigns/${cid}/roles/` + role.id); toast('Роль удалена'); openPermissionsModal(); } }, icon('trash'), ' Удалить');
+          if (delBtn) row.append(delBtn);
+          list.append(row);
+        }
+        content.append(list);
+        // Создание роли.
+        const addBox = el('div', { style: 'border:1px dashed var(--border);border-radius:8px;padding:12px' });
+        addBox.append(el('h5', { style: 'margin:0 0 8px' }, 'Новая роль'));
+        const rName = el('input', { placeholder: 'Название роли' });
+        const rDesc = el('input', { placeholder: 'Описание' });
+        const capBoxes = {};
+        for (const cap of Access.ALL) {
+          const cb = el('input', { type: 'checkbox', style: 'width:auto;margin-right:6px' });
+          const lab = el('label', { style: 'display:block;font-size:12px;margin-bottom:4px' }, cb, cap);
+          capBoxes[cap] = cb;
+          addBox.append(lab);
+        }
+        const addBtn = el('button', { class: 'small primary', onclick: async () => {
+          const name = rName.value.trim(); if (!name) { toast('Введите имя'); return; }
+          const caps = Object.entries(capBoxes).filter(([, cb]) => cb.checked).map(([cap]) => cap);
+          await API.post(`/api/campaigns/${cid}/roles`, { name, description: rDesc.value, capabilities: caps });
+          toast('Роль создана'); openPermissionsModal();
+        } }, 'Создать роль');
+        addBox.append(rName, rDesc, addBtn);
+        content.append(addBox);
+      }
+
+      function showLayers() {
+        content.innerHTML = '';
+        content.append(el('h4', { style: 'margin:0 0 6px;color:var(--fg-muted)' }, 'Права на слои по ролям'));
+        const rolesForLayers = rolesData.filter(r => !r.is_system);
+        if (!rolesForLayers.length) { content.append(el('p', { class: 'muted' }, 'Сначала создайте свою роль.')); return; }
+        // Матрица: роли × слои.
+        const table = el('table', { style: 'width:100%;border-collapse:collapse' });
+        const thead = el('thead');
+        const trHead = el('tr');
+        trHead.append(el('th', { style: 'text-align:left;padding:6px;border-bottom:2px solid var(--border)' }, 'Слой'));
+        for (const role of rolesForLayers) trHead.append(el('th', { style: 'text-align:center;padding:6px;border-bottom:2px solid var(--border)' }, role.name));
+        thead.append(trHead);
+        table.append(thead);
+        const tbody = el('tbody');
+        // Все известные слои.
+        const allLayers = ['character', 'prop', 'mount', 'attachment', 'drawing', 'text', 'note', 'map'];
+        const layerNames = { character: 'Персонажи', prop: 'Предметы', mount: 'Спутники', attachment: 'Вложения', drawing: 'Рисунки', text: 'Текст', note: 'Заметки', map: 'Карта' };
+        const permIndex = new Map();
+        for (const p of permsData) permIndex.set(p.role_id + '|' + p.layer_id, p);
+        for (const layerId of allLayers) {
+          const tr = el('tr');
+          tr.append(el('td', { style: 'padding:6px;border-bottom:1px solid var(--border);font-weight:600' }, layerNames[layerId] || layerId));
+          for (const role of rolesForLayers) {
+            const p = permIndex.get(role.id + '|' + layerId) || { can_read: true, can_write: false, can_create: false };
+            const cell = el('td', { style: 'padding:6px;border-bottom:1px solid var(--border);text-align:center' });
+            const cbRead = el('input', { type: 'checkbox', checked: p.can_read ? '' : null, style: 'width:auto' });
+            const cbWrite = el('input', { type: 'checkbox', checked: p.can_write ? '' : null, style: 'width:auto' });
+            const cbCreate = el('input', { type: 'checkbox', checked: p.can_create ? '' : null, style: 'width:auto' });
+            cell.append(el('div', { style: 'display:flex;flex-direction:column;gap:2px;align-items:center' },
+              el('label', { style: 'font-size:10px' }, cbRead, ' чтение'),
+              el('label', { style: 'font-size:10px' }, cbWrite, ' запись'),
+              el('label', { style: 'font-size:10px' }, cbCreate, ' создание')));
+            cell.append(el('button', { class: 'small', style: 'margin-top:4px', onclick: async () => {
+              await API.patch(`/api/campaigns/${cid}/layer-permissions`, {
+                role_id: role.id, layer_id: layerId,
+                can_read: cbRead.checked, can_write: cbWrite.checked, can_create: cbCreate.checked,
+              });
+              toast('Сохранено');
+              openPermissionsModal();
+            } }, 'Сохранить'));
+            tr.append(cell);
+          }
+          tbody.append(tr);
+        }
+        table.append(tbody);
+        content.append(table);
+        // Подсказка по умолчанию.
+        content.append(el('p', { class: 'muted small', style: 'margin-top:8px' }, 'По умолчанию: все могут читать все слои, писать и создавать — на всех кроме карты (map).'));
+      }
+
+      showRoles();
+      tabRoles.onclick = () => { tabRoles.classList.add('active'); tabLayers.classList.remove('active'); showRoles(); };
+      tabLayers.onclick = () => { tabLayers.classList.add('active'); tabRoles.classList.remove('active'); showLayers(); };
+
+      panel.append(el('div', { style: 'margin-top:12px;text-align:right' }, el('button', { class: 'small', onclick: () => wrap.remove() }, 'Закрыть')));
+      document.body.append(wrap);
+      wrap.onclick = e => { if (e.target === wrap) wrap.remove(); };
     }
 
     // ---- WebSocket ----

@@ -41,7 +41,7 @@ test('список возможностей совпадает с серверо
 });
 
 test('роли: мастер получает всё, игрок — только свои возможности, гость — ничего', () => {
-  assert.equal(Access.ALL.length, 16);
+  assert.equal(Access.ALL.length, 18);
   assert.equal(Access.PLAYER.length, 7);
   assert.deepEqual(plain(Access.perms('gm')), plain(Access.ALL));
   assert.deepEqual(plain(Access.perms('player')), plain(Access.PLAYER));
