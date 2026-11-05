@@ -84,6 +84,12 @@ window.Table = (function () {
   pingColor: (() => { try { return localStorage.getItem('table.pingColor') || '#ffd54f'; } catch { return '#ffd54f'; } })(),
       // Мультивыделение: sel — «главный» элемент для панели свойств, selSet — все выбранные.
       selSet: new Set(), selBox: null,
+      // Ресайз / поворот выделенного токена (ручки по краям, как в Owlbear Rodeo).
+      resize: null,
+      resizeHandleSize: 8 / window.devicePixelRatio,
+      // Ресайз / поворот выделенного токена (ручки по краям, как в Owlbear Rodeo).
+      resize: null,        // {kind:'resize'|'rotate', handle, it, x0,y0,w0,h0,r0, mx,my}
+      resizeHandleSize: 8 / window.devicePixelRatio,
       // Объекты, показанные локально до подтверждения сервером (create с готовым id):
       // подтверждение снимает id из набора, отказ сервера — убирает объект со стола.
       pending: new Set(),
@@ -319,6 +325,130 @@ window.Table = (function () {
     // Пинги живут две секунды и плавно гаснут — пока они есть, кадры идут подряд.
     if (S.pings.length) requestDraw();
   }
+  /// Ручки ресайза (8 по углам/граням) и поворота (над токеном) вокруг выделенного токена.
+  function drawTokenHandles(c, b, it, handleColor, handleBg, handleSize, rotateColor) {
+    const d = it.data;
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const k = S.cam.k;
+    const hs = handleSize / k;          // размер ручки в мировых координатах
+    const hh = hs / 2;
+    const rotLen = Math.max(b.w, b.h) * 0.55 + 14 / k;   // длина линии поворота
+    const rotAng = ((d.rotation || 0) * Math.PI / 180);
+    const rx = cx + Math.cos(rotAng) * rotLen, ry = cy + Math.sin(rotLen ? rotLen : 0) * Math.sin(rotAng);
+    // Линия поворота от центра к ручке.
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(rx, ry);
+    c.strokeStyle = rotateColor; c.lineWidth = (1.5 / k); c.stroke();
+    // Ручка поворота (круг над токеном).
+    c.beginPath(); c.arc(rx, ry, hh, 0, Math.PI * 2);
+    c.fillStyle = handleBg; c.fill(); c.strokeStyle = handleColor; c.lineWidth = (1.5 / k); c.stroke();
+    // Точка привязки поворота (маленькая точка в центре).
+    c.beginPath(); c.arc(cx, cy, hh * 0.35, 0, Math.PI * 2);
+    c.fillStyle = handleColor; c.fill();
+    // Ручки ресайза: nw, n, ne, e, se, s, sw, w.
+    const handles = [
+      { k: 'nw', x: b.x, y: b.y }, { k: 'n', x: cx, y: b.y }, { k: 'ne', x: b.x + b.w, y: b.y },
+      { k: 'e', x: b.x + b.w, y: cy }, { k: 'se', x: b.x + b.w, y: b.y + b.h },
+      { k: 's', x: cx, y: b.y + b.h }, { k: 'sw', x: b.x, y: b.y + b.h }, { k: 'w', x: b.x, y: cy },
+    ];
+    for (const h of handles) {
+      c.beginPath(); c.rect(h.x - hh, h.y - hh, hs, hs);
+      c.fillStyle = handleBg; c.fill(); c.strokeStyle = handleColor; c.lineWidth = (1.5 / k); c.stroke();
+    }
+    // Подпись текущего поворота над ручкой.
+    if (d.rotation) {
+      c.font = `${Math.max(10 / k, 10)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.fillStyle = rotateColor; c.strokeStyle = '#000a'; c.lineWidth = 3 / k;
+      const label = Math.round(d.rotation || 0) + '°';
+      c.strokeText(label, rx, ry - hh - 3 / k); c.fillText(label, rx, ry - hh - 3 / k);
+    }
+  }
+
+  /// Проверка попадания в ручку ресайза/поворота (в экранных пикселях).
+  function hitTokenHandle(wx, wy, it) {
+    if (!it || it.data.type !== 'image') return null;
+    const b = itemBounds(it);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const k = S.cam.k;
+    const hs = (S.resizeHandleSize || 8) / k;
+    const hh = hs / 2;
+    const d = it.data;
+    // Ручка поворота.
+    const rotLen = Math.max(b.w, b.h) * 0.55 + 14 / k;
+    const rotAng = ((d.rotation || 0) * Math.PI / 180);
+    const rx = cx + Math.cos(rotAng) * rotLen, ry = cy + Math.sin(rotAng) * rotLen;
+    if (Math.hypot(wx - rx, wy - ry) <= hh * 1.6) return { kind: 'rotate', handle: 'rotate' };
+    // Ручки ресайза.
+    const handles = [
+      { k: 'nw', x: b.x, y: b.y }, { k: 'n', x: cx, y: b.y }, { k: 'ne', x: b.x + b.w, y: b.y },
+      { k: 'e', x: b.x + b.w, y: cy }, { k: 'se', x: b.x + b.w, y: b.y + b.h },
+      { k: 's', x: cx, y: b.y + b.h }, { k: 'sw', x: b.x, y: b.y + b.h }, { k: 'w', x: b.x, y: cy },
+    ];
+    for (const h of handles) {
+      if (wx >= h.x - hh && wx <= h.x + hh && wy >= h.y - hh && wy <= h.y + hh)
+        return { kind: 'resize', handle: h.k };
+    }
+    return null;
+  }
+
+  /// Ресайз токена за выбранную ручку: расширяем от противоположного края (как Owlbear).
+  function applyResize(w, e) {
+    const r = S.resize, d = r.it.data;
+    const dx = w.x - r.mx, dy = w.y - r.my;
+    let nw = r.w0, nh = r.h0, nx = r.x0, ny = r.y0;
+    const h = r.handle;
+    const min = 8;
+    const lockAspect = d.lockAspect;
+    const aspect = r.w0 / Math.max(r.h0, 1);
+    // Горизонтальные ручки.
+    if (h.includes('w')) { nw = Math.max(min, r.w0 - dx); nx = r.x0 + (r.w0 - nw); }
+    if (h.includes('e')) { nw = Math.max(min, r.w0 + dx); }
+    // Вертикальные ручки.
+    if (h.includes('n')) { nh = Math.max(min, r.h0 - dy); ny = r.y0 + (r.h0 - nh); }
+    if (h.includes('s')) { nh = Math.max(min, r.h0 + dy); }
+    // Сцепленные пропорции (для карт): сохраняем соотношение сторон.
+    if (lockAspect) {
+      const changedW = h.includes('w') || h.includes('e');
+      const changedH = h.includes('n') || h.includes('s');
+      if (changedW && changedH) {
+        // Диагональ — ведёт ширина, высота по пропорции.
+        nh = Math.max(min, Math.round(nw / aspect));
+      } else if (changedW) {
+        nh = Math.max(min, Math.round(nw / aspect));
+        if (h.includes('n')) ny = r.y0 + (r.h0 - nh);
+      } else if (changedH) {
+        nw = Math.max(min, Math.round(nh * aspect));
+        if (h.includes('w')) nx = r.x0 + (r.w0 - nw);
+      }
+    }
+    d.w = nw; d.h = nh; d.x = nx; d.y = ny;
+    r.mx = w.x; r.my = w.y;
+    requestDraw();
+  }
+
+  function finishResize() {
+    const r = S.resize, d = r.it.data;
+    if (r.handle !== 'rotate') {
+      // Привязка к сетке по центру токена.
+      const p = snapPos(d.x, d.y, d.w, d.h);
+      d.x = p.x; d.y = p.y;
+    }
+    upsert(r.it);
+    S.resize = null; S.drag = null;
+    requestDraw();
+  }
+
+  /// Поворот токена мышкой: угол от центра токена к курсору.
+  function applyRotate(w) {
+    const r = S.resize, d = r.it.data;
+    const b = itemBounds(r.it);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const curAng = Math.atan2(w.y - cy, w.x - cx) * 180 / Math.PI;
+    const startAng = Math.atan2(r.my - cy, r.mx - cx) * 180 / Math.PI;
+    const delta = curAng - startAng;
+    d.rotation = ((r.r0 + delta) % 360 + 360) % 360;
+    requestDraw();
+  }
+
   function draw() {
     gridStats.frames++;
     const c = S.ctx2d; c.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
@@ -345,10 +475,21 @@ window.Table = (function () {
     for (const r of Object.values(S.remoteRulers)) drawTemp(c, r, r.user_id);
     // выделение: контур у всех выбранных (мультивыделение), рамка — при протяжке
     const highlighted = S.selSet.size ? S.scene.items.filter(i => S.selSet.has(i.id)) : (S.sel ? S.scene.items.filter(i => i.id === S.sel) : []);
+    const selColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-sel').trim() || '#7c5cff';
+    const selDash = (getComputedStyle(document.documentElement).getPropertyValue('--tok-sel-dash').trim() || '6 4').split(' ').map(Number);
+    const selLine = +(getComputedStyle(document.documentElement).getPropertyValue('--tok-sel-line').trim() || '2');
+    const handleColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-handle').trim() || '#7c5cff';
+    const handleBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-bg').trim() || '#ffffff';
+    const handleSize = +(getComputedStyle(document.documentElement).getPropertyValue('--tok-handle-size').trim() || '7');
+    const rotateColor = getComputedStyle(document.documentElement).getPropertyValue('--tok-rotate').trim() || '#ffd54f';
     for (const it of highlighted) {
       const b = itemBounds(it);
-      c.strokeStyle = '#7c5cff'; c.lineWidth = 2 / S.cam.k; c.setLineDash([6 / S.cam.k, 4 / S.cam.k]);
+      c.strokeStyle = selColor; c.lineWidth = selLine / S.cam.k; c.setLineDash(selDash.map(d => d / S.cam.k));
       c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
+      // Ручки ресайза и поворота — только для одного выделенного image-токена.
+      if (highlighted.length === 1 && it.data.type === 'image' && !S.resize) {
+        drawTokenHandles(c, b, it, handleColor, handleBg, handleSize, rotateColor);
+      }
     }
     if (S.selBox) {
       const b = marqueeBounds();
@@ -859,6 +1000,21 @@ window.Table = (function () {
       }
       if (space || S.tool === 'pan') { S.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: S.cam.x, cy: S.cam.y }; return; }
       if (S.tool === 'select') {
+        // Ручка ресайза/поворота выделенного токена — начинаем ресайз или поворот.
+        const itSel = S.sel ? S.scene.items.find(i => i.id === S.sel) : null;
+        const handle = itSel ? hitTokenHandle(w.x, w.y, itSel) : null;
+        if (handle && (handle.kind === 'resize' || handle.kind === 'rotate') && canEdit(itSel) && !itSel.data.locked) {
+          const d = itSel.data;
+          const b = itemBounds(itSel);
+          S.resize = {
+            kind: handle.kind, handle: handle.handle, it: itSel,
+            x0: d.x, y0: d.y, w0: d.w, h0: d.h, r0: d.rotation || 0,
+            mx: w.x, my: w.y,
+          };
+          S.drag = { kind: 'resize', sx: e.clientX, sy: e.clientY };
+          requestDraw();
+          return;
+        }
         const it = hitTest(w.x, w.y);
         const editable = it && canEdit(it) && !it.data.locked;
         if (editable) {
@@ -925,6 +1081,9 @@ window.Table = (function () {
         for (const entry of S.drag.items) { entry.it.data.x = entry.sx + dx; entry.it.data.y = entry.sy + dy; }
         S.drag.moved = true;
       } else if (S.drag.kind === 'marquee' && S.selBox) { S.selBox.x1 = w.x; S.selBox.y1 = w.y; }
+      else if (S.drag.kind === 'resize' && S.resize) {
+        if (S.resize.handle === 'rotate') applyRotate(w); else applyResize(w, e);
+      }
       else if (S.drag.kind === 'temp' && S.temp) {
         if (S.temp.kind === 'ruler') moveRuler(w, e.ctrlKey || e.metaKey);
         else if (S.temp.shape === 'path') {
@@ -950,6 +1109,7 @@ window.Table = (function () {
           upsert(it);
         }
       }
+      if (S.drag?.kind === 'resize' && S.resize) { finishResize(); }
       if (S.drag?.kind === 'marquee') finishMarquee();
       if (S.drag?.kind === 'temp' && S.temp) finishTemp();
       // ПКМ без движения — обычный клик: выделяем элемент и показываем меню.
@@ -978,7 +1138,7 @@ window.Table = (function () {
       if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
       requestDraw();
       if (e.code === 'Space') { space = true; cv.style.cursor = 'grab'; }
-      if (e.key === 'Escape') { S.temp = null; S.selBox = null; S.drag = null; S.selSet = new Set(); S.sel = null; updateProps(); requestDraw(); }
+      if (e.key === 'Escape') { S.temp = null; S.selBox = null; S.drag = null; S.resize = null; S.selSet = new Set(); S.sel = null; updateProps(); requestDraw(); }
       // Ctrl/Cmd переключает привязку линейки к сетке — пересчитываем уже протянутую линию.
       if ((e.key === 'Control' || e.key === 'Meta') && !e.repeat) refreshRulerSnap(true);
       if (e.key === 'Enter' && S.temp?.shape === 'poly') { S.temp.points.pop(); finishTemp(); }
@@ -1343,11 +1503,12 @@ window.Table = (function () {
       const onMap = layerOf(it) === LAYER.map;
       box.append(el('div', { class: 'field' }, el('label', {}, 'Имя'), el('input', { value: d.name || '', onchange: e => { d.name = e.target.value; save(); } })));
       const g = grid();
-      // Карта масштабируется как обычный объект — по ширине в клетках (высота по пропорциям).
-      const sizes = onMap ? [1, 2, 3, 4, 6, 8, 12, 16, 24, 32] : [0.5, 1, 2, 3, 4, 6];
-      const curCells = Math.round((d.w / g) * 10) / 10;
-      box.append(el('div', { class: 'field' }, el('label', {}, onMap ? 'Ширина (клеток)' : 'Размер (клеток)'), el('select', { onchange: e => { const m = +e.target.value; const r = d.w / d.h; d.w = g * m; d.h = g * m / r; save(); } }, ...[...new Set([...sizes, curCells])].sort((a, b) => a - b).map(m => el('option', { value: m, selected: Math.abs(d.w / g - m) < 0.05 ? '' : null }, m + (m === 1 ? ' (средний)' : m === 2 ? ' (большой)' : m === 3 ? ' (огромный)' : ''))))));
+      const curW = Math.round((d.w / g) * 10) / 10, curH = Math.round((d.h / g) * 10) / 10;
+      box.append(el('div', { class: 'field' }, el('label', {}, 'Ширина (клеток)'), el('input', { type: 'number', value: curW, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.w = g * (+e.target.value || 0.1); save(); } })));
+      box.append(el('div', { class: 'field' }, el('label', {}, 'Высота (клеток)'), el('input', { type: 'number', value: curH, step: 0.1, min: 0.1, style: 'width:70px', onchange: e => { d.h = g * (+e.target.value || 0.1); save(); } })));
       if (onMap) {
+        box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
+          el('label', { style: 'flex:1' }, el('input', { type: 'checkbox', checked: d.lockAspect ? '' : null, style: 'width:auto', onchange: e => { d.lockAspect = e.target.checked; save(); } }), ' Сцепить пропорции')));
         const isActive = activeMapId() === it.id;
         box.append(el('div', { class: 'row', style: 'margin-bottom:8px' },
           el('button', { class: 'small' + (isActive ? ' active' : ''), style: 'flex:1', onclick: () => { setActiveMap(it.id); updateProps(); } }, isActive ? '✓ Активная карта' : 'Сделать активной'),
@@ -1434,4 +1595,64 @@ window.Table = (function () {
     requestDraw, gridStats: gridStatsSnapshot, resetGridStats,
     dropLootAtCenter, placeTokenAtCenter,
   };
+
+
+  /// Ручки ресайза (8 по углам/граням) и поворота (над токеном) вокруг выделенного токена.
+  function drawTokenHandles(c, b, it, handleColor, handleBg, handleSize, rotateColor) {
+    const d = it.data;
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const k = S.cam.k;
+    const hs = handleSize / k;
+    const hh = hs / 2;
+    const rotLen = Math.max(b.w, b.h) * 0.55 + 14 / k;
+    const rotAng = ((d.rotation || 0) * Math.PI / 180);
+    const rx = cx + Math.cos(rotAng) * rotLen, ry = cy + Math.sin(rotAng) * rotLen;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(rx, ry);
+    c.strokeStyle = rotateColor; c.lineWidth = (1.5 / k); c.stroke();
+    c.beginPath(); c.arc(rx, ry, hh, 0, Math.PI * 2);
+    c.fillStyle = handleBg; c.fill(); c.strokeStyle = handleColor; c.lineWidth = (1.5 / k); c.stroke();
+    c.beginPath(); c.arc(cx, cy, hh * 0.35, 0, Math.PI * 2);
+    c.fillStyle = handleColor; c.fill();
+    const handles = [
+      { k: 'nw', x: b.x, y: b.y }, { k: 'n', x: cx, y: b.y }, { k: 'ne', x: b.x + b.w, y: b.y },
+      { k: 'e', x: b.x + b.w, y: cy }, { k: 'se', x: b.x + b.w, y: b.y + b.h },
+      { k: 's', x: cx, y: b.y + b.h }, { k: 'sw', x: b.x, y: b.y + b.h }, { k: 'w', x: b.x, y: cy },
+    ];
+    for (const h of handles) {
+      c.beginPath(); c.rect(h.x - hh, h.y - hh, hs, hs);
+      c.fillStyle = handleBg; c.fill(); c.strokeStyle = handleColor; c.lineWidth = (1.5 / k); c.stroke();
+    }
+    if (d.rotation) {
+      c.font = `${Math.max(10 / k, 10)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.fillStyle = rotateColor; c.strokeStyle = '#000a'; c.lineWidth = 3 / k;
+      const label = Math.round(d.rotation || 0) + '\u00b0';
+      c.strokeText(label, rx, ry - hh - 3 / k); c.fillText(label, rx, ry - hh - 3 / k);
+    }
+  }
+
+  /// Проверка попадания в ручку ресайза/поворота (в мировых координатах).
+  function hitTokenHandle(wx, wy, it) {
+    if (!it || it.data.type !== 'image') return null;
+    const b = itemBounds(it);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const k = S.cam.k;
+    const hs = (S.resizeHandleSize || 8) / k;
+    const hh = hs / 2;
+    const d = it.data;
+    const rotLen = Math.max(b.w, b.h) * 0.55 + 14 / k;
+    const rotAng = ((d.rotation || 0) * Math.PI / 180);
+    const rx = cx + Math.cos(rotAng) * rotLen, ry = cy + Math.sin(rotAng) * rotLen;
+    if (Math.hypot(wx - rx, wy - ry) <= hh * 1.6) return { kind: 'rotate', handle: 'rotate' };
+    const handles = [
+      { k: 'nw', x: b.x, y: b.y }, { k: 'n', x: cx, y: b.y }, { k: 'ne', x: b.x + b.w, y: b.y },
+      { k: 'e', x: b.x + b.w, y: cy }, { k: 'se', x: b.x + b.w, y: b.y + b.h },
+      { k: 's', x: cx, y: b.y + b.h }, { k: 'sw', x: b.x, y: b.y + b.h }, { k: 'w', x: b.x, y: cy },
+    ];
+    for (const h of handles) {
+      if (wx >= h.x - hh && wx <= h.x + hh && wy >= h.y - hh && wy <= h.y + hh)
+        return { kind: 'resize', handle: h.k };
+    }
+    return null;
+  }
+
 })();
