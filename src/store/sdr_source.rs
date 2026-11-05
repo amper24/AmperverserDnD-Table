@@ -65,14 +65,16 @@ impl GitSdrSource {
 impl SdrSource for GitSdrSource {
     fn list_files(&self) -> Result<Vec<String>> {
         self.ensure_cloned()?;
+        self.ensure_cloned()?;
+        let data_dir = self.clone_dir.join("data_seed");
         let mut files = Vec::new();
-        collect_files(&self.clone_dir, &mut files, &self.clone_dir)?;
+        collect_files(&data_dir, &mut files, &data_dir)?;
         Ok(files)
     }
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>> {
         self.ensure_cloned()?;
-        let full = self.clone_dir.join(path);
+        let full = self.clone_dir.join("data_seed").join(path);
         std::fs::read(&full).with_context(|| format!("не удалось прочитать {path} из SDR (Git)"))
     }
 }
