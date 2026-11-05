@@ -496,6 +496,12 @@ window.Table = (function () {
     const lootStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-loot-stroke').trim() || '#f5a524';
     const itemStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-item-stroke').trim() || '#000c';
     const textStroke = getComputedStyle(document.documentElement).getPropertyValue('--tok-text-stroke').trim() || '#000a';
+    const hpBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-bg').trim() || 'rgba(0,0,0,.7)';
+    const hpHigh = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-high').trim() || '#46a758';
+    const hpMed = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-med').trim() || '#f5a524';
+    const hpLow = getComputedStyle(document.documentElement).getPropertyValue('--tok-hp-low').trim() || '#e5484d';
+    const condBg = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-bg').trim() || '#ffd77a';
+    const condText = getComputedStyle(document.documentElement).getPropertyValue('--tok-cond-text').trim() || '#000';
     for (const it of highlighted) {
       const b = itemBounds(it);
       c.strokeStyle = selColor; c.lineWidth = selLine / S.cam.k; c.setLineDash(selDash.map(d => d / S.cam.k));
@@ -668,14 +674,32 @@ window.Table = (function () {
         // рамка владельца, имя, хиты, состояния
         if (d.owner_id) { c.strokeStyle = d.owner_id === S.user.id ? ownerSelf : ownerOther; c.lineWidth = 3 / S.cam.k; c.beginPath(); c.arc(0, 0, Math.min(d.w, d.h) / 2, 0, 7); c.stroke(); }
         if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
+        // HP-бар над токеном: фон, рамка, цвет по остатку хп
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
-          const bw = d.w * 0.9, bh = Math.max(4 / S.cam.k, d.h * 0.07), y = -d.h / 2 - bh - 2;
-          c.fillStyle = '#000a'; c.fillRect(-bw / 2, y, bw, bh);
+          const bw = d.w * 0.9, bh = Math.max(4 / S.cam.k, d.h * 0.07), y = -d.h / 2 - bh - 5;
+          c.fillStyle = hpBg; c.fillRect(-bw / 2, y, bw, bh);
+          c.strokeStyle = nameStroke; c.lineWidth = 1.5 / S.cam.k; c.strokeRect(-bw / 2, y, bw, bh);
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
-          c.fillStyle = p > 0.5 ? '#46a758' : p > 0.25 ? '#f5a524' : '#e5484d'; c.fillRect(-bw / 2, y, bw * p, bh);
+          c.fillStyle = p > 0.5 ? hpHigh : p > 0.25 ? hpMed : hpLow;
+          const pad = 1.5 / S.cam.k;
+          c.fillRect(-bw / 2 + pad, y + pad, Math.max(0, bw * p - pad * 2), bh - pad * 2);
         }
-        if (d.conditions?.length) { c.font = `bold ${d.h * 0.14}px sans-serif`; c.textAlign = 'left'; c.fillStyle = '#ffd77a'; c.fillText(d.conditions.map(x => condIcon(x)).join(' '), -d.w / 2, -d.h / 2 + d.h * 0.18); }
-        if (d.dead) { c.strokeStyle = deadColor; c.lineWidth = d.w * 0.08; c.beginPath(); c.moveTo(-d.w / 2.5, -d.h / 2.5); c.lineTo(d.w / 2.5, d.h / 2.5); c.moveTo(d.w / 2.5, -d.h / 2.5); c.lineTo(-d.w / 2.5, d.h / 2.5); c.stroke(); }
+        // Состояния — цветные круглые бейджи с иконкой под именем, по центру
+        if (d.conditions?.length) {
+          const chip = d.h * 0.17, gap = d.h * 0.04, total = d.conditions.length * chip + (d.conditions.length - 1) * gap;
+          let x = -total / 2;
+          const y = d.h / 2 + d.h * 0.30;
+          for (const key of d.conditions) {
+            const icon = condIcon(key);
+            c.beginPath(); c.arc(x + chip / 2, y, chip / 2, 0, Math.PI * 2);
+            c.fillStyle = condBg; c.fill(); c.strokeStyle = condText; c.lineWidth = 1.5 / S.cam.k; c.stroke();
+            c.font = `bold ${chip * 0.65}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillStyle = condText; c.fillText(icon, x + chip / 2, y);
+            x += chip + gap;
+          }
+        }
+        // Мёртвый — жирный крест поверх токена
+        if (d.dead) { c.strokeStyle = deadColor; c.lineWidth = d.w * 0.12; c.beginPath(); c.moveTo(-d.w / 2.4, -d.h / 2.4); c.lineTo(d.w / 2.4, d.h / 2.4); c.moveTo(d.w / 2.4, -d.h / 2.4); c.lineTo(-d.w / 2.4, d.h / 2.4); c.stroke(); }
       }
     } else if (d.type === 'loot') {
       // мешочек с лутом: иконка предмета на подложке
