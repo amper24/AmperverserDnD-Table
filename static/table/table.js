@@ -446,7 +446,7 @@ window.Table = (function () {
     const css = getComputedStyle(document.documentElement);
     const tokenColors = {
       rotate: css.getPropertyValue('--tok-rotate').trim() || '#ffd54f',
-      nameStroke: css.getPropertyValue('--tok-name-stroke').trim() || '#000c',
+      hpStroke: css.getPropertyValue('--tok-hp-stroke').trim() || '#000c',
       dead: css.getPropertyValue('--tok-dead').trim() || '#e5484d',
       lootStroke: css.getPropertyValue('--tok-loot-stroke').trim() || '#f5a524',
       itemStroke: css.getPropertyValue('--tok-item-stroke').trim() || '#000c',
@@ -657,15 +657,16 @@ window.Table = (function () {
       else { c.fillStyle = '#333'; c.fillRect(-d.w / 2, -d.h / 2, d.w, d.h); }
       c.rotate(-(d.rotation || 0) * Math.PI / 180);
       if (it.layer === LAYER.character || it.layer === LAYER.mount) {
-        // имя, хиты, состояния (обводки «принадлежности» нет: владелец виден в панели свойств)
-        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = colors.nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
+        // Хиты и состояния. Имени под токеном нет: подпись занимала место на карте и
+        // лезла под соседние токены — имя видно в панели свойств и на странице участников.
+        // (Обводки «принадлежности» тоже нет: владелец в панели свойств.)
         // HP-бар над токеном: скруглённый фон, рамка, цвет по остатку хп, подпись cur/max
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
           const bw = d.w * 0.85, bh = Math.max(5 / S.cam.k, d.h * 0.09), y = -d.h / 2 - bh - 6;
           const r = bh / 2;
           c.beginPath(); c.roundRect(-bw / 2, y, bw, bh, r);
           c.fillStyle = colors.hpBg; c.fill();
-          c.strokeStyle = colors.nameStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
+          c.strokeStyle = colors.hpStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
           c.beginPath(); c.roundRect(-bw / 2 + 1.5 / S.cam.k, y + 1.5 / S.cam.k, Math.max(0, bw - 3 / S.cam.k) * p, bh - 3 / S.cam.k, Math.max(0, r - 1.5 / S.cam.k));
           c.fillStyle = p > 0.66 ? colors.hpHigh : p > 0.33 ? colors.hpMed : colors.hpLow;
