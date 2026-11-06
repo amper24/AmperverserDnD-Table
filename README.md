@@ -174,17 +174,13 @@ logging:  { level: "info,sqlx=warn" }
 пропускает блок, а поток идёт дальше. Палитра и принципы — [docs/node-system-v3.md](docs/node-system-v3.md),
 формат графа и типы узлов — [docs/mechanics-v2.md](docs/mechanics-v2.md).
 
-Коротко палитра идёт рабочим процессом: **Начало** (`action.program`) → **Действия**
-(`action.roll`, `action.field`, `action.spend`, `action.slot`, `action.hands`, `action.grant_item`, `action.manual`,
-`action.setvar`, `flow.if`, `flow.end`) → **Данные** (`data.number`, `data.dice`, `data.stat`,
-`data.math`, `data.compare`, `logic.op`, `data.boolean`, `data.result`, `data.sheet`, `data.cast`,
-`data.var`, `data.ref`, `data.call`, `data.mathfun`, `dice.combine`, `data.text`, `data.textlen`,
-`data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`) → **Условия**
-(`condition.context`, `condition.hit`, `condition.status`, `condition.item`, `condition.hp`,
-`condition.slot`) → **Правила** (`rule.value`, `rule.list`, `rule.class`,
-`rule.manual`) → **Группы** (`group.instance`). Всего в палитре 44 типа; ещё два
-внутренних узла групп (`group.input`, `group.output`) видны только внутри группы. У каждого
-узла есть подсказка, у настраиваемых — единый параметр `kind`.
+Категории палитры разделяют поток, действия и виды данных: **Начало → Поток → Действия →
+Условия → Значения и броски → Математика и логика → Текст и списки → Переменные и функции →
+Правила → Группы**. Так узлы для поиска числа или кости отделены от вычислений, а строки, списки,
+переменные и вызовы функций собраны отдельно; по запросу меню ищет также по описанию узла.
+Всего в палитре 44 типа; ещё два внутренних узла групп (`group.input`, `group.output`) видны
+только внутри группы. У каждого узла есть подсказка, у настраиваемых — единый параметр `kind`. Резервная
+категория «Прочее» предназначена для новых типов, пока для них не выбрано постоянное место.
 
 Руки: у листа две обычные руки (`main`, `off`), а поле `sheet.extra_hands` (0–4) добавляет
 дополнительные — слоты `extra1`..`extra4` для трёхруких существ. Узел `action.hands` меняет это
@@ -461,7 +457,7 @@ bash scripts/smoke.sh target/debug/dnd-table   # сквозной тест (ну
 Проверки перед коммитом (те же, что в CI):
 
 ```bash
-node --test "tests/*.test.cjs"            # 578 тестов: юнит + интеграция, без браузера
+node --test "tests/*.test.cjs"            # 579 тест: юнит + интеграция, без браузера
 cargo test --release                      # 133 теста сервера
 node tools/srd/integrity.cjs              # 0 ошибок, 12 исторических предупреждений
 node tools/srd/mechanics_summary.cjs --check   # сводка docs/mechanics-migration.json свежая

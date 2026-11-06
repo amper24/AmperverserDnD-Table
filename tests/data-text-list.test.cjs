@@ -34,7 +34,7 @@ test('семь новых типов зарегистрированы, вычи�
     const def = R.NODE_DEFS[type];
     assert.ok(def, `${type}: узел зарегистрирован`);
     assert.equal(def.group, 'Данные');
-    assert.equal(R.categoryOf(type).id, 'data');
+    assert.equal(R.categoryOf(type).id, 'text');
     assert.ok(R.COMPUTED.has(type), `${type}: узел вычисляется в предпросмотре`);
     assert.match(def.description, /^[^\n]{8,120}$/, `${type}: короткое описание одной строкой`);
     assert.equal(def.validate(plain(def.defaults || {})), '', `${type}: умолчания допустимы`);

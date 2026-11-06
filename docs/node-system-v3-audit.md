@@ -1,6 +1,6 @@
 # Ревизия нодовой системы v3
 
-Дата: 2026-11-05 (числа сверены с HEAD 0.8.7 — 2026-11-05). Проверка соответствия цели «маленькие ноды, условия, результаты,
+Дата: 2026-11-06 (числа сверены с HEAD 0.8.8 — 2026-11-06). Проверка соответствия цели «маленькие ноды, условия, результаты,
 переменные и ссылки, функции-группы, строки и списки, руки, заклинания, шаблоны, без
 легаси» фактами из репозитория.
 
@@ -21,7 +21,7 @@
 | Условия листа | Четыре узла `condition.status/item/hp/slot` читают лист в рантайме; без листа — false | `static/editor/nodes/conditions/*`, Rust `STATUS_MODES`/`ITEM_MODES`/`HP_OPS`/`SLOT_OPS` |
 | Строки и списки | Семь узлов: `data.text`, `data.textlen`, `data.textcheck`, `data.list`, `data.listget`, `data.listlen`, `data.listjoin`; таблицы операций одни на клиенте и сервере | `static/editor/nodes/data/text*.js`, `static/editor/nodes/data/list*.js`; Rust `TEXT_OPS`/`TEXT_CHECK_OPS` |
 | Функции-группы | `data.call`: до трёх числовых аргументов `a/b/c`, типизированный результат number/text/bool/list; рекурсия и блоки действий внутри функции запрещены | `static/editor/nodes/data/call.js`, `tests/graph-call.test.cjs`; Rust `call_group_value` |
-| Руки | `action.hands` — add/remove/set, `count` 1–6; `extra_hands` 0–4, слоты `extra1..extra4`, при исчезновении руки предметы уходят в рюкзак | `static/editor/nodes/actions/hands.js`, `src/domain/mechanics.rs` (`hands`, `inventory::MAX_EXTRA_HANDS`), `tests/action-hands.test.cjs` |
+| Дополнительные руки | `action.hands` — add/remove/set, `count` 1–6; `extra_hands` 0–4, слоты `extra1..extra4`, при исчезновении руки предметы уходят в рюкзак | `static/editor/nodes/actions/hands.js`, `src/domain/mechanics.rs` (`hands`, `inventory::MAX_EXTRA_HANDS`), `tests/action-hands.test.cjs` |
 | Палитра сокращена | `action.condition/adjust/passive` → `action.field`; `consume` → `spend`; `condition.compare` → `data.compare`; `require` удалён; `slot` — отдельный узел | grep по `static/src/tests/data_seed/tools` — старых типов нет (кроме CHANGELOG) |
 | Данные мигрированы без обратной совместимости | 0 записей с v1 `programs`; все записи с механиками — графы | аудит-скрипт: v1 = 0 в `srd_2014/srd_2024/skills` |
 | Поток «Начало → Конец» | у каждой программы ровно один `flow.end` на цепочку | 2014: 3625 программ / 3625 «Концов»; 2024: 3349/3349; `add_flow_ends.cjs --check` — обрывов нет |
@@ -34,13 +34,13 @@
 | Показатель | Значение |
 |---|---|
 | Типов узлов (клиент = сервер) | **46 / 46** (44 видимых + 2 внутренних) |
-| Категорий палитры | 6 (Начало → Действия → Данные → Условия → Правила → Группы) |
+| Категорий палитры | 10 видимых + резервная «Прочее» (Начало → Поток → Действия → Условия → Значения и броски → Математика и логика → Текст и списки → Переменные и функции → Правила → Группы) |
 | Записей SRD 2014 / 2024 | 1294 / 1205 |
 | Из них с механиками | 981 / 986 |
 | Программ (все с «Концом») | 3625 / 3349 |
 | Заклинаний | 319 / 339 |
 | Шаблонов / стартеров | **46 / 19** (было 40 / 13; 16 стартеров с `attach`) |
-| JS-тестов | **578 pass** (`node --test "tests/*.test.cjs"`) |
+| JS-тестов | **579 pass** (`node --test "tests/*.test.cjs"`) |
 | Rust-тестов | **133 pass** (`cargo test --release`) |
 | Браузерных сценариев | **20 файлов `tests/*.browser.cjs`** — все проходят (Chromium/Playwright) |
 | integrity | 0 ошибок, 12 исторических предупреждений (разбор — [integrity.md](integrity.md)) |

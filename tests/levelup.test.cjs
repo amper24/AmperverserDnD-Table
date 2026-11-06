@@ -32,6 +32,14 @@ test('таблицы развития есть для всех 12 классов
 test('slugOf распознаёт класс по английскому и русскому названию', () => {
   assert.equal(L.slugOf(cls('2014', 'wizard')), 'wizard'); assert.equal(L.slugOf({ name: 'Колдун', data: {} }), 'warlock'); assert.equal(L.slugOf({ name: 'Свой класс', data: {} }), '');
 });
+test('лист без выбранного класса начинает с 1 уровня выбранного класса, а не скачет на 2-й', () => {
+  const wizard = cls('2014', 'wizard');
+  const p = L.plan(sheet({ level: 1, class: '' }), wizard);
+  assert.equal(p.isNew, true);
+  assert.equal(p.from, 0); assert.equal(p.to, 1);
+  assert.equal(p.total.from, 0); assert.equal(p.total.to, 1);
+  assert.equal(p.multi, false);
+});
 test('план: волшебник 2014 на 2 уровне — традиция, ячейки, книга заклинаний', () => {
   const w = cls('2014', 'wizard'), p = L.plan(sheet({ level: 1, class: w.name }), w);
   assert.equal(p.to, 2); assert.equal(p.hitDie, 6); assert.equal(p.needSubclass, true);

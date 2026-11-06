@@ -107,6 +107,10 @@ const assert = require('node:assert/strict');
     assert.equal(ops.at(-1).op,'equip');assert.equal(ops.at(-1).item_uid,'bow');assert.equal(ops.at(-1).slot,'main','одна рука — одноручный хват');
     await page.keyboard.press('Escape');
     await page.locator('[data-uid="wand"] .mcard-head').click();
+    const itemMenu = page.locator('[data-uid="wand"] .mcard-body > .row[style*="margin-top"]');
+    await itemMenu.waitFor();
+    assert.equal(await itemMenu.evaluate(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim()).length), 0, 'conditional button slots never turn null into visible text nodes');
+    assert.doesNotMatch(await itemMenu.innerText(), /nullnullnull|null\s+null/i, 'there is no null text between item actions');
     await page.locator('[data-uid="wand"]').getByRole('button',{name:'Изменить',exact:true}).click();
     // Карточку узла ищем по заголовку «Расход ресурса»: поле ресурса — select без <label>,
     // поэтому getByLabel('Ресурс') его не находит, а чекбокс «Включено» — находится.

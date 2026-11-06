@@ -267,7 +267,8 @@ window.LevelUp = (() => {
   function plan(sheet, entry, edition = sheet.edition || '2014', opts = {}) {
     const row = classRow(sheet, entry), classes = classesOf(sheet), isNew = !row;
     const from = isNew ? 0 : row.level, to = from + 1, d = entry?.data || {}, prog = progression(entry, edition);
-    const totalFrom = classes.reduce((n, c) => n + c.level, 0) || (isNew ? Math.max(0, Math.round(Number(sheet.level) || 0)) : clampLevel(sheet.level)), totalTo = totalFrom + 1;
+    const unclassed = !classes.length && !String(sheet.class || '').trim();
+    const totalFrom = classes.reduce((n, c) => n + c.level, 0) || (isNew ? (unclassed ? 0 : Math.max(0, Math.round(Number(sheet.level) || 0))) : clampLevel(sheet.level)), totalTo = totalFrom + 1;
     if (totalFrom >= MAX_LEVEL || (!isNew && from >= MAX_LEVEL)) throw new RangeError('Достигнут предел 20-го уровня персонажа или класса.');
     const slug = slugOf(entry), castMod = modOf(sheet.abilities?.[sheet.spells?.ability || d.spellcasting || 'int']);
     const before = spellStats(entry, edition, from, castMod), after = spellStats(entry, edition, to, castMod);
@@ -628,7 +629,11 @@ window.LevelUp = (() => {
       const onKey = e => { if (e.key === 'Escape' && !st.busy) close(st.applied); };
       document.addEventListener('keydown', onKey);
       const steps = () => {
-        const p = st.p, out = [{ id: 'class', label: 'Класс', hint: p.isNew ? 'Новый класс' : p.entry.name }, { id: 'overview', label: 'Обзор', hint: `Уровень ${p.to}` }, { id: 'hp', label: 'Здоровье', hint: 'Кость хитов' }];
+        const p = st.p, out = [];
+        // Если на листе ещё нет класса, класс уже выбран на стартовом экране мастера;
+        // не показываем пустой шаг «Какой класс повышаем» второй раз.
+        if (classesOf(sheet).length) out.push({ id: 'class', label: 'Класс', hint: p.isNew ? 'Новый класс' : p.entry.name });
+        out.push({ id: 'overview', label: 'Обзор', hint: `Уровень ${p.to}` }, { id: 'hp', label: 'Здоровье', hint: 'Кость хитов' });
         if (p.needSubclass) out.push({ id: 'subclass', label: 'Подкласс', hint: 'Выберите путь' });
         if (subclassVariantRules().length) out.push({ id: 'subclass_variants', label: 'Выбор пути', hint: 'Выберите один вариант умения' });
         if (p.multiclass?.skill) out.push({ id: 'skills', label: 'Навык', hint: 'Владение навыком' });
@@ -844,7 +849,7 @@ window.LevelUp = (() => {
               level ? h('div', 'lu-mini-bar', el('i', { style: `width:${Math.min(100, level / MAX_LEVEL * 100)}%` })) : null));
           c.style.setProperty('--lu-acc', col); c.style.setProperty('--lu-acc-rgb', hexRgb(col));
           if (disabled) { c.setAttribute('aria-disabled', 'true'); return c; }
-          return activate(c, () => selectClass(e), 'radio', on);
+          return activate(c, () => choose(e), 'radio', on);
         };
         const out = [h('p', 'lu-lead', total >= 20 ? 'Достигнут максимальный уровень.' : `Общий уровень ${total}. Выберите, какой класс повысить на уровень.`)];
         if (cur.length) out.push(h('h3', 'lu-h', 'Ваши классы'), h('div', 'lu-cards wide', ...cur.map(c => { const e = resolveEntry(c.name);
@@ -993,9 +998,24 @@ window.LevelUp = (() => {
         shell.className = 'lu-shell' + (st.loading || st.error || !st.entry ? ' single' : '');
         if (st.loading) { shell.append(h('div', 'lu-loading', h('div', 'lu-spinner'), h('p', 'muted', 'Загружаю данные класса…'))); return; }
         if (st.error || !st.entry) {
-          shell.append(h('div', 'lu-loading', h('h2', '', 'Не удалось подобрать класс'), h('p', 'muted', st.error || `Класс «${sheet.class || '—'}» не найден в справочнике выбранной редакции. Перетащите блок класса на лист или выберите его ниже.`),
-            st.classes.length ? h('div', 'lu-cards', ...st.classes.map(e => { const c = h('div', 'lu-cls', crest(monogram(e), 'md'), h('div', 'lu-cls-b', h('b', '', e.name), h('small', 'muted', e.source || ''))); c.style.setProperty('--lu-acc', classColor(e)); return activate(c, () => choose(e), 'button', false); })) : null,
-            el('button', { onclick: () => close(st.applied) }, 'Закрыть')));
+          const unclassed = !String(sheet.class || '').trim() && !classesOf(sheet).length;
+          const options = st.classes.map(e => {
+            const c = h('div', 'lu-cls lu-class-option', crest(monogram(e), 'md'),
+              h('div', 'lu-cls-b', h('div', 'lu-cls-h', h('b', '', e.name)),
+                h('small', 'muted', [e.source, `Кость хитов d${dieOf(e)}`, savesOf(e).length ? 'Спасброски: ' + savesOf(e).join(' / ') : ''].filter(Boolean).join(' · ')),
+                e.data?.primary ? h('div', 'lu-cls-chips', chip('★ ' + e.data.primary, 'gold')) : null,
+                e.data?.desc ? h('p', 'lu-cls-note', clip(e.data.desc, 180)) : null));
+            c.style.setProperty('--lu-acc', classColor(e)); c.style.setProperty('--lu-acc-rgb', hexRgb(classColor(e)));
+            return activate(c, () => choose(e), 'button', false);
+          });
+          const title = st.error ? 'Не удалось загрузить классы' : unclassed ? 'Выберите класс персонажа' : 'Класс не найден';
+          const intro = st.error || (unclassed
+            ? 'На листе пока не указан класс. Выберите его — мастер начнёт с 1-го уровня и покажет доступные выборы.'
+            : `Класс «${sheet.class}» не найден в справочнике выбранной редакции. Выберите запись класса ниже.`);
+          shell.append(h('div', 'lu-loading lu-class-picker',
+            h('div', 'lu-class-picker-head', crest(unclassed ? '✦' : '!', 'lg'), h('div', '', h('h2', '', title), h('p', 'muted', intro))),
+            options.length ? h('div', 'lu-cards wide lu-class-grid', ...options) : h('div', 'lu-empty', st.error ? 'Попробуйте обновить страницу позже или проверьте доступ к справочнику.' : 'В справочнике выбранной редакции нет доступных классов.'),
+            el('button', { type: 'button', onclick: () => close(st.applied) }, 'Закрыть')));
           return;
         }
         const list = steps(), cur = list[st.step], p = st.p, info = hpInfo();
@@ -1034,7 +1054,7 @@ window.LevelUp = (() => {
           close(true);
         } catch (e) { console.error(e); toast('Не удалось повысить уровень: ' + e.message, 4000); }
       }
-      function choose(entry) { st.entry = entry; sheet.class = entry.name; init(); }
+      function choose(entry) { st.entry = entry; init(); }
       function init() {
         st.p = plan(sheet, st.entry, sheet.edition || '2014', { resolve: resolveEntry }); st.step = 0;
         if (!st.p.needSubclass) st.subclass = null;

@@ -235,7 +235,7 @@
   const nodeDef = type => NODE_DEFS[type];
   // Единый префикс заголовка по категории: «Действие · …», «Данные · …», «Условие · …», «Правило · …».
   // «Начало» и «Конец» остаются короткими: их роль понятна по категории.
-  const TITLE_PREFIX = { actions: 'Действие', data: 'Данные', conditions: 'Условие', rules: 'Правило' };
+  const TITLE_PREFIX = { actions: 'Действие', values: 'Данные', logic: 'Данные', text: 'Данные', variables: 'Данные', conditions: 'Условие', rules: 'Правило' };
   // Заголовок карточки: категория и выбранный режим («Действие · Бросок · Атака», «Правило · Список · Языки»).
   function nodeTitle(type, params = null) {
     const def = NODE_DEFS[type];
@@ -254,28 +254,62 @@
     const prefix = TITLE_PREFIX[categoryOf(type).id];
     return prefix && !title.startsWith(prefix) ? `${prefix} · ${title}` : title;
   }
-  // Категории меню (порядок показа = рабочий процесс: начало → действия → данные → условия → правила → группы).
-  // Узел попадает в первую подходящую категорию.
+  // Категории меню сгруппированы по тому, что пользователь ищет: поток → действия →
+  // входные условия → значения → вычисления → текст/списки → переменные/функции → правила.
+  // Узел попадает в первую подходящую категорию; «Прочее» — безопасная категория новых типов.
   const CATEGORIES = [
     { id: 'start', title: 'Начало', match: type => type === 'action.program' },
-    { id: 'actions', title: 'Действия', match: type => type.startsWith('action.') || type === 'flow.if' || type === 'flow.end' },
-    { id: 'data', title: 'Данные', match: type => type.startsWith('data.') || type === 'dice.combine' || type === 'logic.op' },
+    { id: 'flow', title: 'Поток', match: type => type.startsWith('flow.') },
+    { id: 'actions', title: 'Действия', match: type => type.startsWith('action.') },
     { id: 'conditions', title: 'Условия', match: type => type.startsWith('condition.') },
+    { id: 'values', title: 'Значения и броски', match: type => ['data.boolean', 'data.cast', 'data.dice', 'data.number', 'data.result', 'data.sheet', 'data.stat', 'dice.combine'].includes(type) },
+    { id: 'logic', title: 'Математика и логика', match: type => ['data.compare', 'data.math', 'data.mathfun', 'logic.op'].includes(type) },
+    { id: 'text', title: 'Текст и списки', match: type => type.startsWith('data.text') || type.startsWith('data.list') },
+    { id: 'variables', title: 'Переменные и функции', match: type => ['data.call', 'data.ref', 'data.var'].includes(type) },
     { id: 'rules', title: 'Правила', match: type => type.startsWith('rule.') },
     { id: 'groups', title: 'Группы', match: type => type.startsWith('group.') },
+    { id: 'other', title: 'Прочее', match: () => true },
   ];
   const INTERNAL = new Set(['group.input', 'group.output']);
-  const categoryOf = type => CATEGORIES.find(c => c.match(type)) || CATEGORIES[2];
+  const categoryOf = type => CATEGORIES.find(c => c.match(type)) || CATEGORIES[CATEGORIES.length - 1];
   // Сокеты совместимы, только если типы совпадают: это же правило проверяет движок (validateGraph).
   const sameType = (fromType, toType) => Boolean(fromType) && fromType === toType;
+  // Отбрасываем устаревшие/повреждённые пользовательские стартеры до показа и вставки.
+  // Это важно для наборов localStorage и импортированных шаблонов, которые могли пережить удаление типа ноды.
+  function starterProblem(item) {
+    if (!item || !Array.isArray(item.nodes) || !item.nodes.length) return 'нет узлов';
+    const byKey = new Map();
+    for (const node of item.nodes) {
+      if (!node || typeof node.key !== 'string' || !node.key || byKey.has(node.key)) return 'пустой или повторный ключ узла';
+      if (!NODE_DEFS[node.type]) return `неизвестный узел «${node.type || ''}»`;
+      byKey.set(node.key, node);
+    }
+    if (item.links !== undefined && !Array.isArray(item.links)) return 'связи должны быть массивом';
+    for (const link of item.links || []) {
+      if (!Array.isArray(link) || link.length !== 4) return 'повреждённая связь';
+      const [from, fromSocket, to, toSocket] = link, source = byKey.get(from), target = byKey.get(to);
+      if (!source || !target) return 'связь ссылается на отсутствующий узел';
+      const outType = NODE_DEFS[source.type].outputs?.[fromSocket], inType = NODE_DEFS[target.type].inputs?.[toSocket];
+      if (!outType || !inType || !sameType(outType, inType)) return 'связь использует отсутствующий или несовместимый сокет';
+    }
+    if (item.groups !== undefined && !Array.isArray(item.groups)) return 'группы должны быть массивом';
+    for (const group of item.groups || []) {
+      if (!Array.isArray(group?.nodes)) return 'повреждена группа';
+      for (const node of group.nodes) if (!NODE_DEFS[node?.type]) return `неизвестный узел в группе «${node?.type || ''}»`;
+    }
+    return '';
+  }
   // Каталог для меню: категории с узлами, внутренние узлы групп не показываются. Псевдонимы в меню не попадают.
   // description — короткая подсказка для меню (одна строка).
   function catalog(query = '') {
-    const q = String(query).trim().toLocaleLowerCase();
+    const terms = String(query).trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     const items = Object.entries(NODE_DEFS)
       .filter(([type]) => !INTERNAL.has(type))
       .map(([type, def]) => ({ type, label: def.label, description: def.description || '', category: categoryOf(type).id, categoryTitle: categoryOf(type).title }))
-      .filter(item => !q || `${item.type} ${item.label} ${item.description} ${item.categoryTitle}`.toLocaleLowerCase().includes(q));
+      .filter(item => {
+        const haystack = `${item.type} ${item.label} ${item.description} ${item.categoryTitle}`.toLocaleLowerCase();
+        return terms.every(term => haystack.includes(term));
+      });
     return CATEGORIES.map(c => ({ id: c.id, title: c.title, items: items.filter(item => item.category === c.id).sort((a, b) => a.label.localeCompare(b.label, 'ru')) }))
       .filter(section => section.items.length);
   }
@@ -288,6 +322,6 @@
     TEXT_OPS, TEXT_OP_LABELS, TEXT_CHECK_OPS, TEXT_CHECK_OP_LABELS, textValue, textCheckValue, textLength, listItems,
     RULE_VALUE_KINDS, RULE_LIST_KINDS, RULE_CLASS_KINDS, CONTEXT_KINDS, isStatId, statDice, diceTerm,
     idText, stringList, tableValue, equipmentItemsValue, equipmentChoiceValue,
-    NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, catalog, INTERNAL,
+    NODE_DEFS, nodeDef, nodeTitle, CATEGORIES, categoryOf, sameType, starterProblem, catalog, INTERNAL,
   };
 })();

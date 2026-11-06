@@ -1215,6 +1215,16 @@ body.lu-open { overflow: hidden; }
 .lu-shell.single { grid-template-columns: minmax(0, 1fr); }
 .lu-shell.single > .lu-main, .lu-shell.single > .lu-loading { grid-column: 1 / -1; }
 .lu-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 30px; text-align: center; overflow: auto; }
+.lu-class-picker { align-items: stretch; justify-content: flex-start; gap: 18px; padding: clamp(18px, 4vw, 42px); text-align: left; background: radial-gradient(600px 220px at 10% 0%, rgba(var(--lu-acc-rgb), .12), transparent 75%); }
+.lu-class-picker-head { display: flex; align-items: center; gap: 16px; max-width: 820px; width: 100%; margin: 0 auto; }
+.lu-class-picker-head > div:last-child { min-width: 0; }
+.lu-class-picker-head h2 { margin: 0 0 5px; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.02em; }
+.lu-class-picker-head p { margin: 0; line-height: 1.55; }
+.lu-class-grid { width: 100%; max-width: 1040px; align-self: center; padding: 4px; }
+.lu-class-option { min-height: 118px; text-align: left; }
+.lu-class-option .lu-cls-note { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-height: 1.45; }
+.lu-class-picker > .lu-empty { width: 100%; max-width: 820px; align-self: center; }
+.lu-class-picker > button { flex: 0 0 auto; align-self: center; min-width: 120px; }
 .lu-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--lu-acc); animation: lu-spin .8s linear infinite; }
 .lu-overlay .grow { flex: 1; }
 .lu-overlay .muted { color: var(--muted); }
@@ -1566,7 +1576,8 @@ body.lu-open { overflow: hidden; }
 /* Node-based mechanics v2 editor. */
 .node-editor{border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:18px;background:var(--panel,var(--bg));text-align:left;overflow:hidden;
   /* Палитра редактора: цвета категорий узлов, типов значений и сетки холста (см. cat-* / socket-* ниже). */
-  --cat-start:#7f8da3;--cat-actions:#d4794f;--cat-data:#5b9bd5;--cat-conditions:#b47ad6;
+  --cat-start:#7f8da3;--cat-flow:#9aa9bd;--cat-actions:#d4794f;--cat-conditions:#b47ad6;
+  --cat-values:#5b9bd5;--cat-logic:#65b58c;--cat-text:#d2a253;--cat-variables:#9c83d3;
   --cat-rules:#4f9fae;--cat-groups:#9585c8;--cat-other:#7f8a99;
   --socket-flow:#cfd8e3;--socket-bool:#e0736c;--socket-number:#7fc98e;--socket-dice:#6cc5ea;--socket-ability:#9aa8ff;
   --socket-text:#d8c27a;--socket-list:#86ccb9;--socket-table:#bfa4f2;--socket-choice:#e79ac6;--socket-effect:#b9ad97;
@@ -1585,8 +1596,9 @@ body.lu-open { overflow: hidden; }
   background-size:100px 100px,100px 100px,20px 20px,20px 20px;background-position:0 0,0 0,0 0,0 0}
 /* Карточка в духе Blender: цветная полоска категории, шапка-градиент, скругления и тень. */
 .graph-node{position:absolute;z-index:2;width:260px;min-height:94px;--node-cat:var(--accent);border:1px solid color-mix(in srgb,var(--node-cat) 30%,var(--border));border-radius:10px;background:var(--panel,#fff);box-shadow:0 8px 18px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.3);user-select:none;touch-action:none}
-.graph-node.cat-start{--node-cat:var(--cat-start)}.graph-node.cat-actions{--node-cat:var(--cat-actions)}.graph-node.cat-data{--node-cat:var(--cat-data)}
-.graph-node.cat-conditions{--node-cat:var(--cat-conditions)}.graph-node.cat-rules{--node-cat:var(--cat-rules)}.graph-node.cat-groups{--node-cat:var(--cat-groups)}
+.graph-node.cat-start{--node-cat:var(--cat-start)}.graph-node.cat-flow{--node-cat:var(--cat-flow)}.graph-node.cat-actions{--node-cat:var(--cat-actions)}
+.graph-node.cat-conditions{--node-cat:var(--cat-conditions)}.graph-node.cat-values{--node-cat:var(--cat-values)}.graph-node.cat-logic{--node-cat:var(--cat-logic)}
+.graph-node.cat-text{--node-cat:var(--cat-text)}.graph-node.cat-variables{--node-cat:var(--cat-variables)}.graph-node.cat-rules{--node-cat:var(--cat-rules)}.graph-node.cat-groups{--node-cat:var(--cat-groups)}
 .graph-node.cat-other{--node-cat:var(--cat-other)}
 .graph-node.selected{outline:2px solid var(--accent);outline-offset:1px;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent),0 12px 26px rgba(0,0,0,.5)}
 .graph-node-head{display:flex;align-items:center;gap:7px;min-height:33px;padding:6px 8px 5px;border-bottom:1px solid color-mix(in srgb,var(--node-cat) 26%,var(--border));border-radius:9px 9px 0 0;cursor:grab;
@@ -1777,9 +1789,13 @@ body.lu-open { overflow: hidden; }
 .templates-preview-link { stroke: color-mix(in srgb, var(--muted) 72%, transparent); stroke-width: 1.4; stroke-linecap: round; }
 .templates-preview-node { fill: color-mix(in srgb, var(--cat-other) 26%, var(--panel)); stroke: var(--cat-other); stroke-width: 1.4; }
 .templates-preview-node.cat-start { fill: color-mix(in srgb, var(--cat-start) 26%, var(--panel)); stroke: var(--cat-start); }
+.templates-preview-node.cat-flow { fill: color-mix(in srgb, var(--cat-flow) 26%, var(--panel)); stroke: var(--cat-flow); }
 .templates-preview-node.cat-actions { fill: color-mix(in srgb, var(--cat-actions) 26%, var(--panel)); stroke: var(--cat-actions); }
-.templates-preview-node.cat-data { fill: color-mix(in srgb, var(--cat-data) 26%, var(--panel)); stroke: var(--cat-data); }
 .templates-preview-node.cat-conditions { fill: color-mix(in srgb, var(--cat-conditions) 26%, var(--panel)); stroke: var(--cat-conditions); }
+.templates-preview-node.cat-values { fill: color-mix(in srgb, var(--cat-values) 26%, var(--panel)); stroke: var(--cat-values); }
+.templates-preview-node.cat-logic { fill: color-mix(in srgb, var(--cat-logic) 26%, var(--panel)); stroke: var(--cat-logic); }
+.templates-preview-node.cat-text { fill: color-mix(in srgb, var(--cat-text) 26%, var(--panel)); stroke: var(--cat-text); }
+.templates-preview-node.cat-variables { fill: color-mix(in srgb, var(--cat-variables) 26%, var(--panel)); stroke: var(--cat-variables); }
 .templates-preview-node.cat-rules { fill: color-mix(in srgb, var(--cat-rules) 26%, var(--panel)); stroke: var(--cat-rules); }
 .templates-preview-node.cat-groups { fill: color-mix(in srgb, var(--cat-groups) 26%, var(--panel)); stroke: var(--cat-groups); }
 .templates-preview-empty { fill: none; stroke: var(--border); stroke-dasharray: 4 3; }
