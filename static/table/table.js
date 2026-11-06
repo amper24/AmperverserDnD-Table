@@ -446,7 +446,7 @@ window.Table = (function () {
     const css = getComputedStyle(document.documentElement);
     const tokenColors = {
       rotate: css.getPropertyValue('--tok-rotate').trim() || '#ffd54f',
-      nameStroke: css.getPropertyValue('--tok-name-stroke').trim() || '#000c',
+      hpStroke: css.getPropertyValue('--tok-hp-stroke').trim() || '#000c',
       dead: css.getPropertyValue('--tok-dead').trim() || '#e5484d',
       lootStroke: css.getPropertyValue('--tok-loot-stroke').trim() || '#f5a524',
       itemStroke: css.getPropertyValue('--tok-item-stroke').trim() || '#000c',
@@ -657,15 +657,16 @@ window.Table = (function () {
       else { c.fillStyle = '#333'; c.fillRect(-d.w / 2, -d.h / 2, d.w, d.h); }
       c.rotate(-(d.rotation || 0) * Math.PI / 180);
       if (it.layer === LAYER.character || it.layer === LAYER.mount) {
-        // имя, хиты, состояния (обводки «принадлежности» нет: владелец виден в панели свойств)
-        if (d.name && (d.show_name !== false)) { c.font = `bold ${Math.max(12 / S.cam.k, d.h * 0.16)}px sans-serif`; c.textAlign = 'center'; c.lineWidth = 4 / S.cam.k; c.strokeStyle = colors.nameStroke; c.fillStyle = '#fff'; c.strokeText(d.name, 0, d.h / 2 + d.h * 0.18); c.fillText(d.name, 0, d.h / 2 + d.h * 0.18); }
+        // Хиты и состояния. Имени под токеном нет: подпись занимала место на карте и
+        // лезла под соседние токены — имя видно в панели свойств и на странице участников.
+        // (Обводки «принадлежности» тоже нет: владелец в панели свойств.)
         // HP-бар над токеном: скруглённый фон, рамка, цвет по остатку хп, подпись cur/max
         if (d.hp && d.hp.max && (S.isGM || d.owner_id === S.user.id || d.show_hp)) {
           const bw = d.w * 0.85, bh = Math.max(5 / S.cam.k, d.h * 0.09), y = -d.h / 2 - bh - 6;
           const r = bh / 2;
           c.beginPath(); c.roundRect(-bw / 2, y, bw, bh, r);
           c.fillStyle = colors.hpBg; c.fill();
-          c.strokeStyle = colors.nameStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
+          c.strokeStyle = colors.hpStroke; c.lineWidth = 1.5 / S.cam.k; c.stroke();
           const p = Math.max(0, Math.min(1, d.hp.cur / d.hp.max));
           c.beginPath(); c.roundRect(-bw / 2 + 1.5 / S.cam.k, y + 1.5 / S.cam.k, Math.max(0, bw - 3 / S.cam.k) * p, bh - 3 / S.cam.k, Math.max(0, r - 1.5 / S.cam.k));
           c.fillStyle = p > 0.66 ? colors.hpHigh : p > 0.33 ? colors.hpMed : colors.hpLow;
@@ -1354,6 +1355,11 @@ window.Table = (function () {
   function throttleSend(m) { const n = Date.now(); if (n - _lastSend > 60) { _lastSend = n; S.ws.send(m); } }
 
   // ---------- синхронизация ----------
+  function syncLinkedTokenHp(it) {
+    const d = it?.data;
+    if (d?.character_id && d.hp) CharacterHp.write(d.character_id, d.hp);
+  }
+
   /// Отправить элемент на сервер и сразу применить локально.
   /// Новый объект с уже известным id виден немедленно (карты: id нужен сразу, чтобы выбрать
   /// карту активной), остальные получают id от сервера и появляются по его рассылке.
@@ -1390,6 +1396,17 @@ window.Table = (function () {
     if (m.scene_id && m.scene_id !== S.scene.id && m.type !== 'active_scene') return;
     switch (m.type) {
       case 'item_upsert': { S.pending.delete(m.item.id); const idx = S.scene.items.findIndex(i => i.id === m.item.id); if (idx >= 0) { if (!(S.drag?.kind === 'move' && S.drag.items.some(en => en.it.id === m.item.id))) S.scene.items[idx] = m.item; } else S.scene.items.push(m.item); if (S.sel === m.item.id && !isOwnPropsEcho(m.item)) updateProps(); if (T.isMap(m.item)) notifySceneChange(); break; }
+      case 'character_update': {
+        const c = m.character;
+        if (c?.id && c.sheet?.hp) {
+          const token = S.scene.items.find(it => it.data?.character_id === c.id);
+          if (token && !CharacterHp.same(token.data?.hp, c.sheet.hp)) {
+            token.data.hp = CharacterHp.fromSheet(c.sheet.hp);
+            upsert(token);
+          }
+        }
+        break;
+      }
       // Отказ сервера (права, запись в базу): без этого сообщения действие просто «исчезало».
       case 'error': rollbackPending(m.message); break;
       case 'item_delete': {
@@ -1448,8 +1465,8 @@ window.Table = (function () {
     }
     if (d.monster) add('Статблок', () => floatWindow(d.name, el('div', { style: 'padding:12px' }, Compendium.renderData({ category: 'monster', name: d.name, source: 'SRD', data: d.monster })), { w: 480, h: 500 }));
     if (editable && (it.layer === LAYER.character || it.layer === LAYER.mount)) {
-      add('− Урон…', () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; if (d.hp.cur <= 0) d.dead = true; upsert(it); });
-      add('+ Лечение…', () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max || v, d.hp.cur + v); if (d.hp.cur > 0) d.dead = false; upsert(it); });
+      add('− Урон…', () => { const v = +prompt('Урон:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur -= v; if (d.hp.cur <= 0) d.dead = true; upsert(it); syncLinkedTokenHp(it); });
+      add('+ Лечение…', () => { const v = +prompt('Лечение:', '0') || 0; d.hp = { ...(d.hp || { cur: 0, max: 0 }) }; d.hp.cur = Math.min(d.hp.max || v, d.hp.cur + v); if (d.hp.cur > 0) d.dead = false; upsert(it); syncLinkedTokenHp(it); });
       if (d.monster?.abilities) add('Инициатива', () => DiceEngine.submit({ type: 'roll', expr: 'd20' + fmtMod(mod(d.monster.abilities.dex || 10)), label: d.name + ': инициатива', gm_only: !!S.isGM && d.hidden }));
       add(d.dead ? 'Жив' : 'Мёртв', () => { d.dead = !d.dead; upsert(it); });
     }
@@ -1658,21 +1675,23 @@ window.Table = (function () {
       const hpFields = [];
       const hp = d.hp || { cur: 0, max: 0 };
       hpFields.push(field('Хиты', el('div', { class: 'row', gap: 8 },
-        el('input', { type: 'number', value: hp.cur, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, cur: +e.target.value || 0 }; save(); } }),
+        el('input', { type: 'number', value: hp.cur, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, cur: +e.target.value || 0 }; syncLinkedTokenHp(it); save(); } }),
         el('span', { style: 'flex:0;color:var(--muted)' }, '/'),
-        el('input', { type: 'number', value: hp.max, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, max: +e.target.value || 0 }; save(); } }))));
+        el('input', { type: 'number', value: hp.max, step: 1, style: 'flex:1', onchange: e => { d.hp = { ...hp, max: +e.target.value || 0 }; syncLinkedTokenHp(it); save(); } }))));
       hpFields.push(hpBar(hp.cur, hp.max));
       hpFields.push(el('div', { class: 'row', style: 'margin-bottom:0' },
         actionBtn('− Урон', () => {
           const v = +prompt('Урон:', '0') || 0;
           d.hp = { ...(d.hp || { cur: 0, max: 0 }) };
           d.hp.cur -= v;
+          syncLinkedTokenHp(it);
           save();
         }, { cls: 'secondary' }),
         actionBtn('+ Лечение', () => {
           const v = +prompt('Лечение:', '0') || 0;
           d.hp = { ...(d.hp || { cur: 0, max: 0 }) };
           d.hp.cur = Math.min(d.hp.max, d.hp.cur + v);
+          syncLinkedTokenHp(it);
           save();
         }, { cls: 'secondary' })));
       const conds = d.conditions || [];

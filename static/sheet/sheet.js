@@ -689,9 +689,17 @@
     }
     /// Токен на карте: тот же M.imagePicker, что раньше стоял в шапке, но в окне из меню портрета.
     async function tokenPicker() {
-      await modal('Токен на карте', el('div', {},
-        M.imagePicker(s, 'token_asset_id', { kind: AssetKinds.forUsage('token'), label: 'Токен на карте', icon: 'user', onChange: () => save() }),
-        el('p', { class: 'muted small' }, 'Токен показывается на столе кампании. Загрузка, выбор из библиотеки и удаление сохраняются сразу.')),
+      const picker = M.imagePicker(s, 'token_asset_id', {
+        kind: AssetKinds.forUsage('token'), label: 'Изображение токена', icon: 'user',
+        onChange: () => save(),
+      });
+      await modal('Токен персонажа', el('div', { class: 'token-picker' },
+        el('div', { class: 'token-picker-intro' },
+          el('span', { class: 'token-picker-icon' }, icon('map', 20)),
+          el('div', {}, el('b', {}, 'Как персонаж выглядит на столе'),
+            el('p', { class: 'muted small' }, 'Выберите портрет или отдельную картинку для токена. Изображение появится на карте кампании; имя и хиты берутся из листа персонажа.'))),
+        picker,
+        el('div', { class: 'token-picker-tip' }, icon('image', 14), ' Загрузка файла и выбор из библиотеки сохраняются сразу.')),
       [{ label: 'Готово', cls: 'primary', fn: () => true }], { wide: true });
     }
     const menu = el('div', { class: 'portrait-menu', role: 'menu', 'aria-label': 'Портрет и токен' });
@@ -1012,14 +1020,20 @@
       if (it.cost || it.source) body.append(el('div', { class: 'muted small' }, [it.cost, it.source].filter(Boolean).join(' · ')));
       const menu = el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:6px' },
         el('button', { class: 'small', onclick: () => sendCard(it, 'item') }, 'В чат'));
-      if (!readonly) menu.append(
-        el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it, { inventory: s.inventory }); if (r) { Object.assign(it, r); save(); render(); } } }, 'Изменить'),
-        it.attunement ? el('button', { class: 'small', onclick: () => { if (!it.attuned && s.inventory.filter(i => i.attuned).length >= 3) return toast('Настроить можно не более трёх предметов одновременно.'); it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
-        it.type === 'consumable' && !it.mechanics ? el('button', { class: 'small', disabled: it.qty === 0 ? '' : null, onclick: () => inventoryOp({ op: 'use', item_uid: it.uid, actions: [] }) }, 'Использовать') : null,
-        ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, 'Передать') : null,
-        ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, 'На стол') : null,
-        it.qty > 1 ? el('button', { class: 'small', onclick: async () => { const n = +(await prompt2('Отделить сколько?', '', '1')); if (Number.isInteger(n) && n > 0 && n < it.qty) await inventoryOp({ op: 'split', item_uid: it.uid, qty: n }); } }, 'Разделить') : null,
-        el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { if (confirm(`Удалить «${it.name}»?${s.inventory.some(x => x.consume?.target_uid === it.uid) ? ' На предмет ссылается расход другого предмета — привязку придётся изменить.' : ''}`)) { s.inventory = s.inventory.filter(x => x !== it); save(); render(); } } }, icon('trash')));
+      if (!readonly) {
+        const menuItems = [
+          el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it, { inventory: s.inventory }); if (r) { Object.assign(it, r); save(); render(); } } }, 'Изменить'),
+          it.attunement ? el('button', { class: 'small', onclick: () => { if (!it.attuned && s.inventory.filter(i => i.attuned).length >= 3) return toast('Настроить можно не более трёх предметов одновременно.'); it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
+          it.type === 'consumable' && !it.mechanics ? el('button', { class: 'small', disabled: it.qty === 0 ? '' : null, onclick: () => inventoryOp({ op: 'use', item_uid: it.uid, actions: [] }) }, 'Использовать') : null,
+          ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, 'Передать') : null,
+          ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, 'На стол') : null,
+          it.qty > 1 ? el('button', { class: 'small', onclick: async () => { const n = +(await prompt2('Отделить сколько?', '', '1')); if (Number.isInteger(n) && n > 0 && n < it.qty) await inventoryOp({ op: 'split', item_uid: it.uid, qty: n }); } }, 'Разделить') : null,
+          el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { if (confirm(`Удалить «${it.name}»?${s.inventory.some(x => x.consume?.target_uid === it.uid) ? ' На предмет ссылается расход другого предмета — привязку придётся изменить.' : ''}`)) { s.inventory = s.inventory.filter(x => x !== it); save(); render(); } } }, icon('trash')),
+        ];
+        // Element.append(null) создаёт текстовый узел "null" (и при нескольких
+        // отсутствующих действиях — буквально "nullnullnull") между кнопками.
+        menu.append(...menuItems.filter(Boolean));
+      }
       body.append(menu);
       card.append(body);
     }

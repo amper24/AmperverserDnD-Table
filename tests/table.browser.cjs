@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'table/table-model', 'table/table'];
+const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'core/character-hp', 'table/table-model', 'table/table'];
 
 (async () => {
   const browser = await chromium.launch(await require('./browser-launch.cjs')());
@@ -14,6 +14,19 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'table/table-
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    // Хук на текст канвы: собираем все подписи, которые стол реально рисует,
+    // чтобы проверить, что имени под токеном больше нет (а HP-подпись осталась).
+    await page.addInitScript(() => {
+      window.__texts = [];
+      const proto = CanvasRenderingContext2D.prototype;
+      for (const fn of ['fillText', 'strokeText']) {
+        const original = proto[fn];
+        proto[fn] = function (text, ...rest) {
+          try { window.__texts.push(String(text)); } catch { }
+          return original.call(this, text, ...rest);
+        };
+      }
+    });
     await page.route('https://table.test/**', route => {
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/static/')) {
@@ -53,6 +66,22 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'table/table-
       const r = st.canvas.getBoundingClientRect();
       return { x: r.x, y: r.y };
     });
+
+    // ---- имя токена на канве не рисуется, хиты — рисуются ----
+    {
+      await page.evaluate(() => {
+        // Хиты добавляем только этому токену: подпись «7/7» докажет, что хук текста работает.
+        const token = Table.getScene().items.find(it => it.id === 'tok-1');
+        token.data.hp = { cur: 7, max: 7 };
+        window.__texts.length = 0;
+        Table.requestDraw();
+      });
+      await page.waitForFunction(() => (window.__texts || []).includes('7/7'), null, { timeout: 5000 });
+      const texts = await page.evaluate(() => window.__texts.slice());
+      assert.ok(texts.includes('7/7'), 'подпись хитов на канве есть — хук текста работает');
+      assert.equal(texts.includes('Герой'), false, 'имени под токеном нет');
+      assert.equal(texts.some(text => /Герой/.test(text)), false, 'никакой подписи токена на канве нет');
+    }
 
     // ---- карты: две карты живут вместе, активная задаёт «Вписать» ----
     assert.deepEqual(await page.evaluate(() => Table.getMapItems().map(m => m.id)), ['map-a', 'map-b'], 'обе карты на слое map');

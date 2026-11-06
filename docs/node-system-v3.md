@@ -29,7 +29,7 @@
 ## Палитра v3
 
 Всего 46 типов: 44 видимых в меню и два внутренних узла групп (`group.input`, `group.output`).
-Порядок категорий в меню — рабочий процесс: **Начало → Действия → Данные → Условия → Правила → Группы**.
+Порядок категорий в меню: **Начало → Поток → Действия → Условия → Значения и броски → Математика и логика → Текст и списки → Переменные и функции → Правила → Группы**. Числа и кости отделены от вычислений, текстовые значения и списки — от переменных и вызовов функций; резервная категория «Прочее» предназначена для новых типов без выбранной группы.
 У каждого типа есть короткое описание одной строкой (подсказка в меню и на карточке).
 Заголовки карточек действий, данных, условий и правил единообразны: `Действие · …`, `Данные · …`,
 `Условие · …`, `Правило · …`; у настраиваемых узлов после названия идёт выбранный вид
@@ -45,24 +45,27 @@
 | `action.field` | Изменение листа: состояние, показатель, формула | `exec`, `enabled`, `condition` → `exec` | `kind` = status/value/formula; status: `condition`, `operation` add/remove/concentration; value: `field`, `amount`; formula: `field`, `value` |
 | `action.spend` | Расход ресурса предмета или умения | `exec`, `enabled`, `condition` → `exec` | `resource` = quantity/charges/uses, `source` = self/item/tag, `amount`, `trigger` = use/attack, `item_uid`, `tag` |
 | `action.slot` | Расход ячейки заклинания | `exec`, `enabled`, `condition` → `exec` | `level` = 0 (круг выбирается при касте) / 1–9, `amount` |
-| `action.hands` | Руки: добавить, убрать или задать число рук | `exec`, `enabled`, `condition` → `exec` | `operation` = add/remove/set, `count` = 1–6 (add/remove — на сколько дополнительных рук, set — всего рук, 2 = main и off) |
+| `action.hands` | Дополнительные руки: добавить, убрать или задать число рук | `exec`, `enabled`, `condition` → `exec` | `operation` = add/remove/set, `count` = 1–6 (add/remove — на сколько дополнительных рук, set — всего рук, 2 = main и off) |
 | `action.grant_item` | Выдача предмета владельцу листа | `exec`, `enabled`, `condition` → `exec` | `amount`, `item` |
 | `action.manual` | Правило для мастера | `exec`, `enabled`, `condition` → `exec` | `text` |
 | `action.setvar` | Записать число в переменную действия или листа | `exec`, `enabled` (bool), `condition` (bool), `value` (number) → `exec` | `name` (1–32 символа `[a-z0-9_]`), `scope` = action/sheet |
+| `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
+| `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
+| `condition.status` | Есть ли на листе состояние с таким названием | — → `value` (bool) | `name`, `mode` = present/absent |
+| `condition.item` | Есть ли предмет в снаряжении листа | — → `value` (bool) | `name`, `mode` = owned/equipped |
+| `condition.hp` | Хиты или процент от максимума против числа | — → `value` (bool) | `op` = lt/le/gt/ge, `value`, `percent` = true/false |
+| `condition.slot` | Остаток ячеек круга против числа | — → `value` (bool) | `level` = 1–9, `op` = gte/lt, `value` = 0–20 |
 | `data.number` | Числовая константа | — → `value` (number) | `value` |
 | `data.dice` | Кость или формула | — → `value` (dice) | `value` = `{ count, sides, bonus, stat }` |
 | `data.stat` | Характеристика или навык | — → `value` (dice) | `id`, `mode` = bonus/score |
-| `data.math` | Арифметика | `a`, `b` (number) → `value` (number) | `op` = add/sub/mul/div/min/max |
-| `data.compare` | Сравнение чисел | `a`, `b` (number) → `value` (bool) | `op` = `>=`, `<=`, `>`, `<`, `=`, `!=` |
 | `dice.combine` | Сложение двух костей | `a`, `b` (dice) → `value` (dice) | нет |
-| `logic.op` | Логика: И / ИЛИ / НЕ / исключающее ИЛИ / И-НЕ / ИЛИ-НЕ / равнозначность / импликация | `a`, `b` (bool) → `value` (bool) | `op` = and/or/not/xor/nand/nor/xnor/implies; у `not` вход «b» не используется |
 | `data.boolean` | Логическая константа | — → `value` (bool) | `value` = true/false |
 | `data.result` | Результат последнего действия или программы | — → `value` (number) | `source` = last/ID программы, `field` = total/hit/applied/spent |
 | `data.sheet` | Числовое поле листа | — → `value` (number) | `field` — путь вида `hp.current`, `level`, `abilities.str` |
 | `data.cast` | Круг текущего каста | — → `value` (number) | `field` = level/base/extra |
-| `data.var` | Переменная действия или листа | — → `value` (number) | `name` (1–32 символа `[a-z0-9_]`), `scope` = action/sheet |
-| `data.ref` | Ссылка на числовой узел этого же графа | — → `value` (number) | `node` — ID числового узла того же графа (в группе — её узла) |
-| `data.call` | Вызов группы-функции: числовые аргументы и типизированный результат | `a`, `b`, `c` (number) → `value` (number/text/bool/list) | `group` — ID группы-функции, `result` = number/text/bool/list (совпадает с типом выхода группы) |
+| `data.math` | Арифметика | `a`, `b` (number) → `value` (number) | `op` = add/sub/mul/div/min/max |
+| `data.compare` | Сравнение чисел | `a`, `b` (number) → `value` (bool) | `op` = `>=`, `<=`, `>`, `<`, `=`, `!=` |
+| `logic.op` | Логика: И / ИЛИ / НЕ / исключающее ИЛИ / И-НЕ / ИЛИ-НЕ / равнозначность / импликация | `a`, `b` (bool) → `value` (bool) | `op` = and/or/not/xor/nand/nor/xnor/implies; у `not` вход «b» не используется |
 | `data.mathfun` | Математика одного числа и диапазона | `a`, `b`, `c` (number) → `value` (number) | `op` = min/max/clamp/abs/round/floor/ceil/sign; `a` обязателен, `b` — min/max, `b` и `c` — clamp |
 | `data.text` | Строка: склейка, регистр, обрезка пробелов | `a`, `b` (text) → `value` (text) | `op` = concat/upper/lower/trim; `b` читает только `concat` |
 | `data.textlen` | Длина строки в символах Unicode | `a` (text) → `value` (number) | нет |
@@ -71,12 +74,9 @@
 | `data.listget` | Элемент списка по индексу | `list` (list), `index` (number) → `value` (text) | нет |
 | `data.listlen` | Длина списка | `list` (list) → `value` (number) | нет |
 | `data.listjoin` | Склейка списка в строку | `list` (list) → `value` (text) | `separator` — строка до 10 символов (по умолчанию «, ») |
-| `condition.context` | Условие редакции, уровня, подкласса, выбора | — → `value` (bool) | `kind` = edition/level/subclass/choice; edition: `editions`; level: `min`, `max`; subclass/choice: `id`, `value` |
-| `condition.hit` | Попадание предыдущей атаки | — → `value` (bool) | нет |
-| `condition.status` | Есть ли на листе состояние с таким названием | — → `value` (bool) | `name`, `mode` = present/absent |
-| `condition.item` | Есть ли предмет в снаряжении листа | — → `value` (bool) | `name`, `mode` = owned/equipped |
-| `condition.hp` | Хиты или процент от максимума против числа | — → `value` (bool) | `op` = lt/le/gt/ge, `value`, `percent` = true/false |
-| `condition.slot` | Остаток ячеек круга против числа | — → `value` (bool) | `level` = 1–9, `op` = gte/lt, `value` = 0–20 |
+| `data.var` | Переменная действия или листа | — → `value` (number) | `name` (1–32 символа `[a-z0-9_]`), `scope` = action/sheet |
+| `data.ref` | Ссылка на числовой узел этого же графа | — → `value` (number) | `node` — ID числового узла того же графа (в группе — её узла) |
+| `data.call` | Вызов группы-функции: числовые аргументы и типизированный результат | `a`, `b`, `c` (number) → `value` (number/text/bool/list) | `group` — ID группы-функции, `result` = number/text/bool/list (совпадает с типом выхода группы) |
 | `rule.value` | Правило-значение | `enabled` (bool), `amount` (number) → `effect` | `kind` = ability/speed/hp/hit_die/asi/armor_formula + `ability`, `amount`, `value`, `formula`, `table` |
 | `rule.list` | Правило-список | `enabled`, `amount` (number) → `effect` | `kind` = languages/proficiencies/skill_proficiency/saving_throws/skills/spell_list/feature/class_features/equipment/equipment_choice + поля вида |
 | `rule.class` | Правило класса | `enabled` (bool) → `effect` | `kind` = class_progression/class_rules/spell_slots/spellcasting, `table`, `ability` |

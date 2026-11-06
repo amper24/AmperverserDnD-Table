@@ -6,7 +6,7 @@
   const { GraphNode, register, actionDefaults } = window.Nodes;
   class ActionHands extends GraphNode {
     static type = 'action.hands';
-    static label = 'Руки';
+    static label = 'Дополнительные руки';
     static description = 'Добавляет, убирает или задаёт число рук: main, off и дополнительные.';
     static group = 'Действия';
     static inputs = { exec: 'flow', enabled: 'bool', condition: 'bool' };

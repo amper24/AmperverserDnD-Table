@@ -35,13 +35,17 @@ const item = (name, props = {}) => E.normalize({ name, type: 'weapon', handednes
 test('action.hands объявляет порты, умолчания и живёт в категории «Действия»', () => {
   const def = R.NODE_DEFS['action.hands'];
   assert.ok(def, 'узел зарегистрирован');
+  for (const page of ['static/index.html', 'static/sheet.html']) {
+    assert.match(fs.readFileSync(page, 'utf8'), /<script src="\/static\/editor\/nodes\/actions\/hands\.js"><\/script>/, `${page}: загрузка узла на боевой странице`);
+  }
   assert.deepEqual(plain(def.inputs), { exec: 'flow', enabled: 'bool', condition: 'bool' });
   assert.deepEqual(plain(def.outputs), { exec: 'flow' });
   assert.deepEqual(plain(def.defaults), { enabled: true, operation: 'add', count: 1 });
   assert.equal(def.isAction, true);
   assert.equal(R.categoryOf('action.hands').id, 'actions');
-  assert.equal(R.nodeTitle('action.hands', {}), 'Действие · Руки');
-  assert.ok(plain(R.catalog('руки').flatMap(section => section.items.map(entry => entry.type))).includes('action.hands'), 'узел есть в палитре по поиску «руки»');
+  assert.equal(R.nodeTitle('action.hands', {}), 'Действие · Дополнительные руки');
+  assert.ok(plain(R.catalog('руки').flatMap(section => section.items.map(entry => entry.type))).includes('action.hands'), 'узел находится по слову «руки»');
+  assert.ok(plain(R.catalog('доп руки').flatMap(section => section.items.map(entry => entry.type))).includes('action.hands'), 'узел находится по нескольким словам запроса');
   assert.deepEqual(plain(R.blockKindsOf('action.hands')), ['hands'], 'план получает блок hands');
   assert.equal(R.blockKindOf('action.hands', {}), 'hands');
 });

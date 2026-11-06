@@ -84,3 +84,24 @@ test('подпись роли для бейджа', () => {
   assert.equal(Access.label('outsider'), 'Гость');
   assert.equal(Access.label(undefined), 'Гость');
 });
+
+test('права на слои: кэш по имени роли (его и спрашивают), умолчания как у сервера', () => {
+  // Ответ GET /api/campaigns/:cid/layer-permissions: есть и role_id, и role_name.
+  Access.setLayerPerms('camp-1', [
+    { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'map', can_read: true, can_write: true, can_create: false },
+    { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'drawing', can_read: false, can_write: false, can_create: false },
+  ]);
+  // Стол и страница участников спрашивают по имени роли (camp.role) — раньше кэш был
+  // только по id, и права своих ролей не применялись вовсе.
+  assert.deepEqual(plain(Access.layerPerms('camp-1', 'Смотритель карты', 'map')), { read: true, write: true, create: false });
+  assert.equal(Access.canLayerWrite('camp-1', 'Смотритель карты', 'map'), true);
+  assert.equal(Access.canLayerRead('camp-1', 'Смотритель карты', 'drawing'), false);
+  // По id тоже находится: у страницы прав под рукой бывает только id роли.
+  assert.deepEqual(plain(Access.layerPerms('camp-1', 'r1', 'map')), { read: true, write: true, create: false });
+  // Умолчания (DEFAULT_PLAYER_LAYER_PERMS в src/domain/access.rs): читать можно всё,
+  // менять и создавать — всё, кроме карты.
+  assert.deepEqual(plain(Access.layerPerms('camp-1', 'player', 'map')), { read: true, write: false, create: false });
+  assert.deepEqual(plain(Access.layerPerms('camp-1', 'player', 'drawing')), { read: true, write: true, create: true });
+  // Мастер — всё и всегда, даже если строки в матрице нет.
+  assert.deepEqual(plain(Access.layerPerms('camp-1', 'gm', 'map')), { read: true, write: true, create: true });
+});

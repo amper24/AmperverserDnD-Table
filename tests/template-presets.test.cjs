@@ -66,6 +66,7 @@ test('mechanic templates are executable v3 graphs with a completed flow and no d
     assert.ok(ends.length >= 1, `${item.id}: есть «Конец»`);
     assert.equal(M.validate(mechanics), '', `${item.id}: сохранение`);
     assert.deepEqual(plain(M.problems(mechanics)), [], `${item.id}: исполняется`);
+    for (const node of graph.nodes) assert.ok(R.nodeDef(node.type), `${item.id}: неизвестный узел ${node.type}`);
     for (const program of graph.nodes.filter(node => node.type === 'action.program')) {
       assert.ok(endsReached(graph, program.id) > 0, `${item.id}: программа завершается «Концом»`);
     }
@@ -113,6 +114,7 @@ test('creation starters are executable v3 graphs with a completed flow', () => {
   assert.equal(starters.items.length, 3, 'раса, класс и предыстория');
   for (const item of starters.items) {
     const mechanics = item.table;
+    for (const node of mechanics.graph.nodes) assert.ok(R.nodeDef(node.type), `${item.id}: неизвестный узел ${node.type}`);
     assert.equal(M.validate(mechanics), '', `${item.id}: сохранение`);
     assert.deepEqual(plain(M.problems(mechanics)), [], `${item.id}: исполняется`);
     for (const program of mechanics.graph.nodes.filter(node => node.type === 'action.program')) {
@@ -176,6 +178,7 @@ test('19 стартовых графов: 5 старых и 14 новых, 16 в
 test('starter templates attach into a blank action without breaking «Начало → Конец»', () => {
   const starters = read('static/presets/graph-starters.json');
   for (const item of starters.items) {
+    assert.equal(R.starterProblem(item), '', `${item.id}: шаблон должен содержать только действующие ноды и сокеты`);
     for (const node of item.nodes) assert.ok(R.nodeDef(node.type), `${item.id}: неизвестный узел ${node.type}`);
     const keys = new Set(item.nodes.map(node => node.key));
     for (const [from, fromSocket, to, toSocket] of item.links) {
@@ -189,6 +192,8 @@ test('starter templates attach into a blank action without breaking «Начал
     assert.equal(mechanics.graph.nodes.filter(node => node.type === 'flow.end').length, 1, `${item.id}: один «Конец»`);
     assert.deepEqual(plain(M.problems(mechanics)), [], `${item.id}: поток завершён после вставки`);
   }
+  assert.match(R.starterProblem({ nodes: [{ key: 'old', type: 'node.removed' }], links: [] }), /неизвестный узел/);
+  assert.match(R.starterProblem({ nodes: [{ key: 'a', type: 'data.number' }, { key: 'b', type: 'data.text' }], links: [['a', 'value', 'b', 'a']] }), /несовместимый сокет/);
 });
 
 test('every data_seed record with mechanics is executable and each program ends with flow.end', () => {

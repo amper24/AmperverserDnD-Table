@@ -349,8 +349,11 @@ pub struct LayerPermIn {
     pub can_create: bool,
 }
 
+/// Матрица «роль × слой». Читают её все участники кампании (`table.read`): по ней клиент
+/// решает, какие слои показывать и какие двигать, — иначе права своих ролей на столе
+/// не применялись бы. Менять матрицу по-прежнему может только `table.manage_roles`.
 async fn list_layer_perms(State(st): State<AppState>, user: AuthUser, Path(cid): Path<String>) -> ApiResult<Json<Value>> {
-    access::require_cap(&st, &cid, &user.id, access::TABLE_MANAGE_ROLES).await?;
+    access::require_cap(&st, &cid, &user.id, access::TABLE_READ).await?;
     let rows = sqlx::query("SELECT lp.role_id, r.name AS role_name, lp.layer_id, lp.can_read, lp.can_write, lp.can_create FROM layer_permissions lp JOIN campaign_roles r ON r.id = lp.role_id WHERE lp.campaign_id = ? ORDER BY r.name, lp.layer_id")
         .bind(&cid).fetch_all(&st.db).await?;
     Ok(Json(rows.iter().map(|r| json!({

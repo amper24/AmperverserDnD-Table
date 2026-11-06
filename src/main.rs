@@ -91,10 +91,22 @@ async fn main() -> anyhow::Result<()> {
     store::db::migrate(&db, is_sqlite).await?;
     let sdr_source: Arc<dyn store::sdr_source::SdrSource> = Arc::from(make_source(&loaded.cfg));
     tracing::info!(
-        "SDR: источник = {}",
-        if loaded.cfg.sdr.enabled { "Git" } else { "локальная папка / встроенный fallback" }
+        "SDR: источник = {}, обновление = {}",
+        if loaded.cfg.sdr.enabled { "Git" } else { "локальная папка / встроенный fallback" },
+        if !loaded.cfg.sdr.enabled {
+            "не требуется"
+        } else if loaded.cfg.sdr.always_update() {
+            "при каждом запуске (sdr.update: always)"
+        } else {
+            "один раз, если кэша ещё нет (sdr.update: once) — обновить можно кнопкой на странице /admin"
+        }
     );
-    store::seed::seed(&db, &cfg.images, sdr_source.as_ref()).await?;
+    // Первое заполнение справочника. Источник может быть недоступен (нет сети, закрытый
+    // репозиторий, нет git) — тогда работаем с тем, что есть: данные вкомпилированы в бинарник.
+    if let Err(e) = store::seed::seed(&db, &cfg.images, sdr_source.as_ref()).await {
+        tracing::warn!("SDR: источник недоступен ({e:#}) — заполняю справочник встроенными данными");
+        store::seed::seed(&db, &cfg.images, &store::sdr_source::EmbeddedSdrSource).await?;
+    }
     api::admin::ensure_root_from_config(&db, &cfg.root).await?;
 
     // Команды администрирования (dnd-table users …, stats, reseed, config). Ошибка команды — выход

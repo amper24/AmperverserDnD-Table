@@ -80,6 +80,8 @@
           if (!Array.isArray(l) || l.length !== 4) return `стартовый граф «${item.id}»: связь — четыре значения [из, сокет, в, сокет]`;
           if (!keys.has(l[0]) || !keys.has(l[2])) return `стартовый граф «${item.id}»: связь ссылается на неизвестный узел`;
         }
+        const nodeProblem = typeof window !== 'undefined' ? window.NodeRegistry?.starterProblem?.(item) : '';
+        if (nodeProblem) return `стартовый граф «${item.id}»: ${nodeProblem}`;
       }
     }
     return '';

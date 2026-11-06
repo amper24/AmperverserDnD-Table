@@ -82,6 +82,27 @@
 .sheet .portrait-menu-item .portrait-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .portrait-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); pointer-events: none; }
 
+/* ---- Окно выбора токена: отдельный акцентный preview и удобные действия ---- */
+.token-picker { display: grid; gap: 14px; padding: 2px; }
+.token-picker-intro { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--accent-soft); }
+.token-picker-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 10px; color: var(--accent); background: var(--panel); }
+.token-picker-intro b { display: block; margin: 1px 0 4px; font-size: 14px; }
+.token-picker-intro p { margin: 0; line-height: 1.5; }
+.token-picker .imgpick { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 18px; align-items: center; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); }
+.token-picker .imgpick-prev { width: 132px; height: 132px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.token-picker .imgpick-btns { gap: 10px; }
+.token-picker .imgpick-btns > .muted { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.token-picker .imgpick-btns > .row { display: flex; flex-wrap: wrap; gap: 7px !important; }
+.token-picker .imgpick-btns button { min-height: 34px; padding: 5px 12px; }
+.token-picker .imgpick-btns button:first-child { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.token-picker-tip { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.token-picker-tip .ico { flex: 0 0 auto; color: var(--accent); }
+@media (max-width: 560px) {
+  .token-picker .imgpick { grid-template-columns: 1fr; justify-items: center; gap: 12px; }
+  .token-picker .imgpick-btns { width: 100%; align-items: center; }
+  .token-picker .imgpick-btns > .row { justify-content: center; }
+}
+
 /* Библиотека портретов внутри modal: сетка квадратов как у выбора ресурса. */
 .sheet .portrait-library { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
 .sheet .portrait-library .asset {

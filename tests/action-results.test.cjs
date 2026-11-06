@@ -27,7 +27,7 @@ test('data.result и data.sheet — узлы «Данные» с числовы�
     const def = R.NODE_DEFS[type];
     assert.ok(def, `${type}: узел зарегистрирован`);
     assert.equal(def.label, label);
-    assert.equal(R.categoryOf(type).id, 'data', `${type}: категория «Данные»`);
+    assert.equal(R.categoryOf(type).id, 'values', `${type}: категория «Значения и броски»`);
     assert.deepEqual(plain(def.outputs), { value: 'number' }, `${type}: выход value — число`);
     assert.deepEqual(plain(def.inputs), {}, `${type}: входов нет`);
     assert.equal(def.isComputed, true);

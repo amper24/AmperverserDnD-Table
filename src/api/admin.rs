@@ -11,7 +11,7 @@ use sqlx::{AnyPool, Row};
 use crate::{
     api::auth::{self, AuthUser},
     error::ApiResult,
-    store::sdr_source::{make_source, SdrSource},
+    store::sdr_source::{make_source, make_source_for_refresh, SdrSource},
     util, AppError, AppState,
 };
 
@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/admin/users/:uid", axum::routing::patch(update_user).delete(delete_user))
         .route("/api/admin/stats", get(stats))
         .route("/api/admin/reseed", post(reseed))
+        .route("/api/admin/sdr", post(sdr_refresh))
 }
 
 fn user_json(r: &sqlx::any::AnyRow) -> Value {
@@ -90,14 +91,35 @@ async fn stats(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Val
     Ok(Json(Value::Object(out)))
 }
 
-/// Пересоздать базовый справочник из вшитого seed (удаляет базовые записи и заливает заново).
+/// Пересоздать базовый справочник из текущего источника (кэш Git, локальная папка или вшитый seed).
 async fn reseed(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
     user.require_root()?;
-    crate::store::seed::reset(&st.db).await.map_err(|e| AppError::internal(e.to_string()))?;
     let sdr = make_source(&st.cfg);
-    crate::store::seed::seed(&st.db, &st.cfg.images, sdr.as_ref()).await.map_err(|e| AppError::internal(e.to_string()))?;
-    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL").fetch_one(&st.db).await?.get("n");
+    let n = refill(&st.db, &st.cfg, sdr.as_ref()).await?;
     Ok(Json(json!({ "ok": true, "entries": n })))
+}
+
+/// Переподгрузка справочника со страницы root: забрать свежие данные из Git (`git pull` кэша,
+/// в кэше только `data_seed/`) и залить базовые записи заново. Не зависит от `sdr.update`:
+/// в режиме `once` это единственное место, откуда данные обновляются.
+async fn sdr_refresh(State(st): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
+    user.require_root()?;
+    let sdr = make_source_for_refresh(&st.cfg);
+    let n = refill(&st.db, &st.cfg, sdr.as_ref()).await?;
+    let source = if st.cfg.sdr.enabled { "git" } else { "local" };
+    tracing::info!("Справочник перезалит из источника «{source}»: {n} записей");
+    Ok(Json(json!({ "ok": true, "entries": n, "source": source })))
+}
+
+/// Удалить базовые записи справочника и залить их заново из источника. Возвращает число записей.
+async fn refill(db: &AnyPool, cfg: &crate::config::Config, sdr: &dyn SdrSource) -> ApiResult<i64> {
+    crate::store::seed::reset(db).await.map_err(|e| AppError::internal(e.to_string()))?;
+    crate::store::seed::seed(db, &cfg.images, sdr).await.map_err(|e| AppError::internal(e.to_string()))?;
+    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM compendium WHERE campaign_id IS NULL AND pack_id IS NULL")
+        .fetch_one(db)
+        .await?
+        .get("n");
+    Ok(n)
 }
 
 // ---------- общие операции (используются API, CLI и автосозданием root при старте) ----------

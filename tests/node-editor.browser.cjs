@@ -66,7 +66,7 @@ const NODE_SCRIPTS = require('./browser-fixture.cjs').nodeScripts();
     await page.locator('.node-menu').waitFor();
     assert.equal(await page.locator('.node-menu-search').evaluate(el => document.activeElement === el), true, 'поиск получает фокус');
     const titles = await page.locator('.node-menu-title').allTextContents();
-    assert.deepEqual(titles, ['Начало', 'Действия', 'Данные', 'Условия', 'Правила', 'Группы'], 'категории идут рабочим процессом');
+    assert.deepEqual(titles, ['Начало', 'Поток', 'Действия', 'Условия', 'Значения и броски', 'Математика и логика', 'Текст и списки', 'Переменные и функции', 'Правила', 'Группы'], 'категории разделяют поток, действия и виды данных');
     await page.locator('.node-menu-search').fill('условие');
     const filtered = await page.locator('.node-menu-title').allTextContents();
     assert.deepEqual(filtered, ['Условия'], 'поиск оставляет подходящую категорию');

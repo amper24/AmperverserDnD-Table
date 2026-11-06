@@ -1082,7 +1082,8 @@
     const categoryIndex = item => Math.max(0, order.indexOf(item.category));
     items.sort((a, b) => {
       if (conditionFirst) {
-        const shift = Number(!a.type.startsWith('condition.')) - Number(!b.type.startsWith('condition.'));
+        const priority = type => type.startsWith('condition.') ? 0 : type.startsWith('action.') ? 1 : 2;
+        const shift = priority(a.type) - priority(b.type);
         if (shift) return shift;
       }
       return (categoryIndex(a) - categoryIndex(b)) || a.title.localeCompare(b.title, 'ru');
@@ -1091,7 +1092,22 @@
   }
 
   // Стартовые графы для пустого редактора — наборы данных вида graph_starter (static/presets/, реестр Presets).
-  const graphStarters = () => window.Presets?.items('graph_starter') || [];
+  // Не показываем старые пользовательские шаблоны, если их узел удалён или связь больше недопустима.
+  // Если битый пользовательский элемент перекрыл встроенный с тем же id, оставляем встроенный вариант.
+  const graphStarters = () => {
+    const presets = window.Presets;
+    if (!presets) return [];
+    const ownSets = new Set((presets.userSets?.() || []).map(set => set.id));
+    const byId = new Map();
+    for (const set of presets.sets?.() || []) {
+      if (set.kind !== 'graph_starter') continue;
+      for (const item of set.items || []) {
+        if (ownSets.has(set.id) && NodeRegistry.starterProblem(item)) continue;
+        byId.set(item.id, item);
+      }
+    }
+    return [...byId.values()].filter(item => !NodeRegistry.starterProblem(item));
+  };
   // Быстрая панель узлов (без поиска): основные узлы действия, чтобы «Конец» и «Начало» всегда были под рукой.
   const QUICK_NODES = ['action.program', 'flow.if', 'flow.end', 'action.roll', 'action.spend', 'condition.hit', 'logic.op'];
   // Действие — отдельная цепочка от узла «Начало» (action.program) до узла «Конец» (flow.end).

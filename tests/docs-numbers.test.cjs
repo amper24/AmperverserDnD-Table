@@ -46,12 +46,12 @@ test('шаблоны: 46 механик, 19 стартовых графов, 16 
   assert.match(read('CHANGELOG.md'), /Шаблоны: 46 механик и 19 стартеров/);
 });
 
-test('категории палитры: 6 штук, и в доке перечислен тот же порядок', () => {
+test('категории палитры: порядок группирует поток, действия и виды данных', () => {
   const registry = read('static/editor/node-registry.js');
   const ids = [...registry.matchAll(/\{ id: '([a-z]+)', title: '([^']+)'/g)].map(m => ({ id: m[1], title: m[2] }));
-  assert.equal(ids.length, 6, 'категорий в NodeRegistry.CATEGORIES');
-  assert.deepEqual(ids.map(c => c.title), ['Начало', 'Действия', 'Данные', 'Условия', 'Правила', 'Группы']);
-  assert.match(read('docs/node-system-v3.md'), /Начало → Действия → Данные → Условия → Правила → Группы/);
+  assert.equal(ids.length, 11, 'категорий в NodeRegistry.CATEGORIES, включая резервную');
+  assert.deepEqual(ids.map(c => c.title), ['Начало', 'Поток', 'Действия', 'Условия', 'Значения и броски', 'Математика и логика', 'Текст и списки', 'Переменные и функции', 'Правила', 'Группы', 'Прочее']);
+  assert.match(read('docs/node-system-v3.md'), /Начало → Поток → Действия → Условия → Значения и броски → Математика и логика → Текст и списки → Переменные и функции → Правила → Группы/);
 });
 
 test('записи SRD 2014/2024 и сводка механик совпадают с docs/mechanics.md', () => {

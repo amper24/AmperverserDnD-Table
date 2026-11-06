@@ -1,14 +1,18 @@
 // ---------------------------------------------------------------------------
 // table-page.js — страница «Участники кампании» (/table/<кампания>).
 //
-// Три секции:
+// Четыре секции:
 //   «Участники»  — аккаунты кампании: имя/email, роль, присутствие на столе,
 //                  персонажи участника, действия мастера (роль, исключить, пригласить);
+//   «Права»      — система прав целиком (static/core/permissions-ui.js): свои роли,
+//                  их возможности, матрица «слой × роль» и назначение роли участнику;
 //   «Персонажи»  — доступные по правам листы: «На стол»/«Убрать со стола», лист;
 //   «На столе»   — токены сцены: HP, скрытность, владелец, удаление.
 //
 // Права приходят с сервера (GET кампании: role + permissions) и проверяются
 // через Access.can(); сервер остаётся источником правды и отвечает 403/ошибкой WS.
+// Роли и их возможности — отдельные эндпоинты /roles и /layer-permissions (только
+// с возможностью table.manage_roles); раздел «Права» монтирует Permissions.mount.
 // Данные — существующие HTTP API (кампании, сцены, персонажи, ассеты) и те же
 // сообщения WebSocket, что у стола (item_upsert/item_delete), без нового сервера.
 // Зависимости: common.js, access.js, asset-kinds.js, table-model.js.
@@ -52,6 +56,8 @@
   let characters = [];   // листы, доступные по правам (сервер уже отфильтровал)
   let tokens = [];       // элементы слоя персонажей на сцене
   let members = camp.members || [];
+  let rulesUi = null;    // раздел «Права» (Permissions.mount) — только с table.manage_roles
+  const campaignRoles = () => (rulesUi ? rulesUi.roles : []);
   let online = null;     // Set(user_id) из presence; null — присутствие ещё не приходило
   let tokenAssets = null;
   let charFilter = 'all';
@@ -84,12 +90,17 @@
   const tokenCounter = el('span', { class: 'muted small' });
   const tokensBox = el('div', { class: 'list' });
   const hint = el('div', { class: 'muted small', style: 'margin-top:10px' });
+  const rulesBox = el('div', { class: 'perms' });
 
   page.append(
     header,
     el('p', { class: 'muted' }, 'Участники кампании — аккаунты игроков и мастера. Персонажи — отдельный список: мастера ставят на стол любого, игроки — своих и расшаренных. «На стол» создаёт токен на слое персонажей в центре активной карты; HP, скрытность и владелец токена настраиваются ниже. Сам стол — по кнопке «Войти на карту».'),
     sceneBar,
     el('div', { class: 'card', 'data-sec': 'members', style: 'margin-bottom:14px' }, el('div', { class: 'row', style: 'margin-bottom:8px' }, el('h2', { style: 'flex:1;margin:0' }, 'Участники'), membersCount), membersBox),
+    el('div', { class: 'card hidden', 'data-sec': 'rules', style: 'margin-bottom:14px' },
+      el('div', { class: 'row', style: 'margin-bottom:4px' }, el('h2', { style: 'flex:1;margin:0' }, 'Права')),
+      el('p', { class: 'muted small', style: 'margin:0 0 10px' }, 'Роль — набор возможностей и прав на слои стола. Системные «Мастер» и «Игрок» заданы сервером; свои роли создаются здесь и назначаются участнику в списке выше. Доступ к разделу — возможность «Роли и права».'),
+      rulesBox),
     el('div', { class: 'card', 'data-sec': 'characters', style: 'margin-bottom:14px' },
       el('div', { class: 'row', style: 'margin-bottom:8px;flex-wrap:wrap' }, el('h2', { style: 'flex:1;margin:0' }, 'Персонажи'), searchInput, filterSel, charCounter),
       el('p', { class: 'muted small', style: 'margin-top:0' }, 'Мастер видит всех персонажей кампании, игрок — своих и расшаренных. «На стол» ставит токен в центр активной карты, если его ещё нет.'),
@@ -131,6 +142,11 @@
         const c = m.character; if (!c) break;
         const i = characters.findIndex(x => x.id === c.id);
         if (i >= 0) characters[i] = c; else if (c.campaign_id === cid && (isGM() || c.owner_id === me.id || c.sheet?.shared)) characters.push(c);
+        const token = tokenOf(c.id);
+        const sheetHp = c.sheet?.hp;
+        if (token && sheetHp && !CharacterHp.same(token.data?.hp, sheetHp)) {
+          patchToken(token, { hp: CharacterHp.fromSheet(sheetHp) }, { fromSheet: true });
+        }
         renderCharacters(); renderTokens(); renderMembers();
         break;
       }
@@ -174,6 +190,13 @@
     membersBox.append(list);
   }
 
+  /// Подпись роли: «Мастер»/«Игрок» для системных, имя своей роли — как есть.
+  function roleLabel(name) {
+    if (name === 'gm' || name === 'player') return A.label(name);
+    const own = campaignRoles().find(r => r.name === name);
+    return own ? own.name : A.label(name);
+  }
+
   function onlineText(userId) {
     if (online === null) return '—';
     return online.has(userId) ? 'онлайн' : '—';
@@ -181,14 +204,14 @@
 
   function memberRow(m) {
     const chars = characters.filter(c => c.owner_id === m.user_id);
-    const badge = el('span', { class: 'badge ' + m.role, title: m.role === 'gm' ? 'Мастер кампании' : 'Игрок' }, A.label(m.role));
+    const badge = el('span', { class: 'badge ' + m.role, title: m.role === 'gm' ? 'Мастер кампании' : 'Роль: ' + roleLabel(m.role) }, roleLabel(m.role));
     const avatar = el('div', { class: 'portrait', style: 'width:40px;height:40px;flex:0 0 40px' }, icon(m.user_id === me.id ? 'user' : 'users', 20));
     if (m.avatar_asset_id) assetURL(m.avatar_asset_id).then(u => { avatar.innerHTML = ''; avatar.append(el('img', { src: u, alt: '' })); }).catch(() => { });
     const charChips = chars.map(c => el('a', { class: 'chip', href: withTok('/sheet/' + c.id), target: '_blank', title: 'Открыть лист персонажа' }, icon('sheet', 12), ' ', c.name));
     const row = el('div', { class: 'item', style: 'align-items:center;gap:8px;flex-wrap:wrap' }, avatar,
       el('div', { style: 'flex:1;min-width:170px' },
         el('b', {}, m.name, m.user_id === me.id ? el('span', { class: 'muted small' }, ' (вы)') : null),
-        el('div', { class: 'muted small' }, [m.email || null, A.label(m.role), onlineText(m.user_id)].filter(Boolean).join(' · ')),
+        el('div', { class: 'muted small' }, [m.email || null, roleLabel(m.role), onlineText(m.user_id)].filter(Boolean).join(' · ')),
         charChips.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:4px' }, ...charChips) : null),
       can(A.CAP.manageMembers) ? null : badge);
 
@@ -201,8 +224,7 @@
           try { await API.patch(`/api/campaigns/${cid}/members/${m.user_id}`, { role: next }); await reloadCampaign(); toast('Роль обновлена'); }
           catch (err) { toast('Не удалось: ' + err.message, 4000); e.target.value = m.role; }
         } },
-        el('option', { value: 'player', selected: m.role === 'player' ? '' : null }, 'Игрок'),
-        el('option', { value: 'gm', selected: m.role === 'gm' ? '' : null }, 'Мастер'));
+        ...roleOptions(m.role));
       roleSel.disabled = isOwner;
       row.append(roleSel);
       if (!isOwner && m.user_id !== me.id) {
@@ -210,6 +232,20 @@
       }
     }
     return row;
+  }
+
+  /// Варианты роли для участника: «Игрок», свои роли кампании, «Мастер».
+  /// Текущее значение остаётся в списке, даже если роли не загружены (нет прав на них).
+  function roleOptions(current) {
+    const options = [el('option', { value: 'player', selected: current === 'player' ? '' : null }, 'Игрок')];
+    for (const role of campaignRoles().filter(role => !role.is_system)) {
+      options.push(el('option', { value: role.name, selected: current === role.name ? '' : null }, role.name));
+    }
+    options.push(el('option', { value: 'gm', selected: current === 'gm' ? '' : null }, 'Мастер'));
+    if (current && !options.some(option => option.value === current)) {
+      options.unshift(el('option', { value: current, selected: '' }, roleLabel(current)));
+    }
+    return options;
   }
 
   async function reloadCampaign() {
@@ -354,9 +390,13 @@
   }
 
   // ---------- изменения ----------
-  function patchToken(token, patch) {
+  function patchToken(token, patch, opts = {}) {
+    const oldHp = token.data?.hp;
     token.data = { ...(token.data || {}), ...patch };
     if (token.data.owner_id === undefined) delete token.data.owner_id;
+    if (!opts.fromSheet && token.data.character_id && patch.hp && !CharacterHp.same(oldHp, patch.hp)) {
+      CharacterHp.write(token.data.character_id, patch.hp);
+    }
     ws.send({ type: 'item_upsert', scene_id: scene.id, item: { id: token.id, layer: token.layer, z: token.z, data: token.data } });
     renderTokens();
     renderCharacters();
@@ -444,6 +484,19 @@
   sceneId = camp.active_scene_id || scenes[0]?.id || null;
   await loadScene(sceneId);
   characters = await API.get('/api/characters?campaign_id=' + cid).catch(() => []);
+
+  // Раздел «Права» — только тем, кто может менять роли (по умолчанию мастер).
+  if (can(A.CAP.manageRoles)) {
+    const rulesCard = page.querySelector('[data-sec=rules]');
+    rulesCard.classList.remove('hidden');
+    rulesUi = await Permissions.mount(rulesBox, {
+      cid,
+      members: () => members,
+      // Роль могли переименовать/удалить: сервер уже перевёл участников на «Игрока».
+      onChanged: () => reloadCampaign(),
+    });
+  }
+
   renderAll();
   connect();
 })();

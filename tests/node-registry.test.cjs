@@ -18,9 +18,9 @@ test('every node definition has a category and the menu lists only registry node
 
 test('menu categories follow the working order and every node has a one-line description', () => {
   const order = plain(R.catalog('').map(section => section.id));
-  assert.deepEqual(order, ['start', 'actions', 'data', 'conditions', 'rules', 'groups']);
+  assert.deepEqual(order, ['start', 'flow', 'actions', 'conditions', 'values', 'logic', 'text', 'variables', 'rules', 'groups']);
   const titles = plain(R.catalog('').map(section => section.title));
-  assert.deepEqual(titles, ['Начало', 'Действия', 'Данные', 'Условия', 'Правила', 'Группы']);
+  assert.deepEqual(titles, ['Начало', 'Поток', 'Действия', 'Условия', 'Значения и броски', 'Математика и логика', 'Текст и списки', 'Переменные и функции', 'Правила', 'Группы']);
   for (const [type, def] of Object.entries(R.NODE_DEFS)) {
     assert.match(String(def.description || ''), /^[^\n]{8,120}$/, `${type}: короткое описание одной строкой`);
   }
@@ -102,10 +102,12 @@ test('v3 action nodes show their kind and live in the palette categories', () =>
   assert.equal(R.categoryOf('action.slot').id, 'actions');
   assert.equal(R.categoryOf('action.roll').id, 'actions');
   assert.equal(R.categoryOf('action.program').id, 'start');
-  assert.equal(R.categoryOf('flow.end').id, 'actions');
-  assert.equal(R.categoryOf('data.compare').id, 'data');
-  assert.equal(R.categoryOf('data.cast').id, 'data');
-  assert.equal(R.categoryOf('logic.op').id, 'data');
+  assert.equal(R.categoryOf('flow.end').id, 'flow');
+  assert.equal(R.categoryOf('data.compare').id, 'logic');
+  assert.equal(R.categoryOf('data.cast').id, 'values');
+  assert.equal(R.categoryOf('data.text').id, 'text');
+  assert.equal(R.categoryOf('data.call').id, 'variables');
+  assert.equal(R.categoryOf('logic.op').id, 'logic');
   assert.equal(R.categoryOf('rule.list').id, 'rules');
   assert.deepEqual(plain(R.blockKindsOf('action.field')), ['condition', 'adjust', 'passive']);
   assert.deepEqual(plain(R.blockKindsOf('action.spend')), ['consume']);

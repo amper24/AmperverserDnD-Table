@@ -90,6 +90,19 @@ async function scenarioWizard(browser) {
   }
 }
 
+async function scenarioNoClass(browser) {
+  const { page, errors, shell } = await openLevelUp(browser, { edition: '2014', level: 1, class: '', subclass: '', abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, skills: [], expertise: [], features: [], hp: { max: 10, current: 10, temp: 0 }, spells: { ability: 'int', slots: {}, known: [] }, proficiency_bonus: 2 });
+  try {
+    await shell.getByRole('heading', { name: 'Выберите класс персонажа' }).waitFor();
+    assert.ok(await shell.locator('.lu-class-option').count() > 0, 'показываются доступные классы');
+    await shell.locator('.lu-class-option', { hasText: 'Волшебник' }).click();
+    await shell.locator('.lu-kick', { hasText: 'Что вы получаете' }).waitFor();
+    assert.match(await shell.locator('.lu-kick').first().innerText(), /Шаг 1/, 'после выбора сразу открыт обзор первого уровня');
+    assert.match(await shell.locator('.lu-steps .lu-step').first().innerText(), /Обзор/, 'пустой шаг выбора класса не показывается повторно');
+    assert.deepEqual(errors, [], `ошибки страницы: ${errors.join('; ')}`);
+  } finally { await page.close(); }
+}
+
 async function scenarioAsiFeat(browser) {
   // Шаг «Улучшение характеристик» («★ Взять черту») предлагает черты для игрока: собранные из рас и классов
   // черты-умения (data.kind) в списке не показываются.
@@ -114,7 +127,7 @@ async function scenarioAsiFeat(browser) {
 
 (async () => {
   // Отдельный браузер на сценарий: сборка @sparticuz/chromium работает в одном процессе.
-  for (const [name, scenario] of [['волшебник 1 → 2 проходит все шаги', scenarioWizard], ['черта на улучшении характеристик 2014', scenarioAsiFeat]]) {
+  for (const [name, scenario] of [['лист без класса: выбор первого класса', scenarioNoClass], ['волшебник 1 → 2 проходит все шаги', scenarioWizard], ['черта на улучшении характеристик 2014', scenarioAsiFeat]]) {
     const browser = await chromium.launch(await browserLaunchOptions());
     try { await scenario(browser); console.log(`levelup.browser: ${name} — PASS`); }
     finally { await browser.close(); }
