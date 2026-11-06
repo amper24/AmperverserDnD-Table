@@ -378,7 +378,9 @@
       const list = el('div', { class: 'list' });
       const refresh = async () => {
         const chars = await API.get('/api/characters?campaign_id=' + cid);
-        const mine = isGM ? [] : await API.get('/api/characters');
+        // Собственные листы доступны и мастеру, и игроку: сюда попадают созданные
+        // до вступления в кампанию и пока не привязанные к этой кампании.
+        const mine = await API.get('/api/characters');
         list.innerHTML = '';
         list.append(el('h3', {}, 'В кампании'));
         for (const c of chars) {
@@ -404,8 +406,13 @@
         if (!chars.length) list.append(el('p', { class: 'muted' }, 'Пока никого. Создайте персонажа или добавьте своего.'));
         const free = mine.filter(c => c.campaign_id !== cid);
         if (free.length) {
-          list.append(el('h3', { style: 'margin-top:10px' }, 'Мои вне кампании'));
-          for (const c of free) list.append(el('div', { class: 'item' }, el('span', { class: 'grow' }, c.name), el('button', { class: 'small', onclick: async () => { await API.patch('/api/characters/' + c.id, { campaign_id: cid }); refresh(); } }, '+ в кампанию')));
+          list.append(el('h3', { style: 'margin-top:10px' }, 'Мои персонажи вне этой кампании'));
+          for (const c of free) list.append(el('div', { class: 'item' },
+            el('span', { class: 'grow' }, c.name, ' ', el('span', { class: 'muted small' }, c.campaign_id ? 'в другой кампании' : 'вне кампании')),
+            can(Access.CAP.editOwn) ? el('button', { class: 'small', style: 'flex:0;white-space:nowrap', onclick: async () => {
+              try { await API.patch('/api/characters/' + c.id, { campaign_id: cid }); toast('Персонаж добавлен в кампанию'); await refresh(); }
+              catch (e) { toast('Не удалось добавить персонажа: ' + e.message, 4000); }
+            } }, c.campaign_id ? 'Перенести сюда' : '+ в кампанию') : null));
         }
       };
       w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const r = await newCharacterDialog({ campaignId: cid }); if (r) { const c = await API.post('/api/characters', { ...r, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
@@ -614,7 +621,7 @@
         }
         case 'active_scene': camp.active_scene_id = m.scene_id; refreshSceneSel(); if (!isGM) loadScene(m.scene_id); break;
         case 'initiative': initState = m.state; panels.init.render?.(); if (curPanel !== 'init') tabs.querySelector('[data-k=init]').style.color = 'var(--accent)'; break;
-        case 'character_update': panels.chars.refresh?.(); for (const f of sheetFrames) { if (!f.isConnected) { sheetFrames.delete(f); continue; } try { f.contentWindow.postMessage({ type: 'character_update', id: m.character?.id, revision: m.character?.revision }, location.origin); } catch { } } break;
+        case 'character_update': Table.onMessage(m); panels.chars.refresh?.(); for (const f of sheetFrames) { if (!f.isConnected) { sheetFrames.delete(f); continue; } try { f.contentWindow.postMessage({ type: 'character_update', id: m.character?.id, revision: m.character?.revision }, location.origin); } catch { } } break;
         case 'packs_changed': paneEls.comp?.firstChild?.reload?.(); toast('Наборы кампании обновлены'); break;
         default: Table.onMessage(m);
       }

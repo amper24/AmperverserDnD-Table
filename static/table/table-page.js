@@ -142,6 +142,11 @@
         const c = m.character; if (!c) break;
         const i = characters.findIndex(x => x.id === c.id);
         if (i >= 0) characters[i] = c; else if (c.campaign_id === cid && (isGM() || c.owner_id === me.id || c.sheet?.shared)) characters.push(c);
+        const token = tokenOf(c.id);
+        const sheetHp = c.sheet?.hp;
+        if (token && sheetHp && !CharacterHp.same(token.data?.hp, sheetHp)) {
+          patchToken(token, { hp: CharacterHp.fromSheet(sheetHp) }, { fromSheet: true });
+        }
         renderCharacters(); renderTokens(); renderMembers();
         break;
       }
@@ -385,9 +390,13 @@
   }
 
   // ---------- изменения ----------
-  function patchToken(token, patch) {
+  function patchToken(token, patch, opts = {}) {
+    const oldHp = token.data?.hp;
     token.data = { ...(token.data || {}), ...patch };
     if (token.data.owner_id === undefined) delete token.data.owner_id;
+    if (!opts.fromSheet && token.data.character_id && patch.hp && !CharacterHp.same(oldHp, patch.hp)) {
+      CharacterHp.write(token.data.character_id, patch.hp);
+    }
     ws.send({ type: 'item_upsert', scene_id: scene.id, item: { id: token.id, layer: token.layer, z: token.z, data: token.data } });
     renderTokens();
     renderCharacters();

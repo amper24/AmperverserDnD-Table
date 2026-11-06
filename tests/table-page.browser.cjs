@@ -21,7 +21,7 @@ const LAYER_PERMS = [
   { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'character', can_read: true, can_write: false, can_create: false },
 ];
 
-const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/asset-kinds', 'core/permissions-ui', 'table/table-model', 'table/table-page'];
+const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/character-hp', 'core/asset-kinds', 'core/permissions-ui', 'table/table-model', 'table/table-page'];
 
 // Права берём из static/core/access.js — того же модуля, что и страница.
 function accessModule() {
