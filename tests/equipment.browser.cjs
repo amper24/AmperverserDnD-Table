@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 (async()=>{
   const browser=await chromium.launch(await require('./browser-launch.cjs')());
   try{
-    const page=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'reduce'}), errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const page=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'reduce'}), errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&m.text().startsWith('Наборы данных не загружены:'))errors.push(m.text());});
     let sheet={_revision:0,name:'Следопыт',level:1,race:'Эльф',class:'Воин',abilities:{str:12,dex:16,con:14,int:10,wis:13,cha:8},skills:[],expertise:[],saving_throws:[],proficiency_bonus:2,hp:{current:12,max:12,temp:0,hit_dice:'1d10'},ac:13,speed:30,death_saves:{success:0,failure:0},conditions:[],auto_armor:true,inventory:[
       // GET /characters returns the server-normalized hand metadata (handedness + slots_v).
       {uid:'bow',name:'Длинный лук',type:'weapon',qty:1,handedness:'two',slots_v:2,properties:['Двуручное','Боеприпас'],actions:[{name:'Атака',kind:'attack',roll:'d20+@atk_dex'},{name:'Урон',kind:'damage',roll:'d8+@dex'}]},
@@ -45,6 +45,9 @@ const assert = require('node:assert/strict');
     });
     await page.goto('https://equipment.test/sheet/hero'); await page.evaluate(() => Consent.set(false));
     await page.locator('.sheet .ab').first().waitFor();
+    const presetState=await page.evaluate(()=>({loaded:Presets.loaded,equipmentRules:Presets.items('equipment_text_rules').length}));
+    assert.equal(presetState.loaded,true,`browser preset loading failed: ${JSON.stringify(presetState)}; ${errors.join('; ')}`);
+    assert.ok(presetState.equipmentRules>0,`browser equipment rules missing: ${JSON.stringify(presetState)}`);
     await page.evaluate(() => { window.rollMessages = []; DiceEngine.submit = message => { window.rollMessages.push(message); return 'captured'; }; });
     const abilityCheck = page.locator('.sheet .ab').first();
     await abilityCheck.evaluate(node => node.addEventListener('contextmenu', e => { window.rollModeNativeMenuPrevented = e.defaultPrevented; }, { once: true }));
