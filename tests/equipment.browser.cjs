@@ -107,7 +107,12 @@ const assert = require('node:assert/strict');
         actionDisabled: await page.locator('[data-uid="bow"] .act-btn.all').isDisabled().catch(() => null),
         pageErrors: errors,
       };
-      console.error('equipment use debug: ' + JSON.stringify(details));
+      console.error('equipment use operations: ' + JSON.stringify(ops));
+      console.error('equipment use server arrows: ' + JSON.stringify(details.serverArrows));
+      console.error('equipment use server bow: ' + JSON.stringify({ equipped: details.serverBow?.equipped, hand_slot: details.serverBow?.hand_slot, consume: details.serverBow?.consume }));
+      console.error('equipment use UI resource: ' + JSON.stringify(details.resourceText));
+      console.error('equipment use button disabled: ' + JSON.stringify(details.actionDisabled));
+      console.error('equipment use page errors: ' + JSON.stringify(details.pageErrors));
       throw error;
     });
     assert.equal(ops.filter(x=>x.op==='use').length,1);assert.equal(sheet.inventory[1].qty,2);
