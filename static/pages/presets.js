@@ -59,7 +59,7 @@
   const isObj = x => x && typeof x === 'object' && !Array.isArray(x);
 
   // Проверка набора. Возвращает строку с ошибкой или '' (набор корректен).
-  function problemOf(set) {
+  function problemOf(set, { skipGraphValidation = false } = {}) {
     if (!isObj(set)) return 'набор должен быть объектом';
     const kind = KINDS[set.kind];
     if (!kind) return `неизвестный вид набора «${set.kind}»`;
@@ -80,20 +80,20 @@
           if (!Array.isArray(l) || l.length !== 4) return `стартовый граф «${item.id}»: связь — четыре значения [из, сокет, в, сокет]`;
           if (!keys.has(l[0]) || !keys.has(l[2])) return `стартовый граф «${item.id}»: связь ссылается на неизвестный узел`;
         }
-        const nodeProblem = typeof window !== 'undefined' ? window.NodeRegistry?.starterProblem?.(item) : '';
+        const nodeProblem = !skipGraphValidation && typeof window !== 'undefined' ? window.NodeRegistry?.starterProblem?.(item) : '';
         if (nodeProblem) return `стартовый граф «${item.id}»: ${nodeProblem}`;
       }
     }
     return '';
   }
   // Проверка набора с исключением — для импорта и загрузки.
-  function checkSet(set) { const p = problemOf(set); if (p) throw new Error(p); return set; }
+  function checkSet(set, options) { const p = problemOf(set, options); if (p) throw new Error(p); return set; }
 
   function readUser() {
     try {
       const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORE_KEY) : null;
       const list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list.filter(s => !problemOf(s)) : [];
+      return Array.isArray(list) ? list.filter(s => !problemOf(s, { skipGraphValidation: true })) : [];
     } catch { return []; }
   }
   function saveUser() {
@@ -105,12 +105,10 @@
     try {
       const index = await read(MANIFEST);
       if (!Array.isArray(index?.sets)) throw new Error('index.json: нужен массив sets');
-      // Load every set before validating: graph starter validation consults NodeRegistry,
-      // whose node classes are registered by later scripts in the page. Validating the first
-      // files while those scripts are still loading can reject all presets (e.g. data.call).
+      // Validate graph node types when a starter is shown/used, not while all presets load:
+      // this script can run before later node classes have registered with NodeRegistry.
       const builtin = [];
-      for (const file of index.sets) builtin.push(await read(file));
-      for (const set of builtin) checkSet(set);
+      for (const file of index.sets) builtin.push(checkSet(await read(file), { skipGraphValidation: true }));
       const ids = new Set();
       for (const s of builtin) { if (ids.has(s.id)) throw new Error(`повтор набора «${s.id}»`); ids.add(s.id); }
       state.builtin = builtin;

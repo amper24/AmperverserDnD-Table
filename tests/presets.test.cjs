@@ -31,6 +31,14 @@ test('встроенные наборы загружаются с диска п�
   }
 });
 
+test('загрузка встроенных наборов переживает неполный реестр узлов', async () => {
+  const ctx = { console, localStorage: memoryStorage(), window: { NodeRegistry: { starterProblem: () => 'неизвестный узел' } } };
+  const P = await loadPresets(ctx);
+  assert.equal(P.loaded, true);
+  assert.equal(P.items('equipment_text_rules').length, 27);
+  assert.equal(P.items('graph_starter').length, 19, 'валидация конкретного шаблона остаётся ответственностью палитры');
+});
+
 test('каждый файл из index.json существует, и никаких наборов вне реестра нет', () => {
   const index = JSON.parse(fs.readFileSync('static/presets/index.json', 'utf8'));
   for (const f of index.sets) assert.ok(fs.existsSync(path.join('static/presets', f)), f);
