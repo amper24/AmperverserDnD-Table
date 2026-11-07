@@ -105,8 +105,12 @@
     try {
       const index = await read(MANIFEST);
       if (!Array.isArray(index?.sets)) throw new Error('index.json: нужен массив sets');
+      // Load every set before validating: graph starter validation consults NodeRegistry,
+      // whose node classes are registered by later scripts in the page. Validating the first
+      // files while those scripts are still loading can reject all presets (e.g. data.call).
       const builtin = [];
-      for (const file of index.sets) builtin.push(checkSet(await read(file)));
+      for (const file of index.sets) builtin.push(await read(file));
+      for (const set of builtin) checkSet(set);
       const ids = new Set();
       for (const s of builtin) { if (ids.has(s.id)) throw new Error(`повтор набора «${s.id}»`); ids.add(s.id); }
       state.builtin = builtin;
