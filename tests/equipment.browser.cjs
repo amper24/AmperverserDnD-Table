@@ -98,7 +98,18 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>document.querySelectorAll('.hand-slot.filled').length===1&&!document.querySelector('.sheet').inert);
     assert.equal(ops[0].slot,'both');assert.equal(sheet.inventory.length,3);
     await page.locator('[data-uid="bow"] .act-btn.all').evaluate(b=>{b.click();b.click();});
-    await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'));
+    await page.waitForFunction(()=>document.querySelector('[data-uid="bow"] .item-resource').textContent.includes('2 ·'), null, { timeout: 5000 }).catch(async error => {
+      const details = {
+        operations: ops,
+        serverBow: sheet.inventory.find(item => item.uid === 'bow'),
+        serverArrows: sheet.inventory.find(item => item.uid === 'arrows'),
+        resourceText: await page.locator('[data-uid="bow"] .item-resource').textContent().catch(() => null),
+        actionDisabled: await page.locator('[data-uid="bow"] .act-btn.all').isDisabled().catch(() => null),
+        pageErrors: errors,
+      };
+      console.error('equipment use debug: ' + JSON.stringify(details));
+      throw error;
+    });
     assert.equal(ops.filter(x=>x.op==='use').length,1);assert.equal(sheet.inventory[1].qty,2);
     // Перетаскивание руки: двуручный лук (обе руки) сбрасывается в одну руку → одноручный хват.
     // Двуручный хват показывается одной общей рамкой на обе руки; «Одной рукой» переводит в одноручный хват.
