@@ -217,8 +217,9 @@ window.Lobby = {
       let meTok; try { const r = await fetch('/api/auth/me', { headers: LS.getItem('dnd_token') ? { Authorization: 'Bearer ' + LS.getItem('dnd_token') } : {} }); meTok = r.status + (r.ok ? ' — вход по токену работает' : ' — токена нет или он недействителен'); } catch (e) { meTok = 'ошибка ' + e.message; }
       add('/api/auth/me по токену', meTok, meTok.startsWith('200'));
       add('Браузер', navigator.userAgent);
-      page.append(el('h1', {}, 'Диагностика входа'), el('p', { class: 'muted' }, 'Эта страница показывает, что именно блокирует ваш браузер в текущем окне. Скопируйте таблицу, если вход не работает.'), el('table', {}, ...rows),
-        el('p', { style: 'margin-top:14px' }, el('a', { href: '/login', class: 'btn primary' }, 'Перейти ко входу'), ' ', el('a', { href: location.origin !== 'null' ? location.href.replace('/diag', '/') : '/', target: '_blank', class: 'btn' }, 'Открыть в новой вкладке')));
+      page.append(el('h1', {}, 'Диагностика входа'), el('p', { class: 'muted' }, 'Эта страница показывает, что именно блокирует ваш браузер в текущем окне. Скопируйте таблицу, если вход не работает.'),
+        el('div', { class: 'table-scroll' }, el('table', {}, ...rows)),
+        el('p', { class: 'diag-actions', style: 'margin-top:14px' }, el('a', { href: '/login', class: 'btn primary' }, 'Перейти ко входу'), ' ', el('a', { href: location.origin !== 'null' ? location.href.replace('/diag', '/') : '/', target: '_blank', class: 'btn' }, 'Открыть в новой вкладке')));
     }
 
     // ================= Политика конфиденциальности и cookie =================
@@ -324,12 +325,13 @@ window.Lobby = {
       page.append(el('p', { class: 'muted small' }, 'Как root вы можете редактировать и удалять записи базового справочника и любых наборов прямо в разделе «Справочник», а в «Библиотеке ресурсов» — загружать встроенные ассеты и удалять любые. «Обновить из Git» забирает свежую папку ', el('code', {}, 'data_seed'), ' из репозитория ', el('code', {}, 'sdr.git_url'), ' и заливает справочник заново — при ', el('code', {}, 'sdr.update: once'), ' это единственный способ обновить данные без перезапуска и пересборки.'));
       // пользователи
       const tbl = el('table', { class: 'tbl' });
+      const tableWrap = el('div', { class: 'table-scroll admin-table-scroll' }, tbl);
       const box = el('div', { class: 'card', style: 'margin-top:16px' }, el('div', { class: 'row' }, el('h2', { style: 'flex:1;margin:0' }, 'Пользователи'),
         el('button', { class: 'primary small', style: 'flex:0', onclick: async () => {
           const email = el('input', { type: 'email', placeholder: 'email' }), pw = el('input', { type: 'password', placeholder: 'пароль (8+)' }), name = el('input', { placeholder: 'имя' }), root = el('input', { type: 'checkbox', style: 'width:auto' });
           const ok = await modal('Новый пользователь', el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Почта'), email), el('div', { class: 'field' }, el('label', {}, 'Пароль'), pw), el('div', { class: 'field' }, el('label', {}, 'Имя'), name), el('label', {}, root, ' root')), [{ label: 'Создать', cls: 'primary', fn: () => ({ email: email.value, password: pw.value, name: name.value, is_root: root.checked }) }]);
           if (!ok) return; try { await API.post('/api/admin/users', ok); toast('Создан'); refresh(); } catch (e) { toast('Ошибка: ' + e.message, 4000); }
-        } }, 'Создать')), tbl);
+        } }, 'Создать')), tableWrap);
       page.append(box);
       async function refresh() {
         const users = await API.get('/api/admin/users');
