@@ -110,17 +110,27 @@ async fn public_settings(State(st): State<AppState>) -> Json<serde_json::Value> 
         "allow_registration": a.allow_registration,
         "password_min_length": a.password_min_length,
         "code_ttl_minutes": a.code_ttl_minutes,
+        "google_enabled": a.google_enabled,
         "max_upload_mb": st.cfg.images.max_upload_mb,
     }))
 }
 
 // ---------- отправка почты ----------
+fn smtp_configured(st: &AppState) -> bool {
+    !st.cfg.smtp.host.trim().is_empty()
+}
+
+fn ensure_code_channel(st: &AppState) -> ApiResult<()> {
+    if !smtp_configured(st) && !st.cfg.auth.dev_show_code {
+        return Err(AppError::bad("SMTP не настроен: отправка кодов отключена. Настройте SMTP или явно включите auth.dev_show_code только для тестового сервера."));
+    }
+    Ok(())
+}
+
 async fn send_code(st: &AppState, to: &str, code: &str) -> bool {
     let cfg = &st.cfg.smtp;
     let ttl = st.cfg.auth.code_ttl_minutes;
-    if cfg.host.is_empty() {
-        tracing::warn!("SMTP не настроен. Код для {}: {}", to, code);
-        println!("\n===== КОД ПОДТВЕРЖДЕНИЯ для {to}: {code} =====\n");
+    if cfg.host.trim().is_empty() {
         return false;
     }
     let result: anyhow::Result<()> = async {
@@ -146,8 +156,7 @@ async fn send_code(st: &AppState, to: &str, code: &str) -> bool {
     match result {
         Ok(()) => true,
         Err(e) => {
-            tracing::error!("Ошибка отправки письма: {e}. Код: {code}");
-            println!("\n===== (SMTP error) КОД для {to}: {code} =====\n");
+            tracing::error!("Ошибка отправки письма для {to}: {e}");
             false
         }
     }
@@ -181,6 +190,10 @@ async fn request_code(State(st): State<AppState>, Json(body): Json<RequestCodeIn
 
 /// Выпустить и отправить код подтверждения на почту.
 async fn issue_code(st: &AppState, email: &str) -> ApiResult<serde_json::Value> {
+    // Проверяем канал до генерации/сохранения секрета. Локальные коды возможны только
+    // при явном auth.dev_show_code=true и никогда не пишутся в логи.
+    ensure_code_channel(st)?;
+    let has_smtp = smtp_configured(st);
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
     let ttl = st.cfg.auth.code_ttl_minutes;
     let expires = (chrono::Utc::now() + chrono::Duration::minutes(ttl)).to_rfc3339();
@@ -188,8 +201,13 @@ async fn issue_code(st: &AppState, email: &str) -> ApiResult<serde_json::Value> 
     sqlx::query("INSERT INTO auth_codes (email, code, expires_at, attempts, used) VALUES (?, ?, ?, 0, 0)")
         .bind(email).bind(&code).bind(&expires).execute(&st.db).await?;
     let sent = send_code(st, email, &code).await;
+    if has_smtp && !sent {
+        sqlx::query("UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ? AND used = 0")
+            .bind(email).bind(&code).execute(&st.db).await?;
+        return Err(AppError::bad("Не удалось отправить письмо с кодом. Проверьте настройки SMTP и повторите попытку."));
+    }
     let mut out = json!({ "ok": true, "sent": sent, "ttl_min": ttl });
-    if !sent && st.cfg.auth.dev_show_code {
+    if !has_smtp && st.cfg.auth.dev_show_code {
         out["dev_code"] = json!(code);
     }
     Ok(out)
@@ -302,10 +320,12 @@ async fn register(State(st): State<AppState>, Json(body): Json<RegisterIn>) -> A
             if verified != 0 && has_pw {
                 return Err(AppError::bad("Эта почта уже зарегистрирована — войдите или восстановите пароль"));
             }
+            ensure_code_channel(&st)?;
             // незавершённая регистрация или старый аккаунт без пароля: обновляем пароль и имя, требуем подтверждение
             sqlx::query("UPDATE users SET password_hash = ?, name = ? WHERE id = ?").bind(&hash).bind(&name).bind(r.get::<String, _>("id")).execute(&st.db).await?;
         }
         None => {
+            ensure_code_channel(&st)?;
             sqlx::query("INSERT INTO users (id, email, name, created_at, password_hash, verified) VALUES (?, ?, ?, ?, ?, 0)")
                 .bind(util::uid()).bind(&email).bind(&name).bind(util::now()).bind(&hash).execute(&st.db).await?;
         }
@@ -378,7 +398,7 @@ async fn reset_password(State(st): State<AppState>, headers: HeaderMap, Json(bod
     start_session(&st, &headers, &r.get::<String, _>("id"), &email, &r.get::<String, _>("name")).await
 }
 
-/// Заглушка под Google OAuth: место зарезервировано, конфигурация появится позже.
+/// Заглушка под Google OAuth: кнопка управляется auth.google_enabled, полноценный вход ещё не подключён.
 async fn google_stub() -> ApiResult<Json<serde_json::Value>> {
     Err(AppError::bad("Вход через Google пока не подключён"))
 }
@@ -602,6 +622,36 @@ mod tests {
 
     async fn session_count(st: &AppState, uid: &str) -> i64 {
         sqlx::query("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?").bind(uid).fetch_one(&st.db).await.unwrap().get("n")
+    }
+
+    #[tokio::test]
+    async fn missing_smtp_does_not_issue_codes_unless_dev_mode_is_explicit() {
+        let mut st = test_state().await;
+        assert!(!st.cfg.auth.dev_show_code);
+        let err = issue_code(&st, "new@test.ru").await.unwrap_err();
+        assert!(err.1.contains("SMTP не настроен"));
+        let codes: i64 = sqlx::query("SELECT COUNT(*) AS n FROM auth_codes").fetch_one(&st.db).await.unwrap().get("n");
+        assert_eq!(codes, 0, "no code is generated or stored without a mail channel");
+
+        let registration = register(State(st.clone()), Json(RegisterIn { email: "new@test.ru".into(), password: "secret123".into(), name: Some("Новый".into()) })).await;
+        let err = match registration { Err(err) => err, Ok(_) => panic!("registration must be rejected without SMTP") };
+        assert!(err.1.contains("SMTP не настроен"));
+        let users: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users").fetch_one(&st.db).await.unwrap().get("n");
+        assert_eq!(users, 0, "registration without a delivery channel has no side effects");
+
+        let mut cfg = (*st.cfg).clone();
+        cfg.auth.dev_show_code = true;
+        st.cfg = std::sync::Arc::new(cfg);
+        let result = issue_code(&st, "new@test.ru").await.unwrap();
+        assert_eq!(result["sent"], false);
+        assert_eq!(result["dev_code"].as_str().unwrap().len(), 6, "local development must be explicitly enabled");
+    }
+
+    #[tokio::test]
+    async fn public_settings_keep_google_auth_hidden_by_default() {
+        let st = test_state().await;
+        let settings = public_settings(State(st)).await.0;
+        assert_eq!(settings["google_enabled"], false);
     }
 
     #[test]

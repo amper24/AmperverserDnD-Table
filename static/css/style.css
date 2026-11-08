@@ -852,6 +852,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dice-dock-body .dice { margin: 0; }
 .dice-dock-body .dice button { min-width: 40px; padding: 5px 7px; font-weight: 600; }
 .dice-dock-body .row { flex-wrap: nowrap; }
+/* Keep the mode segment and modifier in distinct, non-overlapping touch targets. */
+.dice-dock-body .dice-mode-row { display: grid; grid-template-columns: minmax(0, 1fr) 58px; align-items: center; gap: 5px; min-width: 0; }
+.dice-dock-body .dice-mode-row .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; min-width: 0; }
+.dice-dock .dice-mode-row .seg button { min-width: 0; width: 100%; padding: 4px 3px; font-size: 11px; white-space: nowrap; }
+.dice-dock .dice-mode-row .dice-modifier { width: 58px !important; min-width: 58px; flex: none; }
 .dice-dock input { padding: 4px 6px; font-size: 12px; }
 .dice-dock.min .dice-dock-body { display: none; }
 .dice-log-button { position: fixed; right: 14px; bottom: 14px; z-index: 9000; display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-radius: 22px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); }
@@ -971,6 +976,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 720px) {
   .dice-dock-body .dice button { min-width: 0; flex: 1 1 32px; padding-inline: 4px; }
   .dice-dock-body .row, .dice-dock-options { flex-wrap: wrap; }
+  .dice-dock-body .dice-mode-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .dice-dock-body .dice-mode-row .seg button { padding-inline: 2px; font-size: 10px; }
+  .dice-dock-body .dice-mode-row .dice-modifier { justify-self: end; }
   .dice-dock-options .dice-audience { max-width: 100%; }
   .dice-dock input[aria-label="Формула броска"] { width: 105px !important; }
 }
