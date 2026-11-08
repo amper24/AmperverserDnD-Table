@@ -14,13 +14,13 @@ const loadSrd = require('./fixtures/srd.cjs');
 const browserLaunchOptions = require('./browser-launch.cjs');
 
 const SEED = loadSrd('data_seed/srd_2014.json');
-const record = (slug, id) => { const e = SEED.find(x => x.slug === slug); return { id, category: e.category, name: e.name, source: 'SRD 2014', pack_id: null, campaign_id: null, data: JSON.parse(JSON.stringify(e.data)) }; };
-const CLASS = record('srd14-barbarian', 'c-1'), RACE = record('srd14-high-elf', 'r-1');
+const record = (slug, id) => { const e = SEED.find(x => x.slug === slug); return { id, category: e.category, slug: e.slug, name: e.name, source: 'SRD 2014', pack_id: null, campaign_id: null, data: JSON.parse(JSON.stringify(e.data)) }; };
+const CLASS = record('srd14-barbarian', 'c-1'), SUBCLASS = record('srd14-barbarian-subclass-berserker', 'sc-1'), RACE = record('srd14-high-elf', 'r-1');
 assert.equal(RACE.category, 'subrace', 'srd14-high-elf is a standalone subrace record');
 // Черты — отдельный элемент справочника: записи берём из сборки tools/srd/build_feats.py.
 const FEATS = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data_seed', 'feats_2014.json'), 'utf8'))
   .filter(f => ['srd14-feat-elf-weapon-training', 'srd14-feat-fey-ancestry', 'srd14-feat-darkvision', 'srd14-feat-rage',
-    'srd14-feat-unarmored-defense', 'srd14-feat-reckless-attack', 'srd14-feat-frenzy'].includes(f.slug))
+    'srd14-feat-unarmored-defense', 'srd14-feat-reckless-attack', 'srd14-feat-frenzy', 'srd14-feat-mindless-rage'].includes(f.slug))
   .map((f, i) => ({ id: `f-${i}`, category: 'feat', name: f.name, source: 'SRD 2014', pack_id: null, campaign_id: null, slug: f.slug, data: f.data }));
 
 // Класс: кнопка своего конструктора в карточке, разделы, сохранение и создание новой записи.
@@ -290,12 +290,17 @@ async function scenarioFeatsClass(browser) {
     }
     const method = route.request().method(), body = (() => { try { return route.request().postDataJSON(); } catch { return null; } })();
     if (method !== 'GET') calls.push({ method, url: url.pathname, body });
+    if (method === 'PATCH' && url.pathname === '/api/compendium/c-1') return json({ ...CLASS, ...body });
+    if (method === 'PATCH' && url.pathname === '/api/compendium/sc-1') return json({ ...SUBCLASS, ...body });
     if (url.pathname === '/api/auth/me') return json({ id: 1, name: 'Мастер', email: 'gm@test', is_root: true });
     if (url.pathname === '/api/auth/settings') return json({ allow_registration: true, password_min_length: 8 });
     if (url.pathname === '/api/packs') return json([]);
     if (url.pathname === '/api/compendium/c-1') return json(CLASS);
+    if (url.pathname === '/api/compendium/sc-1') return json(SUBCLASS);
     if (url.pathname === '/api/compendium' && url.searchParams.get('category') === 'feat') return json(FEATS);
-    if (url.pathname === '/api/compendium') return json([CLASS, ...FEATS]);
+    if (url.pathname === '/api/compendium' && url.searchParams.get('category') === 'subclass') return json([SUBCLASS]);
+    if (url.pathname === '/api/compendium' && url.searchParams.get('category') === 'class') return json([CLASS]);
+    if (url.pathname === '/api/compendium') return json([CLASS, SUBCLASS, ...FEATS]);
     if (url.pathname === '/compendium') return route.fulfill({ contentType: 'text/html', body: fs.readFileSync(path.join(process.cwd(), 'static/index.html'), 'utf8') });
     return json([]);
   });
@@ -323,21 +328,31 @@ async function scenarioFeatsClass(browser) {
   assert.equal(await feature.locator('input').first().inputValue(), 'Безрассудная атака', 'название из записи');
   assert.ok((await feature.locator('textarea').inputValue()).includes('отчаянной свирепостью'), 'текст из записи');
 
-  // 3. Умение подкласса: та же строка ссылки.
+  // 3. Подкласс — самостоятельная запись: открываем его отдельный редактор из вкладки класса.
   await modal.locator('.ced-nav-btn', { hasText: 'Подклассы' }).click();
-  const subFeature = modal.locator('.ced-feature').first();
+  const subclassRow = modal.locator('.ced-subclass-record', { hasText: 'Путь берсерка' });
+  await subclassRow.getByRole('button', { name: 'Редактировать', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.modal.wide').length === 2);
+  const subModal = page.locator('.modal.wide').nth(1);
+  await subModal.locator('.ced-nav-btn', { hasText: 'Умения' }).click();
+  const subFeature = subModal.locator('.ced-feature').first();
   const subPick = subFeature.locator('.ced-feat-row select');
-  await subPick.selectOption('srd14-feat-frenzy');
-  assert.equal(await subFeature.locator('input').nth(1).inputValue(), 'Бешенство', 'умение подкласса из записи');
+  assert.equal(await subPick.inputValue(), 'srd14-feat-frenzy', 'подкласс уже ссылается на запись умения');
+  await subPick.selectOption('srd14-feat-mindless-rage');
+  assert.equal(await subFeature.locator('input').nth(1).inputValue(), 'Безумная ярость', 'название умения подкласса из записи');
 
-  // 4. Сохранение: ссылки уходят и в поля данных, и в таблицу узла.
+  // 4. Сохраняются две независимые записи: ссылка подкласса — в его PATCH, класса — в PATCH класса.
+  await subModal.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.modal.wide').length === 1);
   await modal.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.modal.wide'));
-  const patch = calls.find(c => c.method === 'PATCH');
-  assert.ok(patch && patch.url === '/api/compendium/c-1', 'правится та же запись класса');
-  assert.equal(patch.body.data.feature_feats['1']['Безрассудная атака'], 'srd14-feat-reckless-attack', 'ссылка умения 1 уровня');
-  assert.equal(patch.body.data.subclasses[0].feature_feats['3']['Бешенство'], 'srd14-feat-frenzy', 'ссылка умения подкласса');
-  const table = patch.body.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features').params.table.levels['1'];
+  const classPatch = calls.find(c => c.method === 'PATCH' && c.url === '/api/compendium/c-1');
+  const subclassPatch = calls.find(c => c.method === 'PATCH' && c.url === '/api/compendium/sc-1');
+  assert.ok(classPatch, 'PATCH отправлен для записи класса');
+  assert.ok(subclassPatch, 'PATCH отправлен для отдельной записи подкласса');
+  assert.equal(classPatch.body.data.feature_feats['1']['Безрассудная атака'], 'srd14-feat-reckless-attack', 'ссылка умения 1 уровня');
+  assert.equal(subclassPatch.body.data.feature_feats['3']['Безумная ярость'], 'srd14-feat-mindless-rage', 'ссылка умения подкласса хранится в отдельной записи');
+  const table = classPatch.body.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features').params.table.levels['1'];
   assert.equal(table[0].feat, 'srd14-feat-reckless-attack', 'ссылка — и в таблице умений узла');
   assert.deepEqual(errors, [], `ошибки страницы: ${errors.join(' ')}`);
   await page.close();
