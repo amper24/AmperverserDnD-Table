@@ -195,6 +195,10 @@
     try { LS.setItem('et-last-campaign', cid); } catch { /* хранилище недоступно — ссылка ведёт в /campaigns */ }
     app.innerHTML = '';
     const root = el('div', { id: 'table' });
+    // На узких экранах начинаем с полной карты, а инструменты открываем как нижнюю панель.
+    // Так стол остаётся видимым и не сжимается боковой панелью при входе.
+    const mobileTable = window.matchMedia?.('(max-width: 800px)').matches;
+    if (mobileTable) root.classList.add('no-side');
     app.append(root);
 
     // ---- верхняя панель ----
@@ -212,7 +216,15 @@
       if (!shown.length) layerSel.append(el('option', { value: AssetKinds.LAYER.character }, Table.LAYER_NAMES[AssetKinds.LAYER.character]));
       layerSel.value = cur;
     }
-    const toggleSide = el('button', { class: 'small', onclick: () => root.classList.toggle('no-side') }, icon('menu'));
+    const toggleSide = el('button', {
+      class: 'small table-side-toggle', type: 'button', 'aria-label': mobileTable ? 'Открыть панель инструментов' : 'Скрыть панель инструментов',
+      'aria-expanded': mobileTable ? 'false' : 'true', title: 'Панель чата, участников и ассетов',
+      onclick: () => {
+        const open = root.classList.toggle('no-side') === false;
+        toggleSide.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggleSide.setAttribute('aria-label', open ? 'Скрыть панель инструментов' : 'Открыть панель инструментов');
+      }
+    }, icon('menu'));
     // В полноэкранном столе нет места широкой шапке: пункты — в компактном меню
     // «Разделы» (тот же Nav), активный раздел — «Кампании» (см. Nav.activeKey).
     const bar = el('div', { class: 'tbar' }, Nav.menu({ current: path }), el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
