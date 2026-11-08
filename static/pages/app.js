@@ -13,7 +13,7 @@
   const APP_NAME = 'Edge Tablet';
   let me = null;
   // Публичные настройки сервера (config.yml → auth): регистрация, минимальная длина пароля
-  const SETTINGS = { allow_registration: true, password_min_length: 8 };
+  const SETTINGS = { allow_registration: true, password_min_length: 8, google_enabled: false };
   const [meRes, setRes] = await Promise.allSettled([API.get('/api/auth/me'), API.get('/api/auth/settings')]);
   me = meRes.status === 'fulfilled' ? meRes.value : null;
   if (setRes.status === 'fulfilled') Object.assign(SETTINGS, setRes.value);
@@ -81,7 +81,8 @@
     const busy = async (btn, fn) => { btn.disabled = true; err.textContent = ''; try { await fn(); } catch (e) { if (/<a /.test(e.message)) err.innerHTML = e.message; else err.textContent = e.message; } finally { btn.disabled = false; } };
     const tabs = () => el('div', { class: 'tabs auth-tabs' }, el('button', { class: mode === 'login' ? 'active' : '', onclick: () => show('login') }, 'Вход'), CAN_REGISTER ? el('button', { class: mode === 'register' ? 'active' : '', onclick: () => show('register') }, 'Регистрация') : null);
     const google = () => el('button', { class: 'google', disabled: '', title: 'Появится позже' }, el('span', { class: 'g' }, 'G'), 'Войти через Google', el('span', { class: 'badge' }, 'скоро'));
-    const codeHint = (r) => r.sent ? `Код отправлен на ${pendingEmail}. Проверьте почту и папку «Спам».` : 'Почтовый сервер не настроен — код показан ниже (режим разработки).';
+    const googleOptions = () => SETTINGS.google_enabled ? [el('div', { class: 'or' }, 'или'), google()] : [];
+    const codeHint = (r) => r.sent ? `Код отправлен на ${pendingEmail}. Проверьте почту и папку «Спам».` : r.dev_code ? 'SMTP не настроен — код выдан в локальном режиме разработки.' : 'Не удалось отправить код. Проверьте настройки почты и повторите попытку.';
     const toVerify = (r) => { show('verify'); box.querySelector('.code-info').textContent = codeHint(r); if (r.dev_code) box.querySelector('input.code').value = r.dev_code; };
     const views = {
       login() {
@@ -92,7 +93,7 @@
           if (r.need_verify) return toVerify(r);
           await ensureSession(r); go(next);
         }) }, 'Войти');
-        return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), el('div', { class: 'or' }, 'или'), google()];
+        return [tabs(), f('Почта', email), f('Пароль', pw), btn, err, el('div', { class: 'auth-links' }, el('a', { href: '#', onclick: e => { e.preventDefault(); pendingEmail = email.value.trim(); show('reset'); } }, 'Забыли пароль?')), ...googleOptions()];
       },
       register() {
         if (!CAN_REGISTER) return [tabs(), el('p', { class: 'muted' }, 'Регистрация на этом сервере отключена. Попросите администратора создать вам аккаунт, затем войдите.'), el('button', { class: 'primary wide', onclick: () => show('login') }, 'Ко входу')];
@@ -103,7 +104,7 @@
           pendingEmail = email.value.trim();
           toVerify(await API.post('/api/auth/register', { email: pendingEmail, password: pw.value, name: name.value.trim() || null }));
         }) }, 'Создать аккаунт');
-        return [tabs(), f('Имя', name), f('Почта', email), f('Пароль', pw), f('Повторите пароль', pw2), btn, err, el('p', { class: 'muted small' }, 'На почту придёт 6-значный код подтверждения.'), el('div', { class: 'or' }, 'или'), google()];
+        return [tabs(), f('Имя', name), f('Почта', email), f('Пароль', pw), f('Повторите пароль', pw2), btn, err, el('p', { class: 'muted small' }, 'На почту придёт 6-значный код подтверждения.'), ...googleOptions()];
       },
       verify() {
         const code = inp({ class: 'code', placeholder: '000000', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code' });

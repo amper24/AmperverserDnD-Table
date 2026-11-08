@@ -273,7 +273,7 @@ window.DiceEngine = (() => {
   /// Возвращает false, если док уже установлен на странице.
   function dock(opts = {}) {
     if (document.querySelector('.dice-dock')) return false;
-    const modInp = el('input', { type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', 'aria-label': 'Модификатор', style: 'width:54px' });
+    const modInp = el('input', { class: 'dice-modifier', type: 'text', placeholder: '+0', title: 'Модификатор, добавляется к броску', 'aria-label': 'Модификатор', style: 'width:54px' });
     const exprInp = el('input', { type: 'text', placeholder: '2d6+3, 4d6kh3…', title: 'Своя формула — Enter для броска', 'aria-label': 'Формула броска', style: 'width:132px' });
     const audience = audienceSelect();
     const countInp = el('input', { type: 'number', min: '1', max: String(DICE_COUNT_MAX), step: '1', value: String(diceCount()), title: 'Сколько кубов бросить по нажатию кнопки к4–к100', 'aria-label': 'Количество кубов', style: 'width:48px' });
@@ -297,7 +297,7 @@ window.DiceEngine = (() => {
     };
     const quick = el('div', { class: 'dice' }, ...[4, 6, 8, 10, 12, 20, 100].map(d => el('button', { title: `Бросить к${d}. Shift — два броска одновременно`, onclick: e => e.shiftKey ? dieTogether(d) : die(d) }, 'к' + d)));
     const body = el('div', { class: 'dice-dock-body' }, quick,
-      el('div', { class: 'row' }, modeBtns, modInp),
+      el('div', { class: 'row dice-mode-row' }, modeBtns, modInp),
       el('div', { class: 'row' }, exprInp, el('button', { class: 'small primary', title: 'Бросить формулу', onclick: () => { if (exprInp.value.trim()) { rollExpr(exprInp.value.trim()); exprInp.value = ''; } } }, 'Бросить')),
       el('div', { class: 'dice-dock-options' }, el('label', { class: 'muted small', title: 'Сколько кубов бросить по нажатию кнопки' }, 'Кубов: ', countInp), el('label', { class: 'muted small' }, 'Кому: ', audience)));
     const toggle = el('button', { class: 'dice-dock-toggle', title: 'Кубики: свернуть / развернуть', 'aria-label': 'Кубики', onclick: () => { wrap.classList.toggle('min'); LS.setItem('dicetray_min', wrap.classList.contains('min') ? '1' : ''); } }, icon('dice', 16));

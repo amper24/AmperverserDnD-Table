@@ -78,7 +78,10 @@ pub struct SmtpCfg {
 #[serde(default)]
 pub struct AuthCfg {
     pub allow_registration: bool,
+    /// Разрешить локальный dev-код, если SMTP не настроен (с кодом только в ответе API).
     pub dev_show_code: bool,
+    /// Показывать кнопку входа Google; сама OAuth-интеграция пока зарезервирована.
+    pub google_enabled: bool,
     pub code_ttl_minutes: i64,
     pub code_max_attempts: i64,
     pub session_days: i64,
@@ -155,7 +158,7 @@ impl Default for SmtpCfg {
 }
 impl Default for AuthCfg {
     fn default() -> Self {
-        Self { allow_registration: true, dev_show_code: true, code_ttl_minutes: 10, code_max_attempts: 5, session_days: 30, password_min_length: 8 }
+        Self { allow_registration: true, dev_show_code: false, google_enabled: false, code_ttl_minutes: 10, code_max_attempts: 5, session_days: 30, password_min_length: 8 }
     }
 }
 impl Default for RootCfg {
@@ -332,7 +335,17 @@ pub fn load(path: PathBuf) -> anyhow::Result<Loaded> {
 
         let normalized = normalize(&defaults, parsed);
         let normalized = drop_invalid(&defaults, normalized, &shown, &mut warnings);
-        let cfg: Config = serde_yaml::from_value(normalized).map_err(|e| anyhow::anyhow!("неверное значение в {shown}: {e}"))?;
+        let mut cfg: Config = serde_yaml::from_value(normalized).map_err(|e| anyhow::anyhow!("неверное значение в {shown}: {e}"))?;
+        // Старые шаблоны выставляли dev_show_code=true по умолчанию. При первом
+        // обновлении на схему с google_enabled выключаем этот прежний небезопасный default,
+        // если администратор не настроил SMTP; явный DEV_SHOW_CODE=true всё ещё перекроет его ниже.
+        if missing.iter().any(|key| key == "auth.google_enabled")
+            && cfg.smtp.host.trim().is_empty()
+            && cfg.auth.dev_show_code
+        {
+            cfg.auth.dev_show_code = false;
+            info.push(format!("{shown}: локальная выдача кодов без SMTP отключена по умолчанию; включайте DEV_SHOW_CODE только для тестового сервера."));
+        }
 
         for k in &unknown {
             warnings.push(format!("{shown}: неизвестный параметр «{k}» — опечатка? Он игнорируется."));
@@ -559,6 +572,7 @@ impl Config {
 
         e.flag(&mut self.auth.allow_registration, "auth.allow_registration", "ALLOW_REGISTRATION");
         e.flag(&mut self.auth.dev_show_code, "auth.dev_show_code", "DEV_SHOW_CODE");
+        e.flag(&mut self.auth.google_enabled, "auth.google_enabled", "GOOGLE_AUTH_ENABLED");
         e.parse(&mut self.auth.code_ttl_minutes, "auth.code_ttl_minutes", "CODE_TTL_MINUTES");
         e.parse(&mut self.auth.code_max_attempts, "auth.code_max_attempts", "CODE_MAX_ATTEMPTS");
         e.parse(&mut self.auth.session_days, "auth.session_days", "SESSION_DAYS");
@@ -752,8 +766,8 @@ database:
 
 # --- Почта (коды подтверждения и сброса пароля) ------------------------------
 smtp:
-  # SMTP-сервер, например "smtp.yandex.ru". Пусто — письма не отправляются,
-  # код печатается в консоль сервера.                 Переменная: SMTP_HOST
+  # SMTP-сервер, например "smtp.yandex.ru". Если не настроен, почтовые коды не выпускаются,
+  # если только явно не включён auth.dev_show_code для локальной разработки. Переменная: SMTP_HOST
   host: {smtp_host}
   # 587 — STARTTLS, 465 — TLS (SMTPS), 25 — без шифрования. Переменная: SMTP_PORT
   port: {smtp_port}
@@ -773,10 +787,12 @@ auth:
   # Регистрация новых аккаунтов через сайт. false — аккаунты создаёт только root
   # (страница /admin или команда users create).  Переменная: ALLOW_REGISTRATION
   allow_registration: {allow_reg}
-  # Если SMTP не настроен — показывать код прямо в форме входа. Только для
-  # разработки и игры «для своих»: на публичном сервере поставьте false!
-  # Переменная: DEV_SHOW_CODE
+  # Разрешить локальные коды без SMTP и возвращать их только в ответе API.
+  # По умолчанию выключено; включайте только для тестового сервера. Переменная: DEV_SHOW_CODE
   dev_show_code: {dev_code}
+  # Показывать кнопку входа Google. OAuth пока не реализован; по умолчанию выключено.
+  # Переменная: GOOGLE_AUTH_ENABLED
+  google_enabled: {google_enabled}
   # Сколько минут действует код из письма.        Переменная: CODE_TTL_MINUTES
   code_ttl_minutes: {code_ttl}
   # Сколько неверных попыток ввода кода допускается. Переменная: CODE_MAX_ATTEMPTS
@@ -855,6 +871,7 @@ logging:
         smtp_from = q(&c.smtp.from),
         allow_reg = c.auth.allow_registration,
         dev_code = c.auth.dev_show_code,
+        google_enabled = c.auth.google_enabled,
         code_ttl = c.auth.code_ttl_minutes,
         code_attempts = c.auth.code_max_attempts,
         session_days = c.auth.session_days,
@@ -894,6 +911,23 @@ mod tests {
         assert_eq!(back.smtp.password, "p\"a:ss # word");
         assert_eq!(back.root.email, "admin@example.com");
         assert_eq!(back.server.port, 8080);
+        assert!(!back.auth.dev_show_code, "development codes are opt-in");
+        assert!(!back.auth.google_enabled, "Google auth is opt-in");
+    }
+
+    #[test]
+    fn legacy_config_migrates_the_old_dev_code_default_to_off_without_smtp() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!("dnd-config-migrate-{}-{stamp}.yml", std::process::id()));
+        fs::write(&path, "env_overrides: false\nsmtp:\n  host: \"\"\nauth:\n  dev_show_code: true\n").unwrap();
+        let loaded = load(path.clone()).unwrap();
+        assert!(!loaded.cfg.auth.dev_show_code);
+        assert!(loaded.info.iter().any(|m| m.contains("локальная выдача кодов без SMTP отключена")));
+        assert!(fs::read_to_string(&path).unwrap().contains("dev_show_code: false"));
+        let _ = fs::remove_file(&path);
+        let mut backup = path.as_os_str().to_os_string();
+        backup.push(".bak");
+        let _ = fs::remove_file(PathBuf::from(backup));
     }
 
     #[test]

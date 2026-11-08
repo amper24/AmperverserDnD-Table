@@ -62,7 +62,10 @@ pl -X POST "$B/api/join/$CODE" | grep -q '"ok":true'
 [ "$(gm "$B/api/campaigns/$CID" | J "len(d['members'])")" = "2" ]
 
 echo "[2] справочник"
-[ "$(gm "$B/api/compendium?category=race&edition=2014" | J "len(d)")" = "13" ]
+[ "$(gm "$B/api/compendium?category=race&edition=2014" | J "len(d)")" = "9" ]
+[ "$(gm "$B/api/compendium?category=subrace&edition=2014" | J "len(d)")" = "4" ]
+[ "$(gm "$B/api/compendium?category=race&edition=2024" | J "len(d)")" = "9" ]
+[ "$(gm "$B/api/compendium?category=subrace&edition=2024" | J "len(d)")" = "24" ]
 [ "$(gm "$B/api/compendium?category=class&edition=2024" | J "len(d)")" = "12" ]
 [ "$(gm "$B/api/compendium?category=spell&edition=2014&limit=3000" | J "len(d)")" = "319" ]
 [ "$(gm "$B/api/compendium?category=skill" | J "len(d)")" = "18" ]                       # навыки — своя категория, вне редакций

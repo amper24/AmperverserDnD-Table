@@ -116,6 +116,10 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('Escape');
 
     await page.evaluate(() => { window.parallelSent = []; TABLE_CTX = { isGM: true, ws: { send: m => { parallelSent.push(m); return true; } } }; DiceEngine.dock({ gm: true }); });
+    const modeBox = await page.locator('.dice-dock .seg').boundingBox();
+    const modifierBox = await page.locator('.dice-dock .dice-modifier').boundingBox();
+    assert.ok(modeBox.x + modeBox.width <= modifierBox.x || modifierBox.x + modifierBox.width <= modeBox.x || modeBox.y + modeBox.height <= modifierBox.y || modifierBox.y + modifierBox.height <= modeBox.y,
+      'mode buttons and modifier input have separate, non-overlapping hit areas on mobile');
     await page.locator('.dice-dock .dice button').filter({ hasText: 'к6' }).click({ modifiers: ['Shift'] });
     assert.equal(await page.evaluate(() => parallelSent[0].type), 'multi');
     assert.equal(await page.evaluate(() => parallelSent[0].rolls.length), 2);

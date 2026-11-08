@@ -67,7 +67,7 @@ env_overrides: true          # false — игнорировать перемен
 server:   { host: "0.0.0.0", port: 8080 }
 database: { url: "sqlite://data/dnd.db", max_connections: 10 }
 smtp:     { host: "", port: 587, encryption: "auto", user: "", password: "", from: "noreply@example.com" }
-auth:     { allow_registration: true, dev_show_code: true, code_ttl_minutes: 10, code_max_attempts: 5, session_days: 30, password_min_length: 8 }
+auth:     { allow_registration: true, dev_show_code: false, google_enabled: false, code_ttl_minutes: 10, code_max_attempts: 5, session_days: 30, password_min_length: 8 }
 root:     { email: "", password: "" }
 images:   { quality: 82, max_upload_mb: 25, map_max_side: 4096, token_max_side: 1024 }
 logging:  { level: "info,sqlx=warn" }
@@ -85,13 +85,14 @@ logging:  { level: "info,sqlx=warn" }
 | `server.host`, `server.port` | `HOST`, `PORT` / `SERVER_PORT` | адрес и порт (0.0.0.0 / 8080) |
 | `database.url` | `DATABASE_URL` | `mysql://user:pass@host:3306/db` или `sqlite://data/dnd.db` |
 | `database.max_connections` | `DB_MAX_CONNECTIONS` | пул соединений MySQL (SQLite — всегда 1) |
-| `smtp.host/port/user/password/from` | `SMTP_HOST/PORT/USER/PASSWORD/FROM` | почта для кодов. Если `host` пуст — код печатается в консоль |
+| `smtp.host/port/user/password/from` | `SMTP_HOST/PORT/USER/PASSWORD/FROM` | почта для кодов. Если `host` пуст и `auth.dev_show_code=false`, выпуск кодов отключён |
 | `smtp.encryption` | `SMTP_ENCRYPTION` | `auto` (465 → TLS, иначе STARTTLS), `starttls`, `tls`, `none` |
 | `auth.allow_registration` | `ALLOW_REGISTRATION` | `false` — регистрация через сайт закрыта, аккаунты создаёт root |
-| `auth.dev_show_code` | `DEV_SHOW_CODE` | `true` — без SMTP код возвращается в ответе API и подставляется в форму (только для разработки!) |
+| `auth.dev_show_code` | `DEV_SHOW_CODE` | по умолчанию `false`; `true` разрешает локальные коды без SMTP для тестового сервера (возвращаются только в API, не пишутся в логи) |
 | `auth.code_ttl_minutes`, `auth.code_max_attempts` | `CODE_TTL_MINUTES`, `CODE_MAX_ATTEMPTS` | срок жизни кода из письма и число попыток ввода |
 | `auth.session_days` | `SESSION_DAYS` | срок жизни сессии в днях (0 — без ограничения) |
 | `auth.password_min_length` | `PASSWORD_MIN_LENGTH` | минимальная длина пароля в веб-формах |
+| `auth.google_enabled` | `GOOGLE_AUTH_ENABLED` | `false` — по умолчанию кнопка Google скрыта; OAuth-маршрут пока заглушка |
 | `root.email`, `root.password` | `ROOT_EMAIL`, `ROOT_PASSWORD` | автосоздание root-аккаунта при старте (см. «Root и CLI»). Если пользователь с такой почтой уже есть — он не меняется |
 | `images.quality` | `IMAGE_QUALITY` | качество JPEG при сжатии картинок (82) |
 | `images.max_upload_mb` | `MAX_UPLOAD_MB` | максимальный размер загружаемого файла, МБ (25) |
@@ -100,7 +101,7 @@ logging:  { level: "info,sqlx=warn" }
 
 ## Авторизация
 
-Регистрация: почта + пароль (argon2) + имя → на почту приходит 6-значный код подтверждения. Вход — по паролю; «Забыли пароль?» — новый пароль по коду из письма (так же можно задать пароль старому аккаунту без него). Без настроенного SMTP код печатается в консоль сервера и (при `DEV_SHOW_CODE=true`) показывается прямо в форме. Сессия — HttpOnly-cookie (`SameSite=Lax`, плюс дубликат `SameSite=None; Secure; Partitioned` для встраивания по HTTPS) и Bearer-токен в `localStorage` как запасной канал; в URL токен никогда не попадает. Страница `/diag` показывает, что именно блокирует браузер, если вход не держится. Под Google OAuth зарезервированы поле `users.google_sub`, маршрут `/api/auth/google` и кнопка на главной. Страница `/profile` — имя и аватар, смена почты по коду, смена пароля с завершением остальных сессий, выход на всех устройствах и удаление аккаунта (см. `docs/profile.md`).
+Регистрация: почта + пароль (argon2) + имя → на почту приходит 6-значный код подтверждения. Вход — по паролю; «Забыли пароль?» — новый пароль по коду из письма. Если SMTP не настроен, выпуск кодов блокируется; для тестового сервера его можно явно разрешить через `auth.dev_show_code: true` (код не попадает в логи). Сессия — HttpOnly-cookie (`SameSite=Lax`, плюс дубликат `SameSite=None; Secure; Partitioned` для встраивания по HTTPS) и Bearer-токен в `localStorage` как запасной канал; в URL токен никогда не попадает. Страница `/diag` показывает, что именно блокирует браузер, если вход не держится. Кнопка Google скрыта по умолчанию (`auth.google_enabled: false`); OAuth-маршрут пока заглушка. Страница `/profile` — имя и аватар, смена почты по коду, смена пароля с завершением остальных сессий, выход на всех устройствах и удаление аккаунта (см. `docs/profile.md`).
 
 ## Как пользоваться
 1. Войдите, создайте кампанию — вы её **мастер**.
