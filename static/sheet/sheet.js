@@ -468,14 +468,27 @@
   }
 
   // ---- отправка в чат / на карту / другому персонажу ----
-  function sendCard(doc, kind) { M.sendCard({ ...M.toChatCard(doc, kind), owner: ch.name, ...(kind === 'item' ? { item_ref: { character_id: id, uid: doc.uid } } : {}) }); toast('Отправлено в чат'); }
+  function sendCard(doc, kind) { M.sendCard({ ...M.toChatCard(doc, kind), owner: ch.name }); toast('Отправлено в чат'); }
   async function transfer(it) {
     if (!ch.campaign_id) return toast('Персонаж не в кампании');
-    const chars = (await API.get('/api/characters?campaign_id=' + ch.campaign_id)).filter(c => c.id !== id);
-    if (!chars.length) return toast('Некому передать');
-    const sel = el('select', {}, ...chars.map(c => el('option', { value: c.id }, c.name + (c.owner_name ? ` (${c.owner_name})` : ''))));
-    const qty = el('input', { type: 'number', value: it.qty ?? 1, min: 1, max: it.qty ?? 1 });
-    const ok = await modal(`Передать «${it.name}»`, el('div', {}, el('div', { class: 'field' }, el('label', {}, 'Кому'), sel), it.qty > 1 ? el('div', { class: 'field' }, el('label', {}, 'Сколько'), qty) : null), [{ label: 'Передать', cls: 'primary', fn: () => ({ to: sel.value, qty: +qty.value }) }]);
+    let chars;
+    try { chars = await API.get('/api/characters?campaign_id=' + encodeURIComponent(ch.campaign_id)); }
+    catch (e) { return toast('Не удалось загрузить персонажей: ' + e.message); }
+    chars = (Array.isArray(chars) ? chars : []).filter(c => c?.id && c.id !== id && c.campaign_id === ch.campaign_id);
+    if (!chars.length) return toast('В кампании нет доступных персонажей для передачи');
+    const maxQty = Math.floor(Number(it.qty ?? 1));
+    if (!Number.isFinite(maxQty) || maxQty < 1) return toast('Нет предметов для передачи');
+    const sel = el('select', { 'aria-label': 'Кому передать предмет' }, ...chars.map(c => el('option', { value: c.id }, c.name + (c.owner_name ? ` (${c.owner_name})` : ''))));
+    const qty = el('input', { type: 'number', inputmode: 'numeric', value: 1, min: 1, max: maxQty, disabled: maxQty === 1 ? '' : null, 'aria-label': 'Количество предметов' });
+    const ok = await modal(`Передать «${it.name}»`, el('div', {},
+      el('div', { class: 'field' }, el('label', {}, 'Кому'), sel),
+      el('div', { class: 'field' }, el('label', {}, `Сколько (доступно: ${maxQty})`), qty)),
+    [{ label: 'Передать', cls: 'primary', fn: () => {
+      const amount = Number(qty.value);
+      if (!Number.isInteger(amount) || amount < 1 || amount > maxQty) { qty.setCustomValidity(`Укажите целое число от 1 до ${maxQty}`); qty.reportValidity(); return false; }
+      qty.setCustomValidity('');
+      return { to: sel.value, qty: amount };
+    } }]);
     if (!ok) return;
     try { await save(true); await API.post(`/api/characters/${id}/transfer`, { item_uid: it.uid, to_character_id: ok.to, qty: ok.qty }); toast('Передано'); reload(); } catch (e) { toast('Ошибка: ' + e.message); }
   }
@@ -506,8 +519,9 @@
     // шапку не рисуем: темой и редакцией уже заведует футер листа.
     if (!embed && window.Nav) app.append(Nav.header({ me, current: location.pathname, theme: false }));
     app.append(root);
-    // Кубики — док в левом нижнем углу, журнал бросков — в правом (ставится один раз).
-    DiceEngine.dock();
+    // На отдельном листе есть собственные док и журнал; во встраиваемом листе
+    // на игровом столе они дублировали плавающие кнопки самого стола.
+    if (!embed) DiceEngine.dock();
     if (!readonly) bindDrops(root);
   }
 
@@ -529,12 +543,26 @@
     const die = open ? open[0] : Math.max(0, ...Object.keys(counts).map(Number)) || 8;
     return `1d${die}${fmtMod(abMod('con'))}`;
   }
-  async function shortRest() {
+  function attunementRestControl(requestedUid = '') {
+    const eligible = (s.inventory || []).filter(it => it?.attunement === true && (Number(it.qty) || 0) === 1);
+    const attunedCount = eligible.filter(it => it.attuned === true).length;
+    const optionFor = it => `${it.attuned ? 'end' : 'begin'}|${encodeURIComponent(it.uid)}`;
+    const requested = eligible.find(it => String(it.uid) === String(requestedUid));
+    const requestedValue = requested ? optionFor(requested) : '';
+    const options = eligible.map(it => el('option', { value: optionFor(it), selected: requestedValue === optionFor(it) ? '' : null,
+      disabled: !it.attuned && attunedCount >= 3 ? '' : null }, `${it.attuned ? 'Завершить настройку' : 'Настроиться'} · ${it.name}`));
+    if (!options.length) options.push(el('option', { value: '', disabled: '' }, 'Нет одиночных предметов, требующих настройки'));
+    const select = el('select', { 'aria-label': 'Настройка предмета' }, el('option', { value: '', selected: requestedValue ? null : '' }, 'Без изменения настройки'), ...options);
+    return { select, node: el('div', {}, el('label', { class: 'field' }, 'Настройка предмета на этом отдыхе', select),
+      el('p', { class: 'muted small' }, 'Для настройки нужно провести короткий отдых, касаясь предмета и сосредоточившись на нём. За отдых можно настроить или отпустить один предмет; максимум — три одновременно.')) };
+  }
+  async function shortRest(requestedAttunementUid = '') {
     if (readonly || inventoryBusy || restBusy) return;
     restBusy = true;
     try {
     const counts = hitDiceCounts(), used = s.hp.hit_dice_used || {}, available = Object.entries(counts).map(([die, max]) => [Number(die), Math.max(0, max - (Number(used[die]) || 0))]).filter(([, n]) => n > 0);
-    let spend = null;
+    const attunement = attunementRestControl(requestedAttunementUid);
+    let spend = null, picked = null;
     if (available.length && s.hp.current < s.hp.max) {
       const die = el('select', {}, ...available.map(([size, n]) => el('option', { value: size }, `d${size} · доступно ${n}`)));
       const count = el('input', { type: 'number', min: 1, max: available[0][1], value: 1, style: 'width:80px' });
@@ -552,14 +580,27 @@
         DiceEngine.present({ type: 'multi', kind: 'multi', label: `${ch.name}: короткий отдых`, rolls: results }, { local: true }); update();
       };
       die.addEventListener('change', update); count.addEventListener('input', update); update();
-      const picked = await modal('Короткий отдых · кости хитов', el('div', {}, el('p', { class: 'muted small' }, 'Выберите тип и количество костей. Можно бросить их здесь или ввести результат своего броска; кость хитов спишется после подтверждения.'), el('div', { class: 'row' }, el('label', {}, 'Кость', die), el('label', {}, 'Сколько', count), el('button', { class: 'small', type: 'button', onclick: rollHitDice }, 'Бросить')), formula, el('label', { class: 'field' }, 'Итог лечения', rolled)), [{ label: 'Отдохнуть', cls: 'primary', fn: () => ({ die: +die.value, count: +count.value, healing: +rolled.value }) }], { wide: true });
+      picked = await modal('Короткий отдых · кости хитов', el('div', {}, el('p', { class: 'muted small' }, 'Короткий отдых длится не менее часа. Кости хитов тратить необязательно. Для настройки предмета проведите это время в контакте с ним и сосредоточьтесь на нём; настройка завершится, если отдых не будет прерван.'), el('div', { class: 'row' }, el('label', {}, 'Кость', die), el('label', {}, 'Сколько', count), el('button', { class: 'small', type: 'button', onclick: rollHitDice }, 'Бросить')), formula, el('label', { class: 'field' }, 'Итог лечения', rolled), attunement.node), [
+        { label: 'Отдохнуть без костей хитов', fn: () => ({ useHitDice: false, attunement: attunement.select.value }) },
+        { label: 'Потратить кости хитов', cls: 'primary', fn: () => ({ useHitDice: true, die: +die.value, count: +count.value, healing: +rolled.value, attunement: attunement.select.value }) },
+      ], { wide: true });
       if (picked === null) return;
-      const max = available.find(x => x[0] === picked.die)?.[1] || 0, con = abMod('con');
-      const minHeal = picked.count * Math.max(0, 1 + con), maxHeal = picked.count * Math.max(0, picked.die + con);
-      if (!Number.isInteger(picked.count) || picked.count < 1 || picked.count > max || !Number.isInteger(picked.healing) || picked.healing < minHeal || picked.healing > maxHeal) return toast(`Проверьте количество костей и лечение (${minHeal}–${maxHeal}).`, 4000);
-      spend = picked;
+      if (picked.useHitDice) {
+        const max = available.find(x => x[0] === picked.die)?.[1] || 0, con = abMod('con');
+        const minHeal = picked.count * Math.max(0, 1 + con), maxHeal = picked.count * Math.max(0, picked.die + con);
+        if (!Number.isInteger(picked.count) || picked.count < 1 || picked.count > max || !Number.isInteger(picked.healing) || picked.healing < minHeal || picked.healing > maxHeal) return toast(`Проверьте количество костей и лечение (${minHeal}–${maxHeal}).`, 4000);
+        spend = picked;
+      }
     } else {
-      const yes = await modal('Короткий отдых', el('p', { class: 'muted small' }, 'Восстановятся умения с восстановлением после короткого отдыха и ячейки Магии договора. Обычные ячейки не восстановятся.'), [{ label: 'Завершить отдых', cls: 'primary', fn: () => true }]); if (yes === null) return;
+      picked = await modal('Короткий отдых', el('div', {}, el('p', { class: 'muted small' }, 'Короткий отдых длится не менее часа. Восстановятся умения с восстановлением после короткого отдыха и ячейки Магии договора. Для настройки предмета нужны контакт с ним, сосредоточение и непрерванный отдых.'), attunement.node), [{ label: 'Завершить короткий отдых', cls: 'primary', fn: () => ({ attunement: attunement.select.value }) }]); if (picked === null) return;
+    }
+    let attunementChange = null;
+    if (picked?.attunement) {
+      const [action, encodedUid] = picked.attunement.split('|', 2), uid = decodeURIComponent(encodedUid || '');
+      const item = s.inventory.find(it => String(it.uid) === uid && it.attunement === true && (Number(it.qty) || 0) === 1);
+      if (!item) return toast('Этот предмет нельзя настроить: требуется одиночный предмет с соответствующим свойством.', 4000);
+      if (action === 'begin' && s.inventory.filter(it => it.attuned === true && it.attunement === true).length >= 3) return toast('Настроиться можно не более чем на три предмета одновременно. Сначала завершите настройку одного из них.', 4000);
+      attunementChange = { item, active: action === 'begin' };
     }
     if (spend) {
       const spentDice = SpellRules.spendHitDice(s.hp.hit_dice_used || {}, counts, spend.die, spend.count);
@@ -568,8 +609,11 @@
       s.hp.current = Math.min(s.hp.max, s.hp.current + spend.healing);
     }
     const restored = SpellRules.restore(s.spells, s.features, 'short');
+    if (attunementChange) attunementChange.item.attuned = attunementChange.active;
     save(); render();
-    const details = [spend && `${spend.count}d${spend.die}: +${spend.healing} хитов`, restored.pactSlots && 'восстановлены ячейки Договора', restored.features && `восстановлены умения (${restored.features})`, restored.spellUses && `заряды заклинаний (${restored.spellUses})`].filter(Boolean);
+    const details = [spend && `${spend.count}d${spend.die}: +${spend.healing} хитов`,
+      attunementChange && `${attunementChange.active ? 'настройка завершена' : 'настройка снята'}: ${attunementChange.item.name}`,
+      restored.pactSlots && 'восстановлены ячейки Договора', restored.features && `восстановлены умения (${restored.features})`, restored.spellUses && `заряды заклинаний (${restored.spellUses})`].filter(Boolean);
     toast('Короткий отдых завершён' + (details.length ? ': ' + details.join(' · ') : '.'), 4500);
     } finally { restBusy = false; }
   }
@@ -832,6 +876,7 @@
     // Верхняя строка: только имя, статус и действия уровня листа. Тема и редакция — в футере.
     const bar = el('div', { class: 'row sheet-topbar', style: 'margin-bottom:6px' }, el('h1', { style: 'flex:1' }, ch.name), status,
       embed ? el('button', { class: 'small', style: 'flex:0', onclick: () => window.open(withTok('/sheet/' + id), 'sheet_' + id, 'width=1000,height=800') }, 'В окно') : null,
+      ch.campaign_id ? el('a', { class: 'btn small', style: 'flex:0;white-space:nowrap', href: withTok('/c/' + encodeURIComponent(ch.campaign_id)), target: '_blank', rel: 'noopener', title: 'Открыть кампанию и её чат' }, 'Чат кампании') : null,
       el('button', { class: 'small', style: 'flex:0', onclick: () => toggleComp() }, 'Справочник'),
       el('button', { class: 'small', style: 'flex:0', title: 'Переменные листа: числа, которые записывают и читают действия (sheet.vars)', onclick: openVarsDialog }, 'Переменные…'),
       el('button', { class: 'small', style: 'flex:0', onclick: () => { if (!dirty || confirm('Отбросить несохранённые изменения и загрузить актуальный лист?')) reload(true); } }, 'Обновить'),
@@ -865,10 +910,10 @@
     const root = el('div', { class: 'sheet-main-view' });
     const cols = el('div', { class: 'cols sheet-main' });
     const restActions = readonly ? null : el('div', { class: 'rest-actions' },
-      el('button', { class: 'rest-action', type: 'button', title: 'Восстановить умения короткого отдыха и потратить кости хитов', onclick: shortRest }, 'Короткий отдых'),
+      el('button', { class: 'rest-action', type: 'button', title: 'Восстановить умения, потратить кости хитов или настроиться на предмет', onclick: shortRest }, 'Короткий отдых'),
       el('button', { class: 'rest-action primary', type: 'button', title: 'Восстановить хиты, ячейки, умения и часть костей хитов', onclick: longRest }, 'Долгий отдых'));
     root.append(el('section', { class: 'card rest-panel', 'aria-label': 'Отдых персонажа' },
-      el('div', { class: 'rest-panel-copy' }, el('h3', {}, 'Отдых'), el('p', { class: 'muted small' }, 'Короткий: кости хитов и способности. Долгий: хиты, ячейки и восстановление ресурсов.')),
+      el('div', { class: 'rest-panel-copy' }, el('h3', {}, 'Отдых'), el('p', { class: 'muted small' }, 'Короткий: кости хитов, способности и настройка на предмет. Долгий: хиты, ячейки и восстановление ресурсов.')),
       restActions));
     const c1 = el('div', { class: 'sheet-proficiencies' });
     const abil = el('div', { class: 'abil' });
@@ -1004,6 +1049,7 @@
       el('div', { class: 'grow' }, el('div', { class: 'mcard-name' }, it.name, it.attuned ? el('span', { class: 'muted small', title: 'настроен' }, ' · настроен') : null), noteBtn('item:' + it.uid, it.name), el('div', { class: 'muted small' }, [M.ITEM_TYPES[it.type]?.slice(2), it.rarity !== 'Обычный' ? it.rarity : null, it.weight ? `${it.weight} фнт` : null, it.charges ? `заряды ${it.charges.cur}/${it.charges.max}` : null].filter(Boolean).join(' · '))),
       el('div', { class: 'qty', onclick: e => e.stopPropagation() }, readonly ? el('span', {}, '×' + it.qty) : [el('button', { class: 'tiny', onclick: () => { it.qty = Math.max(0, (it.qty ?? 1) - 1); if (!it.qty) { it.equipped = false; it.hand_slot = null; }; save(); render(); } }, '−'), el('span', {}, it.qty ?? 1), el('button', { class: 'tiny', onclick: () => { it.qty = (it.qty ?? 1) + 1; save(); render(); } }, '+')]),
       readonly ? null : favButton(it),
+      !readonly && ch.campaign_id ? el('button', { class: 'small item-transfer', style: 'flex:0;white-space:nowrap', title: 'Передать другому персонажу кампании', 'aria-label': 'Передать ' + it.name, onclick: e => { e.stopPropagation(); transfer(it); } }, 'Передать') : null,
       readonly || !Equipment.canEquip(it, s) ? null : el('button', { disabled: it.qty === 0 ? '' : null, class: 'tiny eq' + (it.equipped ? ' on' : ''), title: it.equipped ? 'Снять' : 'Экипировать', onclick: e => { e.stopPropagation(); inventoryOp({ op: 'equip', item_uid: it.uid, slot: it.equipped ? 'backpack' : it.handedness !== 'none' ? Equipment.choices(it, s)[0] : 'worn' }); } }, icon('check', 12)));
     card.append(head);
     const acts = itemActions(it);
@@ -1023,9 +1069,8 @@
       if (!readonly) {
         const menuItems = [
           el('button', { class: 'small', onclick: async () => { const r = await M.editItem(it, { inventory: s.inventory }); if (r) { Object.assign(it, r); save(); render(); } } }, 'Изменить'),
-          it.attunement ? el('button', { class: 'small', onclick: () => { if (!it.attuned && s.inventory.filter(i => i.attuned).length >= 3) return toast('Настроить можно не более трёх предметов одновременно.'); it.attuned = !it.attuned; save(); render(); } }, it.attuned ? 'Снять настройку' : 'Настроиться') : null,
+          it.attunement ? el('button', { class: 'small', onclick: () => { if (!it.attuned && s.inventory.filter(i => i.attuned && i.attunement === true).length >= 3) return toast('Настроиться можно не более чем на три предмета одновременно. Сначала завершите настройку одного из них.'); shortRest(it.uid); } }, it.attuned ? 'Снять настройку · короткий отдых' : 'Настроиться · короткий отдых') : null,
           it.type === 'consumable' && !it.mechanics ? el('button', { class: 'small', disabled: it.qty === 0 ? '' : null, onclick: () => inventoryOp({ op: 'use', item_uid: it.uid, actions: [] }) }, 'Использовать') : null,
-          ch.campaign_id ? el('button', { class: 'small', onclick: () => transfer(it) }, 'Передать') : null,
           ch.campaign_id ? el('button', { class: 'small', onclick: () => dropToMap(it) }, 'На стол') : null,
           it.qty > 1 ? el('button', { class: 'small', onclick: async () => { const n = +(await prompt2('Отделить сколько?', '', '1')); if (Number.isInteger(n) && n > 0 && n < it.qty) await inventoryOp({ op: 'split', item_uid: it.uid, qty: n }); } }, 'Разделить') : null,
           el('button', { class: 'small danger', style: 'margin-left:auto', onclick: () => { if (confirm(`Удалить «${it.name}»?${s.inventory.some(x => x.consume?.target_uid === it.uid) ? ' На предмет ссылается расход другого предмета — привязку придётся изменить.' : ''}`)) { s.inventory = s.inventory.filter(x => x !== it); save(); render(); } } }, icon('trash')),

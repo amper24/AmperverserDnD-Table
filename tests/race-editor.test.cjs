@@ -27,7 +27,7 @@ const M = ctx.window.Mechanics;
 // Объекты из vm — другого окружения: сравнение идёт через JSON.
 const plain = x => JSON.parse(JSON.stringify(x));
 const seed = JSON.parse(fs.readFileSync('data_seed/srd_2014.json', 'utf8'));
-const RACES = seed.filter(e => e.category === 'race');
+const RACES = seed.filter(e => e.category === 'race' || e.category === 'subrace');
 const raceByName = name => RACES.find(e => e.name === name);
 const nodesOfType = (d, type) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === type);
 const nodesOfKind = (d, kind) => (d.mechanics?.graph?.nodes || []).filter(n => n.type === 'rule.list' && n.params?.kind === kind);
@@ -200,7 +200,7 @@ test('известные сразу заклинания приходят из �
 
   // Записи 2024 — справочник подставляется редактору вторым доводом: линия со своими заговорами
   // перекрывает корень, линия без своих заговоров берёт заговоры и выбор характеристики у корня.
-  const seed24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'race');
+  const seed24 = JSON.parse(fs.readFileSync('data_seed/srd_2024.json', 'utf8')).filter(e => e.category === 'race' || e.category === 'subrace');
   const race24 = name => seed24.find(e => e.name === name);
   const high = RE.readState(race24('Эльфийская линия: высший эльф'), seed24);
   assert.deepEqual(plain(high.spells.fixed.map(r => r.name)), ['Фокусы'], 'своя линия перекрывает корень');

@@ -132,7 +132,7 @@ window.Lobby = {
           el('div', { class: 'home-card-actions' },
             el('a', { class: 'btn small primary', href: '/c/' + c.id, title: 'Открыть стол кампании' }, 'Открыть'),
             el('a', { class: 'btn small', href: '/c/' + c.id, target: '_blank', rel: 'noopener', title: 'Открыть стол в новой вкладке' }, icon('map', 14), ' На стол'),
-            el('a', { class: 'btn small', href: '/table/' + c.id, title: 'Участники, персонажи и токены на столе' }, icon('users', 14), ' Участники')));
+            el('a', { class: 'btn small', href: '/table/' + c.id, title: 'Настройки компании: участники, права и наборы правил' }, icon('users', 14), ' Настройки компании')));
       }
       function characterCard(c, campaignsById) {
         const s = c.sheet || {};

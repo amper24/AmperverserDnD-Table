@@ -49,7 +49,7 @@ window.CharacterBuilder = (() => {
     return null;
   };
   const feature = (s, name, text, source, mechanics) => s.features.push(Modules.newFeature({ name, text: text || '', source, mechanics }));
-  register('race', (s, e) => {
+  const applyRace = (s, e) => {
     const d = e.data || {}; s.race = d.parent ? `${d.parent} (${e.name})` : e.name;
     // Правила расы (скорость, языки, ASI 2014) перенесены в узлы rule.* — придут из applyGraphRules ниже.
     const hasRules = (e.data?.mechanics?.graph?.nodes || []).some(n => (n.type === 'rule.list' && n.params?.kind === 'languages')
@@ -62,7 +62,9 @@ window.CharacterBuilder = (() => {
     }
     // Фиксированные навыки расы (например, Острые чувства эльфа — Восприятие) из данных или пассивного блока.
     for (const name of Array.isArray(d.skills) ? d.skills : []) { const key = skillKey(name); if (key && !s.skills.includes(key)) s.skills.push(key); }
-  });
+  };
+  register('race', applyRace);
+  register('subrace', applyRace);
   register('class', (s, e) => {
     const d = e.data || {}; s.class = e.name;
     const skipFeature = name => (window.Presets?.items('feature_rules', s.edition) || []).some(r => r.table?.creation === 'skip' && new RegExp(r.table.pattern, r.table.flags || '').test(name));

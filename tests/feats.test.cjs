@@ -256,20 +256,22 @@ test('редактор класса: умение уровня и подклас
   assert.equal(allTag(feature, 'input')[0].attributes.value, 'Безрассудная атака', 'название пришло из записи');
   assert.ok(text(allTag(feature, 'textarea')[0]).includes('преимуществ'), 'текст пришёл из записи');
 
-  // Подкласс: перетаскивание записи видов «умение подкласса».
-  navTo('Подклассы');
+  // Ссылки класса сохраняются отдельно от новых самостоятельных подклассов.
+  const save = captured.buttons[0].fn();
+  const plain = x => JSON.parse(JSON.stringify(x));
+  assert.deepEqual(plain(save.data.feature_feats['1']), { 'Безрассудная атака': 'srd14-feat-reckless-attack', 'Защита без доспехов': 'srd14-feat-unarmored-defense' });
+  const node = save.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features');
+  assert.equal(node.params.table.levels['1'][0].feat, 'srd14-feat-reckless-attack', 'ссылка — и в таблице узла');
+  assert.equal(domCtx.window.Mechanics.validate(save.data.mechanics) || '', '', 'граф записи валиден');
+
+  // Подкласс правится собственным редактором и сохраняет ссылку на запись черты.
+  await CE.editSubclass({ category: 'subclass', name: 'Путь ярости', data: { edition: '2014', parent_class: 'Варвар', parent_class_slug: 'barbarian', features: {} } }, { feats: CATALOG['2014'] });
+  const subclassNav = title => clickNode(all(captured.content, 'ced-nav-btn').find(b => text(b) === title));
+  subclassNav('Умения');
   const subZone = all(captured.content, 'ced-drop')[0];
   drop(subZone, 'application/x-feat', { entry: CATALOG['2014'].find(e => e.slug === 'srd14-feat-frenzy'), slug: 'srd14-feat-frenzy' });
   const subFeature = all(captured.content, 'ced-feature').at(-1);
   assert.equal(allTag(subFeature, 'input')[1].attributes.value, 'Бешенство', 'умение подкласса из справочника');
-  assert.ok(allTag(subFeature, 'select').length, 'строка выбора записи есть у умения подкласса');
-
-  // Сохранение: ссылки уровня и подкласса.
-  const save = captured.buttons[0].fn();
-  const plain = x => JSON.parse(JSON.stringify(x));
-  assert.deepEqual(plain(save.data.feature_feats['1']), { 'Безрассудная атака': 'srd14-feat-reckless-attack', 'Защита без доспехов': 'srd14-feat-unarmored-defense' });
-  assert.deepEqual(plain(save.data.subclasses[0].feature_feats['3']), { 'Бешенство': 'srd14-feat-frenzy' });
-  const node = save.data.mechanics.graph.nodes.find(n => n.type === 'rule.list' && n.params?.kind === 'class_features');
-  assert.equal(node.params.table.levels['1'][0].feat, 'srd14-feat-reckless-attack', 'ссылка — и в таблице узла');
-  assert.equal(domCtx.window.Mechanics.validate(save.data.mechanics) || '', '', 'граф записи валиден');
+  const subSave = captured.buttons[0].fn();
+  assert.deepEqual(plain(subSave.data.feature_feats['3']), { 'Бешенство': 'srd14-feat-frenzy' });
 });

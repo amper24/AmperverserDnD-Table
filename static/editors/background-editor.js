@@ -337,7 +337,8 @@ window.BackgroundEditor = (() => {
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));
     };
     render();
-    const root = el('div', { class: 'class-editor' }, nav, content);
+    const tools = el('div', { class: 'ced-editor-tools' }, el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.openWindow?.({ edition: st.edition, campaignId: opts.campaignId, isGM: opts.isGM }) }, icon('book', 14), ' Открыть справочник'));
+    const root = el('div', { class: 'class-editor' }, nav, content, tools);
     return modal(entry?.id ? 'Предыстория: ' + (entry.name || '') : 'Новая предыстория', root,
       [{ label: 'Сохранить', cls: 'primary', fn: () => {
         const name = st.name.trim();

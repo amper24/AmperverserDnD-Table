@@ -714,14 +714,34 @@ window.RaceEditor = (() => {
     return box;
   }
 
-  function subracesSection(st, render) {
-    const box = el('div', {});
-    box.append(listEditor(st.subraces, render, {
-      placeholder: 'название подрасы', empty: 'Подрас нет.',
-    }));
-    box.append(el('p', { class: 'muted small' },
-      'Списком подрасы видны в карточке. Саму разновидность создайте отдельной записью расы и укажите в ней родительскую расу (раздел «Общее»).'));
-    return box;
+  function subracesSection(st, render, catalog = [], opts = {}, parentEntry = null) {
+    const box = el('div', { class: 'ced-subclass-catalog' }), parentName = str(parentEntry?.name), parentId = str(parentEntry?.id);
+    const linked = catalog.filter(sub => sub.category === 'subrace' && String(sub.data?.edition || '2014') === String(st.edition || '2014')
+      && (sub.data?.parent_id === parentId || sub.data?.parent === parentName || sub.data?.parent_slug === parentEntry?.slug)
+      && (!parentEntry?.pack_id || sub.pack_id === parentEntry.pack_id)
+      && (!parentEntry?.campaign_id || sub.campaign_id === parentEntry.campaign_id)
+      && (!parentEntry?.source || sub.source === parentEntry.source));
+    const syncLegacy = (record, previousName = '') => {
+      if (!record?.name) return;
+      const index = st.subraces.findIndex(name => norm(name) === norm(record.name) || (previousName && norm(name) === norm(previousName)));
+      if (index >= 0) st.subraces[index] = record.name; else st.subraces.push(record.name);
+      render();
+    };
+    const draw = () => {
+      box.replaceChildren();
+      if (linked.length) for (const sub of linked) box.append(el('article', { class: 'ced-subclass-record' },
+        el('div', {}, el('b', {}, sub.name), el('div', { class: 'muted small' }, sub.data?.name_en || 'Подраса')),
+        el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.editEntry?.(sub, { packId: sub.pack_id, campaignId: sub.campaign_id, onSaved: saved => { if (saved) { const i = linked.findIndex(x => x.id === saved.id); if (i >= 0) linked[i] = saved; syncLegacy(saved, sub.name); draw(); } } }) }, 'Редактировать')));
+      else box.append(el('div', { class: 'table-empty-state' }, icon('user', 20), el('span', {}, 'Отдельных записей подрас пока нет.')));
+      if (parentEntry?.id || parentEntry?.slug) box.append(el('button', { type: 'button', class: 'small primary', onclick: () => window.Compendium?.editEntry?.(null, {
+        category: 'subrace', directDestination: true, packId: parentEntry.pack_id, campaignId: parentEntry.campaign_id,
+        parentEntry, initialData: { edition: st.edition, parent: parentEntry.name, parent_id: parentEntry.id || '', parent_slug: parentEntry.slug || '' },
+        onSaved: saved => { if (saved) { linked.push(saved); syncLegacy(saved); draw(); } opts.onChanged?.(saved); }
+      }) }, '+ Добавить отдельную подрасу'));
+      else box.append(el('p', { class: 'muted small' }, 'Сначала сохраните расу, затем добавьте к ней подрасы отдельными записями.'));
+      box.append(el('p', { class: 'muted small' }, 'Каждая подраса хранится отдельной записью и может входить в набор самостоятельно.'));
+    };
+    draw(); return box;
   }
 
 
@@ -745,12 +765,15 @@ window.RaceEditor = (() => {
               : sec.id === 'proficiencies' ? proficienciesSection(st, render)
                 : sec.id === 'traits' ? traitsSection(st, render, feats)
                   : sec.id === 'spells' ? spellsSection(st, render)
-                    : subracesSection(st, render);
+                    : entry?.category === 'subrace' ? el('p', { class: 'muted small' }, 'Подрасы привязываются к основной расе. Эта самостоятельная запись уже является подрасой.')
+                      : subracesSection(st, render, opts.catalog || [], opts, entry);
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));
     };
     render();
-    const root = el('div', { class: 'class-editor' }, nav, content);
-    return modal(entry?.id ? 'Раса: ' + (entry.name || '') : 'Новая раса', root,
+    const tools = el('div', { class: 'ced-editor-tools' }, el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.openWindow?.({ edition: st.edition, campaignId: opts.campaignId, isGM: opts.isGM }) }, icon('book', 14), ' Открыть справочник'));
+    const root = el('div', { class: 'class-editor' }, nav, content, tools);
+    const title = entry?.category === 'subrace' ? 'Подраса' : 'Раса';
+    return modal(entry?.id ? title + ': ' + (entry.name || '') : 'Новая ' + title.toLowerCase(), root,
       [{ label: 'Сохранить', cls: 'primary', fn: () => {
         const name = st.name.trim();
         if (!name) { toast('Нужно название расы'); return false; }

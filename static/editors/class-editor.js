@@ -810,42 +810,43 @@ window.ClassEditor = (() => {
   }
 
   // ---------- Подклассы ----------
-  function subclassesSection(st, render, catalog = []) {
-    const box = el('div', {});
-    st.subclasses.forEach((sub, index) => {
-      const card = el('section', { class: 'ced-block' });
-      const head = el('div', { class: 'ced-block-head' }, el('span', { class: 'badge' }, 'подкласс'),
-        el('input', { class: 'grow', value: str(sub.name), placeholder: 'Название подкласса', oninput: e => sub.name = e.target.value }),
-        el('button', { type: 'button', class: 'small ghost', onclick: () => { st.subclasses.splice(index, 1); render(); } }, '×'));
-      card.append(head);
-      card.append(el('div', { class: 'ced-grid' },
-        field('Английское название', textInput(sub.name_en, 'Evocation', v => sub.name_en = v)),
-        field('Надпись (путь, школа…)', textInput(sub.flavor, 'Магическая традиция', v => sub.flavor = v))));
-      card.append(el('label', { class: 'ced-field wide' }, el('span', {}, 'Описание'),
-        el('textarea', { rows: 3, oninput: e => sub.desc = e.target.value }, str(sub.desc))));
-      const list = el('div', { class: 'ced-features' });
-      const draw = () => {
-        list.replaceChildren();
-        (sub.features || (sub.features = [])).forEach((f, fi) => {
-          list.append(el('div', { class: 'ced-feature' },
-            el('div', { class: 'ced-row' },
-              el('span', { class: 'ced-inline' }, el('small', { class: 'muted' }, 'уровень'), numInput(f.level, v => f.level = Math.min(MAX_LEVEL, Math.max(1, v)), { min: 1, max: MAX_LEVEL })),
-              el('input', { class: 'grow', value: str(f.name), placeholder: 'Название умения', oninput: e => f.name = e.target.value }),
-              el('button', { type: 'button', class: 'small ghost', onclick: () => { sub.features.splice(fi, 1); draw(); } }, '×')),
-            featRow(f, catalog, draw),
-            el('textarea', { rows: 2, placeholder: 'Текст умения', oninput: e => f.text = e.target.value }, str(f.text))));
-        });
-        list.append(el('div', { class: 'ced-row' },
-          el('button', { type: 'button', class: 'small', onclick: () => { (sub.features ||= []).push({ level: 3, name: '', text: '' }); draw(); } }, '+ умение'),
-          featDrop(item => { (sub.features ||= []).push({ level: 3, ...item }); draw(); }, 'или перетащите черту из справочника')));
-      };
-      draw();
-      card.append(list);
-      box.append(card);
-    });
-    box.append(el('button', { type: 'button', class: 'small', onclick: () => { st.subclasses.push({ name: '', name_en: '', flavor: '', desc: '', features: [] }); render(); } }, '+ подкласс'));
-    box.append(el('p', { class: 'muted small' }, 'Уровень получения подкласса считается по самому младшему уровню в его умениях — как в мастере повышения.'));
-    return box;
+  function subclassesSection(st, render, catalog = [], opts = {}, parentEntry = null) {
+    const box = el('div', { class: 'ced-subclass-catalog' });
+    const parentSlug = str(parentEntry?.slug || parentEntry?.data?.name_en).toLowerCase();
+    const parentId = str(parentEntry?.id);
+    const linked = catalog.filter(sub => sub.category === 'subclass' && String(sub.data?.edition || '2014') === String(st.edition || '2014')
+      && (sub.data?.parent_class_id === parentId || String(sub.data?.parent_class_slug || '').toLowerCase() === parentSlug
+        || (!sub.data?.parent_class_id && !sub.data?.parent_class_slug && sub.data?.parent_class === parentEntry?.name))
+      && (!parentEntry?.pack_id || sub.pack_id === parentEntry.pack_id)
+      && (!parentEntry?.campaign_id || sub.campaign_id === parentEntry.campaign_id)
+      && (!parentEntry?.source || sub.source === parentEntry.source));
+    const syncLegacy = (record, previousName = '') => {
+      if (!record) return;
+      const data = record.data || {}, features = [];
+      for (const [level, rows] of Object.entries(data.features || {})) for (const row of rows || []) {
+        const name = typeof row === 'string' ? row : str(row?.name);
+        if (name) features.push({ level: num(level, 3), name, text: str(data.feature_texts?.[name] || row?.text), feat: str(data.feature_feats?.[level]?.[name] || row?.feat) });
+      }
+      const item = { name: record.name, name_en: data.name_en || '', flavor: data.flavor || '', desc: data.desc || '', features };
+      const index = st.subclasses.findIndex(x => x.name_en && x.name_en === item.name_en || x.name === item.name || (previousName && x.name === previousName));
+      if (index >= 0) st.subclasses[index] = item; else st.subclasses.push(item);
+      render();
+    };
+    const draw = () => {
+      box.replaceChildren();
+      if (!parentEntry?.id && !parentEntry?.slug) box.append(el('div', { class: 'muted small' }, 'Сначала сохраните класс, затем добавьте к нему отдельные записи подклассов.'));
+      if (linked.length) for (const sub of linked) box.append(el('article', { class: 'ced-subclass-record' },
+        el('div', {}, el('b', {}, sub.name), el('div', { class: 'muted small' }, `${sub.data?.flavor || sub.data?.name_en || 'Подкласс'} · ${sub.data?.edition || 'редакция не указана'}`)),
+        el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.editEntry?.(sub, { packId: sub.pack_id, campaignId: sub.campaign_id, onSaved: saved => { if (saved) { const i = linked.findIndex(x => x.id === saved.id); if (i >= 0) linked[i] = saved; syncLegacy(saved, sub.name); draw(); } } }) }, 'Редактировать')));
+      else box.append(el('div', { class: 'table-empty-state' }, icon('shield', 20), el('span', {}, 'Отдельных записей подклассов пока нет.')));
+      if (parentEntry?.id || parentEntry?.slug) box.append(el('button', { type: 'button', class: 'small primary', onclick: () => window.Compendium?.editEntry?.(null, {
+        category: 'subclass', directDestination: true, packId: parentEntry.pack_id, campaignId: parentEntry.campaign_id,
+        parentEntry, initialData: { edition: st.edition, parent_class: parentEntry.name, parent_class_id: parentEntry.id || '', parent_class_slug: parentEntry.slug || parentEntry.data?.name_en || '', parent_class_name_en: parentEntry.data?.name_en || '' },
+        onSaved: saved => { if (saved) { linked.push(saved); syncLegacy(saved); draw(); } opts.onChanged?.(saved); }
+      }) }, '+ Добавить отдельный подкласс'));
+      box.append(el('p', { class: 'muted small' }, 'Подкласс — самостоятельная запись справочника и набора. Старые встроенные данные класса остаются для совместимости существующих листов.'));
+    };
+    draw(); return box;
   }
 
   // ---------- Заклинания ----------
@@ -870,6 +871,80 @@ window.ClassEditor = (() => {
   // «1 умение», «2 умения», «5 умений» — общий помощник (static/common.js, window.pluralRu).
   const plural = window.pluralRu;
 
+  // ---------- Отдельный редактор подкласса ----------
+  function subclassState(entry, opts = {}) {
+    const d = entry?.data || opts.initialData || {};
+    const features = [];
+    for (const [level, rows] of Object.entries(d.features || {})) for (const row of Array.isArray(rows) ? rows : []) {
+      const name = typeof row === 'string' ? row : str(row?.name);
+      if (!name) continue;
+      features.push({ level: num(level, 3), name, text: typeof row === 'object' ? str(row.text || d.feature_texts?.[name]) : str(d.feature_texts?.[name]),
+        feat: str(row?.feat || d.feature_feats?.[level]?.[name]) });
+    }
+    return { name: str(entry?.name || opts.initialName), name_en: str(d.name_en), edition: str(d.edition || opts.edition || '2014'),
+      parent_class: str(d.parent_class || opts.parentClass?.name), parent_class_slug: str(d.parent_class_slug || opts.parentClass?.slug), parent_class_id: str(d.parent_class_id || opts.parentClass?.id), parent_class_name_en: str(d.parent_class_name_en || opts.parentClass?.data?.name_en),
+      flavor: str(d.flavor), desc: str(d.desc), features };
+  }
+  function subclassData(st, entry) {
+    const d = { ...(entry?.data || {}) };
+    for (const k of ['parent_class', 'parent_class_slug', 'parent_class_name_en', 'flavor', 'desc', 'name_en', 'edition']) if (st[k]) d[k] = st[k]; else delete d[k];
+    const features = {}, texts = {}, refs = {};
+    for (const f of st.features) {
+      const name = str(f.name).trim(); if (!name) continue;
+      const level = String(Math.min(MAX_LEVEL, Math.max(1, num(f.level, 3))));
+      (features[level] ||= []).push(name);
+      if (str(f.text).trim()) texts[name] = str(f.text).trim();
+      if (str(f.feat).trim()) (refs[level] ||= {})[name] = str(f.feat).trim();
+    }
+    d.features = features; d.feature_texts = texts;
+    if (Object.keys(refs).length) d.feature_feats = refs; else delete d.feature_feats;
+    d.parent_class_id = st.parent_class_id || d.parent_class_id;
+    return d;
+  }
+  function editSubclass(entry, opts = {}) {
+    const st = subclassState(entry, opts), featList = featCatalog(opts.feats, ['subclass']);
+    let section = 'common';
+    const nav = el('div', { class: 'ced-nav' }), content = el('div', { class: 'ced-content' });
+    const drawFeatures = () => {
+      const box = el('div', { class: 'ced-features' });
+      const draw = () => {
+        box.replaceChildren();
+        st.features.forEach((f, i) => box.append(el('div', { class: 'ced-feature' },
+          el('div', { class: 'ced-row' }, el('span', { class: 'ced-inline' }, el('small', { class: 'muted' }, 'уровень'), numInput(f.level, v => f.level = Math.min(MAX_LEVEL, Math.max(1, v)), { min: 1, max: MAX_LEVEL })),
+            el('input', { class: 'grow', value: f.name, placeholder: 'Название умения', oninput: e => f.name = e.target.value }),
+            el('button', { type: 'button', class: 'small ghost', onclick: () => { st.features.splice(i, 1); draw(); } }, '×')),
+          featRow(f, featList, draw), el('textarea', { rows: 3, placeholder: 'Текст умения', oninput: e => f.text = e.target.value }, f.text))));
+        box.append(el('div', { class: 'ced-row' }, el('button', { type: 'button', class: 'small', onclick: () => { st.features.push({ level: 3, name: '', text: '' }); draw(); } }, '+ умение'),
+          featDrop(item => { st.features.push({ level: 3, ...item }); draw(); }, 'или перетащите умение из справочника')));
+      };
+      draw(); return box;
+    };
+    const render = () => {
+      const sections = [{ id: 'common', title: 'Общее' }, { id: 'features', title: 'Умения' }];
+      nav.replaceChildren(...sections.map(s => el('button', { type: 'button', class: 'ced-nav-btn' + (section === s.id ? ' on' : ''), onclick: () => { section = s.id; render(); } }, s.title)));
+      let body;
+      if (section === 'common') {
+        const classes = (opts.classes || []).filter(e => e.category === 'class' && String(e.data?.edition || '2014') === String(st.edition || '2014'));
+        const parent = el('select', { 'aria-label': 'Класс', onchange: e => { const c = classes.find(x => String(x.id) === e.target.value); st.parent_class = c?.name || ''; st.parent_class_slug = c?.slug || ''; st.parent_class_id = c?.id || ''; st.parent_class_name_en = c?.data?.name_en || ''; } },
+          el('option', { value: '' }, 'Выберите класс…'), ...classes.map(c => el('option', { value: c.id, selected: (st.parent_class_id === c.id || st.parent_class_slug === c.slug || st.parent_class === c.name) ? '' : null }, c.name + ' · ' + c.source)));
+        body = el('div', { class: 'ced-grid' }, field('Класс', parent), field('Редакция', select(st.edition, [{ value: '2014', label: 'D&D 5e (2014)' }, { value: '2024', label: 'D&D 5e (2024)' }], v => st.edition = v)),
+          field('Название подкласса', textInput(st.name, 'Путь берсерка', v => st.name = v)),
+          field('Английское название', textInput(st.name_en, 'Battle Master', v => st.name_en = v)),  field('Название пути / школы', textInput(st.flavor, 'Боевой архетип', v => st.flavor = v)),
+          el('label', { class: 'ced-field wide' }, el('span', {}, 'Описание'), el('textarea', { rows: 5, oninput: e => st.desc = e.target.value }, st.desc)));
+      } else body = drawFeatures();
+      content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, section === 'common' ? 'Общее' : 'Умения по уровням'), el('p', { class: 'muted small' }, 'Подкласс — отдельная запись справочника, связанная с классом.'), body));
+    };
+    render();
+    const tools = el('div', { class: 'ced-editor-tools' }, el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.openWindow?.({ edition: st.edition }) }, icon('book', 14), ' Открыть справочник'));
+    const root = el('div', { class: 'class-editor' }, nav, content, tools);
+    return modal(entry?.id ? 'Подкласс: ' + (entry.name || '') : 'Новый подкласс', root, [{ label: 'Сохранить', cls: 'primary', fn: () => {
+      const name = st.name.trim();
+      if (!name) { toast('Укажите название подкласса'); return false; }
+      if (!st.parent_class && !st.parent_class_slug) { toast('Выберите класс для подкласса'); section = 'common'; render(); return false; }
+      return { name, data: subclassData(st, entry) };
+    } }], { wide: true });
+  }
+
   // ---------- Окно редактора ----------
   const ABIL_SHORT = { str: 'СИЛ', dex: 'ЛОВ', con: 'ТЕЛ', int: 'ИНТ', wis: 'МДР', cha: 'ХАР' };
 
@@ -879,7 +954,7 @@ window.ClassEditor = (() => {
     // Черты справочника (категория «Черты»): реестр передаёт их списком, иначе список пуст —
     // умения тогда правятся как раньше, своими названием и текстом.
     const catalog = featCatalog(opts.feats, ['class', '']);
-    const subCatalog = featCatalog(opts.feats, ['subclass']);
+    const subclassCatalog = Array.isArray(opts.subclasses) ? opts.subclasses : [];
     let section = 'common';
     const content = el('div', { class: 'ced-content' });
     const nav = el('div', { class: 'ced-nav' });
@@ -892,12 +967,13 @@ window.ClassEditor = (() => {
           : sec.id === 'skills' ? skillsSection(st, render)
             : sec.id === 'languages' ? languagesSection(st, render)
               : sec.id === 'equipment' ? equipmentSection(st, render)
-                : sec.id === 'subclasses' ? subclassesSection(st, render, subCatalog)
+                : sec.id === 'subclasses' ? subclassesSection(st, render, subclassCatalog, opts, entry)
                   : casterSection(st);
       content.replaceChildren(el('div', { class: 'ced-section' }, el('h3', {}, sec.title), el('p', { class: 'muted small' }, sec.hint), body));
     };
     render();
-    const root = el('div', { class: 'class-editor' }, nav, content);
+    const tools = el('div', { class: 'ced-editor-tools' }, el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.openWindow?.({ edition: st.edition, campaignId: opts.campaignId, isGM: opts.isGM }) }, icon('book', 14), ' Открыть справочник'));
+    const root = el('div', { class: 'class-editor' }, nav, content, tools);
     return modal(entry?.id ? 'Класс: ' + (entry.name || '') : 'Новый класс', root,
       [{ label: 'Сохранить', cls: 'primary', fn: () => {
         const name = st.name.trim();
@@ -906,6 +982,6 @@ window.ClassEditor = (() => {
       } }], { wide: true });
   }
 
-  return { edit, readState, writeData, emptyData, equipmentText, blocksFromText, rowsFromList, rowFromText, skillKeyOfName, skillNameOfKey, skillFromEntry,
+  return { edit, editSubclass, subclassState, subclassData, readState, writeData, emptyData, equipmentText, blocksFromText, rowsFromList, rowFromText, skillKeyOfName, skillNameOfKey, skillFromEntry,
     skillsCatalog, pickFilters, levelRow, SECTIONS, MAX_LEVEL };
 })();

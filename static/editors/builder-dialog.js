@@ -51,6 +51,17 @@ window.newCharacterDialog = async function (defaults = {}) {
   const equipmentCatalog = () => (draft.catalog || []).filter(e => e.category === 'item');
   const entryName = e => String(e?.name || e?.data?.name || '');
   const entryCategory = e => String(e?.data?.category || e?.category || '');
+  const standaloneSubclasses = klass => entries.filter(e => e.category === 'subclass' && (e.data?.parent_class_slug === klass?.slug
+    || e.data?.parent_class_name_en === klass?.data?.name_en || e.data?.parent_class === klass?.name));
+  const subclassesFor = klass => {
+    const standalone = standaloneSubclasses(klass);
+    return standalone.length ? standalone.map(entry => ({ ...entry.data, name: entry.name, standaloneEntry: entry }))
+      : (klass?.data?.subclasses || []).filter(s => s && typeof s === 'object' && s.name);
+  };
+  const subclassLevelFor = klass => {
+    const levels = subclassesFor(klass).flatMap(s => Object.keys(s.data?.features || s.features || {}).map(Number).filter(Number.isFinite));
+    return levels.length ? Math.min(...levels) : subclassLevel(klass);
+  };
   const equipmentPickOptions = filter => equipmentCatalog().filter(e => (B.PICK_FILTERS[filter] || {}).test ? B.PICK_FILTERS[filter].test(e) : false);
   const weight = it => Math.round((Number(it.weight) || 0) * (Number(it.qty) || 1) * 100) / 100;
 
@@ -62,7 +73,7 @@ window.newCharacterDialog = async function (defaults = {}) {
   function parentRace() {
     const race = draft.selected.race;
     if (!race?.data?.parent) return null;
-    const candidates = (draft.catalog || []).filter(e => e.category === 'race' && e.name === race.data.parent && !e.data?.subrace);
+    const candidates = (draft.catalog || []).filter(e => e.category === 'race' && e.name === race.data.parent && !e.data?.parent);
     return candidates.find(e => e.pack_id === race.pack_id && e.source === race.source) || candidates[0] || null;
   }
   /// Языки, которые раса выдаёт без выбора: в data.languages рядом с названиями лежит пояснение.
@@ -113,10 +124,9 @@ window.newCharacterDialog = async function (defaults = {}) {
       if (['race', 'class', 'background'].some(k => !draft.selected[k])) return 'Выберите расу, класс и предысторию.';
       if (draft.edition === '2024' && !String(draft.selected.background?.data?.feat || '').trim()) return 'В редакции 2024 предыстория должна давать черту происхождения; проверьте запись справочника.';
       if (draft.edition === '2024' && draft.selected.background?.data?.feat && !draft.selected.feat) return `Черта предыстории «${draft.selected.background.data.feat}» не найдена в справочнике; добавьте корректную запись, прежде чем продолжить.`;
-      if (entries.some(e => e.category === 'race' && e.data?.parent === draft.selected.race?.name) && !draft.selected.race?.data?.parent) return 'Для этой расы выберите одну из доступных родословных.';
       const raceProblem = B.raceChoiceProblem(draft);
       if (raceProblem) return raceProblem;
-      if (subclassLevel(draft.selected.class) === 1 && (draft.selected.class?.data?.subclasses || []).some(s => typeof s === 'object' && s.name)
+      if (subclassLevelFor(draft.selected.class) === 1 && subclassesFor(draft.selected.class).length
         && !draft.selected.subclass) return 'Выберите подкласс: у вашего класса он выбирается уже на 1 уровне.';
       for (const group of subclassVariantGroups(draft.selected.subclass, 1))
         if (!group.options.includes(draft.ruleChoices?.subclassVariants?.[group.base])) return `Выберите вариант «${group.base}» подкласса.`;
@@ -213,7 +223,7 @@ window.newCharacterDialog = async function (defaults = {}) {
     try {
       const params = new URLSearchParams({ edition: draft.edition, limit: '3000' });
       if (defaults.campaignId) params.set('campaign_id', defaults.campaignId);
-      const result = await Promise.all(['race', 'class', 'background', 'feat', 'spell', 'item'].map(category => API.get('/api/compendium?' + params + '&category=' + category)));
+      const result = await Promise.all(['race', 'subrace', 'class', 'subclass', 'background', 'feat', 'spell', 'item'].map(category => API.get('/api/compendium?' + params + '&category=' + category)));
       if (version !== request) return;
       // Черты-умения (черты рас, умения классов и подклассов) — не выбор игрока: в каталоге мастера
       // создания их нет, иначе «чертой происхождения» человека стали бы умения всех классов сразу.
@@ -308,7 +318,9 @@ window.newCharacterDialog = async function (defaults = {}) {
   // ---------- Шаг «Происхождение»: карточки расы, класса и предыстории ----------
   function choose(category) {
     const selected = draft.selected[category];
-    const selectableEntries = entries.filter(e => e.category === category && !(category === 'race' && !e.data?.parent && entries.some(child => child.category === 'race' && child.data?.parent === e.name)));
+    const selectableEntries = entries.filter(e => category === 'race'
+      ? (e.category === 'race' || e.category === 'subrace')
+      : e.category === category);
     const select = el('select', { 'aria-label': CAT_NAMES[category], onchange: e => {
       draft.selected[category] = entries.find(x => x.id === e.target.value);
       if (category === 'background') { draft.bonuses = {}; draft.languages = []; draft.selected.feat = B.backgroundFeatModule(draft.selected.background, entries); delete draft.ruleChoices.magicInitiate; }
@@ -324,7 +336,8 @@ window.newCharacterDialog = async function (defaults = {}) {
       }
       if (category === 'class' || category === 'background') draft.equipment = emptyEquipment();
       render();
-    } }, el('option', { value: '' }, 'Выберите…'), ...selectableEntries.map(e => el('option', { value: e.id, selected: selected?.id === e.id ? '' : null }, e.name + ' · ' + e.source)));
+    } }, el('option', { value: '' }, 'Выберите…'), ...selectableEntries.map(e => el('option', { value: e.id, selected: selected?.id === e.id ? '' : null },
+      (e.category === 'subrace' && e.data?.parent ? `${e.name} — подраса: ${e.data.parent}` : e.name) + ' · ' + e.source)));
     const d = selected?.data || {};
     const list = value => Array.isArray(value) ? value.filter(Boolean).join(', ') : typeof value === 'string' ? value : '';
     // Навыки класса — правило графа (узел rule.list, kind: skills): показываем то же, что спросит мастер создания.
@@ -340,7 +353,7 @@ window.newCharacterDialog = async function (defaults = {}) {
           d.tools && `Инструменты: ${list(d.tools)}`,
           Number(d.languages) > 0 && `Языки на выбор: ${d.languages}`,
           d.feature && `Умение: ${d.feature}`, d.feat && `Черта: ${d.feat}`].filter(Boolean).join(' · ')
-        : [d.speed && `Скорость: ${d.speed} фт.`, d.size && `Размер: ${d.size}`,
+        : [d.parent && `Подраса вида: ${d.parent}`, d.speed && `Скорость: ${d.speed} фт.`, d.size && `Размер: ${d.size}`,
           d.languages && `Языки: ${list(d.languages)}`].filter(Boolean).join(' · ');
     return el('section', { class: 'builder-module' }, field(CAT_NAMES[category], select),
       selected ? el('div', {},
@@ -356,23 +369,24 @@ window.newCharacterDialog = async function (defaults = {}) {
   function subclassSection() {
     const klass = draft.selected.class;
     if (!klass) return null;
-    const subs = (klass.data?.subclasses || []).filter(s => s && typeof s === 'object' && String(s.name || '').trim());
+    const subs = subclassesFor(klass);
     if (!subs.length) return null;
-    const at = B.subclassLevel(klass);
+    const at = subclassLevelFor(klass);
     if (at !== 1) return el('section', { class: 'builder-module builder-subclass-note' },
       el('b', {}, 'Подкласс'),
       el('p', { class: 'muted small' }, at ? `По записи класса подкласс выбирается на ${at} уровне — вы сможете выбрать его при повышении уровня.` : 'Для этого класса в записи справочника подклассы не настроены.'));
     const available = subs.filter(sub => {
-      const levels = Object.keys(sub.features || {}).map(Number).filter(n => Number.isInteger(n) && n >= 1);
+      const features = sub.data?.features || sub.features || {};
+      const levels = Object.keys(features).map(Number).filter(n => Number.isInteger(n) && n >= 1);
       return levels.length && Math.min(...levels) === 1;
     });
     const box = el('section', { class: 'builder-module builder-subclass' },
       available.length < subs.length ? el('p', { class: 'muted small' }, 'Показаны только подклассы, выбираемые на 1 уровне по их таблице умений.') : null,
       el('h3', {}, 'Подкласс · выбор на 1 уровне'),
-      el('p', { class: 'muted small' }, `Вложенные в запись класса «${klass.name}» варианты из справочника.`));
+      el('p', { class: 'muted small' }, `Самостоятельные записи подклассов класса «${klass.name}».`));
     for (const raw of available) {
-      const entry = B.subclassModule(klass, raw), on = draft.selected.subclass?.name === entry.name;
-      const firstFeatures = (entry.data.features?.['1'] || []).filter(n => typeof n === 'string' && !n.startsWith('|'));
+      const entry = raw.standaloneEntry || (B.subclassModule(klass, raw) || raw), on = draft.selected.subclass?.name === entry.name;
+      const firstFeatures = (entry.data?.features?.['1'] || []).filter(n => typeof n === 'string' && !n.startsWith('|'));
       box.append(el('label', { class: 'builder-subclass-option' + (on ? ' on' : '') },
         el('input', { type: 'radio', name: 'builder-subclass', checked: on ? '' : null, onchange: () => {
           draft.selected.subclass = entry; draft.ruleChoices.subclassVariants = {}; render();

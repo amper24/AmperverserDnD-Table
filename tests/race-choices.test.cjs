@@ -20,7 +20,7 @@ const B = ctx.window.CharacterBuilder;
 const abil = Object.fromEntries(B.keys.map(k => [k, 10]));
 const load = ed => loadSrd(`data_seed/srd_${ed}.json`).map(e => e.id ? e : { ...e, id: `${e.category}|${e.name}` });
 const recs14 = load('2014'), recs24 = load('2024');
-const race = (recs, name) => recs.find(e => e.category === 'race' && e.name === name);
+const race = (recs, name) => recs.find(e => ['race', 'subrace'].includes(e.category) && e.name === name);
 const draftFor = (recs, ed, raceEntry, ruleChoices = {}) => ({ name: 'Тест', edition: ed, abilities: abil,
   selected: { race: raceEntry, class: null, background: recs.find(e => e.category === 'background') }, catalog: recs, spells: [], ruleChoices, method: 'standard', languages: [] });
 

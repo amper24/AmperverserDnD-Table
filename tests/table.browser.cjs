@@ -53,7 +53,7 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'core/charact
         items: [
           { id: 'map-a', layer: 'map', z: -100, data: { type: 'image', asset_id: 'a', x: 350, y: 350, w: 700, h: 700, name: 'Карта A' } },
           { id: 'map-b', layer: 'map', z: -100, data: { type: 'image', asset_id: 'b', x: 2000, y: 350, w: 700, h: 700, name: 'Карта B' } },
-          { id: 'tok-1', layer: 'character', z: 0, data: { type: 'image', asset_id: 't', x: 350, y: 350, w: 70, h: 70, name: 'Герой' } },
+          { id: 'tok-1', layer: 'character', z: 0, data: { type: 'image', asset_id: 't', x: 350, y: 350, w: 70, h: 70, name: 'Герой', character_id: 'hero-target' } },
         ],
       };
       Table.init({
@@ -66,6 +66,31 @@ const SCRIPTS = ['core/common', 'core/asset-kinds', 'core/access', 'core/charact
       const r = st.canvas.getBoundingClientRect();
       return { x: r.x, y: r.y };
     });
+
+    // ---- drop предмета: на токен героя — передача, рядом на пустое место — лут ----
+    {
+      const drops = await page.evaluate(async () => {
+        const st = Table.state(), calls = [];
+        const originalPost = API.post;
+        API.post = async (url, body) => { calls.push({ url, body: JSON.parse(JSON.stringify(body)) }); return {}; };
+        const drop = async (x, y) => {
+          const data = new DataTransfer();
+          data.setData('application/x-item', JSON.stringify({ item: { uid: 'sword-1', name: 'Меч' }, from_character_id: 'hero-source' }));
+          const ev = new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true });
+          Object.defineProperty(ev, 'offsetX', { value: x }); Object.defineProperty(ev, 'offsetY', { value: y });
+          st.canvas.dispatchEvent(ev);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        };
+        try { await drop(350, 350); await drop(450, 450); }
+        finally { API.post = originalPost; }
+        return calls;
+      });
+      assert.equal(drops.length, 2, 'оба drop-жеста обработаны');
+      assert.equal(drops[0].url, '/api/characters/hero-source/transfer', 'drop на токен запускает серверную передачу');
+      assert.equal(drops[0].body.to_character_id, 'hero-target', 'получатель определяется по токену под указателем');
+      assert.equal(drops[1].url, '/api/characters/hero-source/inventory', 'drop мимо токена остаётся обычным сбросом лута на стол');
+      assert.equal(drops[1].body.op, 'drop');
+    }
 
     // ---- имя токена на канве не рисуется, хиты — рисуются ----
     {

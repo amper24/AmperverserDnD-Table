@@ -218,10 +218,8 @@
     const bar = el('div', { class: 'tbar' }, Nav.menu({ current: path }), el('a', { href: '/', title: 'На главную', class: 'brand small' }, APP_NAME), el('b', {}, camp.name), el('span', { class: 'badge ' + camp.role }, isGM ? 'Мастер' : 'Игрок'), el('span', { class: 'sep' }));
     if (canScene) bar.append(el('span', { class: 'muted' }, 'Сцена:'), sceneSel, el('button', { class: 'small', title: 'Показать игрокам', onclick: () => API.post(`/api/campaigns/${cid}/active-scene`, { scene_id: sceneSel.value }).then(() => toast('Сцена показана игрокам')) }, 'Показать игрокам'), el('span', { class: 'sep' }));
     const createBtn = el('button', { class: 'small primary', title: 'Создать: персонаж, NPC, предмет, заклинание, запись справочника, сцена', onclick: e => { e.stopPropagation(); createMenu(e.currentTarget); } }, icon('plus'), ' Создать');
-    // Отдельная страница «Участники кампании»: аккаунты, роли и права на слои, персонажи,
-    // токены, HP, скрытность. Система прав целиком (роли, возможности, матрица слоёв) —
-    // там же, в разделе «Права»: со стола ведёт одна кнопка, без модального окна.
-    const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Участники и права: роли, права на слои, персонажи, токены, HP, скрытность' }, icon(canManageRoles ? 'shield' : 'users'), canManageRoles ? ' Участники и права' : ' Участники');
+    // Отдельная страница настроек кампании: участники, роли, персонажи, токены и наборы правил.
+    const membersBtn = el('a', { class: 'btn small', href: '/table/' + cid, title: 'Настройки компании: участники, права, наборы правил и токены' }, icon(canManageRoles ? 'shield' : 'users'), ' Настройки компании');
     bar.append(el('span', { class: 'muted' }, 'Слой:'), layerSel, el('span', { class: 'sep' }), createBtn, membersBtn, el('span', { class: 'spacer' }), presence, el('span', { class: 'sep' }), Theme.button(), toggleSide);
     root.append(bar);
 
@@ -376,6 +374,33 @@
     function buildChars() {
       const w = el('div');
       const list = el('div', { class: 'list' });
+      async function addCharacterToCampaign(character) {
+        const enabled = await API.get(`/api/campaigns/${cid}/packs`).catch(() => []);
+        const missing = PackDependencies.missing(character.sheet, enabled);
+        if (missing.length) {
+          const body = el('div', {},
+            el('p', {}, `В персонаже «${character.name}» есть компоненты из наборов, не подключённых к этой кампании:`),
+            el('ul', {}, ...missing.map(p => el('li', {}, PackDependencies.label(p)))),
+            el('p', { class: 'muted small' }, isGM ? 'Можно подключить эти наборы сейчас. Содержимое персонажа сохранится и без подключения.' : 'Подключить наборы может только мастер кампании. Можно добавить персонажа сейчас, а мастер подключит наборы позже.'));
+          const action = isGM
+            ? await modal('Наборы персонажа', body, [
+              { label: 'Подключить и добавить', cls: 'primary', fn: () => 'enable' },
+              { label: 'Добавить без наборов', fn: () => 'attach' },
+            ])
+            : await modal('Наборы персонажа', body, [
+              { label: 'Добавить всё равно', cls: 'primary', fn: () => 'attach' },
+            ]);
+          if (!action) return;
+          if (action === 'enable') {
+            try {
+              for (const pack of missing) await API.post(`/api/campaigns/${cid}/packs/${pack.id}`, {});
+            } catch (e) { toast('Не удалось подключить набор: ' + e.message, 4000); return; }
+          }
+        }
+        try { await API.patch('/api/characters/' + character.id, { campaign_id: cid }); toast('Персонаж добавлен в кампанию'); await refresh(); }
+        catch (e) { toast('Не удалось добавить персонажа: ' + e.message, 4000); }
+      }
+
       const refresh = async () => {
         const chars = await API.get('/api/characters?campaign_id=' + cid);
         // Собственные листы доступны и мастеру, и игроку: сюда попадают созданные
@@ -409,10 +434,7 @@
           list.append(el('h3', { style: 'margin-top:10px' }, 'Мои персонажи вне этой кампании'));
           for (const c of free) list.append(el('div', { class: 'item' },
             el('span', { class: 'grow' }, c.name, ' ', el('span', { class: 'muted small' }, c.campaign_id ? 'в другой кампании' : 'вне кампании')),
-            can(Access.CAP.editOwn) ? el('button', { class: 'small', style: 'flex:0;white-space:nowrap', onclick: async () => {
-              try { await API.patch('/api/characters/' + c.id, { campaign_id: cid }); toast('Персонаж добавлен в кампанию'); await refresh(); }
-              catch (e) { toast('Не удалось добавить персонажа: ' + e.message, 4000); }
-            } }, c.campaign_id ? 'Перенести сюда' : '+ в кампанию') : null));
+            can(Access.CAP.editOwn) ? el('button', { class: 'small', style: 'flex:0;white-space:nowrap', onclick: async () => { await addCharacterToCampaign(c); } }, c.campaign_id ? 'Перенести сюда' : '+ в кампанию') : null));
         }
       };
       w.append(el('button', { class: 'primary', style: 'width:100%;margin-bottom:8px', onclick: async () => { const r = await newCharacterDialog({ campaignId: cid }); if (r) { const c = await API.post('/api/characters', { ...r, campaign_id: cid }); refresh(); openSheet(c.id); } } }, '+ Новый персонаж'),
@@ -593,7 +615,6 @@
         el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'player' }); refreshInv(); } }, '+ Для игроков'),
         el('button', { class: 'small', onclick: async () => { await API.post(`/api/campaigns/${cid}/invites`, { role: 'gm' }); refreshInv(); } }, '+ Для мастера')), inv);
       if (canMembers) w.append(el('h3', { style: 'margin-top:14px' }, 'Участники'), mem);
-      w.append(el('h3', { style: 'margin-top:14px' }, 'Наборы справочника'), Compendium.campaignPacksPanel(cid, isGM));
       if (canMembers) w.append(el('h3', { style: 'margin-top:14px' }, 'Кампания'),
         el('button', { class: 'small', onclick: async () => { const n = await prompt2('Название', '', camp.name); if (n) { await API.patch('/api/campaigns/' + cid, { name: n, description: camp.description }); reloadPage(); } } }, 'Переименовать'), ' ',
         el('button', { class: 'small danger', onclick: async () => { if (confirm('Удалить кампанию безвозвратно?')) { await API.del('/api/campaigns/' + cid); go('/'); } } }, 'Удалить кампанию'));

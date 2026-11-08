@@ -246,6 +246,10 @@ const ALTERS: &[&str] = &[
     // локализация наборов: базовый язык записей (ru|en) и переводы названия/описания {"en": {"name", "description"}}
     "ALTER TABLE packs ADD COLUMN locale VARCHAR(8) NULL",
     "ALTER TABLE packs ADD COLUMN i18n {LONGTEXT} NULL",
+    // Публикация пакета: лицензия контента, первоисточник и обязательная атрибуция.
+    "ALTER TABLE packs ADD COLUMN license VARCHAR(128) NULL",
+    "ALTER TABLE packs ADD COLUMN source_url VARCHAR(1024) NULL",
+    "ALTER TABLE packs ADD COLUMN attribution {LONGTEXT} NULL",
     // слои сцены (JSON-массив {id,name,order,...}) и активная карта (id элемента слоя map)
     "ALTER TABLE scenes ADD COLUMN layers MEDIUMTEXT NULL",
     "ALTER TABLE scenes ADD COLUMN active_map_id VARCHAR(32) NULL",

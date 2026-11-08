@@ -81,6 +81,42 @@ fn clean_pack_i18n(v: &Value, locale: &str) -> ApiResult<Option<String>> {
     Ok(if out.is_empty() { None } else { Some(Value::Object(out).to_string()) })
 }
 
+fn clean_optional_text(value: Option<&str>, max: usize) -> Option<String> {
+    let value = util::trim_to(value.unwrap_or(""), max);
+    if value.is_empty() { None } else { Some(value) }
+}
+
+fn clean_source_url(value: Option<&str>) -> ApiResult<Option<String>> {
+    let value = clean_optional_text(value, 1024);
+    if let Some(url) = &value {
+        let lower = url.to_ascii_lowercase();
+        if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+            return Err(AppError::bad("Ссылка на источник должна начинаться с http:// или https://"));
+        }
+    }
+    Ok(value)
+}
+
+fn private_only_license(license: &str) -> bool {
+    let normalized = license.to_lowercase();
+    normalized.contains("all rights reserved") || normalized.contains("все права защищены")
+}
+
+fn validate_publication(license: Option<&str>, attribution: Option<&str>) -> ApiResult<()> {
+    let Some(license) = license.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Err(AppError::bad("Перед публикацией укажите лицензию набора"));
+    };
+    let normalized = license.to_lowercase();
+    if private_only_license(license) {
+        return Err(AppError::bad("Набор с лицензией «Все права защищены» нельзя публиковать в открытом каталоге"));
+    }
+    let is_cc0 = normalized.contains("cc0");
+    if !is_cc0 && attribution.map(str::trim).filter(|s| !s.is_empty()).is_none() {
+        return Err(AppError::bad("Добавьте обязательную атрибуцию автора и источника для выбранной лицензии"));
+    }
+    Ok(())
+}
+
 fn pack_json(r: &sqlx::any::AnyRow, extra: Value) -> Value {
     let folders = folders_of(r);
     let mut v = json!({
@@ -90,6 +126,9 @@ fn pack_json(r: &sqlx::any::AnyRow, extra: Value) -> Value {
         "tags": opt(r, "tags").unwrap_or_default(), "edition": opt(r, "edition").unwrap_or_default(),
         "updated_at": opt(r, "updated_at"), "published_at": opt(r, "published_at"), "version": r.try_get::<i64, _>("version").unwrap_or(1),
         "locale": locale_of(r), "i18n": i18n_of(r),
+        "license": opt(r, "license").unwrap_or_default(),
+        "source_url": opt(r, "source_url").unwrap_or_default(),
+        "attribution": opt(r, "attribution").unwrap_or_default(),
     });
     if let (Some(dst), Some(src)) = (v.as_object_mut(), extra.as_object()) {
         for (k, val) in src { dst.insert(k.clone(), val.clone()); }
@@ -160,32 +199,58 @@ async fn stats_with_owner(st: &AppState, pid: &str, owner_id: &str, uid: &str) -
 }
 
 #[derive(Deserialize)]
-pub struct ListQuery { pub scope: Option<String>, pub q: Option<String>, pub tag: Option<String>, pub sort: Option<String> }
+pub struct ListQuery {
+    pub scope: Option<String>, pub q: Option<String>, pub tag: Option<String>, pub sort: Option<String>,
+    pub edition: Option<String>, pub limit: Option<i64>, pub offset: Option<i64>, pub with_total: Option<bool>,
+}
 
 /// scope: mine (свои + соавторство) | subscribed | public (каталог) | all (всё доступное для подключения)
 async fn list(State(st): State<AppState>, user: AuthUser, Query(q): Query<ListQuery>) -> ApiResult<Json<Value>> {
     let scope = q.scope.as_deref().unwrap_or("all");
-    // «Подписан» и «соавтор» — подзапросами в той же выборке: раньше на каждый набор шло
-    // ещё два COUNT-запроса (N+1: при 500 наборах — 1001 запрос на один HTTP-запрос).
-    let mut sql = String::from("SELECT p.*, (SELECT COUNT(*) FROM compendium c WHERE c.pack_id = p.id) AS entries, (SELECT COUNT(*) FROM pack_subscriptions s WHERE s.pack_id = p.id) AS subscribers, u.name AS owner_name, (SELECT COUNT(*) FROM pack_subscriptions s2 WHERE s2.pack_id = p.id AND s2.user_id = ?) AS subscribed, (SELECT COUNT(*) FROM pack_editors e2 WHERE e2.pack_id = p.id AND e2.user_id = ?) AS editor FROM packs p JOIN users u ON u.id = p.owner_id WHERE ");
-    // Два первых `?` — из подзапросов в списке колонок, они идут до условий WHERE.
-    let mut binds: Vec<String> = vec![user.id.clone(), user.id.clone()];
+    // Сначала собираем общие условия отдельно: они одинаковы для страницы результата и точного счётчика.
+    let mut filter = String::new();
+    let mut filter_binds: Vec<String> = Vec::new();
     match scope {
-        "mine" => { sql.push_str("(p.owner_id = ? OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); binds.push(user.id.clone()); binds.push(user.id.clone()); }
-        "subscribed" => { sql.push_str("p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?)"); binds.push(user.id.clone()); }
-        "public" => { sql.push_str("p.is_public = 1"); }
-        _ => { sql.push_str("(p.owner_id = ? OR p.is_public = 1 OR p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?) OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); binds.push(user.id.clone()); binds.push(user.id.clone()); binds.push(user.id.clone()); }
+        "mine" => { filter.push_str("(p.owner_id = ? OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); filter_binds.push(user.id.clone()); filter_binds.push(user.id.clone()); }
+        "subscribed" => { filter.push_str("p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?)"); filter_binds.push(user.id.clone()); }
+        "public" => filter.push_str("p.is_public = 1"),
+        _ => { filter.push_str("(p.owner_id = ? OR p.is_public = 1 OR p.id IN (SELECT pack_id FROM pack_subscriptions WHERE user_id = ?) OR p.id IN (SELECT pack_id FROM pack_editors WHERE user_id = ?))"); filter_binds.push(user.id.clone()); filter_binds.push(user.id.clone()); filter_binds.push(user.id.clone()); }
     }
-    if let Some(s) = &q.q { sql.push_str(" AND (LOWER(p.name) LIKE ? OR LOWER(p.description) LIKE ? OR LOWER(p.i18n) LIKE ?)"); let pat = format!("%{}%", s.to_lowercase()); binds.push(pat.clone()); binds.push(pat.clone()); binds.push(pat); }
-    if let Some(t) = &q.tag { sql.push_str(" AND LOWER(p.tags) LIKE ?"); binds.push(format!("%{}%", t.to_lowercase())); }
+    if let Some(s) = q.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        filter.push_str(" AND (LOWER(p.name) LIKE ? OR LOWER(p.description) LIKE ? OR LOWER(p.i18n) LIKE ? OR LOWER(p.tags) LIKE ? OR LOWER(p.license) LIKE ?)");
+        let pat = format!("%{}%", s.to_lowercase());
+        filter_binds.extend([pat.clone(), pat.clone(), pat.clone(), pat.clone(), pat]);
+    }
+    if let Some(t) = q.tag.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        filter.push_str(" AND (REPLACE(LOWER(p.tags), ' ', '') = ? OR REPLACE(LOWER(p.tags), ' ', '') LIKE ? OR REPLACE(LOWER(p.tags), ' ', '') LIKE ? OR REPLACE(LOWER(p.tags), ' ', '') LIKE ?)");
+        let tag = t.to_lowercase().replace(' ', "");
+        filter_binds.extend([tag.clone(), format!("{tag},%"), format!("%,{tag}"), format!("%,{tag},%")]);
+    }
+    if let Some(edition) = q.edition.as_deref().filter(|s| matches!(*s, "2014" | "2024")) {
+        filter.push_str(" AND p.edition = ?"); filter_binds.push(edition.to_string());
+    }
+
+    let limit = q.limit.unwrap_or(500).clamp(1, 500);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let total = if q.with_total.unwrap_or(false) {
+        let count_sql = format!("SELECT COUNT(*) AS total FROM packs p WHERE {filter}");
+        let mut count_query = sqlx::query(&count_sql);
+        for b in &filter_binds { count_query = count_query.bind(b); }
+        Some(count_query.fetch_one(&st.db).await?.get::<i64, _>("total"))
+    } else { None };
+
+    // Подписка и соавторство считаются подзапросами в той же выборке, без N+1 запросов.
+    let mut sql = format!("SELECT p.*, (SELECT COUNT(*) FROM compendium c WHERE c.pack_id = p.id) AS entries, (SELECT COUNT(*) FROM pack_subscriptions s WHERE s.pack_id = p.id) AS subscribers, u.name AS owner_name, (SELECT COUNT(*) FROM pack_subscriptions s2 WHERE s2.pack_id = p.id AND s2.user_id = ?) AS subscribed, (SELECT COUNT(*) FROM pack_editors e2 WHERE e2.pack_id = p.id AND e2.user_id = ?) AS editor FROM packs p JOIN users u ON u.id = p.owner_id WHERE {filter}");
     sql.push_str(match q.sort.as_deref() { Some("popular") => " ORDER BY subscribers DESC, p.created_at DESC", Some("updated") => " ORDER BY p.updated_at DESC, p.created_at DESC", Some("name") => " ORDER BY p.name", _ => " ORDER BY p.created_at DESC" });
-    sql.push_str(" LIMIT 500");
-    let mut query = sqlx::query(&sql);
-    for b in &binds { query = query.bind(b); }
+    sql.push_str(" LIMIT ? OFFSET ?");
+    let mut query = sqlx::query(&sql).bind(&user.id).bind(&user.id);
+    for b in &filter_binds { query = query.bind(b); }
+    query = query.bind(limit).bind(offset);
     let rows = query.fetch_all(&st.db).await?;
     let out: Vec<Value> = rows.iter().map(|r| pack_json(r, json!({ "entries": r.get::<i64, _>("entries"), "subscribers": r.get::<i64, _>("subscribers"), "owner_name": r.get::<String, _>("owner_name"),
         "mine": r.get::<String, _>("owner_id") == user.id, "editor": r.get::<i64, _>("editor") > 0, "subscribed": r.get::<i64, _>("subscribed") > 0 }))).collect();
-    Ok(Json(json!(out)))
+    if let Some(total) = total { Ok(Json(json!({ "items": out, "total": total, "limit": limit, "offset": offset }))) }
+    else { Ok(Json(json!(out))) }
 }
 
 #[derive(Deserialize)]
@@ -194,16 +259,27 @@ pub struct PackIn {
     pub cover_asset_id: Option<String>, #[serde(default)] pub tags: String, #[serde(default)] pub edition: String,
     /// Базовый язык записей набора (ru|en) и переводы названия/описания: {"en": {"name": "…", "description": "…"}}.
     #[serde(default)] pub locale: String, #[serde(default)] pub i18n: Value,
+    /// Условия использования контента и атрибуция для каталога/экспорта.
+    #[serde(default)] pub license: Option<String>, #[serde(default)] pub source_url: Option<String>, #[serde(default)] pub attribution: Option<String>,
 }
 
 async fn create(State(st): State<AppState>, user: AuthUser, Json(body): Json<PackIn>) -> ApiResult<Json<Value>> {
     if body.name.trim().is_empty() { return Err(AppError::bad("Укажите название набора")); }
+    let license = clean_optional_text(body.license.as_deref(), 128);
+    let source_url = clean_source_url(body.source_url.as_deref())?;
+    let attribution = clean_optional_text(body.attribution.as_deref(), 8000);
+    if body.is_public {
+        if body.description.trim().len() < 10 { return Err(AppError::bad("Для публикации в каталоге добавьте описание набора (хотя бы пару предложений)")); }
+        validate_publication(license.as_deref(), attribution.as_deref())?;
+    }
     let id = util::uid();
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, cover_asset_id, tags, edition, folders, locale, i18n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)")
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, cover_asset_id, tags, edition, folders, locale, i18n, license, source_url, attribution) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?)")
         .bind(&id).bind(&user.id).bind(util::trim_to(&body.name, 128)).bind(&body.description).bind(body.is_public as i64).bind(util::now()).bind(util::now())
-        .bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr).execute(&st.db).await?;
+        .bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr)
+        .bind(&license).bind(&source_url).bind(&attribution).execute(&st.db).await?;
+    if body.is_public { sqlx::query("UPDATE packs SET published_at = ? WHERE id = ?").bind(util::now()).bind(&id).execute(&st.db).await?; }
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": 0, "mine": true, "subscribers": 0 }))))
 }
 
@@ -217,15 +293,23 @@ async fn get_one(State(st): State<AppState>, user: AuthUser, Path(pid): Path<Str
 async fn update(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>, Json(body): Json<PackIn>) -> ApiResult<Json<Value>> {
     require_owner(&st, &pid, &user).await?;
     if body.name.trim().is_empty() { return Err(AppError::bad("Укажите название набора")); }
-    let was_public = fetch(&st, &pid).await?.get::<i64, _>("is_public") != 0;
+    let current = fetch(&st, &pid).await?;
+    let was_public = current.get::<i64, _>("is_public") != 0;
     if body.is_public && body.description.trim().len() < 10 {
         return Err(AppError::bad("Для публикации в каталоге добавьте описание набора (хотя бы пару предложений)"));
     }
+    let license = body.license.as_deref().map(|s| clean_optional_text(Some(s), 128)).unwrap_or_else(|| clean_optional_text(opt(&current, "license").as_deref(), 128));
+    let source_url = match body.source_url.as_deref() {
+        Some(url) => clean_source_url(Some(url))?,
+        None => opt(&current, "source_url"),
+    };
+    let attribution = body.attribution.as_deref().map(|s| clean_optional_text(Some(s), 8000)).unwrap_or_else(|| clean_optional_text(opt(&current, "attribution").as_deref(), 8000));
+    if body.is_public { validate_publication(license.as_deref(), attribution.as_deref())?; }
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
-    sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ?, cover_asset_id = ?, tags = ?, edition = ?, updated_at = ?, locale = ?, i18n = ? WHERE id = ?")
+    sqlx::query("UPDATE packs SET name = ?, description = ?, is_public = ?, cover_asset_id = ?, tags = ?, edition = ?, updated_at = ?, locale = ?, i18n = ?, license = ?, source_url = ?, attribution = ? WHERE id = ?")
         .bind(util::trim_to(&body.name, 128)).bind(&body.description).bind(body.is_public as i64).bind(&body.cover_asset_id).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(util::now())
-        .bind(locale).bind(&tr).bind(&pid).execute(&st.db).await?;
+        .bind(locale).bind(&tr).bind(&license).bind(&source_url).bind(&attribution).bind(&pid).execute(&st.db).await?;
     if body.is_public && !was_public {
         sqlx::query("UPDATE packs SET published_at = ? WHERE id = ?").bind(util::now()).bind(&pid).execute(&st.db).await?;
     }
@@ -351,12 +435,17 @@ async fn entries_of(st: &AppState, pid: &str) -> ApiResult<Vec<Value>> {
 /// Экспорт набора в переносимый JSON.
 async fn export(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
     let p = can_read(&st, &pid, &user.id).await?;
+    if private_only_license(&opt(&p, "license").unwrap_or_default()) && p.get::<String, _>("owner_id") != user.id {
+        return Err(AppError::forbidden("Набор с лицензией «Все права защищены» может экспортировать только владелец"));
+    }
     Ok(Json(json!({
         "format": "amperverser-pack/2",
         "name": p.get::<String, _>("name"), "description": util::text(&p, "description"),
         "folders": folders_of(&p), "tags": opt(&p, "tags").unwrap_or_default(), "edition": opt(&p, "edition").unwrap_or_default(),
         "version": p.try_get::<i64, _>("version").unwrap_or(1),
         "locale": locale_of(&p), "i18n": i18n_of(&p),
+        "license": opt(&p, "license").unwrap_or_default(), "source_url": opt(&p, "source_url").unwrap_or_default(),
+        "attribution": opt(&p, "attribution").unwrap_or_default(),
         "entries": entries_of(&st, &pid).await?,
     })))
 }
@@ -386,6 +475,7 @@ pub struct ImportIn {
     #[serde(default)] pub folders: Vec<String>, #[serde(default)] pub tags: String, #[serde(default)] pub edition: String,
     /// Язык записей и переводы названия/описания (формат amperverser-pack/2); у файлов старого формата их нет — русский.
     #[serde(default)] pub locale: String, #[serde(default)] pub i18n: Value,
+    #[serde(default)] pub license: Option<String>, #[serde(default)] pub source_url: Option<String>, #[serde(default)] pub attribution: Option<String>,
     /// Импортировать в существующий набор (дополнить), а не создавать новый.
     pub into: Option<String>,
 }
@@ -408,8 +498,12 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
     let name = util::trim_to(body.name.as_deref().unwrap_or("Импортированный набор"), 128);
     let locale = clean_locale(&body.locale);
     let tr = clean_pack_i18n(&body.i18n, locale)?;
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&user.id).bind(&name).bind(&body.description).bind(util::now()).bind(util::now()).bind(json!(body.folders).to_string()).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr).execute(&st.db).await?;
+    let license = clean_optional_text(body.license.as_deref(), 128);
+    let source_url = clean_source_url(body.source_url.as_deref())?;
+    let attribution = clean_optional_text(body.attribution.as_deref(), 8000);
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, locale, i18n, license, source_url, attribution) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&user.id).bind(&name).bind(&body.description).bind(util::now()).bind(util::now()).bind(json!(body.folders).to_string()).bind(util::truncate(&body.tags, 255)).bind(util::truncate(&body.edition, 8)).bind(locale).bind(&tr)
+        .bind(&license).bind(&source_url).bind(&attribution).execute(&st.db).await?;
     let count = insert_entries(&st, &id, &name, &body.entries).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": count, "mine": true, "subscribers": 0 }))))
 }
@@ -417,11 +511,14 @@ async fn import(State(st): State<AppState>, user: AuthUser, Json(body): Json<Imp
 /// Клонировать доступный набор к себе (получается свой редактируемый экземпляр).
 async fn clone_pack(State(st): State<AppState>, user: AuthUser, Path(pid): Path<String>) -> ApiResult<Json<Value>> {
     let p = can_read(&st, &pid, &user.id).await?;
+    if private_only_license(&opt(&p, "license").unwrap_or_default()) && p.get::<String, _>("owner_id") != user.id {
+        return Err(AppError::forbidden("Набор с лицензией «Все права защищены» может клонировать только владелец"));
+    }
     let id = util::uid();
     let name = util::truncate(&format!("{} (копия)", p.get::<String, _>("name")), 128);
-    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, cover_asset_id, locale, i18n) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO packs (id, owner_id, name, description, is_public, created_at, updated_at, folders, tags, edition, cover_asset_id, locale, i18n, license, source_url, attribution) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&id).bind(&user.id).bind(&name).bind(util::text(&p, "description")).bind(util::now()).bind(util::now()).bind(folders_of(&p).to_string()).bind(opt(&p, "tags").unwrap_or_default()).bind(opt(&p, "edition").unwrap_or_default()).bind(opt(&p, "cover_asset_id"))
-        .bind(locale_of(&p)).bind(opt(&p, "i18n")).execute(&st.db).await?;
+        .bind(locale_of(&p)).bind(opt(&p, "i18n")).bind(opt(&p, "license")).bind(opt(&p, "source_url")).bind(opt(&p, "attribution")).execute(&st.db).await?;
     let entries = entries_of(&st, &pid).await?;
     let count = insert_entries(&st, &id, &name, &entries).await?;
     Ok(Json(pack_json(&fetch(&st, &id).await?, json!({ "entries": count, "mine": true, "subscribers": 0 }))))
@@ -451,4 +548,25 @@ async fn disable(State(st): State<AppState>, user: AuthUser, Path((cid, pid)): P
     sqlx::query("DELETE FROM campaign_packs WHERE campaign_id = ? AND pack_id = ?").bind(&cid).bind(&pid).execute(&st.db).await?;
     st.hub.broadcast(&cid, &json!({ "type": "packs_changed" }), None).await;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_catalog_requires_license_and_attribution_except_cc0() {
+        assert!(validate_publication(None, None).is_err());
+        assert!(validate_publication(Some("CC BY 4.0"), None).is_err());
+        assert!(validate_publication(Some("CC BY 4.0"), Some("Автор; источник; изменения")).is_ok());
+        assert!(validate_publication(Some("CC0 1.0"), None).is_ok());
+        assert!(validate_publication(Some("All rights reserved"), Some("Автор")).is_err());
+    }
+
+    #[test]
+    fn source_url_accepts_http_and_rejects_active_schemes() {
+        assert_eq!(clean_source_url(Some("https://example.org/license")).unwrap().as_deref(), Some("https://example.org/license"));
+        assert!(clean_source_url(Some("javascript:alert(1)")).is_err());
+        assert!(clean_source_url(Some("example.org/license")).is_err());
+    }
 }

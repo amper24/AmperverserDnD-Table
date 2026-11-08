@@ -21,7 +21,7 @@ const LAYER_PERMS = [
   { role_id: 'r1', role_name: 'Смотритель карты', layer_id: 'character', can_read: true, can_write: false, can_create: false },
 ];
 
-const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/character-hp', 'core/asset-kinds', 'core/permissions-ui', 'table/table-model', 'table/table-page'];
+const SCRIPTS = ['core/common', 'core/nav', 'core/access', 'core/character-hp', 'core/asset-kinds', 'core/permissions-ui', 'core/pack-dependencies', 'table/table-model', 'table/table-page'];
 
 // Права берём из static/core/access.js — того же модуля, что и страница.
 function accessModule() {
@@ -70,6 +70,8 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
     [`/api/campaigns/${camp.id}/scenes`]: SCENES,
     [`/api/campaigns/${camp.id}/scenes/sc1`]: { ...SCENE, items: sceneItems },
     [`/api/characters?campaign_id=${camp.id}`]: characters,
+    [`/api/campaigns/${camp.id}/packs`]: [],
+    '/api/packs?scope=all': [],
     '/api/assets?kind=token': [{ id: 'tok-a', name: 'NPC' }],
     [`/api/campaigns/${camp.id}/roles`]: ROLES,
     [`/api/campaigns/${camp.id}/layer-permissions`]: LAYER_PERMS,
@@ -121,7 +123,7 @@ async function openPage(browser, { me, camp, characters, sceneItems, presence })
   });
 
   await page.goto('https://table-page.test/table/' + camp.id);
-  await page.waitForSelector('[data-sec=members] .item');
+  await page.waitForSelector('[data-sec=members] .table-member');
   return { page, errors, sent, patched, created };
 }
 
@@ -152,22 +154,26 @@ async function waitSent(pred, message, tries = 60) {
     {
       const { page, errors, sent } = gm;
       // ---- заголовок и роль ----
-      assert.equal(await page.locator('h1', { hasText: 'Участники кампании' }).count(), 1, 'страница участников открылась');
-      assert.equal((await page.locator('h1').first().innerText()).includes('Участники кампании'), true);
+      assert.equal(await page.locator('h1', { hasText: 'Настройки компании' }).count(), 1, 'страница управления кампанией открылась');
+      assert.equal((await page.locator('h1').first().innerText()).includes('Настройки компании'), true);
+      assert.equal(await page.locator('.table-admin-section.active').count(), 1, 'одновременно показан один раздел');
       assert.equal(await page.locator('.badge.gm').first().innerText(), 'Мастер', 'бейдж роли мастера');
       const joinHref = await page.getByRole('link', { name: /Войти на карту/ }).getAttribute('href');
       assert.equal(joinHref, '/c/camp-1', 'кнопка «Войти на карту» ведёт на стол кампании');
 
       // ---- участники-аккаунты: имя, email, роль, онлайн ----
-      const members = page.locator('[data-sec=members] .item');
+      const members = page.locator('[data-sec=members] .table-member');
       assert.equal(await members.count(), 3, 'три участника-аккаунта');
       const playerRow = members.filter({ hasText: 'pl@test' });
+      await playerRow.getByText('В сети', { exact: true }).waitFor({ timeout: 3000 });
       const playerText = await playerRow.innerText();
       assert.ok(playerText.includes('Игрок'), 'имя участника');
       assert.ok(playerText.includes('pl@test'), 'email виден мастеру');
-      assert.ok(playerText.includes('онлайн'), 'присутствие из хаба (presence)');
-      const guestText = await members.filter({ hasText: 'guest@test' }).innerText();
-      assert.ok(guestText.includes('—'), 'без presence — прочерк');
+      assert.ok(playerText.includes('В сети'), 'присутствие из хаба (presence)');
+      const guestRow = members.filter({ hasText: 'guest@test' });
+      await guestRow.getByText('Не в сети', { exact: true }).waitFor({ timeout: 3000 });
+      const guestText = await guestRow.innerText();
+      assert.ok(guestText.includes('Не в сети'), 'без presence участник отмечен как офлайн');
       // роль: селект у игрока, у владельца заблокирован
       assert.equal(await playerRow.locator('select').count(), 1, 'мастер меняет роль селектом');
       assert.equal(await playerRow.locator('select').inputValue(), 'player');
@@ -180,6 +186,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.ok((await ownerRow.innerText()).includes('Ария'));
 
       // ---- персонажи: все, «На стол» для чужого персонажа ----
+      await page.getByRole('button', { name: 'Персонажи' }).click();
       const chars = page.locator('[data-sec=characters] .item');
       assert.equal(await chars.count(), 3, 'мастер видит всех персонажей кампании');
       const borin = chars.filter({ hasText: 'Борин' });
@@ -204,6 +211,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.ok(place.item.data.x >= 350 && place.item.data.x < 700, 'токен в пределах карты');
 
       // ---- «На столе»: токены сцены, HP/скрытность/владелец ----
+      await page.getByRole('button', { name: 'На столе' }).click();
       const tokens = page.locator('[data-sec=tokens] .item');
       assert.equal(await tokens.count(), 2, 'два токена на сцене');
       const goblin = tokens.filter({ hasText: 'Гоблин' });
@@ -234,6 +242,7 @@ async function waitSent(pred, message, tries = 60) {
         me: { id: 'u1', name: 'Мастер', email: 'gm@test' }, camp,
         characters: [CHARACTERS_GM[1]], sceneItems: [SCENE.items[0]], presence: [],
       });
+      await empty.page.getByRole('button', { name: 'Персонажи' }).click();
       const row = empty.page.locator('[data-sec=characters] .item', { hasText: 'Борин' });
       await row.getByRole('button', { name: /На стол/ }).click();
       await waitSent(() => empty.sent.some(m => m.type === 'item_upsert' && m.item?.data?.character_id === 'ch2'), 'токен не создан');
@@ -253,7 +262,8 @@ async function waitSent(pred, message, tries = 60) {
         characters: CHARACTERS_GM, sceneItems: SCENE.items, presence: [],
       });
       const { page, errors, patched } = rp;
-      // Раздел «Права» живёт на странице участников (раньше — модалка со стола).
+      // Раздел «Права» живёт в отдельной вкладке страницы управления кампанией.
+      await page.getByRole('button', { name: 'Права' }).click();
       const rules = page.locator('[data-sec=rules]');
       assert.equal(await rules.isVisible(), true, 'раздел «Права» виден мастеру');
       const card = rules.locator('.role-card[data-role="r1"]');
@@ -265,11 +275,13 @@ async function waitSent(pred, message, tries = 60) {
       assert.equal(await rules.locator('.role-card.system').count(), 2, 'системные роли показаны для справки');
 
       // Роль участника: в списке есть своя роль и она выбрана.
-      const watchRow = page.locator('[data-sec=members] .item', { hasText: 'watch@test' });
+      await page.getByRole('button', { name: 'Участники' }).click();
+      const watchRow = page.locator('[data-sec=members] .table-member', { hasText: 'watch@test' });
       assert.equal(await watchRow.locator('select').inputValue(), 'Смотритель карты', 'участник со своей ролью');
       assert.equal(await watchRow.locator('select option[value="Смотритель карты"]').count(), 1, 'своя роль в списке назначения');
 
       // Матрица: строка «Карта», столбец роли. «З» сразу включает изменение слоя и сохраняет.
+      await page.getByRole('button', { name: 'Права' }).click();
       const mapCell = rules.locator('.perms-matrix td[data-role="r1"][data-layer="map"]');
       const writeBtn = mapCell.locator('[data-flag=write]');
       assert.equal(await writeBtn.getAttribute('class'), 'perm-toggle', 'по умолчанию карту менять нельзя');
@@ -306,7 +318,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.equal(await page.locator('.badge.player').first().innerText(), 'Игрок', 'бейдж роли игрока');
 
       // ---- участники: имена/роли видны, действий мастера нет ----
-      const members = page.locator('[data-sec=members] .item');
+      const members = page.locator('[data-sec=members] .table-member');
       assert.equal(await members.count(), 3, 'игрок видит список участников');
       assert.ok((await members.filter({ hasText: 'Мастер' }).first().innerText()).includes('Мастер'), 'роль мастера видна');
       assert.ok(!(await members.first().innerText()).includes('@'), 'email участников игроку не показывают');
@@ -316,6 +328,7 @@ async function waitSent(pred, message, tries = 60) {
       assert.equal(await page.locator('[data-sec=rules]').isVisible(), false, 'раздел «Права» скрыт без возможности «Роли и права»');
 
       // ---- персонажи: только свои и расшаренные, «На стол» только для своего ----
+      await page.getByRole('button', { name: 'Персонажи' }).click();
       const chars = page.locator('[data-sec=characters] .item');
       assert.equal(await chars.count(), 2, 'игрок видит своих и расшаренных');
       const borin = chars.filter({ hasText: 'Борин' });
@@ -326,6 +339,7 @@ async function waitSent(pred, message, tries = 60) {
       await waitSent(() => sent.some(m => m.type === 'item_upsert' && m.item?.data?.character_id === 'ch2'), 'игрок не поставил своего персонажа');
 
       // ---- «На столе»: чужой токен только для чтения ----
+      await page.getByRole('button', { name: 'На столе' }).click();
       const tokens = page.locator('[data-sec=tokens] .item');
       assert.equal(await tokens.count(), 2);
       const ariaToken = tokens.filter({ hasText: 'Ария' });

@@ -162,7 +162,12 @@ iframe.sheetframe { width: 100%; height: 100%; border: none; background: var(--b
 .init-row.current { background: var(--accent-soft); }
 .init-row input { padding: 3px 6px; text-align: center; }
 
-.toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel2); border: 1px solid var(--accent); padding: 10px 14px; border-radius: var(--radius-lg); z-index: 200; }
+.toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 200; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: min(420px, calc(100vw - 40px)); max-height: min(70vh, 640px); overflow: hidden; pointer-events: none; }
+.toast { position: relative; flex: 0 0 auto; max-width: 100%; background: var(--panel2); border: 1px solid var(--accent); padding: 10px 14px; border-radius: var(--radius-lg); opacity: 0; transform: translateY(8px); transition: opacity .22s ease, transform .22s ease; pointer-events: auto; overflow-wrap: anywhere; }
+.toast.toast-visible { opacity: 1; transform: translateY(0); }
+.toast.toast-leaving { opacity: 0; transform: translateY(8px); }
+@media (max-width: 520px) { .toast-stack { right: 12px; bottom: 12px; width: calc(100vw - 24px); } }
+@media (prefers-reduced-motion: reduce) { .toast { transition-duration: .01ms; } }
 .presence { display: flex; gap: 4px; }
 .presence span { width: 26px; height: 26px; border-radius: 50%; background: var(--accent2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
 .presence span.gm { background: var(--accent); color: var(--on-accent); }
@@ -1131,6 +1136,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .comp-facets button { padding: 5px 8px; }
 .pack-catalog-filters { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin: 10px 0; }
 .pack-catalog-filters select { min-width: 140px; }
+.pack-catalog-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0 4px; }
+.pack-catalog-pager button { min-width: 105px; }
+.pack-attribution { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); }
+.pack-attribution summary { cursor: pointer; font-size: 12px; font-weight: 650; }
 @media (max-width: 600px) { .pack-catalog-filters > * { flex: 1 1 145px; min-width: 0 !important; max-width: none !important; } .comp-facets select { flex: 1 1 130px; min-width: 0; } }
 .comp-compact { grid-template-columns: minmax(235px, .9fr) minmax(300px, 1.25fr); }
 .comp-compact-controls { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1873,7 +1882,16 @@ body.lu-open { overflow: hidden; }
   height: min(92vh, 900px); max-height: 92vh; padding: 18px 22px; overflow: hidden; }
 .modal:has(.class-editor) > h2 { flex: none; }
 .modal:has(.class-editor) > .row { flex: none; margin-top: 10px !important; }
-.class-editor { display: flex; gap: 16px; flex: 1; min-height: 0; }
+.ced-editor-tools { position: absolute; top: 6px; right: 12px; z-index: 2; display: flex; justify-content: flex-end; }
+.class-editor { position: relative; display: flex; gap: 16px; flex: 1; min-height: 0; }
+.class-editor > .ced-nav, .class-editor > .ced-content { padding-top: 42px; }
+.ced-subclass-catalog { display: grid; gap: 8px; }
+.ced-subclass-record { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel2); }
+.compendium-window { z-index: 1200 !important; }
+.compendium-window .body { display: flex; padding: 8px; }
+.compendium-window-content, .compendium-window-content > .comp { display: flex; width: 100%; height: 100%; min-height: 0; }
+@media (max-width: 700px) { .ced-subclass-record { align-items: flex-start; flex-direction: column; } }
+
 .ced-nav { flex: none; width: 176px; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; padding-right: 4px; }
 .ced-nav-btn { text-align: left; padding: 7px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 400; }
 .ced-nav-btn:hover { background: var(--panel2); color: var(--text); }
@@ -1988,7 +2006,7 @@ body.sheet-vars-open { overflow: hidden; }
 .table-page .dice-log-button { bottom: 74px; }
 /* Лист: «Журнал» и док кубиков не перекрывают нижнюю строку формулы/футер. */
 .sheet-page .dice-dock,
-.sheet-page .dice-log-button { bottom: 74px; }
+.sheet-page .dice-log-button { bottom: 64px; }
 /* «Журнал» стоит слева от боковой панели, а когда она свёрнута — у правого края. */
 body:has(#table:not(.no-side)) .dice-log-button { right: 354px; }
 /* Участники: кнопки действий не рвутся на строки, роли не дублируются. */
@@ -2055,3 +2073,137 @@ body:has(#table) .dice-dock { bottom: 74px; }
 .perm-cap input { width: auto; margin: 0; }
 .perm-cap-label { font-size: 13px; color: var(--text); }
 .perm-cap-hint { grid-column: 2; line-height: 1.25; font-size: 11px; }
+
+/* ---------- страница «Настройки компании»: единая сетка, размеры и ритм ---------- */
+.table-admin-page { width: min(1380px, calc(100% - 48px)); max-width: none; margin: 0 auto; padding: 30px 0 56px; }
+.table-admin-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 26px 30px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: radial-gradient(ellipse at 88% 0%, var(--accent-soft), transparent 42%), var(--panel); box-shadow: var(--shadow); }
+.table-admin-heading { min-width: 0; }
+.table-admin-eyebrow, .table-section-kicker { display: flex; align-items: center; gap: 6px; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .13em; }
+.table-admin-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.table-admin-title-row h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.035em; }
+.table-admin-heading > p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.table-admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; }
+.table-admin-actions > * { flex: 0 0 auto; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.table-admin-scenebar { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 16px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel2); }
+.table-admin-scenebar:empty { display: none; }
+.table-admin-scenebar > span { color: var(--muted); font-size: 12px; }
+.table-admin-scenebar select { width: min(360px, 100%); min-height: 36px; }
+.table-admin-tabs { display: flex; align-items: stretch; gap: 6px; margin: 0 0 16px; padding: 5px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel2); scrollbar-width: thin; }
+.table-admin-tab { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 130px; min-height: 42px; padding: 8px 15px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .16s, color .16s, border-color .16s; }
+.table-admin-tab:hover { color: var(--text); background: var(--panel); }
+.table-admin-tab.active { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+.table-admin-section { display: none; min-width: 0; padding: clamp(18px, 2.4vw, 30px); margin: 0; border-radius: var(--radius-lg); animation: table-section-in .18s ease-out; }
+.table-admin-section.active { display: block; }
+@keyframes table-section-in { from { opacity: .65; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.table-section-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 0 0 20px; padding: 0 0 17px; border-bottom: 1px solid var(--border); }
+.table-section-head h2 { margin: 5px 0 3px; color: var(--text); font-size: 22px; letter-spacing: -.02em; text-transform: none; }
+.table-section-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.section-count { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 11px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; background: var(--panel2); color: var(--muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.table-section-head-tools { align-items: flex-end; }
+.table-section-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.table-search { width: min(260px, 100%); min-height: 38px; }
+.table-filter { width: 180px; min-height: 38px; }
+.table-member-list, .table-roster-list { display: grid; gap: 10px; }
+.table-member { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 150px) 38px; align-items: center; gap: 16px; min-height: 88px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel2); transition: border-color .15s, background .15s; }
+.table-member:hover { border-color: var(--accent-line); background: color-mix(in srgb, var(--panel2) 84%, var(--accent-soft)); }
+.table-member-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.table-member-avatar { width: 48px; height: 48px; flex: 0 0 48px; }
+.table-member-info { min-width: 0; }
+.table-member-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 680; overflow-wrap: anywhere; }
+.table-member-meta { margin-top: 3px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.table-member-characters { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.table-member-characters .chip { margin: 0; }
+.table-member-no-characters { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.table-role-select { width: 100%; min-width: 0; min-height: 38px; }
+.table-role-select:disabled { opacity: .75; }
+.table-member-presence { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.table-member-presence i { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--muted); opacity: .6; }
+.table-member-presence.online { color: var(--ok); }
+.table-member-presence.online i { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); }
+.table-member-remove { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; }
+.table-roster-list > .item { min-height: 76px; padding: 12px 14px; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel2); transition: border-color .15s, background .15s; }
+.table-roster-list > .item:hover { border-color: var(--accent-line); background: color-mix(in srgb, var(--panel2) 84%, var(--accent-soft)); }
+.table-roster-list > .item > div:nth-child(2) { min-width: 180px; }
+.table-row-avatar { width: 48px; height: 48px; flex: 0 0 48px; cursor: default; }
+.table-roster-list .portrait { overflow: hidden; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); }
+.table-roster-list .portrait img, .table-member-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.table-roster-list input[type=number] { min-height: 34px; padding: 4px 7px; }
+.table-empty-state { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 110px; padding: 22px; border: 1px dashed var(--border); border-radius: var(--radius-lg); color: var(--muted); text-align: center; }
+.table-empty-state .ico { color: var(--accent); }
+.table-admin-note { display: flex; align-items: center; gap: 9px; margin-top: 14px; padding: 11px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); color: var(--muted); font-size: 12px; }
+.table-admin-note:empty { display: none; }
+.table-admin-note::before { content: 'i'; display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 18px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+/* Права: одинаковые карточки, контролируемая ширина матрицы и компактные группы. */
+.permissions-subsection-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 25px 0 13px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
+.permissions-subsection-head h3 { margin: 0 0 4px; color: var(--text); font-size: 16px; letter-spacing: -.01em; text-transform: none; }
+.permissions-subsection-head p { margin: 0; color: var(--muted); font-size: 12px; }
+.permissions-subsection-actions, .permissions-legend { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.permissions-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.permissions-legend b { display: inline-grid; place-items: center; width: 23px; height: 23px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2); color: var(--text); }
+.permissions-status { min-height: 0; margin-top: 9px; color: var(--ok); font-size: 12px; }
+.permissions-status:empty { display: none; }
+.permissions-new-role { min-height: 36px; }
+.table-admin-section .role-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; }
+.table-admin-section .role-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 160px; padding: 16px; border-radius: var(--radius-lg); background: var(--panel2); }
+.table-admin-section .role-card.system { background: var(--bg); }
+.table-admin-section .role-card > .row:last-child { margin-top: auto !important; }
+.campaign-packs-settings > .row { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.campaign-packs-settings > .row:last-of-type { border-bottom: 0; }
+.campaign-packs-settings select { width: min(440px, 100%); }
+.table-roster-info > .row { flex-wrap: wrap; }
+.table-admin-section .role-empty { min-height: 100px; padding: 18px; border-radius: var(--radius-lg); background: var(--panel2); }
+.table-admin-section .perms-matrix-box { max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel2); }
+.table-admin-section .perms-matrix { width: max-content; min-width: 100%; margin: 0; border-collapse: separate; border-spacing: 0; }
+.table-admin-section .perms-matrix th, .table-admin-section .perms-matrix td { min-width: 92px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.table-admin-section .perms-matrix th:first-child, .table-admin-section .perms-matrix td:first-child { position: sticky; left: 0; z-index: 1; min-width: 220px; max-width: 280px; background: var(--panel); text-align: left; }
+.table-admin-section .perms-matrix th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+.table-admin-section .perms-matrix th:first-child { z-index: 3; }
+.table-admin-section .perms-matrix tr:last-child td { border-bottom: 0; }
+.table-admin-section .perm-toggle { width: 32px; height: 32px; margin: 0 2px; border-radius: 7px; }
+.table-admin-section .perm-groups { grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: 12px; }
+.table-admin-section .perm-group { padding: 14px 16px; border-radius: var(--radius-lg); background: var(--panel2); }
+.table-admin-section .perm-group-head { min-height: 34px; }
+.table-admin-section .perm-cap { padding: 6px 0; }
+
+@media (max-width: 900px) {
+  .table-admin-page { width: min(100% - 28px, 760px); padding-top: 18px; }
+  .table-admin-header { align-items: flex-start; flex-direction: column; padding: 22px; }
+  .table-admin-actions { justify-content: flex-start; }
+  .table-member { grid-template-columns: minmax(0, 1fr) minmax(130px, 160px) minmax(100px, 125px) 36px; gap: 10px; }
+  .table-admin-section .perms-matrix th:first-child, .table-admin-section .perms-matrix td:first-child { min-width: 175px; }
+}
+@media (max-width: 600px) {
+  .table-admin-page { width: calc(100% - 20px); padding: 12px 0 32px; }
+  .table-admin-header { gap: 18px; padding: 18px; }
+  .table-admin-title-row { align-items: flex-start; }
+  .table-admin-title-row h1 { font-size: 26px; }
+  .table-admin-heading > p { font-size: 13px; }
+  .table-admin-actions { width: 100%; }
+  .table-admin-actions > * { flex: 1 1 auto; }
+  .table-admin-scenebar { align-items: stretch; flex-direction: column; }
+  .table-admin-scenebar select { width: 100%; }
+  .table-admin-tabs { gap: 3px; margin-bottom: 10px; }
+  .table-admin-tab { min-width: auto; padding: 8px 10px; font-size: 12px; }
+  .table-admin-section { padding: 16px 13px; }
+  .table-section-head { align-items: flex-start; gap: 10px; margin-bottom: 14px; padding-bottom: 13px; }
+  .table-section-head h2 { font-size: 19px; }
+  .table-section-head-tools { flex-direction: column; align-items: stretch; }
+  .table-section-tools { display: grid; grid-template-columns: minmax(0,1fr) minmax(120px,.8fr); width: 100%; }
+  .table-search, .table-filter { width: 100%; min-width: 0; }
+  .table-section-tools .section-count { grid-column: 1 / -1; justify-self: start; }
+  .table-member { grid-template-columns: minmax(0,1fr) auto; gap: 9px; padding: 12px; }
+  .table-member-identity { gap: 10px; }
+  .table-member-avatar { width: 42px; height: 42px; flex-basis: 42px; }
+  .table-member-presence { grid-column: 1; }
+  .table-role-select { grid-column: 1; grid-row: 3; }
+  .table-member-remove { grid-column: 2; grid-row: 3; justify-self: end; }
+  .table-member > .badge { justify-self: end; grid-column: 2; }
+  .table-roster-list > .item { flex-wrap: wrap; align-items: center; }
+  .table-roster-list > .item > div:nth-child(2) { flex: 1 1 180px; }
+  .table-roster-list > .item > .row { flex: 1 1 auto !important; }
+  .table-roster-list .table-role-select { grid-column: auto; }
+  .permissions-subsection-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .permissions-subsection-actions, .permissions-legend { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { .table-admin-tab, .table-admin-section, .table-member, .table-roster-list > .item { transition: none; animation: none; } }

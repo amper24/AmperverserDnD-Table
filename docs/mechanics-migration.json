@@ -1,7 +1,7 @@
 {
   "2014": {
     "version": 2,
-    "records": 1294,
+    "records": 1306,
     "categories": {
       "background": 1,
       "class": 12,
@@ -9,8 +9,10 @@
       "feat": 1,
       "item": 599,
       "monster": 334,
-      "race": 13,
-      "spell": 319
+      "race": 9,
+      "spell": 319,
+      "subclass": 12,
+      "subrace": 4
     },
     "mechanics_records": 981,
     "origin": {
@@ -40,7 +42,7 @@
   },
   "2024": {
     "version": 2,
-    "records": 1205,
+    "records": 1217,
     "categories": {
       "background": 4,
       "class": 12,
@@ -48,8 +50,10 @@
       "feat": 17,
       "item": 444,
       "monster": 341,
-      "race": 33,
-      "spell": 339
+      "race": 9,
+      "spell": 339,
+      "subclass": 12,
+      "subrace": 24
     },
     "mechanics_records": 986,
     "origin": {

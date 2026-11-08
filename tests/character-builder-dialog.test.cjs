@@ -285,3 +285,26 @@ test('«Заполнить самостоятельно» спрашивает �
   assert.equal(result.sheet.modules.length, 0, 'модули в пустой лист не попали');
   sandbox.confirm = () => true;
 });
+
+test('мастер создания показывает базового эльфа и высшего эльфа как отдельную подрасу', async () => {
+  documentStub.body = makeNode('body');
+  const dialog = sandbox.newCharacterDialog({});
+  const rejected = [];
+  dialog.catch(error => rejected.push(error));
+  await sleep(50);
+  click(findButton(documentStub.body, 'Далее')); await sleep(40);
+  const raceSelect = findSelect(documentStub.body, 'Расы');
+  assert.ok(raceSelect, 'селектор расы открылся');
+  const options = raceSelect.children.filter(option => option.tag === 'option');
+  const elf = options.find(option => option.attributes.value === 'srd14-elf');
+  const highElf = options.find(option => option.attributes.value === 'srd14-high-elf');
+  assert.ok(elf, 'основной вид «Эльф» доступен отдельно');
+  assert.ok(highElf, 'высший эльф не подменяет основную расу');
+  assert.match(text(highElf), /подраса: Эльф/i, 'линейка явно помечена как подраса эльфа');
+  fireChange(raceSelect, 'srd14-elf'); await sleep(30);
+  assert.doesNotMatch(text(documentStub.body), /выберите одну из доступных подрас/i, 'базового эльфа можно выбрать без навязывания неполного списка подрас');
+  sandbox.confirm = () => true;
+  click(findButton(documentStub.body, 'Заполнить самостоятельно')); await sleep(20);
+  await Promise.race([dialog, sleep(500)]);
+  assert.equal(rejected.length, 0, rejected[0]?.stack);
+});
