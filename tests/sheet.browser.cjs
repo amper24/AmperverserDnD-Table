@@ -180,7 +180,9 @@ const character = () => ({
 
     const card = page.locator('.mcard', { hasText: 'Кинжал' });
     assert.equal(await card.locator('.mcard-body').count(), 0, 'карточка закрыта до клика');
-    await card.locator('.mcard-head').click({ position: { x: 220, y: 40 } });
+    // Use the title as the disclosure target; fixed coordinates can land on nested controls
+    // (such as quantity), which deliberately stop propagation to the card header.
+    await card.locator('.mcard-name').click();
     await page.waitForFunction(() => document.querySelectorAll('.mcard.open').length === 1);
     assert.equal(await page.locator('.align-picker-list').isVisible(), false, 'клик по предмету закрыл дропдаун');
     assert.equal(await card.locator('.mcard-body').count(), 1, 'предмет открылся, клик не потерялся');
