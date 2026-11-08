@@ -1,13 +1,15 @@
 // ---------------------------------------------------------------------------
-// table-page.js — страница «Участники кампании» (/table/<кампания>).
+// table-page.js — страница «Настройки компании» (/table/<кампания>).
 //
-// Четыре секции:
+// Пять секций:
 //   «Участники»  — аккаунты кампании: имя/email, роль, присутствие на столе,
 //                  персонажи участника, действия мастера (роль, исключить, пригласить);
 //   «Права»      — система прав целиком (static/core/permissions-ui.js): свои роли,
 //                  их возможности, матрица «слой × роль» и назначение роли участнику;
 //   «Персонажи»  — доступные по правам листы: «На стол»/«Убрать со стола», лист;
-//   «На столе»   — токены сцены: HP, скрытность, владелец, удаление.
+//                  у листов показываются зависимости от отключённых наборов;
+//   «На столе»   — токены сцены: HP, скрытность, владелец, удаление;
+//   «Наборы правил» — подключение и отключение наборов кампании (только мастер).
 //
 // Права приходят с сервера (GET кампании: role + permissions) и проверяются
 // через Access.can(); сервер остаётся источником правды и отвечает 403/ошибкой WS.
@@ -15,7 +17,7 @@
 // с возможностью table.manage_roles); раздел «Права» монтирует Permissions.mount.
 // Данные — существующие HTTP API (кампании, сцены, персонажи, ассеты) и те же
 // сообщения WebSocket, что у стола (item_upsert/item_delete), без нового сервера.
-// Зависимости: common.js, access.js, asset-kinds.js, table-model.js.
+// Зависимости: common.js, access.js, asset-kinds.js, pack-dependencies.js, table-model.js.
 // ---------------------------------------------------------------------------
 (async function () {
   const app = document.getElementById('app');
@@ -35,7 +37,7 @@
     app.append(el('div', { class: 'center' }, el('div', { class: 'card auth' }, el('h2', {}, 'Нет доступа'), el('p', { class: 'muted' }, 'Кампания не найдена или вы не её участник.'), el('a', { href: '/campaigns' }, 'К кампаниям'))));
     return;
   }
-  document.title = 'Участники: ' + camp.name + ' — ' + APP_NAME;
+  document.title = 'Настройки компании: ' + camp.name + ' — ' + APP_NAME;
 
   // ---------- права (с сервера; локальная матрица — запасной вариант) ----------
   let perms = A.perms(camp);
@@ -60,6 +62,8 @@
   const campaignRoles = () => (rulesUi ? rulesUi.roles : []);
   let online = null;     // Set(user_id) из presence; null — присутствие ещё не приходило
   let tokenAssets = null;
+  let enabledPacks = [];
+  let availablePacks = [];
   let charFilter = 'all';
   let search = '';
 
@@ -68,45 +72,81 @@
   // поэтому локальные «К столу/Кампании/Персонажи/Справочник» больше не дублируются.
   app.append(Nav.header({ me, current: location.pathname }));
 
-  const page = el('div', { class: 'page' });
+  const page = el('main', { class: 'page table-admin-page' });
   app.append(page);
 
   const roleBadge = el('span', { class: 'badge ' + camp.role, title: 'Ваша роль в кампании' }, A.label(camp.role));
   const inviteBtn = el('button', { class: 'small', title: 'Создать ссылку-приглашение', onclick: () => inviteDialog() }, icon('link'), ' Пригласить');
-  const header = el('div', { class: 'row', style: 'margin-bottom:14px;flex-wrap:wrap' },
-    el('h1', { style: 'flex:1' }, 'Участники кампании'), roleBadge, inviteBtn,
-    el('a', { class: 'btn primary', href: '/c/' + cid, title: 'Открыть виртуальный стол' }, icon('map'), ' Войти на карту'));
-  const sceneBar = el('div', { class: 'row', style: 'margin-bottom:10px;flex-wrap:wrap' });
-  const membersCount = el('span', { class: 'muted small' });
-  const membersBox = el('div', { class: 'list' });
-  const searchInput = el('input', { placeholder: 'Поиск по имени…', style: 'max-width:260px', oninput: e => { search = e.target.value.trim().toLowerCase(); renderCharacters(); } });
-  const filterSel = el('select', { style: 'width:auto;max-width:220px', title: 'Фильтр персонажей', onchange: e => { charFilter = e.target.value; renderCharacters(); } },
+  const mapBtn = el('a', { class: 'btn primary', href: '/c/' + cid, title: 'Открыть виртуальный стол' }, icon('map'), ' Войти на карту');
+  const header = el('header', { class: 'table-admin-header' },
+    el('div', { class: 'table-admin-heading' },
+      el('div', { class: 'table-admin-eyebrow' }, icon('users', 13), ' КАМПАНИЯ'),
+      el('div', { class: 'table-admin-title-row' }, el('h1', {}, 'Настройки компании'), roleBadge),
+      el('p', {}, camp.name + ' · Участники, права, наборы правил и доступ к столу.')),
+    el('div', { class: 'table-admin-actions' }, inviteBtn, mapBtn));
+  const sceneBar = el('div', { class: 'table-admin-scenebar' });
+  const membersCount = el('span', { class: 'section-count' });
+  const membersBox = el('div', { class: 'table-member-list' });
+  const searchInput = el('input', { class: 'table-search', placeholder: 'Поиск по имени…', oninput: e => { search = e.target.value.trim().toLowerCase(); renderCharacters(); } });
+  const filterSel = el('select', { class: 'table-filter', title: 'Фильтр персонажей', onchange: e => { charFilter = e.target.value; renderCharacters(); } },
     el('option', { value: 'all' }, 'Все персонажи'),
     el('option', { value: 'mine' }, 'Мои персонажи'),
     el('option', { value: 'table' }, 'На столе'),
     el('option', { value: 'off' }, 'Не на столе'));
-  const charCounter = el('span', { class: 'muted small' });
-  const charsBox = el('div', { class: 'list' });
-  const tokenCounter = el('span', { class: 'muted small' });
-  const tokensBox = el('div', { class: 'list' });
-  const hint = el('div', { class: 'muted small', style: 'margin-top:10px' });
+  const charCounter = el('span', { class: 'section-count' });
+  const charsBox = el('div', { class: 'table-roster-list' });
+  const tokenCounter = el('span', { class: 'section-count' });
+  const tokensBox = el('div', { class: 'table-roster-list' });
+  const hint = el('div', { class: 'table-admin-note' });
   const rulesBox = el('div', { class: 'perms' });
+  const packsBox = el('div', { class: 'campaign-packs-settings' });
 
-  page.append(
-    header,
-    el('p', { class: 'muted' }, 'Участники кампании — аккаунты игроков и мастера. Персонажи — отдельный список: мастера ставят на стол любого, игроки — своих и расшаренных. «На стол» создаёт токен на слое персонажей в центре активной карты; HP, скрытность и владелец токена настраиваются ниже. Сам стол — по кнопке «Войти на карту».'),
-    sceneBar,
-    el('div', { class: 'card', 'data-sec': 'members', style: 'margin-bottom:14px' }, el('div', { class: 'row', style: 'margin-bottom:8px' }, el('h2', { style: 'flex:1;margin:0' }, 'Участники'), membersCount), membersBox),
-    el('div', { class: 'card hidden', 'data-sec': 'rules', style: 'margin-bottom:14px' },
-      el('div', { class: 'row', style: 'margin-bottom:4px' }, el('h2', { style: 'flex:1;margin:0' }, 'Права')),
-      el('p', { class: 'muted small', style: 'margin:0 0 10px' }, 'Роль — набор возможностей и прав на слои стола. Системные «Мастер» и «Игрок» заданы сервером; свои роли создаются здесь и назначаются участнику в списке выше. Доступ к разделу — возможность «Роли и права».'),
-      rulesBox),
-    el('div', { class: 'card', 'data-sec': 'characters', style: 'margin-bottom:14px' },
-      el('div', { class: 'row', style: 'margin-bottom:8px;flex-wrap:wrap' }, el('h2', { style: 'flex:1;margin:0' }, 'Персонажи'), searchInput, filterSel, charCounter),
-      el('p', { class: 'muted small', style: 'margin-top:0' }, 'Мастер видит всех персонажей кампании, игрок — своих и расшаренных. «На стол» ставит токен в центр активной карты, если его ещё нет.'),
-      charsBox),
-    el('div', { class: 'card', 'data-sec': 'tokens' }, el('div', { class: 'row', style: 'margin-bottom:8px' }, el('h2', { style: 'flex:1;margin:0' }, 'На столе'), tokenCounter), tokensBox),
-    hint);
+  const sectionNav = el('nav', { class: 'table-admin-tabs', 'aria-label': 'Разделы кампании' });
+  const membersCard = el('section', { class: 'card table-admin-section', 'data-sec': 'members' },
+    el('div', { class: 'table-section-head' },
+      el('div', {}, el('div', { class: 'table-section-kicker' }, 'КОМАНДА'), el('h2', {}, 'Участники'), el('p', {}, 'Игроки и роли в этой кампании.')),
+      membersCount), membersBox);
+  const rulesCard = el('section', { class: 'card table-admin-section', 'data-sec': 'rules' },
+    el('div', { class: 'table-section-head' },
+      el('div', {}, el('div', { class: 'table-section-kicker' }, 'ДОСТУП'), el('h2', {}, 'Права и роли'), el('p', {}, 'Настройте возможности ролей и доступ к слоям стола.'))),
+    rulesBox);
+  const charactersCard = el('section', { class: 'card table-admin-section', 'data-sec': 'characters' },
+    el('div', { class: 'table-section-head table-section-head-tools' },
+      el('div', {}, el('div', { class: 'table-section-kicker' }, 'ЛИСТЫ'), el('h2', {}, 'Персонажи'), el('p', {}, 'Мастер видит всех; игрок — своих и расшаренных.')),
+      el('div', { class: 'table-section-tools' }, searchInput, filterSel, charCounter)),
+    charsBox);
+  const tokensCard = el('section', { class: 'card table-admin-section', 'data-sec': 'tokens' },
+    el('div', { class: 'table-section-head' },
+      el('div', {}, el('div', { class: 'table-section-kicker' }, 'СЦЕНА'), el('h2', {}, 'Токены на столе'), el('p', {}, 'Хиты, видимость и владелец токена.')),
+      tokenCounter), tokensBox);
+  const packsCard = el('section', { class: 'card table-admin-section', 'data-sec': 'packs' },
+    el('div', { class: 'table-section-head' },
+      el('div', {}, el('div', { class: 'table-section-kicker' }, 'ПРАВИЛА'), el('h2', {}, 'Наборы правил'), el('p', {}, 'Наборы, подключённые к кампании, доступны её участникам.'))),
+    packsBox);
+  const sectionDefs = [
+    { id: 'members', label: 'Участники', icon: 'users', element: membersCard },
+    ...(can(A.CAP.manageRoles) ? [{ id: 'rules', label: 'Права', icon: 'shield', element: rulesCard }] : []),
+    { id: 'characters', label: 'Персонажи', icon: 'sheet', element: charactersCard },
+    { id: 'tokens', label: 'На столе', icon: 'target', element: tokensCard },
+    { id: 'packs', label: 'Наборы правил', icon: 'box', element: packsCard }
+  ];
+  const sectionButtons = new Map();
+  for (const section of sectionDefs) {
+    const button = el('button', { class: 'table-admin-tab', type: 'button', 'aria-current': 'false', onclick: () => activateSection(section.id) }, icon(section.icon, 15), section.label);
+    sectionButtons.set(section.id, button);
+    sectionNav.append(button);
+  }
+  function activateSection(id) {
+    for (const section of sectionDefs) {
+      const active = section.id === id;
+      section.element.classList.toggle('active', active);
+      const button = sectionButtons.get(section.id);
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-current', active ? 'page' : 'false');
+    }
+  }
+  page.append(header, sceneBar, sectionNav, membersCard, rulesCard, charactersCard, tokensCard, packsCard, hint);
+  activateSection('members');
 
   // ---------- WebSocket: те же сообщения, что у стола ----------
   const ws = { sock: null, q: [], send(m) { if (this.sock?.readyState === 1) { this.sock.send(JSON.stringify(m)); return true; } this.q.push(m); return false; } };
@@ -127,6 +167,9 @@
       case 'presence':
         online = new Set((m.users || []).map(u => u.user_id));
         renderMembers();
+        break;
+      case 'packs_changed':
+        loadPacks();
         break;
       case 'item_upsert':
         if (m.item?.layer === LAYER.character) {
@@ -172,7 +215,7 @@
     sceneBar.innerHTML = '';
     if (!scenes.length) { sceneBar.append(el('span', { class: 'muted' }, 'В кампании пока нет сцен — их создаёт мастер.')); return; }
     if (isGM()) {
-      const sel = el('select', { style: 'width:auto;max-width:280px', title: 'Сцена, на которой ставим токены', onchange: e => { loadScene(e.target.value).then(renderAll); } },
+      const sel = el('select', { class: 'scene-picker', title: 'Сцена, на которой ставим токены', onchange: e => { loadScene(e.target.value).then(renderAll); } },
         ...scenes.map(s => el('option', { value: s.id, selected: s.id === sceneId ? '' : null }, s.name + (s.id === camp.active_scene_id ? ' (активная)' : ''))));
       sceneBar.append(el('span', { class: 'muted' }, 'Сцена:'), sel);
     } else {
@@ -185,9 +228,11 @@
   function renderMembers() {
     membersBox.innerHTML = '';
     membersCount.textContent = members.length === 1 ? '1 участник' : `${members.length} участников`;
-    const list = el('div', { class: 'list' });
-    for (const m of members) list.append(memberRow(m));
-    membersBox.append(list);
+    if (!members.length) {
+      membersBox.append(el('div', { class: 'table-empty-state' }, icon('users', 22), el('span', {}, 'В кампании пока нет участников.')));
+      return;
+    }
+    for (const m of members) membersBox.append(memberRow(m));
   }
 
   /// Подпись роли: «Мастер»/«Игрок» для системных, имя своей роли — как есть.
@@ -197,28 +242,24 @@
     return own ? own.name : A.label(name);
   }
 
-  function onlineText(userId) {
-    if (online === null) return '—';
-    return online.has(userId) ? 'онлайн' : '—';
-  }
-
   function memberRow(m) {
     const chars = characters.filter(c => c.owner_id === m.user_id);
     const badge = el('span', { class: 'badge ' + m.role, title: m.role === 'gm' ? 'Мастер кампании' : 'Роль: ' + roleLabel(m.role) }, roleLabel(m.role));
-    const avatar = el('div', { class: 'portrait', style: 'width:40px;height:40px;flex:0 0 40px' }, icon(m.user_id === me.id ? 'user' : 'users', 20));
+    const avatar = el('div', { class: 'portrait table-member-avatar' }, icon(m.user_id === me.id ? 'user' : 'users', 20));
     if (m.avatar_asset_id) assetURL(m.avatar_asset_id).then(u => { avatar.innerHTML = ''; avatar.append(el('img', { src: u, alt: '' })); }).catch(() => { });
     const charChips = chars.map(c => el('a', { class: 'chip', href: withTok('/sheet/' + c.id), target: '_blank', title: 'Открыть лист персонажа' }, icon('sheet', 12), ' ', c.name));
-    const row = el('div', { class: 'item', style: 'align-items:center;gap:8px;flex-wrap:wrap' }, avatar,
-      el('div', { style: 'flex:1;min-width:170px' },
-        el('b', {}, m.name, m.user_id === me.id ? el('span', { class: 'muted small' }, ' (вы)') : null),
-        el('div', { class: 'muted small' }, [m.email || null, roleLabel(m.role), onlineText(m.user_id)].filter(Boolean).join(' · ')),
-        charChips.length ? el('div', { class: 'row', style: 'flex-wrap:wrap;gap:4px;margin-top:4px' }, ...charChips) : null),
-      can(A.CAP.manageMembers) ? null : badge);
+    const isOnline = online === null ? null : online.has(m.user_id);
+    const identity = el('div', { class: 'table-member-identity' }, avatar,
+      el('div', { class: 'table-member-info' },
+        el('div', { class: 'table-member-name' }, m.name, m.user_id === me.id ? el('span', { class: 'muted small' }, 'Вы') : null),
+        el('div', { class: 'table-member-meta' }, m.email || 'Почта не указана'),
+        charChips.length ? el('div', { class: 'table-member-characters' }, ...charChips) : el('div', { class: 'table-member-no-characters' }, 'Персонажи не привязаны')));
+    const row = el('article', { class: 'table-member' }, identity);
 
     if (can(A.CAP.manageMembers)) {
       // Владельца кампании нельзя ни разжаловать, ни исключить — сервер это тоже запрещает.
       const isOwner = m.user_id === camp.owner_id;
-      const roleSel = el('select', { style: 'width:auto;max-width:150px', title: isOwner ? 'Владелец кампании всегда мастер' : 'Роль участника',
+      const roleSel = el('select', { class: 'table-role-select', title: isOwner ? 'Владелец кампании всегда мастер' : 'Роль участника',
         onchange: async e => {
           const next = e.target.value;
           try { await API.patch(`/api/campaigns/${cid}/members/${m.user_id}`, { role: next }); await reloadCampaign(); toast('Роль обновлена'); }
@@ -227,9 +268,12 @@
         ...roleOptions(m.role));
       roleSel.disabled = isOwner;
       row.append(roleSel);
-      if (!isOwner && m.user_id !== me.id) {
-        row.append(el('button', { class: 'small danger', title: 'Исключить из кампании', onclick: () => kickMember(m) }, icon('trash')));
-      }
+    } else row.append(badge);
+
+    row.append(el('span', { class: 'table-member-presence' + (isOnline ? ' online' : '') },
+      el('i', { 'aria-hidden': 'true' }), isOnline === null ? 'Статус загружается' : isOnline ? 'В сети' : 'Не в сети'));
+    if (can(A.CAP.manageMembers) && m.user_id !== camp.owner_id && m.user_id !== me.id) {
+      row.append(el('button', { class: 'small danger table-member-remove', title: 'Исключить из кампании', 'aria-label': 'Исключить ' + m.name, onclick: () => kickMember(m) }, icon('trash')));
     }
     return row;
   }
@@ -297,6 +341,58 @@
     return [s.race, s.class, s.level ? s.level + ' ур.' : null].filter(Boolean).join(' · ');
   }
 
+  const canManagePacks = () => camp.role === 'gm';
+  const packLabel = p => PackDependencies.label(p, [...enabledPacks, ...availablePacks]);
+  function missingPacks(c) { return PackDependencies.missing(c.sheet, enabledPacks); }
+
+  async function loadPacks() {
+    enabledPacks = await API.get(`/api/campaigns/${cid}/packs`).catch(() => []);
+    availablePacks = canManagePacks() ? await API.get('/api/packs?scope=all').catch(() => []) : [];
+    renderPacks();
+    renderCharacters();
+  }
+
+  async function enablePacks(ids) {
+    try {
+      for (const id of ids) await API.post(`/api/campaigns/${cid}/packs/${id}`, {});
+      await loadPacks();
+      toast(ids.length === 1 ? 'Набор подключён к кампании' : `Подключено наборов: ${ids.length}`);
+    } catch (e) {
+      await loadPacks();
+      toast('Не удалось подключить набор: ' + e.message, 4000);
+    }
+  }
+
+  function renderPacks() {
+    packsBox.innerHTML = '';
+    if (!enabledPacks.length) packsBox.append(el('p', { class: 'muted' }, 'К кампании пока не подключён ни один набор правил.'));
+    for (const pack of enabledPacks) {
+      const users = characters.filter(c => PackDependencies.fromSheet(c.sheet).some(d => d.id === pack.id));
+      const row = el('div', { class: 'row', style: 'margin:6px 0' },
+        el('span', { class: 'grow' }, packLabel(pack), ' ', el('span', { class: 'muted small' }, `${pack.entries ?? 0} записей${users.length ? ` · используется в ${users.length} персонажах` : ''}`)));
+      if (canManagePacks()) row.append(el('button', { class: 'small danger', onclick: async () => {
+        const warning = users.length ? ` Набор используется в ${users.length} персонажах; сохранённые снимки останутся, но записи набора перестанут быть доступны.` : '';
+        if (!confirm(`Отключить «${packLabel(pack)}» от кампании?${warning}`)) return;
+        try { await API.del(`/api/campaigns/${cid}/packs/${pack.id}`); await loadPacks(); toast('Набор отключён'); }
+        catch (e) { toast('Не удалось отключить набор: ' + e.message, 4000); }
+      } }, 'Отключить'));
+      packsBox.append(row);
+    }
+    if (!canManagePacks()) {
+      packsBox.append(el('p', { class: 'muted small' }, 'Подключать и отключать наборы может мастер кампании. Если персонажу не хватает набора, попросите мастера подключить его.'));
+      return;
+    }
+    const enabled = new Set(enabledPacks.map(p => p.id));
+    const available = availablePacks.filter(p => !enabled.has(p.id));
+    if (!available.length) {
+      packsBox.append(el('p', { class: 'muted small' }, 'Нет доступных наборов для подключения. Добавьте или импортируйте набор в разделе «Наборы» кампании.'));
+      return;
+    }
+    const select = el('select', { 'aria-label': 'Набор для подключения' }, ...available.map(p => el('option', { value: p.id }, `${packLabel(p)} (${p.entries ?? 0})`)));
+    packsBox.append(el('div', { class: 'row', style: 'margin-top:10px' }, select,
+      el('button', { class: 'small primary', onclick: () => enablePacks([select.value]) }, 'Подключить')));
+  }
+
   function renderCharacters() {
     const all = characters;
     const shown = all.filter(c => {
@@ -310,10 +406,10 @@
     charsBox.innerHTML = '';
     charCounter.textContent = shown.length === all.length ? String(all.length) : `${shown.length} из ${all.length}`;
     if (!all.length) {
-      charsBox.append(el('p', { class: 'muted' }, can(A.CAP.editOwn) ? 'Пока нет персонажей — создайте лист в кампании или откройте расшаренный.' : 'Нет доступных персонажей.'));
+      charsBox.append(el('div', { class: 'table-empty-state' }, icon('user', 22), el('span', {}, can(A.CAP.editOwn) ? 'Пока нет персонажей — создайте лист в кампании или откройте расшаренный.' : 'Нет доступных персонажей.')));
       return;
     }
-    if (!shown.length) { charsBox.append(el('p', { class: 'muted' }, 'Никого не найдено.')); return; }
+    if (!shown.length) { charsBox.append(el('div', { class: 'table-empty-state' }, icon('search', 22), el('span', {}, 'Никого не найдено.'))); return; }
     for (const c of shown) charsBox.append(characterRow(c));
   }
 
@@ -321,13 +417,17 @@
     const token = tokenOf(c.id);
     const owner = memberName(c.owner_id) || (c.owner_id === me.id ? me.name : '');
     const avatarId = c.sheet?.token_asset_id || c.portrait_asset_id;
-    const img = el('div', { class: 'portrait', style: 'width:44px;height:44px;flex:0 0 44px' }, icon('user', 22));
+    const img = el('div', { class: 'portrait table-row-avatar' }, icon('user', 22));
     if (avatarId) assetURL(avatarId).then(u => { img.innerHTML = ''; img.append(el('img', { src: u, alt: '' })); }).catch(() => { });
     const sub = [owner ? 'владелец: ' + owner : null, token ? 'на столе' : 'не на столе', token?.data?.hidden ? 'скрыт' : null].filter(Boolean).join(' · ');
-    const row = el('div', { class: 'item', style: 'align-items:center;gap:8px;flex-wrap:wrap' }, img,
-      el('div', { style: 'flex:1;min-width:160px' },
+    const missing = missingPacks(c);
+    const missingNotice = missing.length ? el('div', { class: 'row', style: 'justify-content:flex-start;gap:6px;margin-top:4px' },
+      el('span', { class: 'small', style: 'color:var(--danger,#e18a36)' }, `Недостающие наборы: ${missing.map(p => packLabel(p)).join(', ')}`),
+      canManagePacks() ? el('button', { class: 'small', onclick: () => enablePacks(missing.map(p => p.id)) }, 'Подключить') : el('span', { class: 'muted small' }, 'Попросите мастера подключить их.')) : null;
+    const row = el('div', { class: 'item table-roster-item' }, img,
+      el('div', { class: 'table-roster-info' },
         el('b', {}, c.name, classLine(c) ? el('span', { class: 'muted small' }, ' · ' + classLine(c)) : null),
-        el('div', { class: 'muted small' }, sub)));
+        el('div', { class: 'muted small' }, sub), missingNotice));
     const hp = c.sheet?.hp;
     row.append(el('span', { class: 'muted small', title: 'Хиты листа персонажа' }, 'HP ' + (hp?.current ?? 0) + '/' + (hp?.max ?? 0)));
 
@@ -351,8 +451,8 @@
   function renderTokens() {
     tokensBox.innerHTML = '';
     tokenCounter.textContent = tokens.length === 1 ? '1 токен' : `${tokens.length} токенов`;
-    if (!scene) { tokensBox.append(el('p', { class: 'muted' }, 'Мастер ещё не выбрал сцену: смотреть можно, ставить токены — нет.')); return; }
-    if (!tokens.length) { tokensBox.append(el('p', { class: 'muted' }, 'На столе пока нет токенов.')); return; }
+    if (!scene) { tokensBox.append(el('div', { class: 'table-empty-state' }, icon('map', 22), el('span', {}, 'Мастер ещё не выбрал сцену.'))); return; }
+    if (!tokens.length) { tokensBox.append(el('div', { class: 'table-empty-state' }, icon('target', 22), el('span', {}, 'На этой сцене пока нет токенов.'))); return; }
     for (const t of tokens) tokensBox.append(tokenRow(t));
   }
 
@@ -362,10 +462,10 @@
     const name = d.name || char?.name || (d.monster ? 'Монстр' : 'NPC');
     const owner = memberName(d.owner_id);
     const sub = [owner ? 'владелец: ' + owner : (d.monster ? 'монстр' : (char ? '' : 'NPC')), d.hidden ? 'скрыт' : null].filter(Boolean).join(' · ');
-    const img = el('div', { class: 'portrait', style: 'width:40px;height:40px;flex:0 0 40px' }, icon(char ? 'user' : 'skull', 20));
+    const img = el('div', { class: 'portrait table-row-avatar' }, icon(char ? 'user' : 'skull', 20));
     if (d.asset_id) assetURL(d.asset_id).then(u => { img.innerHTML = ''; img.append(el('img', { src: u, alt: '' })); }).catch(() => { });
-    const row = el('div', { class: 'item', style: 'align-items:center;gap:8px;flex-wrap:wrap' }, img,
-      el('div', { style: 'flex:1;min-width:150px' }, el('b', {}, name), el('div', { class: 'muted small' }, sub || 'токен')));
+    const row = el('div', { class: 'item table-roster-item' }, img,
+      el('div', { class: 'table-roster-info' }, el('b', {}, name), el('div', { class: 'muted small' }, sub || 'токен')));
 
     const editable = canMoveToken(t);
     const hp = d.hp || { cur: 0, max: 0 };
@@ -484,6 +584,7 @@
   sceneId = camp.active_scene_id || scenes[0]?.id || null;
   await loadScene(sceneId);
   characters = await API.get('/api/characters?campaign_id=' + cid).catch(() => []);
+  await loadPacks();
 
   // Раздел «Права» — только тем, кто может менять роли (по умолчанию мастер).
   if (can(A.CAP.manageRoles)) {

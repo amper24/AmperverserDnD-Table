@@ -191,9 +191,41 @@ window.copyText = async function (text, okMsg = 'Скопировано') {
   try { await navigator.clipboard.writeText(text); toast(okMsg); }
   catch { prompt('Скопируйте ссылку', text); }
 };
+let toastStack;
 window.toast = function (t, ms = 2500) {
-  const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d);
-  setTimeout(() => d.remove(), ms);
+  // Embedded pages (for example, a sheet floating over the table) must use the
+  // top-level app's one notification stack instead of anchoring a second stack
+  // to the smaller iframe viewport.
+  if (window.top && window.top !== window) {
+    try { if (typeof window.top.toast === 'function') return window.top.toast(t, ms); } catch { /* cross-origin embed: show locally */ }
+  }
+  if (!toastStack?.isConnected) {
+    toastStack = document.createElement('div');
+    toastStack.className = 'toast-stack';
+    toastStack.setAttribute('role', 'status');
+    toastStack.setAttribute('aria-live', 'polite');
+    toastStack.setAttribute('aria-relevant', 'additions');
+    document.body.appendChild(toastStack);
+  }
+  const stack = toastStack;
+  const d = document.createElement('div');
+  d.className = 'toast'; d.textContent = String(t);
+  stack.appendChild(d);
+  requestAnimationFrame(() => d.classList.add('toast-visible'));
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    d.classList.add('toast-leaving');
+    setTimeout(() => {
+      d.remove();
+      if (!stack.children.length) {
+        stack.remove();
+        if (toastStack === stack) toastStack = null;
+      }
+    }, 240);
+  };
+  setTimeout(dismiss, Math.max(0, Number(ms) || 0));
 };
 window.el = function (tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -245,7 +277,7 @@ window.ABIL = { str: 'Сила', dex: 'Ловкость', con: 'Телослож
 window.EDITIONS = { '2014': 'D&D 5e (2014)', '2024': 'D&D 5e (2024)' };
 /// Редакция по умолчанию для новых персонажей и фильтра справочника (запоминается).
 window.defaultEdition = () => LS.getItem('et-edition') || '2014';
-window.CAT_NAMES = { race: 'Расы', class: 'Классы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила', skill: 'Навыки' };
+window.CAT_NAMES = { race: 'Расы', subrace: 'Подрасы', class: 'Классы', subclass: 'Подклассы', background: 'Предыстории', item: 'Предметы', spell: 'Заклинания', monster: 'Бестиарий', npc: 'NPC', feat: 'Черты', condition: 'Состояния', lore: 'Лор и правила', skill: 'Навыки' };
 
 // ---- Минималистичные SVG-иконки (line icons), без эмодзи ----
 const ICONS = {

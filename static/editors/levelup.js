@@ -607,9 +607,18 @@ window.LevelUp = (() => {
     const name = last?.class || cur[0]?.name || '';
     const snap = [...(sheet.modules || [])].reverse().find(m => m.category === 'class' && m.snapshot && (!name || m.snapshot.name === name));
     const params = new URLSearchParams({ edition: sheet.edition || '2014', limit: '3000', category: 'class' }); if (campaignId) params.set('campaign_id', campaignId);
-    const list = await API.get('/api/compendium?' + params);
+    const subParams = new URLSearchParams({ edition: sheet.edition || '2014', limit: '3000', category: 'subclass' }); if (campaignId) subParams.set('campaign_id', campaignId);
+    const [classes, subclasses] = await Promise.all([API.get('/api/compendium?' + params), API.get('/api/compendium?' + subParams)]);
+    const hydrate = klass => {
+      if (!klass) return null;
+      const linked = subclasses.filter(sub => sub.data?.parent_class_slug === klass.slug
+        || sub.data?.parent_class_name_en === klass.data?.name_en || sub.data?.parent_class === klass.name)
+        .map(sub => ({ ...sub.data, name: sub.name, name_en: sub.data?.name_en, record_id: sub.id }));
+      return linked.length ? { ...klass, data: { ...klass.data, subclasses: linked } } : klass;
+    };
+    const list = classes.map(hydrate);
     const found = list.find(e => sameClass(name, e));
-    return { list, entry: found || (snap ? snap.snapshot : null) };
+    return { list, entry: found || hydrate(snap?.snapshot) };
   }
   async function loadCatalog(category, sheet, campaignId) {
     const params = new URLSearchParams({ edition: sheet.edition || '2014', limit: '3000', category }); if (campaignId) params.set('campaign_id', campaignId);

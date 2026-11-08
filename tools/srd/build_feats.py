@@ -149,7 +149,7 @@ def collect(rows):
     out = []
     for row in rows:
         category = row.get('category')
-        if category == 'race':
+        if category in ('race', 'subrace'):
             for item, ref in race_items(row):
                 out.append((dict(item, ref=(row, ref)), row))
         elif category == 'class':
@@ -252,7 +252,7 @@ def build(rows, prefix, edition):
     strip_links(rows)  # ссылки пересобираются целиком: устаревших (на снятую черту) не остаётся
     for record in records:
         for row, ref in record['refs']:
-            link(row, ref, record['slug'])
+            link(row, ref, record['slug'], rows)
     for row in rows:
         data = obj(row.get('data'))
         if isinstance(data.get('feature_feats'), dict):
@@ -272,6 +272,8 @@ def strip_links(rows):
         data.pop('feature_feats', None)
         for sub in arr(data.get('subclasses')):
             obj(sub).pop('feature_feats', None)
+        if row.get('category') == 'subclass':
+            data.pop('feature_feats', None)
         for node in arr(obj(obj(data.get('mechanics')).get('graph')).get('nodes')):
             levels = obj(obj(obj(node.get('params')).get('table')).get('levels'))
             for items in levels.values():
@@ -280,8 +282,8 @@ def strip_links(rows):
                         item.pop('feat', None)
 
 
-def link(row, ref, slug):
-    """Записать ссылку на запись черты: в поле данных и в узел графа (у класса)."""
+def link(row, ref, slug, rows=()):
+    """Записать ссылку на черту в legacy-снимок и, для отдельного подкласса, в его самостоятельную запись."""
     data = row.setdefault('data', {})
     if ref[0] == 'race':
         data['traits'][ref[1]]['feat'] = slug
@@ -295,6 +297,12 @@ def link(row, ref, slug):
         _, index, level, name = ref
         sub = data['subclasses'][index]
         sub.setdefault('feature_feats', {}).setdefault(level, {})[name] = slug
+        refs = arr(data.get('subclass_ids'))
+        standalone_slug = refs[index] if index < len(refs) else ''
+        standalone = next((entry for entry in rows if standalone_slug and entry.get('slug') == standalone_slug and entry.get('category') == 'subclass'), None)
+        if standalone:
+            standalone_data = standalone.setdefault('data', {})
+            standalone_data.setdefault('feature_feats', {}).setdefault(level, {})[name] = slug
 
 
 def table_entries(row, level):

@@ -18,8 +18,8 @@ const vm = require('node:vm');
 
 const REPO = path.join(__dirname, '..', '..');
 const EDITIONS = ['2014', '2024'];
-const CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'npc', 'feat', 'condition', 'lore'];
-const SEED_CATEGORIES = ['race', 'class', 'background', 'item', 'spell', 'monster', 'feat', 'condition'];
+const CATEGORIES = ['race', 'subrace', 'class', 'subclass', 'background', 'item', 'spell', 'monster', 'npc', 'feat', 'condition', 'lore', 'skill'];
+const SEED_CATEGORIES = ['race', 'subrace', 'class', 'subclass', 'background', 'item', 'spell', 'monster', 'feat', 'condition'];
 const RUNTIME_NODE_FILES = require('../nodes/node-loader.cjs').nodeFiles().map(f => path.relative(REPO, f).split(path.sep).join('/'));
 const RUNTIME_FILES = ['static/core/dice.js', 'static/editor/mechanics.js', 'static/core/formulas.js', 'static/editor/node-params-form.js', 'static/editor/node-registry.js', ...RUNTIME_NODE_FILES, 'static/editor/mechanics-graph.js'];
 const CJK_CYR = /[\u0400-\u04FF]/;
@@ -203,8 +203,10 @@ function checkSeed(edition, opts = {}) {
   const itemNames = namesByCategory.get('item') || new Set();
   const classNames = namesByCategory.get('class') || new Set();
   const raceNames = namesByCategory.get('race') || new Set();
+  const subraceNames = namesByCategory.get('subrace') || new Set();
   const subclassIds = new Set();
   for (const c of byCategory.get('class') || []) for (const s of c.data.subclasses || []) if (s && isStr(s.name_en)) subclassIds.add(s.name_en);
+  for (const s of byCategory.get('subclass') || []) if (isStr(s.data?.name_en)) subclassIds.add(s.data.name_en);
   const itemTypes = new Set(), schools = new Set(), damageTypes = new Set(), weaponMasteries = new Set(), conditions = new Set(), properties = new Set(), languages = new Set();
   for (const row of rows) {
     const d = row.data;
@@ -438,13 +440,23 @@ function checkSeed(edition, opts = {}) {
         if (!['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(k)) report.error('enum-values', where, `data.asi.${k}`, `неизвестная характеристика «${k}»`);
         if (!isInt(v) || v < -5 || v > 5) report.error('field-range', where, `data.asi.${k}`, `бонус характеристики ${v} вне −5…5`);
       }
-      if (d.subrace === true) {
-        if (!isStr(d.parent)) report.error('required-field', where, 'data.parent', 'у подрасы нет parent');
-        else if (!raceNames.has(d.parent)) report.error('broken-reference', where, 'data.parent', `родительская раса «${d.parent}» не найдена в редакции ${edition}`);
-      } else if (isArr(d.subraces) && d.subraces.length) {
-        for (const s of d.subraces) if (!raceNames.has(s)) report.error('broken-reference', where, 'data.subraces', `подраса «${s}» не найдена в редакции ${edition}`);
+      if (isArr(d.subraces) && d.subraces.length) {
+        for (const s of d.subraces) if (!subraceNames.has(s)) report.error('broken-reference', where, 'data.subraces', `подраса «${s}» не найдена в редакции ${edition}`);
       }
       for (const t of d.traits || []) if (!isObj(t) || !isStr(t.name) || !isStr(t.text)) report.error('field-type', where, 'data.traits', 'черта должна быть {name, text}');
+    }
+    if (row.category === 'subrace') {
+      if (d.subrace !== true) report.error('field-type', where, 'data.subrace', 'отдельная подраса должна иметь флаг subrace=true');
+      if (!isStr(d.parent)) report.error('required-field', where, 'data.parent', 'у подрасы нет parent');
+      else if (!raceNames.has(d.parent)) report.error('broken-reference', where, 'data.parent', `родительская раса «${d.parent}» не найдена в редакции ${edition}`);
+      checkFields(row, [['traits', isArr], ['desc', isStr, { allowEmpty: edition === '2024', level: edition === '2024' ? 'warn' : 'error' }]]);
+    }
+    if (row.category === 'subclass') {
+      if (!isStr(d.parent_class) || !isStr(d.parent_class_slug)) report.error('required-field', where, 'data.parent_class', 'подкласс должен ссылаться на родительский класс по имени и slug');
+      if (!isStr(d.name_en)) report.error('required-field', where, 'data.name_en', 'у подкласса нет английского имени');
+      if (!isObj(d.features) || !isObj(d.feature_texts)) report.error('field-type', where, 'data.features', 'умения подкласса должны быть сгруппированы по уровням');
+      for (const [level, names] of Object.entries(d.features || {})) for (const name of names || [])
+        if (!(name in (d.feature_texts || {}))) report.error('missing-feature-text', where, `data.feature_texts.${name}`, `у умения «${name}» нет текста`);
     }
     if (row.category === 'background') {
       // Описание происхождения в дампе SRD лежит в feature/feature_text или отсутствует вовсе.

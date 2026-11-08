@@ -324,7 +324,30 @@ def conditions(ed):
 def build(ed):
     res = spells(ed) + monsters(ed) + equipment(ed) + classes(ed) + races(ed) + backgrounds(ed) + feats(ed) + conditions(ed)
     from mechanics import convert
-    return convert(res, ed)
+    res = convert(res, ed)
+    # Подрасы и подклассы — отдельные записи справочника/набора; ссылки на них
+    # остаются у родителей для совместимости старых листов и клиентов.
+    race_roots = [e for e in res if e['category'] == 'race' and not e.get('data', {}).get('parent')]
+    by_name = {e['name']: e for e in race_roots}
+    variants = []
+    for e in res:
+        d = e.get('data', {})
+        if e['category'] == 'race' and d.get('subrace'):
+            e['category'] = 'subrace'
+            parent = by_name.get(d.get('parent'))
+            if parent: d['parent_slug'] = parent['slug']
+        elif e['category'] == 'class':
+            refs = []
+            for sub in d.get('subclasses') or []:
+                if not isinstance(sub, dict) or not sub.get('name'): continue
+                part = re.sub(r'[^a-z0-9]+', '-', str(sub.get('name_en') or sub['name']).lower()).strip('-') or 'variant'
+                slug = f"{e['slug']}-subclass-{part}"
+                refs.append(slug)
+                sd = dict(sub, edition=ed, parent_class=e['name'], parent_class_slug=e['slug'], parent_class_name_en=d.get('name_en', ''))
+                variants.append({'category': 'subclass', 'slug': slug, 'name': sub['name'], 'data': sd})
+            if refs: d['subclass_ids'] = refs
+    res.extend(variants)
+    return res
 
 
 if __name__ == '__main__':

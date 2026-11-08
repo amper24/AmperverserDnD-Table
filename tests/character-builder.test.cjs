@@ -47,8 +47,8 @@ test('origin selections project into starting proficiencies and 2024 lineage spe
   assert.ok(halfElfSheet.skills.includes('stealth') && halfElfSheet.skills.includes('athletics'));
 
   const records24 = loadSrd('data_seed/srd_2024.json');
-  const woodElf = records24.find(e => e.category === 'race' && e.name === 'Эльфийская линия: лесной эльф');
-  const lineageCatalog = records24.filter(e => e.category === 'spell' || (e.category === 'race' && (e.name === 'Эльф' || e.id === woodElf.id)));
+  const woodElf = records24.find(e => e.category === 'subrace' && e.name === 'Эльфийская линия: лесной эльф');
+  const lineageCatalog = records24.filter(e => e.category === 'spell' || (['race', 'subrace'].includes(e.category) && (e.name === 'Эльф' || e.id === woodElf.id)));
   const elfSheet = B.build({ name: 'Эльф', edition: '2024', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: woodElf },
     ruleChoices: { raceSkills: ['stealth'], raceSpellAbility: 'wis' }, spells: [], catalog: lineageCatalog, method: 'standard' });
   assert.equal(elfSheet.speed, 35);
@@ -99,8 +99,8 @@ test('2014 dwarf/elf weapon proficiencies and tiefling cantrip, plus exact 2024 
   assert.ok(tieflingSheet.spells.known.some(spell => spell.name === 'Чудотворство' && spell.spell_ability === 'cha'));
 
   const records24 = loadSrd('data_seed/srd_2024.json');
-  const drow = records24.find(e => e.category === 'race' && /дроу/i.test(e.name));
-  const abyssal = records24.find(e => e.category === 'race' && /наследие исчадий: бездна/i.test(e.name));
+  const drow = records24.find(e => e.category === 'subrace' && /дроу/i.test(e.name));
+  const abyssal = records24.find(e => e.category === 'subrace' && /наследие исчадий: бездна/i.test(e.name));
   const drowSheet = B.build({ name: 'Дроу', edition: '2024', abilities: Object.fromEntries(B.keys.map(k => [k, 10])), selected: { race: drow }, catalog: records24,
     ruleChoices: { raceSpellAbility: 'wis' }, spells: [] });
   assert.ok(drowSheet.spells.known.some(spell => spell.name === 'Пляшущие огоньки' && spell.spell_ability === 'wis'));

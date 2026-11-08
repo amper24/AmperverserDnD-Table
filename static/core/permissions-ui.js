@@ -156,21 +156,23 @@ window.Permissions = (function () {
     const onChanged = opts.onChanged || (() => {});
     const state = { roles: [], perms: [], loading: true, error: '', loaded: false };
 
-    const countEl = el('span', { class: 'muted small' });
-    const newBtn = el('button', { class: 'small primary', style: 'flex:0;white-space:nowrap', title: 'Создать роль с набором возможностей', onclick: () => roleDialog(null) }, icon('plus'), ' Новая роль');
+    const countEl = el('span', { class: 'section-count' });
+    const newBtn = el('button', { class: 'small primary permissions-new-role', title: 'Создать роль с набором возможностей', onclick: () => roleDialog(null) }, icon('plus'), ' Новая роль');
     const rolesBox = el('div', { class: 'role-grid' });
     const matrixBox = el('div', { class: 'perms-matrix-box' });
-    const statusEl = el('div', { class: 'muted small', style: 'margin-top:8px' });
+    const statusEl = el('div', { class: 'permissions-status' });
 
     container.append(
-      el('div', { class: 'row', style: 'align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap' },
-        el('b', { style: 'flex:1' }, 'Роли'), countEl, newBtn),
+      el('div', { class: 'permissions-subsection-head' },
+        el('div', {}, el('h3', {}, 'Роли кампании'), el('p', {}, 'Системные роли фиксированы; собственные роли можно менять и назначать участникам.')),
+        el('div', { class: 'permissions-subsection-actions' }, countEl, newBtn)),
       rolesBox,
-      el('div', { class: 'row', style: 'align-items:center;gap:8px;margin:16px 0 4px;flex-wrap:wrap' },
-        el('b', { style: 'flex:1' }, 'Права на слои'),
-        el('span', { class: 'muted small' }, 'Ч — читать, З — изменять, С — создавать')),
-      el('p', { class: 'muted small', style: 'margin:0 0 6px' },
-        'Одна строка — один слой стола, один столбец — своя роль. Изменения сохраняются сразу; «Мастер» всегда имеет полный доступ, а права по умолчанию — как у «Игрока» (всё видно, менять можно всё, кроме карты).'),
+      el('div', { class: 'permissions-subsection-head permissions-layer-heading' },
+        el('div', {}, el('h3', {}, 'Доступ к слоям'), el('p', {}, 'Настройте, что каждая роль может читать, изменять и создавать.')),
+        el('div', { class: 'permissions-legend' },
+          el('span', {}, el('b', {}, 'Ч'), ' Читать'),
+          el('span', {}, el('b', {}, 'З'), ' Изменять'),
+          el('span', {}, el('b', {}, 'С'), ' Создавать'))),
       matrixBox,
       statusEl);
 

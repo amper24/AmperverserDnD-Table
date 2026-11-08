@@ -11,7 +11,7 @@ use sqlx::Row;
 
 use crate::{api::auth::AuthUser, api::campaigns::{get_member, require_gm}, error::ApiResult, i18n, api::packs, util, AppError, AppState};
 
-pub const CATEGORIES: &[&str] = &["race", "class", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore", "skill"];
+pub const CATEGORIES: &[&str] = &["race", "subrace", "class", "subclass", "background", "item", "spell", "monster", "npc", "feat", "condition", "lore", "skill"];
 
 /// Как отдавать запись. `lang` — язык вида (слой перевода накладывается на данные, `i18n` скрыт);
 /// без `lang` и `raw=1` запись отдаётся как хранится (со всеми слоями перевода) — так работают редактор и старые клиенты.
@@ -152,7 +152,7 @@ fn name_lc(body: &EntryIn) -> String {
 
 /// Класс и раса — не объекты на карте: токена на карте у них нет.
 fn strip_map_token(body: &mut EntryIn) {
-    if matches!(body.category.as_str(), "race" | "class") {
+    if matches!(body.category.as_str(), "race" | "subrace" | "class" | "subclass") {
         if let Some(o) = body.data.as_object_mut() { o.remove("token_asset_id"); }
     }
 }

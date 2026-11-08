@@ -67,7 +67,7 @@ test('записи SRD 2014/2024 и сводка механик совпадаю
   }
   const metrics = ['records', 'mechanics_records', 'nodes', 'links', 'programs'];
   const totals = Object.fromEntries(metrics.map(key => [key, summary['2014'][key] + summary['2024'][key]]));
-  assert.equal(totals.records, 2499);
+  assert.equal(totals.records, 2523);
   assert.equal(totals.mechanics_records, 1967);
   assert.match(doc, new RegExp(`\\*\\*${num(totals.mechanics_records)} записей из ${num(totals.records)}\\*\\*`), 'записи с механиками');
   assert.match(doc, new RegExp(`${num(totals.nodes)} узлов, ${num(totals.links)} связи и ${num(totals.programs)} программы`), 'узлы/связи/программы');

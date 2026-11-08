@@ -386,12 +386,9 @@ test('редактор класса открывается: все раздел�
   assert.ok(itemInput, 'строка предмета отрисована');
   typeIn(itemInput, 'Книга заклинаний');
 
-  // Подкласс: название и умение 3 уровня.
+  // Подклассы теперь самостоятельные записи; у несохранённого класса нет доступного ID для привязки.
   navTo('Подклассы');
-  clickNode(allTag(captured.content, 'button').find(b => text(b) === '+ подкласс'));
-  typeIn(byPlaceholder(captured.content, 'Название подкласса'), 'Алхимик');
-  clickNode(allTag(captured.content, 'button').find(b => text(b) === '+ умение'));
-  typeIn(byPlaceholder(captured.content, 'Название умения'), 'Зельеварение');
+  assert.ok(text(all(captured.content, 'ced-section')[0]).includes('Сначала сохраните класс'), 'сначала нужно сохранить класс, чтобы создать отдельный подкласс');
 
   // Заклинания: тип заклинателя и книга.
   navTo('Заклинания');
@@ -415,8 +412,7 @@ test('редактор класса открывается: все раздел�
   assert.deepEqual(JSON.parse(JSON.stringify(saved.data.features)), { 1: ['Мастер ремесла'] });
   assert.match(saved.data.starting_equipment, /Книга заклинаний/);
   assert.equal(saved.data.name_en, 'Artificer');
-  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.subclasses[0].features)), { 3: ['Зельеварение'] });
-  assert.equal(saved.data.subclasses[0].name, 'Алхимик');
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.subclasses)), [], 'новые подклассы не вкладываются в запись класса');
   assert.equal(saved.data.caster.level, 'full');
   assert.equal(saved.data.caster.book.start, 6);
   const table = nodesOfClass(saved.data, 'class_progression')[0].params.table;
@@ -427,19 +423,40 @@ test('редактор класса открывается: все раздел�
   assert.equal(domCtx.window.Mechanics.validate(saved.data.mechanics) || '', '', 'граф валиден');
 });
 
+test('редактор подкласса создаёт отдельную запись с привязкой к классу и умениями по уровням', async () => {
+  await domPresets;
+  let captured = null;
+  domCtx.modal = (title, content, buttons, opts) => { captured = { title, content, buttons, opts }; return Promise.resolve(null); };
+  const CE = domCtx.window.ClassEditor;
+  await CE.editSubclass(null, { edition: '2014', initialData: { parent_class: 'Варвар', parent_class_slug: 'barbarian', parent_class_name_en: 'Barbarian' } });
+  typeIn(byPlaceholder(captured.content, 'Путь берсерка'), 'Алхимическая традиция');
+  const navTo = title => clickNode(all(captured.content, 'ced-nav-btn').find(b => text(b) === title));
+  navTo('Умения');
+  clickNode(allTag(captured.content, 'button').find(b => text(b) === '+ умение'));
+  typeIn(byPlaceholder(captured.content, 'Название умения'), 'Трансмутация');
+  const saved = captured.buttons[0].fn();
+  assert.equal(saved.name, 'Алхимическая традиция');
+  assert.equal(saved.data.parent_class_slug, 'barbarian');
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.features)), { 3: ['Трансмутация'] });
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.data.feature_texts)), {});
+});
+
 // ---------- Место редактора: конструктор класса живёт в окне редактора записи ----------
 test('класс правится в окне редактора записи, отдельных страниц редактора нет', () => {
   const compendium = fs.readFileSync('static/pages/compendium.js', 'utf8');
+  assert.match(compendium, /category === 'subclass' && window\.ClassEditor\?\.editSubclass/, 'подкласс направляется в собственный редактор');
+  assert.match(compendium, /\(category === 'race' \|\| category === 'subrace'\) && window\.RaceEditor/, 'подраса направляется в редактор расы');
+  assert.match(compendium, /function openWindow\(opts = \{\}\)/, 'справочник можно открыть отдельным плавающим окном');
   // Карточка открывает окно редактора записи, а внутри для класса — конструктор.
-  assert.match(compendium, /const EDITOR_LABELS = \{ class: 'Редактор класса', race: 'Редактор расы', background: 'Редактор предыстории' \}/,
+  assert.match(compendium, /const EDITOR_LABELS = \{ class: 'Редактор класса', subclass: 'Редактор подкласса', race: 'Редактор расы', subrace: 'Редактор подрасы', background: 'Редактор предыстории' \}/,
     'кнопка конструктора названа своим именем');
   assert.match(compendium, /onclick: \(\) => editEntry\(e, \{ campaignId: e\.campaign_id, packId: e\.pack_id, onSaved: opts\.onChanged \}\) \}, EDITOR_LABELS\[e\.category\] \|\| 'Редактировать'\)/,
     'кнопка в карточке открывает окно редактора записи: конструктор для класса, раса, предыстория');
   // Список черт справочника редактор получает вместе с карточкой: умения уровня и подкласса
   // ссылаются на записи категории «Черты» (см. tests/feats.test.cjs).
-  assert.match(compendium, /category === 'class' && window\.ClassEditor[\s\S]*?const r = await window\.ClassEditor\.edit\(e, \{ \.\.\.o, feats: await categoryCatalog\('feat'\) \}\); if \(!r\) return;[\s\S]{0,200}result = \{ name: r\.name, data: \{ \.\.\.e\?\.data, \.\.\.r\.data/,
+  assert.match(compendium, /category === 'class' && window\.ClassEditor[\s\S]*?const \[feats, subclasses\] = await Promise\.all\(\[categoryCatalog\('feat'\), categoryCatalog\('subclass'\)\]\);[\s\S]{0,160}const r = await window\.ClassEditor\.edit\(e, \{ \.\.\.o, feats, subclasses \}\); if \(!r\) return;[\s\S]{0,200}result = \{ name: r\.name, data: \{ \.\.\.e\?\.data, \.\.\.r\.data/,
     'в окне для класса открывается конструктор и его поля ложатся в запись');
-  assert.match(compendium, /if \(e\?\.id\) await API\.patch\('\/api\/compendium\/' \+ e\.id, body\); else await API\.post\('\/api\/compendium', body\)/,
+  assert.match(compendium, /e\?\.id \? await API\.patch\('\/api\/compendium\/' \+ e\.id, body\) : await API\.post\('\/api\/compendium', body\)/,
     'результат конструктора сохраняется в саму запись справочника');
   // Создание записи и мастерская наборов: тот же путь.
   assert.match(compendium, /function createRecord\(\)[\s\S]{0,600}editEntry\(null, \{/, '«+ Своя запись» открывает то же окно');

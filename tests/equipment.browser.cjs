@@ -22,7 +22,7 @@ const assert = require('node:assert/strict');
         {from:{node:'spend',socket:'exec'},to:{node:'end',socket:'exec'}}
       ],frames:[],groups:[]}}}
     ]}; const ops=[]; let concurrentSave = false;
-    const character=()=>({id:'hero',name:sheet.name,owner_id:'user',revision:sheet._revision,sheet:JSON.parse(JSON.stringify(sheet))});
+    const character=()=>({id:'hero',name:sheet.name,owner_id:'user',campaign_id:'campaign1',revision:sheet._revision,sheet:JSON.parse(JSON.stringify(sheet))});
     await page.route('https://equipment.test/**',async route=>{
       const url=new URL(route.request().url()), req=route.request();
       const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
@@ -33,6 +33,10 @@ const assert = require('node:assert/strict');
         if(req.method()==='PATCH') {const b=req.postDataJSON();if(b.sheet){assert.equal(b.sheet._revision,sheet._revision);sheet={...b.sheet,_revision:sheet._revision+1}; if (concurrentSave) { concurrentSave = false; sheet._revision++; sheet.inventory[1].qty--; }}}
         return json(character());
       }
+      if(url.pathname==='/api/characters' && url.searchParams.get('campaign_id')==='campaign1') return json([
+        {id:'hero',campaign_id:'campaign1',name:'Следопыт'},
+        {id:'ally',campaign_id:'campaign1',name:'Жрец'}
+      ]);
       if(url.pathname==='/api/characters/hero/inventory'){
         const b=req.postDataJSON();ops.push(b);await new Promise(r=>setTimeout(r,200));const item=sheet.inventory.find(i=>i.uid===b.item_uid);let result={};
         if(b.op==='equip'){item.equipped=b.slot!=='backpack';item.hand_slot=item.equipped?b.slot:null;}
@@ -45,6 +49,9 @@ const assert = require('node:assert/strict');
     });
     await page.goto('https://equipment.test/sheet/hero'); await page.evaluate(() => Consent.set(false));
     await page.locator('.sheet .ab').first().waitFor();
+    const campaignChat = page.getByRole('link', { name: 'Чат кампании' });
+    assert.equal(await campaignChat.getAttribute('href'), '/c/campaign1', 'the character sheet opens its associated campaign');
+    assert.equal(await campaignChat.getAttribute('target'), '_blank', 'the chat opens without leaving the character sheet');
     const presetState=await page.evaluate(()=>({loaded:Presets.loaded,equipmentRules:Presets.items('equipment_text_rules').length}));
     assert.equal(presetState.loaded,true,`browser preset loading failed: ${JSON.stringify(presetState)}; ${errors.join('; ')}`);
     assert.ok(presetState.equipmentRules>0,`browser equipment rules missing: ${JSON.stringify(presetState)}`);
@@ -89,6 +96,19 @@ const assert = require('node:assert/strict');
     assert.ok(levelActionBox.x >= levelBox.x + levelBox.width, 'level-up action is aligned after the number input');
 
     await page.getByRole('button',{name:/Инвентарь/}).click();
+    const transferButton = page.getByRole('button', { name: 'Передать Жезл стрел' });
+    assert.equal(await transferButton.count(), 1, 'each campaign item has a visible transfer button without expanding it');
+    await transferButton.click();
+    const transferModal = page.locator('.modal');
+    await transferModal.getByRole('heading', { name: 'Передать «Жезл стрел»' }).waitFor();
+    assert.deepEqual(await transferModal.locator('select option').allTextContents(), ['Жрец'], 'the recipient dropdown contains other heroes, not the current character');
+    assert.equal(await transferModal.getByLabel('Количество предметов').getAttribute('max'), '1', 'the quantity picker is shown even for a single item');
+    await transferModal.getByRole('button', { name: 'Отмена' }).click();
+    await page.getByRole('button', { name: 'Передать Стрелы' }).click();
+    const stackTransferModal = page.locator('.modal');
+    await stackTransferModal.getByRole('heading', { name: 'Передать «Стрелы»' }).waitFor();
+    assert.equal(await stackTransferModal.getByLabel('Количество предметов').getAttribute('max'), '3', 'the quantity selector is capped at the available stack');
+    await stackTransferModal.getByRole('button', { name: 'Отмена' }).click();
     const equipmentSlots = page.locator('.inv .equipment-hands .hand-slot');
     assert.equal(await equipmentSlots.count(), 3, 'main hand, off hand, and armor share one slot row');
     const slotBoxes = await equipmentSlots.evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().toJSON()));
@@ -113,6 +133,15 @@ const assert = require('node:assert/strict');
     await page.locator('[data-uid="wand"] .mcard-head').click();
     const itemMenu = page.locator('[data-uid="wand"] .mcard-body > .row[style*="margin-top"]');
     await itemMenu.waitFor();
+    await page.evaluate(() => { window.sentCards = []; Modules.sendCard = card => window.sentCards.push(structuredClone(card)); });
+    const opsBeforeSend = ops.length;
+    const sendItemCard = itemMenu.getByRole('button', { name: 'В чат', exact: true });
+    await sendItemCard.click(); await sendItemCard.click();
+    await page.waitForFunction(() => window.sentCards.length === 2);
+    const sentCards = await page.evaluate(() => window.sentCards);
+    assert.equal(sentCards.length, 2, 'the same item information can be sent repeatedly');
+    assert.ok(sentCards.every(card => card.name === 'Жезл стрел' && !('item_ref' in card)), 'chat receives an informational card, not a link to the live inventory item');
+    assert.equal(ops.length, opsBeforeSend, 'sending a card does not consume or mutate the inventory item');
     assert.equal(await itemMenu.evaluate(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim()).length), 0, 'conditional button slots never turn null into visible text nodes');
     assert.doesNotMatch(await itemMenu.innerText(), /nullnullnull|null\s+null/i, 'there is no null text between item actions');
     await page.locator('[data-uid="wand"]').getByRole('button',{name:'Изменить',exact:true}).click();
@@ -135,7 +164,22 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>document.querySelector('[data-uid="arrows"] .qty span').textContent==='1');
     await page.setViewportSize({width:390,height:844});
     assert.ok(await page.locator('.equipment-hands').isVisible());
+    await page.evaluate(() => { toast('toast-test-one', 700); toast('toast-test-two', 700); });
+    const stackedToasts = page.locator('.toast-stack .toast').filter({ hasText: /^toast-test-/ });
+    await stackedToasts.first().waitFor();
+    const toastBoxes = await stackedToasts.evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().toJSON()));
+    assert.equal(toastBoxes.length, 2, 'simultaneous notifications share a single stack');
+    assert.ok(toastBoxes[0].y + toastBoxes[0].height <= toastBoxes[1].y, 'notifications occupy separate vertical rows');
+    await page.waitForFunction(() => ![...document.querySelectorAll('.toast')].some(n => n.textContent.startsWith('toast-test-')), null, { timeout: 2500 });
+    await page.evaluate(() => { const frame = document.createElement('iframe'); frame.id = 'sheet-embed-test'; frame.src = '/sheet/hero?embed=1'; document.body.append(frame); });
+    await page.waitForFunction(() => document.querySelector('#sheet-embed-test')?.contentDocument?.querySelector('.sheet .ab'));
+    const embeddedSheet = page.frameLocator('#sheet-embed-test');
+    assert.equal(await embeddedSheet.locator('.dice-dock').count(), 0, 'an embedded character sheet does not duplicate the table dice dock');
+    assert.equal(await embeddedSheet.locator('.dice-log-button').count(), 0, 'an embedded character sheet does not duplicate the table roll journal');
+    await page.evaluate(() => document.querySelector('#sheet-embed-test').contentWindow.toast('iframe-toast-check', 1500));
+    await page.locator('.toast-stack .toast').filter({ hasText: 'iframe-toast-check' }).waitFor();
+    assert.equal(await embeddedSheet.locator('.toast-stack').count(), 0, 'embedded-sheet notifications use the top-level stack');
     assert.deepEqual(errors,[]);
-    console.log('PASS: real sheet UI, right-click normal/disadvantage/advantage menu and ordinary left-click, two-hand slots, no copies, single use on double-click, atomic action payload, resource feedback, per-item opt-out, mobile layout');
+    console.log('PASS: sheet UI, repeated informational item cards, campaign chat link, embedded dock suppression, single toast stack, roll modes, equipment and mobile layout');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

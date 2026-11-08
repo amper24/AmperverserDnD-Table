@@ -249,6 +249,15 @@ window.Table = (function () {
     }
     return null;
   }
+  /// Герой под указателем при отпускании предмета: скрытые и недоступные токены исключаются через visibleItems().
+  function characterTokenAt(wx, wy, sourceCharacterId) {
+    return visibleItems().slice().reverse().find(it => {
+      const d = it.data || {};
+      if (layerOf(it) !== LAYER.character || !d.character_id || d.character_id === sourceCharacterId) return false;
+      const b = itemBounds(it);
+      return wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h;
+    }) || null;
+  }
   /// Элементы в порядке отрисовки: порядок слоёв из scene.layers, затем z.
   function visibleItems() {
     const items = S.scene.items.filter(i => {
@@ -1214,7 +1223,18 @@ window.Table = (function () {
       const comp = e.dataTransfer.getData('application/x-compendium');
       const lootRaw = e.dataTransfer.getData('application/x-item');
       if (asset) { placeAsset(JSON.parse(asset), w); return; }
-      if (lootRaw) { try { await dropLoot(JSON.parse(lootRaw), w); } catch (err) { toast('Ошибка: ' + err.message); } return; }
+      if (lootRaw) {
+        try {
+          const payload = JSON.parse(lootRaw);
+          const target = payload.from_character_id ? characterTokenAt(w.x, w.y, payload.from_character_id) : null;
+          if (target) {
+            const targetId = target.data.character_id;
+            await API.post(`/api/characters/${encodeURIComponent(payload.from_character_id)}/transfer`, { item_uid: payload.item.uid, to_character_id: targetId });
+            toast(`${payload.item.name} → ${target.data.name || 'персонажу'}`);
+          } else await dropLoot(payload, w);
+        } catch (err) { toast('Ошибка: ' + err.message); }
+        return;
+      }
       const spellRaw = e.dataTransfer.getData('application/x-spell');
       if (spellRaw) {
         const sp = JSON.parse(spellRaw);
@@ -1254,7 +1274,7 @@ window.Table = (function () {
       }
     });
   }
-  // Предмет, брошенный на стол: создаём «лут»-токен; если он пришёл с листа персонажа — убираем его оттуда
+  // Предмет на герое передаётся его листу; при броске на свободное место стола создаём «лут»-токен.
   // ---------- Лут и размещение ассетов ----------
   async function dropLoot(p, w, silent) {
     const g = grid(); const pos = snapPos(w.x, w.y, g * 0.7, g * 0.7);

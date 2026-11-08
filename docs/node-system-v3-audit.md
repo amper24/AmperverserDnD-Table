@@ -40,7 +40,7 @@
 | Программ (все с «Концом») | 3625 / 3349 |
 | Заклинаний | 319 / 339 |
 | Шаблонов / стартеров | **46 / 19** (было 40 / 13; 16 стартеров с `attach`) |
-| JS-тестов | **579 pass** (`node --test "tests/*.test.cjs"`) |
+| JS-тестов | **587 pass** (`node --test "tests/*.test.cjs"`) |
 | Rust-тестов | **133 pass** (`cargo test --release`) |
 | Браузерных сценариев | **20 файлов `tests/*.browser.cjs`** — все проходят (Chromium/Playwright) |
 | integrity | 0 ошибок, 12 исторических предупреждений (разбор — [integrity.md](integrity.md)) |

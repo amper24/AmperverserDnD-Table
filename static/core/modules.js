@@ -61,7 +61,7 @@ window.Modules = (function () {
   function itemFromCompendium(e, ctx) {
     const d = e.data || {};
     const type = d.mechanics?.item_defaults?.type === 'ammo' ? 'ammo' : d.type === 'ammo' ? 'ammo' : d.type === 'consumable' ? 'consumable' : d.type === 'weapon' ? 'weapon' : d.type === 'armor' ? 'armor' : d.type === 'magic' ? 'magic' : /зелье|свиток|рацион/i.test(e.name) ? 'consumable' : /^(боеприпасы|ammunition)$/i.test(d.category || '') ? 'ammo' : 'gear';
-    const it = newItem({ name: e.name, type, qty: d.qty ?? d.mechanics?.item_defaults?.qty ?? 1, rarity: d.rarity || 'Обычный', weight: d.qty===undefined ? (d.mechanics?.item_defaults?.unit_weight ?? d.weight ?? 0) : (d.weight || 0), cost: d.cost || '', desc: d.desc || '', source: e.source || '', asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, attunement: !!d.attunement, tags: [d.category].filter(Boolean),
+    const it = newItem({ name: e.name, type, qty: d.qty ?? d.mechanics?.item_defaults?.qty ?? 1, rarity: d.rarity || 'Обычный', weight: d.qty===undefined ? (d.mechanics?.item_defaults?.unit_weight ?? d.weight ?? 0) : (d.weight || 0), cost: d.cost || '', desc: d.desc || '', source: e.source || '', pack_id: e.pack_id || null, pack_name: e.pack_name || '', entry_id: e.id || null, asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, attunement: !!d.attunement, tags: [d.category].filter(Boolean),
       mechanics: d.mechanics ? JSON.parse(JSON.stringify(d.mechanics)) : undefined, properties: d.properties || [], mastery: d.mastery || null, handedness: d.handedness, ammo_tag: d.ammo_tag ?? d.mechanics?.item_defaults?.ammo_tag, consume: d.consume ? JSON.parse(JSON.stringify(d.consume)) : undefined, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : [] });
     if (type === 'weapon' && d.damage && !it.actions.length) {
       const props = d.properties || [];
@@ -82,7 +82,7 @@ window.Modules = (function () {
   function spellFromCompendium(e) {
     const d = e.data || {};
     return newSpell({ name: e.name, level: d.level ?? 1, school: d.school || '', casting_time: d.casting_time || '', range: d.range || '', components: d.components || '', duration: d.duration || '',
-      mechanics: d.mechanics ? JSON.parse(JSON.stringify(d.mechanics)) : undefined, classes: d.classes || [], concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', cast_cost: d.cast_cost || null, use_cost: Math.max(1, Number(d.use_cost) || 1), uses: d.uses ? JSON.parse(JSON.stringify(d.uses)) : null, asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, effect_size: d.effect_size || 1, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
+      mechanics: d.mechanics ? JSON.parse(JSON.stringify(d.mechanics)) : undefined, classes: d.classes || [], concentration: !!d.concentration, ritual: !!d.ritual, desc: d.desc || '', source: e.source || '', pack_id: e.pack_id || null, pack_name: e.pack_name || '', entry_id: e.id || null, cast_cost: d.cast_cost || null, use_cost: Math.max(1, Number(d.use_cost) || 1), uses: d.uses ? JSON.parse(JSON.stringify(d.uses)) : null, asset_id: d.asset_id || null, token_asset_id: d.token_asset_id || null, effect_size: d.effect_size || 1, actions: Array.isArray(d.actions) ? d.actions.map(a => ({ ...a })) : autoSpellActions(d) });
   }
   function autoSpellActions(d) {
     const acts = [];
@@ -428,6 +428,7 @@ window.Modules = (function () {
     if (!entry && !d.mechanics) { const starter = window.Mechanics?.starter?.(category); if (starter) d.mechanics = starter; }
     const simple = el('div', {}, f('Название', el('input', { value: state.name, oninput: e => state.name = e.target.value })),
       visualsRow(d, { noToken: NO_TOKEN, imageLabel: NO_TOKEN ? 'Изображение (карточка справочника)' : undefined, tokenLabel: category === 'monster' ? 'Токен монстра на карте' : 'Токен на карте' }));
+    simple.prepend(el('button', { type: 'button', class: 'small', onclick: () => window.Compendium?.openWindow?.({ edition: d.edition || defaultEdition() }) }, icon('book', 14), ' Открыть справочник'));
     if (gopts.folders && gopts.folders.length) simple.append(f('Папка в наборе', el('select', { onchange: e => { if (e.target.value) d.folder = e.target.value; else delete d.folder; } }, el('option', { value: '' }, '— без папки'), ...gopts.folders.map(x => el('option', { value: x, selected: d.folder === x ? '' : null }, x)))));
     if (category === 'npc') {
       simple.append(el('div', { class: 'row' }, f('Роль', el('input', { value: d.role || '', placeholder: 'трактирщик, капитан стражи…', oninput: e => d.role = e.target.value })), f('Раса', el('input', { value: d.race || '', oninput: e => d.race = e.target.value })), f('Фракция', el('input', { value: d.faction || '', oninput: e => d.faction = e.target.value })),

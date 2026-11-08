@@ -16,8 +16,8 @@ window.Compendium = (function () {
   // или расовая иконка по имени, затем иконка категории. Расы, классы и предыстории несут data.icon.
   // Запись правится своим конструктором: у класса, расы и предыстории он родной и потому
   // называется в кнопке. Остальные категории правит общий редактор записи.
-  const EDITOR_LABELS = { class: 'Редактор класса', race: 'Редактор расы', background: 'Редактор предыстории' };
-  const CATEGORY_ICONS = { spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', class: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' };
+  const EDITOR_LABELS = { class: 'Редактор класса', subclass: 'Редактор подкласса', race: 'Редактор расы', subrace: 'Редактор подрасы', background: 'Редактор предыстории' };
+  const CATEGORY_ICONS = { spell: 'star', monster: 'skull', npc: 'user', lore: 'book', race: 'user', subrace: 'user', class: 'shield', subclass: 'shield', background: 'book', feat: 'scroll', condition: 'zap', skill: 'target' };
   const entryIcon = (e, size = 16) => e.data?.asset_id ? M().docIcon(e.data, 'box', size)
     : e.category === 'item' ? M().itemIcon({ type: e.data?.type, icon: e.data?.icon })
       : e.data?.icon ? icon(e.data.icon, size)
@@ -34,6 +34,12 @@ window.Compendium = (function () {
     const ctx = window.SHEET_CTX || {};
     switch (e.category) {
       case 'race': if (d.parent) add('Основной вид', d.parent); add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Тёмное зрение', d.darkvision && d.darkvision + ' фт'); add('Языки', d.languages); break;
+      case 'subrace': if (d.parent) add('Родительский вид', d.parent); add('Характеристики', asi(d.asi)); add('Размер', d.size); add('Скорость', d.speed && d.speed + ' фт'); add('Языки', d.languages); break;
+      case 'subclass': {
+        add('Класс', d.parent_class); add('Редакция', d.edition); add('Путь / школа', d.flavor);
+        const levels = Object.keys(d.features || {}).sort((a,b) => Number(a)-Number(b));
+        add('Уровни умений', levels.map(level => `${level}: ${(d.features[level] || []).map(f => typeof f === 'string' ? f : f.name).filter(Boolean).join(', ')}`).filter(Boolean)); break;
+      }
       case 'class': {
         // Навыки класса — правило графа (узел rule.list, kind: skills, id classSkills): в карточке видно то же,
         // что спросит мастер создания. Запас — поле data.skills старого формата.
@@ -208,10 +214,16 @@ window.Compendium = (function () {
     } else if (category === 'spell') {
       const r = await M().editSpell(e ? M().spellFromCompendium(e) : null); if (!r) return;
       result = { name: r.name, data: { ...e?.data, mechanics: r.mechanics, folder: e?.data?.folder || o.folder || undefined, level: r.level, school: r.school, casting_time: r.casting_time, range: r.range, components: r.components, duration: r.duration, concentration: r.concentration, ritual: r.ritual, desc: r.desc, classes: r.classes, actions: r.actions, asset_id: r.asset_id || null, token_asset_id: r.token_asset_id || null, effect_size: r.effect_size || 1 } };
-    } else if (category === 'race' && window.RaceEditor) {
-      // Раса правится отдельным редактором: характеристики, языки, навыки и черты — своими разделами.
-      // и черты — ссылками на записи категории «Черты» (список передаётся редактору).
-      const r = await window.RaceEditor.edit(e, { ...o, catalog: await categoryCatalog('race'), feats: await categoryCatalog('feat') }); if (!r) return;
+    } else if ((category === 'race' || category === 'subrace') && window.RaceEditor) {
+      // Вид и подраса редактируются одним профильным конструктором; подрасы лежат отдельными записями.
+      const editorEntry = e || (o.initialData ? { category, name: o.initialName || '', data: o.initialData } : null);
+      const [races, subraces, feats] = await Promise.all([categoryCatalog('race'), categoryCatalog('subrace'), categoryCatalog('feat')]);
+      const r = await window.RaceEditor.edit(editorEntry, { ...o, catalog: [...races, ...subraces], feats }); if (!r) return;
+      result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
+    } else if (category === 'subclass' && window.ClassEditor?.editSubclass) {
+      const editorEntry = e || (o.initialData ? { category, name: o.initialName || '', data: o.initialData } : null);
+      const [classes, feats] = await Promise.all([categoryCatalog('class'), categoryCatalog('feat')]);
+      const r = await window.ClassEditor.editSubclass(editorEntry, { ...o, classes, feats }); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else if (category === 'background' && window.BackgroundEditor) {
       // Предыстория правится отдельным редактором: навыки, языки, снаряжение и умение — своими разделами.
@@ -220,14 +232,15 @@ window.Compendium = (function () {
     } else if (category === 'class' && window.ClassEditor) {
       // Класс правится отдельным редактором: уровни, навыки, языки и снаряжение — своими разделами,
       // а умения уровней и подклассов — ссылками на записи категории «Черты».
-      const r = await window.ClassEditor.edit(e, { ...o, feats: await categoryCatalog('feat') }); if (!r) return;
+      const [feats, subclasses] = await Promise.all([categoryCatalog('feat'), categoryCatalog('subclass')]);
+      const r = await window.ClassEditor.edit(e, { ...o, feats, subclasses }); if (!r) return;
       result = { name: r.name, data: { ...e?.data, ...r.data, folder: e?.data?.folder || o.folder || undefined } };
     } else {
       const r = await M().editGeneric(e, category, { folders: o.folders, folder: o.folder }); if (!r) return; result = r;
     }
     if (!result.name) return toast('Нужно название');
     const body = { category, name: result.name, data: result.data, campaign_id: e ? e.campaign_id : o.campaignId, pack_id: e ? e.pack_id : o.packId };
-    try { if (e?.id) await API.patch('/api/compendium/' + e.id, body); else await API.post('/api/compendium', body); toast('Сохранено'); o.onSaved && o.onSaved(); } catch (err) { toast('Ошибка: ' + err.message, 4000); }
+    try { const saved = e?.id ? await API.patch('/api/compendium/' + e.id, body) : await API.post('/api/compendium', body); toast('Сохранено'); o.onSaved && o.onSaved(saved); } catch (err) { toast('Ошибка: ' + err.message, 4000); }
   }
 
   // Полноэкранная мастерская справочника: фильтры/рубрики | список | карточка.
@@ -258,7 +271,7 @@ window.Compendium = (function () {
     main.append(toolbar, facetBar, lst);
     root.append(side, main, det);
 
-    const state = { source: '', packTag: '', category: '', folder: '', query: '', sort: 'name', facets: {} };
+    const state = { source: '', packTag: '', category: opts.category || '', folder: '', query: '', sort: 'name', facets: {} };
     let timer, request = 0, rawItems = [], packNames = {}, packTags = {}, folders = [], folderLists = {}, activeId = null;
     const sourceKey = e => e.pack_id ? 'pack:' + e.pack_id : e.campaign_id ? 'hb' : 'srd';
     const sourceLabel = e => e.pack_id ? (packNames[e.pack_id] || e.pack_name || 'Набор') : e.campaign_id ? 'Homebrew кампании' : 'Базовый SRD';
@@ -756,6 +769,15 @@ window.Compendium = (function () {
     return root;
   }
 
+  /// Открыть полноценный справочник поверх любого редактора; окно можно перемещать и закрывать отдельно.
+  function openWindow(opts = {}) {
+    const content = el('div', { class: 'compendium-window-content' });
+    content.append(workspaceWidget({ ...opts, category: opts.category || '', isGM: opts.isGM ?? window.ME?.is_gm }));
+    const w = floatWindow('Справочник', content, { x: 32, y: 32, w: Math.min(1160, Math.max(360, window.innerWidth - 64)), h: Math.min(780, Math.max(420, window.innerHeight - 64)) });
+    w.classList.add('compendium-window');
+    return w;
+  }
+
   /// Панель подключения наборов к кампании (для мастера)
   function campaignPacksPanel(campaignId, isGM) {
     const root = el('div');
@@ -775,5 +797,5 @@ window.Compendium = (function () {
     return root;
   }
 
-  return { widget, renderData, editEntry, campaignPacksPanel };
+  return { widget, renderData, editEntry, openWindow, campaignPacksPanel };
 })();

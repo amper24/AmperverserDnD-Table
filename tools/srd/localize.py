@@ -790,10 +790,32 @@ def process(root, src, ed, report):
     ctx.item_names = {e['data']['name_en']: e['name'] for e in raw if e['category'] == 'item'}
     ctx.spell_names = {e['data']['name_en']: e['name'] for e in raw if e['category'] == 'spell'}
     FEAT_EN.update({e['name']: e['data']['name_en'] for e in raw if e['category'] == 'feat'})
-    out = []
+    localized = {}
+    class_rows = {e['slug']: e for e in raw if e['category'] == 'class'}
+    # Классы локализуются со встроенными снимками подклассов; самостоятельные записи ниже
+    # получают те же переводы, но сохраняют отдельный slug и родительские ссылки.
     for e in raw:
+        if e['category'] == 'subclass': continue
         ru, en, tr = localize_entry(ctx, e, names, FEAT_EN)
-        out.append({'category': e['category'], 'slug': e['slug'], 'name': e['name'], 'data': ru, '_en': en})
+        localized[e['slug']] = {'category': e['category'], 'slug': e['slug'], 'name': e['name'], 'data': ru, '_en': en}
+    for e in raw:
+        if e['category'] != 'subclass': continue
+        parent = class_rows.get(e.get('data', {}).get('parent_class_slug'))
+        parent_loc = localized.get(parent['slug']) if parent else None
+        index = next((i for i, slug in enumerate(parent.get('data', {}).get('subclass_ids', [])) if slug == e['slug']), -1) if parent else -1
+        ru_subs = (parent_loc or {}).get('data', {}).get('subclasses', [])
+        en_subs = (parent_loc or {}).get('_en', {}).get('subclasses', [])
+        ru_sub = ru_subs[index] if 0 <= index < len(ru_subs) else {}
+        en_sub = en_subs[index] if 0 <= index < len(en_subs) else {}
+        ru, en = copy.deepcopy(e['data']), copy.deepcopy(e['data'])
+        ru.update(copy.deepcopy(ru_sub)); en.update(copy.deepcopy(en_sub))
+        if parent:
+            ru['parent_class'] = parent['name']
+            en['parent_class'] = parent.get('data', {}).get('name_en', parent['name'])
+            ru['parent_class_name_en'] = en['parent_class']
+            en['parent_class_name_en'] = en['parent_class']
+        localized[e['slug']] = {'category': 'subclass', 'slug': e['slug'], 'name': e['name'], 'data': ru, '_en': en}
+    out = [localized[e['slug']] for e in raw]
     ctx.stats['entries'] = len(out)
     # механика: русская из русских данных, английская из английского слоя
     ru_entries = [{**x, 'data': copy.deepcopy(x['data'])} for x in out]
@@ -803,6 +825,9 @@ def process(root, src, ed, report):
     for x, rm in zip(out, ru_entries):
         ov = diff(x['data'], x['_en']) or {}
         ov = {'name': x['data']['name_en'], **ov}
+        if x['category'] == 'subclass':
+            for key in ('features', 'feature_texts'):
+                if key in x['_en']: ov[key + '!'] = copy.deepcopy(x['_en'][key])
         overlays.append(ov)
         view = merge(x['data'], ov)
         en_entries.append({'category': x['category'], 'slug': x['slug'], 'name': x['name'], 'data': view})

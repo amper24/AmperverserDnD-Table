@@ -103,9 +103,9 @@ test('passives project new values without mutating source or accumulating bonuse
   const next=M.passiveData(e);assert.equal(next.data.speed,40);assert.equal(next.data.asi.dex,1);
   assert.equal(e.data.speed,30);assert.equal(M.passiveData(next).data.asi.dex,1);
 });
-test('full SRD coverage: all 2499 records across categories, optional item mechanics validate when present',()=>{
+test('full SRD coverage: all 2523 records across categories, optional item mechanics validate when present',()=>{
   let count=0;
-  const expected={2014:{total:1294,item:599,attunement:176},2024:{total:1205,item:444,attunement:136}};
+  const expected={2014:{total:1306,item:599,attunement:176},2024:{total:1217,item:444,attunement:136}};
   for(const ed of ['2014','2024']){
     const data=srd(`data_seed/srd_${ed}.json`);
     assert.equal(data.length,expected[ed].total,ed);
@@ -117,7 +117,7 @@ test('full SRD coverage: all 2499 records across categories, optional item mecha
       count++;
     }
   }
-  assert.equal(count,2499);
+  assert.equal(count,2523);
   const passive=srd('data_seed/srd_2014.json').find(e=>e.slug==='srd14-backpack');
   assert.equal(passive.data.mechanics,undefined,'пассивное снаряжение не получает фиктивные правила использования');
 });
