@@ -130,8 +130,12 @@ const assert = require('node:assert/strict');
     await page.waitForTimeout(300);
     assert.equal(ops.at(-1).op,'equip');assert.equal(ops.at(-1).item_uid,'bow');assert.equal(ops.at(-1).slot,'main','одна рука — одноручный хват');
     await page.keyboard.press('Escape');
-    await page.locator('[data-uid="wand"] .mcard-head').click();
-    const itemMenu = page.locator('[data-uid="wand"] .mcard-body > .row[style*="margin-top"]');
+    const wandCard = page.locator('[data-uid="wand"]');
+    // Clicking the middle of the full header can hit the quantity control, whose handler
+    // intentionally stops propagation; target the item name to deterministically expand it.
+    await wandCard.locator('.mcard-name').click();
+    await wandCard.locator('.mcard-body').waitFor();
+    const itemMenu = wandCard.locator('.mcard-body .row').filter({ hasText: 'В чат' });
     await itemMenu.waitFor();
     await page.evaluate(() => { window.sentCards = []; Modules.sendCard = card => window.sentCards.push(structuredClone(card)); });
     const opsBeforeSend = ops.length;
