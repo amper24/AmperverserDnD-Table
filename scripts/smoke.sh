@@ -137,7 +137,9 @@ gm -X POST "$B/api/compendium" -H 'content-type: application/json' -d "{\"catego
 [ "$(pl "$B/api/compendium?pack_id=$PACK&folder=%D0%96%D0%B8%D1%82%D0%B5%D0%BB%D0%B8%20%D0%A2%D0%B0%D0%B2%D0%B5%D1%80%D0%BD%D1%82%D0%BE%D0%BD%D0%B0" | J "len(d)")" = "1" ]
 [ "$(pl "$B/api/packs/$PACK" | J "d['version']")" -ge "2" ]
 pl -X DELETE "$B/api/packs/$PACK/editors/$(gm "$B/api/auth/me" | J "d['id']")" | grep -q '"ok":true'
-pl -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","description":"Тестовый набор для каталога","is_public":true,"tags":"тест"}' | J "d['is_public']" | grep -qi true
+pl -X PATCH "$B/api/packs/$PACK" -H 'content-type: application/json' -d '{"name":"Набор игрока","description":"Тестовый набор для каталога","is_public":true,"tags":"тест","license":"MIT","attribution":"Автор теста; тестовый источник"}' | J "d['is_public']" | grep -qi true
+[ "$(pl "$B/api/packs/$PACK" | J "d['license']")" = "MIT" ]
+[ "$(pl "$B/api/packs/$PACK" | J "d['attribution']")" = "Автор теста; тестовый источник" ]
 [ "$(gm "$B/api/packs?scope=public&q=%D0%B8%D0%B3%D1%80%D0%BE%D0%BA%D0%B0" | J "len(d)")" = "1" ]
 CLONE=$(gm -X POST "$B/api/packs/$PACK/clone" | J "d['id']")
 [ "$(gm "$B/api/packs/$CLONE" | J "d['entries']")" = "2" ]

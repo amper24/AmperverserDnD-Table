@@ -1,6 +1,6 @@
 // Браузерный тест конструкторов класса и расы в окне редактора записи (настоящий Chromium):
-// 1) в карточке класса и расы кнопка называет свой конструктор («Редактор класса»,
-//    «Редактор расы») и открывает его прямо в окне редактора записи — без отдельных
+// 1) в карточке класса, расы и подрасы кнопка называет свой конструктор и открывает
+//    его прямо в окне редактора записи — без отдельных
 //    страниц и переходов;
 // 2) разделы рисуются одним устройством (навигация .ced-nav-btn, чипы, счётчики,
 //    карточки .ced-block с меткой) — редактор расы устроен как редактор класса;
@@ -16,6 +16,7 @@ const browserLaunchOptions = require('./browser-launch.cjs');
 const SEED = loadSrd('data_seed/srd_2014.json');
 const record = (slug, id) => { const e = SEED.find(x => x.slug === slug); return { id, category: e.category, name: e.name, source: 'SRD 2014', pack_id: null, campaign_id: null, data: JSON.parse(JSON.stringify(e.data)) }; };
 const CLASS = record('srd14-barbarian', 'c-1'), RACE = record('srd14-high-elf', 'r-1');
+assert.equal(RACE.category, 'subrace', 'srd14-high-elf is a standalone subrace record');
 // Черты — отдельный элемент справочника: записи берём из сборки tools/srd/build_feats.py.
 const FEATS = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data_seed', 'feats_2014.json'), 'utf8'))
   .filter(f => ['srd14-feat-elf-weapon-training', 'srd14-feat-fey-ancestry', 'srd14-feat-darkvision', 'srd14-feat-rage',
@@ -99,9 +100,9 @@ async function scenarioClass(browser) {
   await page.close();
 }
 
-// Раса: тот же вход и то же устройство разделов, что у класса, — навигация, чипы, счётчики,
-// карточки .ced-block с меткой; правка уходит в запись расы.
-async function scenarioRace(browser) {
+// Подраса: тот же вход и то же устройство разделов, что у расы/класса, — навигация, чипы, счётчики,
+// карточки .ced-block с меткой; правка сохраняет категорию подрасы.
+async function scenarioSubrace(browser) {
   const page = await browser.newPage({ viewport: { width: 1360, height: 1000 }, reducedMotion: 'reduce' });
   const errors = [], calls = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -129,12 +130,12 @@ async function scenarioRace(browser) {
   await page.goto('https://editors.test/compendium');
   await page.locator('.comp-entry', { hasText: 'Высший эльф' }).click();
 
-  // 1. «Редактор расы» в карточке: конструктор открывается окном там же, где правится запись.
-  await page.getByRole('button', { name: 'Редактор расы', exact: true }).click();
+  // 1. Запись «Высший эльф» — отдельная подраса: её профильный редактор открывается прямо в карточке.
+  await page.getByRole('button', { name: 'Редактор подрасы', exact: true }).click();
   const modal = page.locator('.modal.wide');
   await modal.waitFor();
   assert.equal(page.url(), 'https://editors.test/compendium', 'страница не меняется');
-  assert.ok((await modal.locator('h2').innerText()).includes('Раса: Высший эльф'), 'заголовок записи расы');
+  assert.ok((await modal.locator('h2').innerText()).includes('Подраса: Высший эльф'), 'заголовок записи подрасы');
   const nav = JSON.parse(JSON.stringify(await modal.locator('.ced-nav-btn').allInnerTexts()));
   assert.deepEqual(nav, ['Общее', 'Характеристики', 'Навыки', 'Языки', 'Владения', 'Черты', 'Заклинания', 'Подрасы'],
     'разделы расы идут как у класса: общее, характеристики, навыки, языки, …');
@@ -181,7 +182,7 @@ async function scenarioRace(browser) {
   const patch = calls.find(c => c.method === 'PATCH');
   assert.ok(patch, 'сохранение ушло в справочник');
   assert.equal(patch.url, '/api/compendium/r-1', 'правится та же запись расы');
-  assert.equal(patch.body.category, 'race');
+  assert.equal(patch.body.category, 'subrace');
   assert.equal(patch.body.name, 'Высший эльф Подлунья');
   assert.equal(patch.body.data.traits.length, 3, 'черты записи на месте');
   assert.ok(patch.body.data.mechanics.graph.nodes.some(n => n.type === 'rule.value' && n.params.kind === 'ability'), 'бонусы характеристик — в узлах графа');
@@ -193,7 +194,7 @@ async function scenarioRace(browser) {
 
 // Черты — отдельный элемент справочника: рубрика «Черты» показывает записи, а редактор расы
 // ссылается на них списком (и принимает перетаскивание).
-async function scenarioFeatsRace(browser) {
+async function scenarioFeatsSubrace(browser) {
   const page = await browser.newPage({ viewport: { width: 1360, height: 1000 }, reducedMotion: 'reduce' });
   const errors = [], calls = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -232,10 +233,10 @@ async function scenarioFeatsRace(browser) {
   assert.ok(card.includes('Черта расы'), 'карточка называет вид черты');
   assert.ok(card.includes('srd14-feat-fey-ancestry'), 'карточка показывает ключ записи, по которому ссылаются редакторы');
 
-  // 2. Редактор расы: черты — ссылки на записи справочника.
+  // 2. Редактор подрасы: черты — ссылки на записи справочника.
   await page.locator('.comp-nav-item', { hasText: 'Все записи' }).click();
   await page.locator('.comp-list .comp-entry', { hasText: 'Высший эльф' }).click();
-  await page.getByRole('button', { name: 'Редактор расы', exact: true }).click();
+  await page.getByRole('button', { name: 'Редактор подрасы', exact: true }).click();
   const modal = page.locator('.modal.wide');
   await modal.waitFor();
   await modal.locator('.ced-nav-btn', { hasText: 'Черты' }).click();
@@ -345,8 +346,8 @@ async function scenarioFeatsClass(browser) {
 (async () => {
   // Отдельный браузер на сценарий: сборка @sparticuz/chromium работает в одном процессе.
   for (const [what, scenario] of [['конструктор класса в окне редактора записи', scenarioClass],
-    ['конструктор расы в окне редактора записи', scenarioRace],
-    ['черты — ссылки в редакторе расы', scenarioFeatsRace], ['черты — ссылки в редакторе класса', scenarioFeatsClass]]) {
+    ['конструктор подрасы в окне редактора записи', scenarioSubrace],
+    ['черты — ссылки в редакторе подрасы', scenarioFeatsSubrace], ['черты — ссылки в редакторе класса', scenarioFeatsClass]]) {
     const browser = await chromium.launch(await browserLaunchOptions());
     try { await scenario(browser); console.log(`editors.browser: ${what} — PASS`); }
     finally { await browser.close(); }
